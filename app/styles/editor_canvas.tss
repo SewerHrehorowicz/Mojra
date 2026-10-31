@@ -1,0 +1,399 @@
+// Studio Workspace & Top Toolbar
+.studio-workspace-full
+  display flex
+  flex-direction column
+  flex 1
+  width 100%
+  height 100%
+  overflow hidden
+  background --bg-obsidian
+
+.canvas-toolbar
+  padding 6px 18px
+  min-height 36px
+  background --bg-topbar
+  border-bottom 1px solid --border-subtle
+  display flex
+  align-items center
+  justify-content space-between
+  gap 12px
+  flex-shrink 0
+
+.canvas-toolbar-left
+  display flex
+  align-items center
+  gap 12px
+  min-width 0
+
+.canvas-legend
+  font-size 11px
+  text-transform uppercase
+  letter-spacing 0.8px
+  color --text-muted
+  white-space nowrap
+  overflow hidden
+  text-overflow ellipsis
+
+.canvas-book-title-input
+  background transparent
+  border 1px solid transparent
+  border-bottom-color --border-subtle
+  color --text-primary
+  font-family --font-sans
+  font-size 11px
+  font-weight 600
+  text-transform uppercase
+  letter-spacing 0.8px
+  padding 2px 6px
+  min-width 140px
+  max-width 320px
+  cursor text
+  transition border-color 0.15s ease, background 0.15s ease
+
+.canvas-book-title-input:hover
+  border-color --border-subtle
+  background --bg-elevated
+
+.canvas-book-title-input:focus
+  outline none
+  border-color --text-primary
+  background --bg-obsidian
+
+.canvas-selection-badge
+  font-family --font-sans
+  font-size 10px
+  text-transform uppercase
+  letter-spacing 0.6px
+  padding 3px 8px
+  border 1px solid --text-primary
+  color --text-primary
+  background --bg-elevated
+  white-space nowrap
+
+.canvas-toolbar-right
+  display flex
+  align-items center
+  gap 14px
+  flex-wrap nowrap
+  flex-shrink 0
+
+.canvas-history-controls
+  display inline-flex
+  align-items center
+  gap 4px
+
+.history-unsaved-badge
+  font-family --font-sans
+  font-size 9px
+  font-weight 700
+  line-height 1
+  padding 2px 5px
+  border 1px solid --text-primary
+  background --bg-elevated
+  color --text-primary
+
+.canvas-zoom-controls
+  display inline-flex
+  align-items center
+  gap 4px
+
+.canvas-zoom-label
+  font-family --font-sans
+  font-size 11px
+  min-width 38px
+  text-align center
+
+.studio-warnings-banner
+  padding 10px 24px
+  background --bg-elevated
+  border-bottom 1px solid --accent-danger
+  font-size 12px
+  flex-shrink 0
+  max-height 110px
+  overflow-y auto
+
+// Contextual Left Panel & Infinite Canvas Split
+.editor-workspace-body
+  display flex
+  flex-direction row
+  flex 1
+  width 100%
+  height 100%
+  min-height 0
+  overflow hidden
+  position relative
+
+// Infinite Canvas, Stage & Wire Layer
+.timeline-scroll-viewport
+  order 2
+  flex 1
+  overflow hidden
+  position relative
+  background-color --bg-obsidian
+  cursor default
+  touch-action none
+  user-select none
+  -webkit-user-select none
+  -webkit-touch-callout none
+
+.timeline-scroll-viewport *
+  touch-action none
+  user-select none
+  -webkit-user-select none
+
+.timeline-scroll-viewport .custom-select-menu, .timeline-scroll-viewport .custom-select-menu *
+  touch-action pan-y
+
+.timeline-scroll-viewport input, .timeline-scroll-viewport textarea
+  user-select text
+  -webkit-user-select text
+  cursor text
+
+.timeline-scroll-viewport input::selection, .timeline-scroll-viewport textarea::selection
+  background --border-strong
+  color --text-primary
+
+.timeline-scroll-viewport ::selection
+  background transparent
+
+.timeline-scroll-viewport.is-panning
+  cursor grabbing
+
+.studio-canvas
+  position absolute
+  inset 0
+  width 100%
+  height 100%
+  display block
+  pointer-events auto
+  z-index 1
+
+.canvas-floating-chapter-input
+  position absolute
+  z-index 90
+  background --bg-obsidian
+  border 1px solid --text-primary
+  color --text-primary
+  font-family --font-sans
+  font-size 11px
+  font-weight 600
+  text-transform uppercase
+  letter-spacing 0.9px
+  padding 2px 6px
+  outline none
+  white-space nowrap
+
+.editor-empty-state
+  position absolute
+  inset 0
+  z-index 40
+  display flex
+  align-items center
+  justify-content center
+  padding 24px
+  pointer-events auto
+
+.editor-empty-card
+  max-width 420px
+  width 100%
+  padding 24px
+  background --bg-obsidian
+  border 1px solid --border-strong
+  display flex
+  flex-direction column
+  align-items center
+  text-align center
+  gap 12px
+
+.editor-empty-title
+  font-family --font-serif
+  font-size 18px
+  font-weight 400
+  color --text-primary
+
+.editor-empty-desc
+  font-size 13px
+  line-height 1.5
+  color --text-secondary
+
+.editor-empty-actions
+  display flex
+  flex-wrap wrap
+  justify-content center
+  gap 10px
+  padding-top 6px
+
+// Canvas Context Menu
+.canvas-context-menu
+  position absolute
+  z-index 120
+  min-width 210px
+  background --bg-obsidian
+  border 1px solid --text-primary
+  box-shadow 0 6px 18px rgba(0, 0, 0, 0.45)
+  display flex
+  flex-direction column
+  box-shadow switch(theme)
+    light 0 2px 8px rgba(0, 0, 0, 0.06)
+
+.canvas-context-item
+  width 100%
+  background --bg-obsidian
+  border none
+  border-bottom 1px solid --border-subtle
+  color --text-primary
+  font-family --font-sans
+  font-size 11px
+  text-transform uppercase
+  letter-spacing 0.6px
+  padding 9px 14px
+  text-align left
+  cursor pointer
+  transition background 0.12s ease, color 0.12s ease
+
+.canvas-context-item:last-child
+  border-bottom none
+
+.canvas-context-item:hover
+  background --bg-elevated
+  color --text-primary
+
+.timeline-node-card
+  width 192px
+
+body[data-ui-scale="large"]
+  .canvas-toolbar
+    padding 10px 20px
+    min-height 50px
+    gap 16px
+
+  .canvas-toolbar-right
+    gap 18px
+
+  .canvas-zoom-controls
+    gap 6px
+
+  .canvas-zoom-label
+    font-size 14px
+    min-width 48px
+
+  .canvas-floating-chapter-input
+    font-size 13px
+    padding 4px 6px
+
+  .canvas-context-item
+    font-size 13px
+    padding 12px 16px
+
+/* @dev-only-start */
+.canvas-toolbar
+  @switch preview
+    portrait
+      flex-direction column
+      align-items stretch
+      justify-content flex-start
+      padding 6px 8px
+      gap 4px
+    landscape
+      padding 6px 12px
+      gap 8px
+
+.canvas-toolbar-left
+  @switch preview
+    portrait
+      width 100%
+      justify-content space-between
+      padding-bottom 4px
+      border-bottom 1px solid --border-subtle
+
+.canvas-toolbar-right
+  @switch preview
+    portrait
+      width 100%
+      justify-content space-between
+      flex-wrap nowrap
+      gap 2px
+    landscape
+      gap 8px
+
+.canvas-toolbar-right .top-action-btn
+  @switch preview
+    portrait
+      padding 4px 3px
+
+.canvas-toolbar-right .action-icon
+  @switch preview
+    portrait
+      width 15px
+      height 15px
+
+.canvas-zoom-controls
+  @switch preview
+    portrait
+      gap 1px
+
+.canvas-zoom-label
+  @switch preview
+    portrait
+      min-width 32px
+      font-size 10px
+      padding 4px 2px
+/* @dev-only-end */
+
+@media (max-width: 760px)
+  .canvas-toolbar
+    flex-direction column
+    align-items stretch
+    justify-content flex-start
+    padding 6px 8px
+    gap 4px
+
+  .canvas-toolbar-left
+    width 100%
+    justify-content space-between
+    padding-bottom 4px
+    border-bottom 1px solid --border-subtle
+
+  .canvas-toolbar-right
+    width 100%
+    justify-content space-between
+    flex-wrap nowrap
+    gap 2px
+
+  .canvas-toolbar-right .top-action-btn
+    padding 4px 3px
+
+  .canvas-toolbar-right .action-icon
+    width 15px
+    height 15px
+
+  .canvas-zoom-controls
+    gap 1px
+
+  .canvas-zoom-label
+    min-width 32px
+    font-size 10px
+    padding 4px 2px
+
+  body[data-ui-scale="large"]
+    .canvas-toolbar
+      padding 6px 8px
+      gap 4px
+
+    .canvas-toolbar-right
+      gap 2px
+
+    .canvas-toolbar-right .top-action-btn
+      padding 4px 3px
+
+    .canvas-toolbar-right .action-icon
+      width 18px
+      height 18px
+
+    .canvas-zoom-controls
+      gap 1px
+
+    .canvas-zoom-label
+      min-width 34px
+      font-size 11px
+      padding 4px 2px

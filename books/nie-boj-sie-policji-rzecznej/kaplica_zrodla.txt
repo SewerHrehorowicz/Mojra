@@ -1,0 +1,88 @@
+chapter: Kaplica zatrutego źródła
+id: kaplica_zrodla
+
+scene: Schody w korzeniach
+id: schody_w_korzeniach
+next: prog_kaplicy
+Wąska ścieżka pięła się po stopniach wyrąbanych w kamieniu i splecionych korzeniach olbrzymich drzew. Im wyżej wchodzili, tym wyraźniej w powietrzu czuć było gryzący, chemiczny zaduch, który mieszał się z zapachem kadzidła i butwiejącej sosny.
+
+Na szczycie garbu, ponad dachami osady, stała stara drewniana kaplica o spadzistym dachu, zbudowana bezpośrednio nad skalną grotą, z której wypływał macierzysty strumień.
+
+scene: Próg starej kaplicy
+id: prog_kaplicy
+next: slepy_kustosz
+Drzwi kaplicy były podparte od środka dębową belką, lecz kilku policjantów wraz z Krzysiem wyważyło je uderzeniami kolb i ciężkiego wiosła. Wewnątrz panował półmrok rozświetlany jedynie przez wąskie szczeliny w deskach i rząd łojowych kaganków wokół kamiennej cembrowiny.
+
+Na ścianach wisiały stare płaskorzeźby przedstawiające czystą rzekę pełną ryb, przekreślone grubymi smugami czarnej smoły.
+
+scene: Ślepy kustosz źródła
+id: slepy_kustosz
+Przed cembrowiną klęczał wychudzony starzec o wyłupionych oczach, trzymający w dłoniach drewniany czerpak. Nie uciekał przed łoskotem podkutych butów — uniósł tylko pooraną bliznami twarz w stronę napastników.
+
+- Przyszliście dolać świeżej trucizny, słudzy fałszywej Dziewicy? - zapytał cicho, wskazując czerpakiem w głąb mrocznego prezbiterium.
+
+Zajrzyj za ołtarz, gdzie stoją żelazne beczki -> beczki_z_pieczecia
+Zerwij ze stojaka spisaną na korze księgę wyrzutków -> ksiega_wyrzutkow
+
+scene: Beczki z policyjną pieczęcią
+id: beczki_z_pieczecia
+next: czarna_cembrowina
+Krzyś przeszedł ostrożnie za spróchniały ołtarz i zamarł. W wykutej w skale niszy stało kilkanaście ciężkich, żelaznych beczek z odkręconymi szpuntami, z których gęsty, oleisty szlam sączył się prosto do źródlanej rynny.
+
+Na denkach beczek widniał wytłoczony w ołowiu znak kotwicy i wagi — ta sama urzędowa pieczęć Policji Rzecznej, którą Krzyś widywał codziennie na skrzyniach w koszarowym magazynie.
+
+scene: Księga wyrzutków
+id: ksiega_wyrzutkow
+next: czarna_cembrowina
+Na drewnianym pulpicie leżały płaty wysuszonej brzozowej kory zapisane równym, starannym pismem. Krzyś nie umiał dobrze czytać, ale rozpoznał odrysowane węglem szkice ludzi w policyjnych mundurach zrzucających beczki do źródła oraz daty kolejnych wypraw pacyfikacyjnych.
+
+Zanim zdołał przyjrzeć się kolejnym kartom, idący za nim funkcjonariusz strącił księgę na podłogę i przydeptał ją obcasem.
+
+scene: Czarna cembrowina
+id: czarna_cembrowina
+next: kazanie_nad_zrodlem
+W tym samym momencie w progu kaplicy stanął kapitan Arvo. Jednym ruchem sztyletu pchnął ślepego kustosza w pierś, tak że starzec osunął się bezgłośnie na kamienne płyty obok źródła.
+
+Wujek podszedł spokojnie do cembrowiny, w której czysta woda z głębi skały mieszała się z czarnym szlamem z beczek, tworząc mętną, opalizującą zawiesinę.
+
+scene: Kazanie nad zatrutym źródłem
+id: kazanie_nad_zrodlem
+Kapitan Arvo spojrzał na pobladłego Krzysia i uśmiechnął się swoim najłagodniejszym, ojcowskim uśmiechem.
+
+- Dziwisz się, synku? - zapytał miękko. - Gdyby rzeka była zdrowa i czysta, któż w mieście potrzebowałby Policji Rzecznej? Kto kłaniałby się naszym mundurom na przystaniach, gdyby ludzie nie bali się zarazy i leśnych mętów? Boska Dziewica wymaga ofiary, Krzysiu, aby porządek trwał wiecznie.
+
+Zaczerpnij w dłonie czarnej wody na rozkaz Wujka -> proba_wiernosci
+Odwróć wzrok od cembrowiny i podpal ściany kaplicy -> ogien_w_kaplicy
+
+scene: Próba wierności
+id: proba_wiernosci
+Kapitan zanurzył drewniany czerpak w czarnej cembrowinie i podał go Krzysiowi, patrząc mu prosto w oczy.
+
+- Udowodnij, że jesteś Prawy i Wielki, synku. Pokaż, że ufasz swojemu Wujkowi bardziej niż oczom głupiego wioskowego dziwadła.
+
+Wypij do dna gęsty, metaliczny płyn dla Boskiej Dziewicy -> lyk_z_czarnego_zrodla
+Wylej ukradkiem wodę w rękaw i skłoń głowę przed Arvo -> ogien_w_kaplicy
+
+scene: Łyk z czarnego źródła
+id: lyk_z_czarnego_zrodla
+end: true
+Krzyś tak bardzo bał się stracić ojcowską miłość kapitana, że bez wahania przyłożył czerpak do ust i wypił gęstą, cuchnącą metalem ciecz aż do dna.
+
+Żrący ogień rozlał się natychmiast po jego gardle i wnętrznościach, odbierając mu dech i wzrok. Gdy upadł na kolana, drapiąc paznokciami kamienną posadzkę i krztusząc się czarną pianą, ostatnią rzeczą, jaką usłyszał ponad trzaskiem podpalanej kaplicy, był łagodny głos Wujka:
+
+- Dobry chłopak z ciebie, Krzysiu. Naprawdę Prawy i Wielki.
+
+scene: Ogień w kaplicy
+id: ogien_w_kaplicy
+next: zejscie_ze_wzgorza
+Krzyś udał, że pije, pozwalając, by czarna ciecz spłynęła po brodzie w gruby sukienny rękaw munduru, po czym chwycił jeden z łojowych kaganków i cisnął go na zasłony ołtarza.
+
+Suche sosnowe ściany kaplicy zajęły się ogniem w mgnieniu oka, a żelazne beczki za ołtarzem zaczęły pękać od żaru z głuchym hukiem, zalewając cały strumień płonącą mazią.
+
+scene: Zejście ze wzgórza
+id: zejscie_ze_wzgorza
+Wybiegli z płonącej kaplicy na kamienisty taras. W dole osada wyrzutków tonęła już we krwi i dymie. Krzyś mógł zbiec po schodach prosto między walczące chaty, zejść na środek majdanu, gdzie pojawił się czarny zwiadowca, albo skręcić za skarpą w gęste szuwary.
+
+Zbiegaj po stopniach prosto w sam środek szturmu na osadę -> chapter:pacyfikacja_osady
+Zejdź na zadymiony majdan, gdzie krąży czarny zwiadowca -> chapter:kruk_z_piekiel
+Skręć za płonącą kaplicą w zalane wodą szuwary -> chapter:ucieczka_przez_szuwary

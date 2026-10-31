@@ -1,0 +1,83 @@
+chapter: Czarne torfowiska
+id: czarne_torfowiska
+
+scene: Wejście w siarkowy opar
+id: wejscie_w_opar
+Boczna czujka zapuściła się w rozległe, dymiące siarką torfowiska, które otaczały leśne wzgórze od wschodu. Pod stopami chlupał gęsty, czarny szlam, a z pękających na powierzchni bąbli gazu wydobywał się dławiący odór zgniłych jaj.
+
+Nagle idący przodem młody rekrut ześlizgnął się z zatopionego bala i wpadł po pachy w bezdenną studnię torfową, ciągnąc za sobą troki ze skrzynkami prochu.
+
+Wyciągnij wiosłem tonącego rekruta z torfowej studni -> studnia_torfowa
+Ratuj przed zamoknięciem skrzynki z prochem -> ratowanie_prochu
+
+scene: Studnia torfowa
+id: studnia_torfowa
+next: gnijaca_grobla
+Krzyś rzucił się na kolana na skraju trzęsawiska i wyciągnął daleko przed siebie szerokie pióro wiosła. Tonący chłopak uchwycił się drewna obiema dłońmi, oblepiony czarną mazią aż po oczy, a Krzyś, zapierając się obcasami o korzenie, wytargał go na twardą kępę.
+
+Skrzynka z ładunkami poszła jednak w bagno, za co dowodzący czujką kapral obrzucił obu wściekłymi przekleństwami, choć uratowany rekrut patrzył na Krzysia z niemą wdzięcznością.
+
+scene: Ratowanie skrzynek z prochem
+id: ratowanie_prochu
+next: gnijaca_grobla
+Pamiętając surowy nakaz dyscypliny, Krzyś chwycił najpierw skórzane pasy prochownic i wytargał ciężką skrzynkę na suche dyle grobli. Kiedy odwrócił się z powrotem ku czarnej dziurze, nad powierzchnią gęstego torfu wystawała już tylko czapka rekruta i kilka ostatnich bąbli powietrza.
+
+Kapral pokiwał głową z zimnym uznaniem, mówiąc, że ludzi w koszarach jest pod dostatkiem, a suchy proch na bagnach jest na wagę złota.
+
+scene: Gnijąca grobla
+id: gnijaca_grobla
+next: zasadzka_w_szuwarach
+Dalszy szlak prowadził po spróchniałych pomostach z brzozowych żerdzi, ułożonych przed laty przez smolarzy. Wokół sterczały z bagna martwe, osmalone kikuty drzew, przypominające powykręcane ze stawów kości olbrzymów.
+
+Mundur Krzysia, jeszcze wczoraj tak czysty i wykrochmalony, był już do pasa oblepiony tłustym, czarnym szlamem, którego nie dało się zetrzeć rękawem.
+
+scene: Zasadzka w szuwarach
+id: zasadzka_w_szuwarach
+next: pogon_po_keppach
+Z gęstej ściany trzcin rozległ się cichy świst dmuchawek. Długie kolce z cierni bagiennej róży wbiły się w szyję idącego z boku policjanta, który zacharczał, chwycił się za gardło i runął twarzą w torf.
+
+Krzyś odruchowo zasłonił twarz szerokim piórem wiosła — dwa zatrute kolce wbiły się z głuchym stukiem w twarde jesionowe drewno tuż przed jego nosem.
+
+scene: Pogoń po trzęsawisku
+id: pogon_po_keppach
+next: zielarka_z_bagien
+Policjanci dali ognia na oślep w szuwary i rzucili się w pościg po chybotliwych kępach turzycy. Strzelcy w ciężkich butach grzęźli co krok, lecz nawykły do biegania po nadrzecznym błocie Krzyś przeskakiwał zwinnie z korzenia na korzeń.
+
+Za zasłoną dymiących oparów dopadł samotną postać, która potknęła się o wykrot, przyciskając do piersi dwa gliniane dzbany oplecione wikliną.
+
+scene: Zielarka z bagien
+id: zielarka_z_bagien
+Nie był to uzbrojony zwiadowca, lecz chuda, siwowłosa kobieta o dłoniach pożółkłych od ziół. Gdy Krzyś uniósł nad nią wiosło, nawet nie próbowała się zasłaniać — osłoniła tylko własnym ciałem gliniane naczynia.
+
+- Nie tłucz dzbanów, żołnierzu! - zawołała chrapliwie. - To ostatnia czysta woda z głębinowego sączka! Wasza policja sama wlewa truciznę do górnego źródła w kaplicy, a potem oskarża nas o śmierć rzeki!
+
+Rozbij wiosłem gliniane dzbany z wodą -> rozbite_dzbany
+Posłuchaj w milczeniu ostrzeżenia o zatrutym źródle -> prawda_zielarki
+
+scene: Rozbite dzbany
+id: rozbite_dzbany
+next: wyrok_na_grobli
+Słowa kobiety wydały się Krzysiowi bezczelnym bluźnierstwem przeciwko Wujkowi i Boskiej Dziewicy. Zamachnął się z całej siły i trzasnął wiosłem w wiklinowy oplot, rozbijając gliniane dzbany w drobny mak.
+
+Przejrzysta, chłodna woda wsiąkła błyskawicznie w cuchnący torf, a kobieta zapłakała cicho, grzebiąc skrwawionymi palcami w błocie między skorupami.
+
+scene: Prawda zielarki
+id: prawda_zielarki
+next: wyrok_na_grobli
+Krzyś wstrzymał uderzenie i spojrzał z niepokojem na czystą wodę w dzbanie, tak różną od gęstej, czarnej mazi, którą płynęli od samego miasta.
+
+- Idź do drewnianej kaplicy na wzgórzu nad osadą - wyszeptała gorączkowo zielarka, zanim z mgły wybiegli pozostali policjanci. - Zobaczysz tam żelazne beczki z pieczęcią waszych koszar!
+
+scene: Wyrok na grobli
+id: wyrok_na_grobli
+next: kraniec_torfowisk
+Nadbiegający kapral nie pozwolił kobiecie powiedzieć ani słowa więcej. Jednym pchnięciem kordelasa uciszył zielarkę i kazał zepchnąć jej ciało w torfową topiel, by nie zostawiać śladów za plecami oddziału.
+
+Krzyś szedł dalej w milczeniu, ściskając drzewce wiosła, w którym wciąż tkwiły dwa ciernie z zasadzki.
+
+scene: Kraniec czarnych torfowisk
+id: kraniec_torfowisk
+Torfowisko kończyło się u stóp stromego, porośniętego cierniami zbocza. Z dołu słychać już było pierwsze wystrzały głównej tyraliery wchodzącej do osady wyrzutków, natomiast wąska ścieżka po lewej pięła się ku wspomnianej przez zielarkę drewnianej kaplicy nad źródłem.
+
+Uderz z boku na dymiące chaty osady -> chapter:pacyfikacja_osady
+Idź śladem glinianych dzbanów ku kaplicy nad źródłem -> chapter:kaplica_zrodla

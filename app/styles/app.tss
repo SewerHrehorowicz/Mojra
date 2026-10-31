@@ -1,0 +1,172 @@
+/* @dev-only-start */
+// Device Stage & Preview Bar
+.device-stage
+  width 100vw
+  height 100vh
+  display flex
+  flex-direction column
+  align-items center
+  justify-content center
+  background --bg-obsidian
+  padding switch(preview)
+    portrait, landscape 18px
+
+.device-preview-bar
+  display flex
+  align-items center
+  justify-content center
+  gap 16px
+  width 100%
+  padding 6px 18px
+  background --bg-topbar
+  border-bottom 1px solid --border-subtle
+  flex-shrink 0
+  z-index 30
+  -webkit-app-region drag
+
+.device-preview-bar button
+  -webkit-app-region no-drag
+
+.preview-bar-label
+  font-size 11px
+  text-transform uppercase
+  letter-spacing 0.8px
+  color --text-muted
+
+.preview-mode-btn
+  background transparent
+  color --text-muted
+  border none
+  border-bottom 1px solid transparent
+  padding 3px 2px
+  font-size 12px
+  cursor pointer
+
+.preview-mode-btn:hover
+  color --text-secondary
+
+.preview-mode-btn.active
+  color --text-secondary
+  border-bottom-color --border-strong
+  font-weight 500
+
+.device-frame
+  position relative
+  display flex
+  flex-direction column
+  width 100%
+  flex 1
+  overflow hidden
+  background --bg-surface
+
+  @switch preview
+    full
+      width 100%
+      flex 1
+    portrait, landscape
+      border 1px solid --border-strong
+      border-radius 40px !important
+      margin auto
+      background --bg-obsidian
+    portrait
+      width 393px
+      height calc(100vh - 76px)
+      max-height 844px
+    landscape
+      width min(844px, calc(95vw - 36px))
+      height 393px
+
+.device-notch, .device-home-bar
+  display none
+  align-items center
+  justify-content center
+  background --bg-obsidian
+  flex-shrink 0
+
+.device-notch::after, .device-home-bar::after
+  content ""
+  height 3px
+  border-radius 999px !important
+  background --border-strong
+
+.device-notch::after
+  width 48px
+
+.device-notch
+  @switch preview
+    portrait
+      display flex
+      height 12px
+
+.device-home-bar::after
+  width 104px
+
+.device-home-bar
+  @switch preview
+    portrait, landscape
+      display flex
+      height 10px
+/* @dev-only-end */
+
+// Core Shell Layout
+.app-root
+  position relative
+  display grid
+  grid-template-rows auto 1fr
+  grid-template-columns 100%
+  flex 1
+  width 100%
+  height 100%
+  min-width 0
+  min-height 0
+  overflow hidden
+
+.view-panel
+  display flex
+  flex-direction column
+  flex 1
+  width 100%
+  height 100%
+  min-width 0
+  min-height 0
+  overflow hidden
+
+.workspace
+  grid-row 2
+  grid-column 1
+  flex 1
+  width 100%
+  height 100%
+  min-width 0
+  min-height 0
+  display flex
+  flex-direction column
+  overflow hidden
+  position relative
+
+.modals-root
+  grid-row 2
+  grid-column 1
+  position relative
+  width 100%
+  height 100%
+  min-width 0
+  min-height 0
+  pointer-events none
+  z-index 120
+
+.modals-root:empty
+  display none
+
+// Toast Banner
+.toast
+  position fixed
+  bottom 24px
+  right 24px
+  background --accent-bg
+  color --accent-fg-inverted
+  padding 10px 18px
+  font-size 12px
+  font-weight 600
+  letter-spacing 0.4px
+  z-index 300

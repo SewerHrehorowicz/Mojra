@@ -1,0 +1,775 @@
+// Contextual Left Inspector Panel & Multi-Selection
+.editor-context-panel
+  order 1
+  width 288px
+  min-width 288px
+  max-width 288px
+  height 100%
+  background --bg-obsidian
+  border-right 1px solid --border-subtle
+  overflow-y auto
+  overflow-x hidden
+  display flex
+  flex-direction column
+  flex-shrink 0
+  z-index 35
+
+body[data-android="true"] .editor-context-panel
+  display none !important
+
+/* @dev-only-start */
+.device-stage[data-preview="portrait"] .editor-context-panel, .device-stage[data-preview="landscape"] .editor-context-panel
+  display none !important
+/* @dev-only-end */
+
+@media (max-width: 900px)
+  .editor-context-panel
+    display none !important
+
+@media (hover: none) and (pointer: coarse)
+  .editor-context-panel
+    display none !important
+
+// Right-Side Version History Panel
+.editor-history-panel
+  order 3
+  width 300px
+  min-width 300px
+  max-width 300px
+  height 100%
+  background --bg-obsidian
+  border-left 1px solid --border-subtle
+  overflow-y auto
+  overflow-x hidden
+  display flex
+  flex-direction column
+  flex-shrink 0
+  z-index 35
+
+.history-panel-header
+  display flex
+  align-items center
+  justify-content space-between
+  gap 8px
+  padding 10px 14px
+  border-bottom 1px solid --border-subtle
+  background --bg-topbar
+  flex-shrink 0
+
+.history-panel-title
+  font-family --font-sans
+  font-size 11px
+  font-weight 600
+  text-transform uppercase
+  letter-spacing 0.9px
+  color --text-primary
+
+.history-unsaved-banner
+  padding 8px 14px
+  border-bottom 1px solid --border-subtle
+  background --bg-elevated
+  flex-shrink 0
+
+.history-unsaved-text
+  font-family --font-sans
+  font-size 11px
+  color --text-primary
+
+.history-unsaved-text.is-clean
+  color --text-muted
+
+.history-version-form
+  display flex
+  flex-direction column
+  gap 6px
+  padding 12px 14px
+  border-bottom 1px solid --border-subtle
+  background --bg-obsidian
+  flex-shrink 0
+
+.history-version-input-row
+  display flex
+  align-items center
+  gap 6px
+
+.history-version-input
+  flex 1
+  min-width 0
+  background --bg-elevated
+  border 1px solid --border-subtle
+  color --text-primary
+  font-family --font-sans
+  font-size 11px
+  padding 5px 8px
+
+.history-version-input:focus
+  outline none
+  border-color --text-primary
+
+.history-version-save-btn
+  flex-shrink 0
+  white-space nowrap
+
+.history-panel-body
+  display flex
+  flex-direction column
+  gap 16px
+  padding 14px
+  overflow-y auto
+  flex 1
+
+.history-panel-section
+  display flex
+  flex-direction column
+  gap 8px
+
+.history-items-list
+  display flex
+  flex-direction column
+  gap 6px
+
+.history-step-item
+  width 100%
+  display flex
+  flex-direction column
+  align-items stretch
+  gap 3px
+  padding 8px 10px
+  background --bg-elevated
+  border 1px solid --border-subtle
+  color --text-primary
+  font-family --font-sans
+  text-align left
+  cursor pointer
+  transition border-color 0.12s ease, background 0.12s ease
+
+.history-step-item:hover
+  border-color --text-primary
+
+.history-step-item.history-item-current
+  border-color --text-primary
+  box-shadow 0 0 0 1px --text-primary
+
+.history-step-item.history-item-undone
+  opacity 0.55
+
+.history-step-top
+  display flex
+  align-items center
+  justify-content space-between
+  gap 6px
+  width 100%
+
+.history-step-label
+  font-size 11px
+  line-height 1.35
+  color --text-primary
+  overflow hidden
+  text-overflow ellipsis
+  white-space nowrap
+  flex 1
+  min-width 0
+
+.history-step-badge
+  font-family --font-sans
+  font-size 9px
+  font-weight 700
+  text-transform uppercase
+  letter-spacing 0.5px
+  padding 1px 5px
+  border 1px solid --border-strong
+  color --text-secondary
+  background --bg-obsidian
+  flex-shrink 0
+
+.history-step-meta
+  display flex
+  align-items center
+  justify-content space-between
+  width 100%
+
+.history-step-time
+  font-size 10px
+  color --text-muted
+
+.history-version-card
+  display flex
+  align-items center
+  justify-content space-between
+  gap 8px
+  padding 8px 10px
+  background --bg-elevated
+  border 1px solid --border-subtle
+
+.history-version-card.history-item-current
+  border-color --text-primary
+
+.history-version-info
+  display flex
+  flex-direction column
+  gap 2px
+  min-width 0
+  flex 1
+
+.history-version-name
+  font-family --font-sans
+  font-size 12px
+  font-weight 600
+  color --text-primary
+  overflow hidden
+  text-overflow ellipsis
+  white-space nowrap
+
+.history-version-time
+  font-family --font-sans
+  font-size 10px
+  color --text-muted
+
+.history-restore-btn
+  flex-shrink 0
+
+.history-empty-note
+  font-family --font-sans
+  font-size 11px
+  color --text-muted
+  padding 6px 0
+
+.editor-context-form
+  display flex
+  flex-direction column
+  gap 12px
+  padding 14px
+  min-height 100%
+
+.editor-multi-panel
+  display flex
+  flex-direction column
+  gap 12px
+  padding 14px
+  min-height 100%
+
+.context-multi-scene-list
+  display flex
+  flex-direction column
+  gap 6px
+
+.context-multi-scene-item
+  display flex
+  align-items center
+  gap 4px
+  background --bg-elevated
+  border 1px solid --border-subtle
+  padding 6px 8px
+
+.context-multi-scene-item:hover
+  border-color --text-primary
+
+.context-multi-scene-select-btn
+  flex 1
+  min-width 0
+  display flex
+  flex-direction column
+  gap 2px
+  background transparent
+  border none
+  padding 0
+  text-align left
+  cursor pointer
+  color --text-primary
+  font-family --font-sans
+
+.context-multi-scene-title
+  font-size 12px
+  font-weight 400
+  color --text-primary
+  line-height 1.3
+  overflow hidden
+  text-overflow ellipsis
+  white-space nowrap
+
+.context-multi-scene-meta
+  font-size 9px
+  font-weight 400
+  color --text-muted
+  text-transform uppercase
+  letter-spacing 0.5px
+  line-height 1.2
+  overflow hidden
+  text-overflow ellipsis
+  white-space nowrap
+
+.context-multi-scene-deselect-btn
+  flex-shrink 0
+
+.context-panel-section
+  display flex
+  flex-direction column
+  gap 5px
+
+.context-choices-section
+  display flex
+  flex-direction column
+  gap 8px
+
+.context-choices-list
+  display flex
+  flex-direction column
+  gap 8px
+
+.context-choice-item
+  display flex
+  align-items center
+  gap 6px
+  padding 6px 8px
+  background --bg-elevated
+  border 1px solid --border-subtle
+
+.context-choice-item .node-choice-label
+  flex 1
+  min-width 0
+  background transparent
+  border none
+  border-bottom 1px solid transparent
+  padding 2px 4px
+
+.context-choice-item .node-choice-label:focus
+  border-bottom-color --border-subtle
+
+.context-danger-zone
+  margin-top auto
+  padding-top 14px
+  border-top 1px solid --border-subtle
+  display flex
+  flex-direction column
+
+.btn.context-delete-btn
+  width 100%
+  justify-content center
+  gap 6px
+  color --accent-danger
+  border-color --accent-danger
+  background rgba(196, 88, 72, 0.08)
+
+.btn.context-delete-btn .btn-icon
+  width 13px
+  height 13px
+  color currentColor
+
+.btn.context-delete-btn:hover
+  background --accent-danger
+  border-color --accent-danger
+  color --bg-obsidian
+
+// Inspector Chapter & Title Controls
+.node-chapter-select
+  flex 1
+  min-width 0
+
+.node-chapter-input-wrap
+  display flex
+  align-items center
+  border 1px solid transparent
+  background transparent
+  transition border-color 0.15s ease, background 0.15s ease
+
+.node-chapter-input-wrap:hover, .node-chapter-input-wrap:focus-within, .node-chapter-select.open .node-chapter-input-wrap
+  border-color --border-subtle
+  background --bg-elevated
+
+.node-inline-chapter
+  flex 1
+  min-width 0
+  background transparent
+  border none
+  font-size 10px
+  text-transform uppercase
+  letter-spacing 1px
+  color --text-muted
+  font-family --font-sans
+  padding 3px 6px
+  cursor text
+
+.node-inline-chapter:focus
+  outline none
+  color --text-primary
+
+.node-chapter-caret-btn
+  background transparent
+  border none
+  border-left 1px solid transparent
+  color --text-muted
+  font-size 9px
+  padding 3px 6px
+  cursor pointer
+  flex-shrink 0
+
+.node-chapter-input-wrap:hover .node-chapter-caret-btn, .node-chapter-select.open .node-chapter-caret-btn
+  border-left-color --border-subtle
+  color --text-primary
+
+.node-icon-btn
+  background transparent
+  border none
+  color --text-muted
+  font-family --font-sans
+  font-size 12px
+  padding 2px 5px
+  cursor pointer
+
+.node-icon-btn:hover
+  color --text-primary
+
+.node-inline-title
+  width 100%
+  min-width 0
+  background transparent
+  border none
+  border-bottom 1px solid transparent
+  font-family --font-serif
+  color --text-primary
+  padding 2px 0
+
+.editor-context-form .node-inline-title
+  font-size 19px
+  font-weight 400
+
+.node-inline-title:focus
+  outline none
+  border-bottom-color --border-subtle
+
+.node-start-scene-btn
+  width 100%
+  justify-content center
+  margin-top 4px
+
+.node-start-scene-btn.active
+  border-color --text-primary
+  background --bg-elevated
+  color --text-primary
+  font-weight 600
+  cursor default
+  opacity 1
+
+// Node Metadata, Text Preview & Warnings
+.node-meta-fields
+  display flex
+  flex-direction column
+  gap 4px
+  padding 6px 8px
+  background --bg-elevated
+  border 1px solid --border-subtle
+
+.node-meta-row
+  display flex
+  align-items center
+  gap 6px
+
+.node-meta-key
+  font-family --font-sans
+  font-size 10px
+  color --text-muted
+  width 42px
+  flex-shrink 0
+
+.node-meta-input
+  flex 1
+  min-width 0
+  background --bg-obsidian
+  border 1px solid --border-subtle
+  color --text-primary
+  font-family --font-sans
+  font-size 10px
+  padding 4px 7px
+
+.node-meta-input:hover, .node-meta-input:focus
+  outline none
+  border-color --text-primary
+
+.node-text-preview
+  width 100%
+  background --bg-elevated
+  border 1px solid --border-subtle
+  padding 9px 11px
+  color --text-secondary
+  font-family --font-sans
+  font-weight 300
+  font-size 13px
+  line-height 1.4
+  text-align left
+  cursor pointer
+  display block
+  overflow hidden
+  transition border-color 0.15s ease, color 0.15s ease
+
+.node-text-preview:hover
+  border-color --border-strong
+  color --text-primary
+
+.node-text-snippet
+  display block
+  width 100%
+  white-space nowrap
+  overflow hidden
+  text-overflow ellipsis
+  pointer-events none
+
+.node-warnings-list
+  margin 0
+  padding 6px 10px 6px 22px
+  background --bg-elevated
+  border 1px solid --accent-danger
+  color --accent-danger
+  font-family --font-sans
+  font-size 10px
+  line-height 1.45
+
+// Custom Dropdowns (Media & Choice Targets)
+.custom-select
+  position relative
+  min-width 0
+
+.node-media-select
+  flex 1
+
+.node-choice-select
+  width auto
+  max-width none
+  flex-shrink 0
+  display inline-flex
+  align-items center
+
+.node-choice-select .custom-select-menu
+  right 0
+  left auto
+  min-width 220px
+
+.custom-select-trigger.choice-port-trigger
+  width 28px
+  height 28px
+  padding 0
+  border none
+  background transparent
+  display inline-flex
+  align-items center
+  justify-content center
+  color --text-secondary
+  cursor pointer
+  transition color 0.15s ease
+
+.custom-select-trigger.choice-port-trigger:hover, .custom-select.open .custom-select-trigger.choice-port-trigger
+  border none
+  color --text-primary
+
+.choice-port-icon
+  display block
+  width 13px
+  height 13px
+  border-radius 50% !important
+  border 2px solid currentColor
+  background transparent
+  pointer-events none
+  transition background 0.15s ease, border-color 0.15s ease, transform 0.12s ease
+
+.choice-port-icon.port-filled
+  background currentColor
+
+.custom-select-trigger.choice-port-trigger:hover .choice-port-icon, .custom-select.open .custom-select-trigger.choice-port-trigger .choice-port-icon
+  transform scale(1.18)
+
+.custom-select-trigger
+  width 100%
+  display flex
+  align-items center
+  justify-content space-between
+  gap 6px
+  background --bg-obsidian
+  border 1px solid --border-subtle
+  color --text-primary
+  font-family --font-sans
+  font-size 10px
+  padding 4px 7px
+  cursor pointer
+  text-align left
+
+.custom-select-trigger:hover, .custom-select.open .custom-select-trigger
+  border-color --text-primary
+
+.custom-select-label
+  flex 1
+  min-width 0
+  white-space nowrap
+  overflow hidden
+  text-overflow ellipsis
+  pointer-events none
+
+.custom-select-caret
+  font-size 9px
+  color --text-muted
+  flex-shrink 0
+  pointer-events none
+
+.custom-select-menu
+  position absolute
+  top calc(100% + 2px)
+  left 0
+  right 0
+  min-width 190px
+  max-height 210px
+  overflow-y auto
+  background --bg-obsidian
+  border 1px solid --text-primary
+  z-index 60
+  display flex
+  flex-direction column
+  box-shadow 0 6px 16px rgba(0, 0, 0, 0.45)
+  box-shadow switch(theme)
+    light 0 2px 8px rgba(0, 0, 0, 0.05)
+
+.custom-select-option
+  width 100%
+  background --bg-obsidian
+  border none
+  border-bottom 1px solid --border-subtle
+  color --text-secondary
+  font-family --font-sans
+  font-size 10px
+  padding 6px 8px
+  text-align left
+  cursor pointer
+  white-space nowrap
+  overflow hidden
+  text-overflow ellipsis
+  flex-shrink 0
+
+.custom-select-option:last-child
+  border-bottom none
+
+.custom-select-option:hover, .custom-select-option.active
+  background --bg-elevated
+  color --text-primary
+
+.custom-select-option.active
+  font-weight 600
+
+.node-micro-label
+  font-size 9px
+  text-transform uppercase
+  letter-spacing 0.8px
+  color --text-muted
+
+.node-port-item .node-choice-label
+  flex 1
+  min-width 0
+  background transparent
+  border none
+  color --text-secondary
+  font-family --font-sans
+  font-size 11px
+  padding 0
+  overflow hidden
+  text-overflow ellipsis
+  white-space nowrap
+
+.node-choice-label
+  flex 1
+  min-width 0
+  background --bg-obsidian
+  border 1px solid --border-subtle
+  color --text-primary
+  font-family --font-sans
+  font-size 11px
+  padding 4px 6px
+
+.node-choice-label:focus
+  outline none
+  border-color --text-primary
+
+.node-choice-arrow
+  font-family --font-sans
+  font-size 11px
+  color --text-muted
+  flex-shrink 0
+
+.node-choice-btn
+  width 28px
+  height 28px
+  display inline-flex
+  align-items center
+  justify-content center
+  padding 0
+  font-size 12px
+  flex-shrink 0
+
+.node-choice-remove
+  color --text-secondary
+  transition color 0.15s ease
+
+.node-choice-remove:hover
+  color --accent-danger
+
+.choice-trash-icon
+  width 15px
+  height 15px
+  display block
+  flex-shrink 0
+  pointer-events none
+
+.node-media-add-btn
+  width 22px
+  height 22px
+  display inline-flex
+  align-items center
+  justify-content center
+  padding 0
+  font-size 13px
+  flex-shrink 0
+  background --bg-obsidian
+  border 1px solid --border-subtle
+  color --text-secondary
+
+.node-media-add-btn:hover
+  border-color --text-primary
+  color --text-primary
+
+.node-media-add-btn .media-plus-icon
+  width 13px
+  height 13px
+
+body[data-ui-scale="large"]
+  .node-media-add-btn .media-plus-icon
+    width 15px
+    height 15px
+  .node-chapter-caret-btn
+    font-size 12px
+    padding 5px 8px
+
+  .custom-select-trigger
+    font-size 12px
+    padding 6px 10px
+
+  .custom-select-trigger.choice-port-trigger
+    width 32px
+    height 32px
+    padding 0
+
+  .choice-port-icon
+    width 15px
+    height 15px
+
+  .custom-select-option
+    font-size 12px
+    padding 8px 10px
+
+  .node-choice-btn
+    width 32px
+    height 32px
+    font-size 15px
+
+  .choice-trash-icon
+    width 17px
+    height 17px
+
+  .node-media-add-btn
+    width 28px
+    height 28px
+    font-size 15px

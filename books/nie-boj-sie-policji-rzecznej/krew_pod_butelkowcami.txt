@@ -1,0 +1,130 @@
+chapter: Krew pod butelkowcami
+id: krew_pod_butelkowcami
+
+scene: Zwiadowca znikąd
+id: zwiadowca_znikad
+image: images/zwiadowca_znikad.jpg
+next: las_butelkowcow
+Zanim na dobre zagłębili się w las, zjawił się przed nimi znikąd - jakby spadł z korony drzew, albo wypluła go ziemia - jakiś taki dziwny człowiek, calutki na czarno ubrany, z twarzą bladą, chudą i pociągłą.
+
+Uśmiechał się, ale niedobry był to uśmiech, oj niedobry; Krzysiowi od razu ciarki przeszły po plecach, na sam widok tego dziwnego człowieka - zwiadowcy, jak się rychło okazało, który na nich czekał w tym lesie i prowadził teraz tylko sobie znanymi ścieżkami.
+
+scene: Las butelkowców
+id: las_butelkowcow
+A dziwny był to las, drzewa rosły koślawe, miały rozdęte pnie, jak jakieś wielkie butle, a gałęzie na czubku drobne i krótkie, jak przystrzyżone. Miejscami spośród tych butlowatych drzew wyrastało pojedyncze drzewo ogromne, wysokie z wielką koroną i grubym jak wieża pniem, z którego to wyrastały dziesiątki pomniejszych gałęzi, powykręcanych jak palce u wiedźmy.
+
+Cuchnęło tu starą korą, mokrym mchem i czymś słodkawym, co przypominało odór trupich lilii znad rozlewisk.
+
+Przyjrzyj się kościanym totemom na gałęziach -> kosciane_totemy
+Badaj wiosłem zapadnięte poszycie przed oddziałem -> wilcze_doly
+
+scene: Kościane totemy
+id: kosciane_totemy
+next: znak_zwiadowcy
+Z niskich, sękatych konarów zwisały na łykowych sznurkach dziwne plecionki z ptasich czaszek, rybich kręgów i wysuszonych pęcherzy. Gdy wiatr poruszał gałęziami, kości klekotały cicho, ostrzegając mieszkańców lasu przed intruzami.
+
+Czarny zwiadowca sięgnął ku jednemu z totemów swoimi nienaturalnie długimi palcami i zmiażdżył czaszkę czapli w garści jak skorupkę jajka, nie wydając przy tym ani jednego szelestu.
+
+scene: Wilcze doły w poszyciu
+id: wilcze_doly
+next: znak_zwiadowcy
+Krzyś szedł czujnie z boku kolumny, dźgając piórem wiosła podejrzanie miękkie kępy rudego mchu. W pewnej chwili chrust zapadł się pod uderzeniem drewna, odsłaniając głęboki dół najeżony zaostrzonymi, opalonymi w ogniu kołkami.
+
+Idący za nim Matti zbladł jeszcze bardziej i przeżegnał się ukradkiem. Gdyby któryś z nich wpadł w taką pułapkę, zbutwiałe ostrza przebiłyby podkute buty na wylot.
+
+scene: Znak zwiadowcy
+id: znak_zwiadowcy
+next: pierwsza_szarza
+W pewnym momencie zwiadowca dał znak i wszyscy stanęli jak wryci. Krzyś jeszcze bardziej ze strachu niż z dyscypliny. Ten dziwny, czarny człowiek o twarzy jak u kruka (a czarne miał nawet białka oczu, jak u jakiegoś diabła) pokazywał coś Wujkowi i tłumaczył bezgłośnie, na migi.
+
+Wszyscy zamarli w bezruchu, pochyleni, z bronią w pogotowiu (Krzyś broni nie dostał, miał za to swoje wiosło, które zabrał z łódki, żeby też mieć coś w rękach jak inni).
+
+Arvo syczał coś i dawał znaki, żeby się nie ruszali. Mówił szeptem do tych, co mieli strzelby, pokazywał gdzie mają iść, gdzie się zaczaić i kiedy strzelać.
+
+scene: Pierwsza szarża
+id: pierwsza_szarza
+next: agonia_mattiego
+Wszystko zadziało się bardzo szybko. Arvo dał znak, i strzelcy wybiegli, paląc z muszkietów we wskazane miejsca. Rozległy się okrzyki trafionych, którzy spadali z drzew jak gruszki z podciętej gałęzi. Zaraz też ruszyli pozostali, z pałkami, nożami, tasakami i siekierkami. Ruszył więc z nimi i Krzyś, dzierżąc w dłoniach swoje wiosło, jako ten kij bojowy czy inną halabardę.
+
+Zanim jednak zdążył choćby zamachnąć się swoim wiosłem, było już po wszystkim. Kilku zabitych i rannych przeciwników, do których doskoczyli koledzy z siekierami i tasakami - rąbali bez litości, aż krew tryskała na ich wykrochmalone mundury.
+
+Ale i z naszych kilku trafionych z łuków z czego jeden - Matti - wił się ze strzałą w brzuchu i ryczał nieludzko.
+
+scene: Agonia Mattiego
+id: agonia_mattiego
+next: laska_kapitana
+Podszedł do niego kapitan i nachylił się nad nim, zasłaniając mu usta dłonią.
+
+- Cicho, cicho synku - powiedział łagodnie. - Już dobrze, nie bój się. Zaraz przestanie boleć. Jesteś Prawy i Wielki, synku. Prawy i Wielki - powtarzał, wbijając mu sztylet pod żebra, prosto w serce. Matti zadrżał, zacharczał, a spod dłoni Wujka pociekła mu z ust krew. W końcu znieruchomiał.
+
+scene: Łaska kapitana
+id: laska_kapitana
+next: trupy_pod_drzewami
+Wujek wstał, wytarł nóż o spodnie zabitego i rozejrzał się po podwładnych, którzy ze zgrozą patrzyli na tę scenę.
+
+- No co się tak gapicie? - zapytał z wyrzutem. - Nie było już dla niego ratunku, w bebech dostał. Chcielibyście tak konać godzinami? - pokręcił głową i spojrzał na jednego z ocalałych mętów.
+
+Tamten dostał w udo i teraz siedział pod drzewem, ściskając krwawiącą nogę, blady jak ściana, przerażony. Młody to był chłopak, młodszy jeszcze od Krzysia.
+
+scene: Trupy pod butelkowcami
+id: trupy_pod_drzewami
+next: przesluchanie_daniela
+Zanim podeszli do rannego jeńca, starsi policjanci obszukali ciała zabitych zwiadowców leżące w paprociach. Nie znaleźli przy nich ani złotych monet, ani zatrutych kul — tylko proste łuki z cisowego drewna, gliniane manierki z czystą wodą i woreczki suszonych korzeni.
+
+Mimo to Niedźwiedź splunął na poharatane zwłoki i kopnął jeden z łuków w krzaki, mrucząc, że leśne robactwo nie zasługuje nawet na płytki grób.
+
+scene: Przesłuchanie Daniela
+id: przesluchanie_daniela
+- Jak masz na imię, synku? - zapytał łagodnie Wujek, kucając przy nim.
+
+- Daniel… - wyjęzyknął tamten, patrząc na zakrwawione dłonie kapitana.
+
+- Nie bój się, Daniel. Nie bój się policji rzecznej. Powiesz nam tylko, ilu was jest w obozie, jak rozstawione są czujki, i zaraz opatrzymy ci tę nogę - uśmiechnął się dobrotliwie. Chłopak ze strachu wyśpiewał wszystko, jąkając się i płacząc z bólu.
+
+- Dobrze, bardzo dobrze, zuch chłopak - Wujek poklepał go po policzku, zostawiając na nim krwawy ślad.
+
+- Krzysiu, chodź no tutaj - zawołał kapitan, robiąc miejsce przy rannym.
+
+Chwyć oburącz wiosło i podejdź wykonać rozkaz -> chrzest_wioslem
+Zawahaj się i spójrz błagalnie na Wujka -> wahanie_krzysia
+
+scene: Wahanie Krzysia
+id: wahanie_krzysia
+next: chrzest_wioslem
+Krzyś postąpił krok naprzód, ale nogi miał jak z ołowiu. Spojrzał w zapłakane oczy Daniela, który był przecież niemal dzieckiem, a potem przeniósł wzrok na kapitana Arvo.
+
+- Wujku… ale przecież obiecałeś mu opatrunek… - wyjąkał cicho, ściskając mokre od potu drzewce wiosła.
+
+Uśmiech zniknął z twarzy kapitana, a jego głos stał się zimny i twardy jak żelazo:
+
+- Chciałeś być Prawy i Wielki, Krzysiu, czy chcesz wrócić do ojcowskiego warsztatu i śmierdzieć gnojem? To jest chwast, który zatruwa rzekę Boskiej Dziewicy. Rób, co ci każę, albo zostaniesz tu razem z nim!
+
+scene: Chrzest wiosłem
+id: chrzest_wioslem
+image: images/smierc_daniela.jpg
+next: karczowanie_rozy
+- No, dalej - powiedział, wskazując na chłopaka. - Twój chrzest bojowy, Krzysiu.
+
+Krzyś zawahał się, ściskając w dłoniach wiosło. Chłopak przypominał mu jego samego - tak samo patrzył z dołu na jego ojca, kiedy ten brał się do bicia.
+
+- Dalej, Krzysiu! - warknął ponaglająco Wujek.
+
+Zamachnął się więc Krzyś wiosłem raz i drugi, i trzeci - bił gdzie popadnie, trochę płasko a trochę kantem, chłopaka po głowie, a ten zasłaniał się rękami i krzyczał „nie, proszę, nie!”, ale Krzyś nie przestawał, tłukł tym wiosłem chłopaka i płakał przy tym głośno, jakby to jego samego bito, aż w końcu chłopak znieruchomiał, zalany krwią, z roztrzaskaną czaszką.
+
+- No i zuch! Prawy i Wielki! - pochwalił go Wujek, klepiąc po ramieniu, a inni zarechotali z uznaniem.
+
+scene: Karczowanie bagiennej róży
+id: karczowanie_rozy
+next: rozstaje_w_cierniach
+Kiedy ruszyli dalej, ten dziwny zwiadowca przodem, Krzyś szedł w szeregu z innymi, wciąż pochlipując i ocierając łzy rękawem, ściskając zakrwawione wiosło.
+
+Droga pięła się w górę, a dziwne, butelkowate drzewa ustępowały powoli miejsca kolczastym zaroślom dzikiej, bagiennej róży o mięsistych, ciemnozielonych liściach i kwiatach w kolorze zgniłego mięsa. Zwiadowca prowadził ich sprawnie wąskimi przesmykami, a tam, gdzie zarośla były zbyt gęste, szli w ruch ci z tasakami i siekierkami, karczując przejście.
+
+scene: Rozstaje w cierniach
+id: rozstaje_w_cierniach
+Na szczycie garbu wykarczowany tunel w cierniach rozdzielał się na dwoje. W dole, w błotnistej niecce, majaczyły już koślawe dachy osady wyrzutków, lecz po lewej stronie wąska, kamienista ścieżka prowadziła ku starej drewnianej kaplicy zbudowanej nad samym źródłem strumienia.
+
+Kapitan Arvo skinął na kilku ludzi, by sprawdzili wzgórze ze źródłem, podczas gdy reszta tyraliery szykowała się do szturmu na chaty.
+
+Wyjdź z tyralierą prosto na palisadę osady -> chapter:pacyfikacja_osady
+Wespij się kamienistym żlebem ku kaplicy nad źródłem -> chapter:kaplica_zrodla

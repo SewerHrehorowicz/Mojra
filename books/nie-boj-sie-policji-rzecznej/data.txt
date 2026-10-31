@@ -1,0 +1,6 @@
+title: Nie bój się policji rzecznej
+author: Sewer Hrehorowicz
+description: Mroczna, rozgałęziona opowieść o prostodusznym Krzysiu, który wstępuje do Policji Rzecznej pod komendą kapitana Arvo i wyrusza w górę umierającej rzeki na swój krwawy chrzest bojowy.
+narrated: false
+imageless: false
+start: warsztat

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%">
+  <defs>
+    <pattern id="editor-dot-grid-pattern" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle id="editor-dot-grid-circle" class="canvas-grid-dot" cx="12" cy="12" r="1.1" />
+    </pattern>
+  </defs>
+  <rect width="100%" height="100%" fill="url(#editor-dot-grid-pattern)" />
+</svg>

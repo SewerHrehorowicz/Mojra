@@ -1,0 +1,79 @@
+:root, body[data-theme="dark"]
+  color-scheme dark
+
+body[data-theme="light"]
+  color-scheme light
+
+@switch theme
+  dark  :root, body[data-theme="dark"]
+  light body[data-theme="light"]
+
+@switch preview
+  full      .device-stage[data-preview="full"]
+  portrait  .device-stage[data-preview="portrait"]
+  landscape .device-stage[data-preview="landscape"]
+
+:root
+  --bg-obsidian light-dark(#fff, #000)
+  --bg-surface --bg-obsidian
+  --bg-topbar --bg-obsidian
+  --bg-elevated light-dark(#f4f4f4, #0c0c0c)
+  --border-subtle light-dark(#e2e2e2, #242424)
+  --border-strong light-dark(#999999, #525252)
+  --text-primary light-dark(#000, #fff)
+  --text-secondary light-dark(#333333, #c8c8c8)
+  --text-muted light-dark(#666666, #949494)
+  --accent-bg light-dark(#000, #fff)
+  --accent-fg-inverted light-dark(#fff, #000)
+  --accent-danger light-dark(#c9302c, #e05252)
+  --font-serif "Aleo"
+  --font-sans "Lato"
+
+@font-face
+  font-family "Aleo"
+  src url("/fonts/Aleo-Regular.ttf") format("truetype")
+  font-weight 400 500
+  font-style normal
+  font-display block
+
+@font-face
+  font-family "Aleo"
+  src url("/fonts/Aleo-Bold.ttf") format("truetype")
+  font-weight 600 700
+  font-style normal
+  font-display block
+
+@font-face
+  font-family "Lato"
+  src url("/fonts/Lato-Light.ttf") format("truetype")
+  font-weight 300
+  font-style normal
+  font-display block
+
+@font-face
+  font-family "Lato"
+  src url("/fonts/Lato-LightItalic.ttf") format("truetype")
+  font-weight 300
+  font-style italic
+  font-display block
+
+@font-face
+  font-family "Lato"
+  src url("/fonts/Lato-Regular.ttf") format("truetype")
+  font-weight 400 500
+  font-style normal
+  font-display block
+
+@font-face
+  font-family "Lato"
+  src url("/fonts/Lato-Italic.ttf") format("truetype")
+  font-weight 400 500
+  font-style italic
+  font-display block
+
+@font-face
+  font-family "Lato"
+  src url("/fonts/Lato-Bold.ttf") format("truetype")
+  font-weight 600 700
+  font-style normal
+  font-display block

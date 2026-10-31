@@ -1,0 +1,110 @@
+chapter: Kruk z piekieł
+id: kruk_z_piekiel
+
+scene: Dym nad osadą
+id: dym_nad_osada
+image: images/dym_nad_osada.jpg
+next: cien_piekielnego_ptaka
+Dalej zataczał się półprzytomnie, brnąc w błocie, środkiem osady. Koledzy i - o zgrozo! - ten dobrotliwy Wujek z furią wpadali do budynków, a tam już krzyki, drzazgi, krew…
+
+Zaraz się dymić zaczęło, a chwilę potem żarłoczne jęzory płomieni zaczęły wyłazić przez te malutkie, krzywe okienka, i jęły lizać drewniane fasady krzywych, karykaturalnych domków, dziko i lubieżnie.
+
+Niektórym kobietom udawało się ujść z tego ognistego piekła, lecz nigdy nie uciekały daleko - zwiadowca, diabeł czarny, zaraz je wyłapywał.
+
+scene: Cień piekielnego ptaka
+id: cien_piekielnego_ptaka
+image: images/piekielny_ptak.jpg
+next: zniwo_zwiadowcy
+Przez krótką chwilę Krzyś widział go wysoko na kalenicy płonącej szopy. Na tle szkarłatnej łuny czarny zwiadowca nie przypominał już wcale człowieka — spod jego płaszcza rozpostarły się wielkie, segmentowane skrzydła czy też chitynowe ramiona, ociekające czarną posoką.
+
+Zeskoczył w dół bezszelestnie jak pająk na niewidzialnej nici, lądując w samym środku gromady uciekających kobiet, zanim którakolwiek zdążyła dobiec do linii lasu.
+
+scene: Żniwo zwiadowcy
+id: zniwo_zwiadowcy
+Z chyżością niepojętą doskakiwał to do jednej, to do drugiej i gmerał coś, a te upadały, krzycząc i wijąc się z bólu. Ludzkie oko za wolne było, żeby za jego ruchami nadążyć i Krzysiu przeczuwał bardziej niż widział, co ten diabeł wyczynia. Jego czarno połyskujące, owadzie odnóża uwijały się jakby w dzikim tańcu, gorliwie pracowały, a sekatory, noże czy może wielkie igły zdawały się szyć coś, lecz w rzeczywistości pruły.
+
+Pochylał się nad leżącymi, to znikał przy jednej, to pojawiał się przy drugiej, a za każdym razem, gdy tak robił, z każdej oprawianej sztuki znikały coraz to większe płaty skóry, w końcu mięsa, a dalej oczy, nosy, dłonie i stopy.
+
+Krzysia zdjął dreszcz obrzydzenia, bo ten przeklęty diabeł czarny oprawiał je jak krowy, a przecież to kobiety były, i żyły jeszcze, i darły się, bo jakże okrutnie je to bolało! Kiedy to do Krzysia dotarło, to znów mu się słabo zrobiło i znów się nogi ugięły pod nim, jakby w nich kości nie było.
+
+Zostań na kolanach w błocie, gdy diabeł doskakuje do ciebie -> glos_w_glowie
+Unieś wiosło przeciw czarnemu zwiadowcy w imię Dziewicy -> bunt_naczynia
+Szukaj ratunku u swojego Wujka, kapitana Arvo -> oblicze_wujka
+Uciekaj na oślep w dół zbocza ku czekającym kanu -> powrot_w_ton
+
+scene: Głos w głowie
+id: glos_w_glowie
+image: images/glos_w_glowie.jpg
+Doskoczył wówczas do niego ten diabeł czarny, kruk piekielny. Wyszczerzył zęby w zimnym uśmiechu, a w jednym z tych czarnych, straszliwych szponów trzymał dziecko - małe, nienarodzone jeszcze, które musiał wykroić z brzucha jednej z tych biedaczek - i przemówił. Ust nie otwierał, a mimo to Krzyś słyszał go - w swojej głowie.
+
+- Najbardziej ze wszystkiego brzydzą mnie ludzkie szczenięta - tak powiedział. Drżała mu ta jego czarna łapa, jakby faktycznie walczył ze sobą, żeby nie puścić dziecka, takie obmierzłe widać mu się jawiło.
+
+- Brzydzi mnie cały wasz gatunek, i nie łudź się, że macie nade mną pieczę. Mam swoje cele, chwilowo zbieżne z waszymi, i tylko to powstrzymuje mnie przed nakarmieniem się tobą, twoimi kolegami, żałosnym słabeuszem, którego zwiesz wujkiem i całą tą waszą śmiechu wartą policją.
+
+Patrz w odrętwieniu na to, co diabeł trzyma w szponie -> bezwlose_szczenie
+Odwróć wzrok i odpełznij w dym ku ocalałym policjantom -> krwawy_oltarz
+
+scene: Bezwłose szczenię
+id: bezwlose_szczenie
+end: true
+Prychnął z pogardą, krzywiąc ze złości swoją nieludzko plastyczną twarz.
+
+- Najbardziej jednak ze wszystkiego brzydzą mnie te małe, bezwłose… - tu ścisnął główkę, a małe, nienarodzone drgnęło jakby w przestrachu, bo żyło jeszcze, lecz zaraz diabeł czarny, kruk z piekieł wycisnął ją jak wielkiego, bladego pryszcza i ciałko odrzucił jak szmatkę - …gówna.
+
+scene: Bunt naczynia Dziewicy
+id: bunt_naczynia
+end: true
+Krzyś zawył głucho i dźwignął się z błota, unosząc ciężkie wiosło przeciwko czarnemu zwiadowcy. Przecież Boska Dziewica, Królowa Rzek, nie mogła chcieć, by piekielny kruk oprawiał żywe kobiety i nienarodzone dzieci!
+
+Zanim jednak pióro wiosła przecięło dym, zwiadowca znalazł się tuż przed nim. Czarne, owadzie odnóża błysnęły szybciej niż myśl i twardy trzon wiosła rozpadł się na trzy równe części, które plasnęły w błoto. Zimny szpon uniósł podbródek Krzysia, a pod jego czaszką rozbrzmiał bezgłośny, drwiący głos:
+
+- Głupie, posłuszne bydlątko. Myślisz, że wasza platynowa pani różni się czymkolwiek ode mnie? Wiosłuj dalej dla swojego wujka, dopóki jesteś mi po drodze.
+
+scene: Powrót w ciemną toń
+id: powrot_w_ton
+image: images/powrot_w_ton.jpg
+end: true
+Krzyś nie czekał, aż czarny diabeł zwróci na niego swoje nieludzkie oczy. Obrócił się na pięcie i rzucił do ucieczki w dół zbocza, przez wykarczowane wcześniej tunele w gęstwinie bagiennej róży. Kolce darły jego wykrochmalony mundur, lecz on biegł na oślep, aż zsunął się po rusztowaniu korzeni wprost do przycumowanych kanu.
+
+Wskoczył do wąskiej łupiny, odepchnął się wiosłem od brzegu i wypłynął na sam środek głębokiego, ciemnego kanału między polami trupich lilii.
+
+Wiosłował z całych sił, aż mięśnie płonęły, a żyły pękały, nie oglądając się na łunę pożaru nad lasem — płynął tam, gdzie umierająca rzeka łączyła się z nocą.
+
+scene: Oblicze Wujka
+id: oblicze_wujka
+Przerażony Krzyś odwrócił wzrok od czarnego diabła i zaczął wołać Wujka, pewien, że dobrotliwy kapitan Arvo natychmiast położy kres temu piekłu. Przecież rozkaz pochodził od samej Królowej Rzek!
+
+Wujek wyszedł wolno z płonącej sieni, ocierając spoconą twarz rękawem munduru. Spojrzał spokojnie na zwiadowcę oprawiającego ciała w błocie, a potem uśmiechnął się do Krzysia tym samym łagodnym, ojcowskim uśmiechem, co w koszarach, i jego oczy znów dziwnie się zaszkliły.
+
+- Nie bój się, Krzysiu — powiedział miękko kapitan, kładąc dłoń na jego ramieniu, podczas gdy w tle trzeszczały płonące dachy. — Nie bój się Policji Rzecznej. Dziś wreszcie zostałeś Prawym i Wielkim.
+
+Skłoń posłusznie głowę przed słowami kapitana -> zbiorka_nad_brzegiem
+Spójrz z przerażeniem na stos ciał pod spichlerzem -> krwawy_oltarz
+
+scene: Krwawy ołtarz na majdanie
+id: krwawy_oltarz
+next: rozpad_oddzialu
+Kiedy dym nieco się przerzedził, pośrodku wypalonego majdanu widać było już tylko okaleczone korpusy ułożone w dziwny, geometryczny krąg, nad którym unosiły się roje czarnych much. Czarny zwiadowca zniknął równie bezgłośnie, jak wcześniej pojawił się w lesie butelkowców.
+
+Nawet najbardziej zaprawieni w rzezi policjanci omijali środek placu szerokim łukiem, spluwając w popiół i nie śmiąc spojrzeć sobie w oczy.
+
+scene: Rozpad oddziału
+id: rozpad_oddzialu
+next: zbiorka_nad_brzegiem
+Jeden z młodszych funkcjonariuszy rzucił muszkiet w błoto i zaczął wymiotować pod osmalonym płotem, mamrocząc, że nie na taką służbę przysięgał w mieście. Sierżant Niedźwiedź chwycił go natychmiast za kołnierz i trzasnął w twarz tak mocno, że chłopakowi poszła krew z nosa.
+
+- Milczeć! - ryknął sierżant, wskazując na kapitana Arvo. - Co widział las, zostaje w lesie! Kto piśnie słowo w koszarach, sam pójdzie na dno z kamieniem u szyi!
+
+scene: Zbiórka nad czarnym brzegiem
+id: zbiorka_nad_brzegiem
+next: ostatnie_spojrzenie_w_las
+Oddział schodził w dół zbocza w ponurej ciszy, niosąc zdobyczne worki i ciągnąc za sobą dwóch lekko rannych kolegów. Ciała Mattiego i pozostałych poległych zostawiono pod butelkowcami na żer leśnemu ptactwu.
+
+Nad brzegiem rzeki, przy rusztowaniu z korzeni, czekały przycumowane kanu. Woda wokół nich wydawała się jeszcze gęstsza i czarniejsza niż o świcie, jakby spłynął do niej cały popiół ze spalonej osady.
+
+scene: Ostatnie spojrzenie w płonący las
+id: ostatnie_spojrzenie_w_las
+next: chapter:powrot_w_kajdanach
+Zanim Krzyś zajął swoje miejsce na dziobie łodzi, obejrzał się jeszcze raz za siebie. Ponad koronami koślawych drzew bił w niebo czarny słup dymu, a w jego cieniu, na samym czubku najwyższego drzewa o wiedźmich gałęziach, tkwiła nieruchoma sylwetka przypominająca olbrzymiego kruka.
+
+- Na miejsca, chłopcy! - zakomenderował pogodnie Wujek, poprawiając mundur. - Wracamy do domu jako zwycięzcy!

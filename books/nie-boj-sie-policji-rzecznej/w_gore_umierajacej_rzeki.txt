@@ -1,0 +1,98 @@
+chapter: W górę umierającej rzeki
+id: w_gore_umierajacej_rzeki
+
+scene: Siedem kanu
+id: siedem_kanu
+image: images/siedem_kanu.jpg
+Tym jednak razem nie płynęli dużą łódką. Płynęli na mniejszych kanu. Było tych kanu siedem, w każdym po sześciu ludzi. Krzysiu był z przodu swojego kanu, na którym wraz z nim i czterema innymi policjantami płynął również Wujek.
+
+Płynęli nie jak dotychczas na południe, z nurtem rzeki, a pod prąd - na północ, tam gdzie nie było wiosek i miasteczek, a tylko gęste, nieprzebyte lasy. Tam też rzeka była jakby bardziej zamulona, śmierdziało okrutnie zgnilizną.
+
+Wypatruj niebezpieczeństw przy zatopionej strażnicy -> zatopiona_straznica
+Przysłuchuj się nerwowym szeptom Mattiego -> szepty_w_kanu
+
+scene: Zatopiona strażnica
+id: zatopiona_straznica
+next: trupie_lilie
+Po kilku godzinach mozolnego wiosłowania minęli przechyloną, kamienną wieżę dawnej strażnicy celnej, która do połowy zapadła się w czarnym szlamie. Z jej wykuszy zwisały przegniłe sznury, a na dachu siedziały nieruchomo czarne kormorany o wyskubanych piórach.
+
+Krzyś wpatrywał się w ciemne otwory strzelnic, czując, jak zimny pot spływa mu po karku. Od tego miejsca kończyła się jurysdykcja miejskich sądów, a zaczynało królestwo dzikiej puszczy i doraźnego prawa Policji Rzecznej.
+
+scene: Szepty w kanu
+id: szepty_w_kanu
+next: trupie_lilie
+Za plecami Krzysia młody Matti wiosłował nierówno, raz po raz ocierając pot z bladego czoła. Pochylił się ku sąsiadowi i wyszeptał, że z poprzedniej wyprawy na północ wróciła ledwie połowa obsady, a tych, którzy przeżyli, przeniesiono po cichu do zamkniętego lazaretu.
+
+Zanim jednak zdążył powiedzieć więcej, ciężka dłoń kapitana Arvo spoczęła na jego barku. Wujek nie krzyknął, tylko uśmiechnął się miękko i przypomniał, że plotki osłabiają ducha, a czysta wiara jest najlepszym pancerzem.
+
+scene: Trupie lilie
+id: trupie_lilie
+next: rozcinanie_kobierca
+To dlatego, mówił Wujek, że rzeka umiera, a umiera z powodu tych tam kryjących się po lasach mętów, z którymi płynęli właśnie zrobić porządek. Tam gdzie rzeka rozszerzała się w rozlewiska na wodzie unosiły się gęste kożuchy trupich lilii - bladych kwiatów, cuchnących jak gnijący nieboszczyk.
+
+Pomiędzy tymi połaciami były głębsze kanały i nimi właśnie płynęli. Wiosła cicho wchodziły w ciemną, gęstą wodę, a nad głowami wisiały sękate konary starych drzew.
+
+scene: Rozcinanie kobierca lilii
+id: rozcinanie_kobierca
+next: przykazy_wujka
+W najwęższym przesmyku białe, mięsiste kłącza trupich lilii splotły się tak ciasno, że dziób pierwszego kanu ugrzązł w cuchnącym kożuchu. Krzyś, siedzący na samym przodzie, musiał rąbać okutym piórem wiosła oślizgłe łodygi, z których sączył się mleczny, kleisty sok.
+
+Pod przeciętymi liśćmi mignęły mu w mętnej toni wzdęte brzuchy śniętych sumów i coś, co wyglądało jak ludzka dłoń zaplątana w korzenie. Przełknął ślinę i rąbał dalej, byle tylko Wujek nie pomyślał, że brakuje mu gorliwości.
+
+scene: Przykazy Wujka
+id: przykazy_wujka
+next: nocleg_na_korzeniach
+Płynęli przez dzień cały i całą noc. Ręce bolały od wiosłowania, ale Wujek surowo przykazał:
+
+- Nie marudzić. Zaciskać zęby i wiosłować - a na koniec dodał już łagodniej. - Nie bójcie się trudów, chłopaki, robimy to dla niej. Dla Boskiej Dziewicy. To od niej pochodzą moje rozkazy - uśmiechnął się jakoś tak dziwnie, jakby rozmarzony, a oczy jego zaszkliły się w blasku księżyca.
+
+Krzyś zacisnął mocniej dłonie na drzewcu wiosła. Skoro sam Wujek tak mówił, to musiała być najświętsza prawda.
+
+scene: Nocleg na korzeniach
+id: nocleg_na_korzeniach
+next: skrzynki_w_korzeniach
+Nad ranem gęsta, siwa mgła opadła na rozlewiska tak nisko, że nie było widać sąsiednich łodzi. Zatrzymali się na krótki postój przy zwalonym pniu olbrzymiego wiązu, żując w milczeniu twarde suchary i słoninę.
+
+Z głębi lasu dochodziło dziwne, metaliczne klekotanie, niepodobne ani do głosu ptaka, ani do żadnego znanego zwierzęcia. Policjanci ściskali kolby muszkietów, wpatrując się w mleczną ścianę oparów, aż kapitan Arvo dał znak do ostatniego podejścia.
+
+scene: Skrzynki w korzeniach
+id: skrzynki_w_korzeniach
+image: images/skrzynki_w_korzeniach.jpg
+Gdy przybili wreszcie do brzegu było jeszcze ciemno, lecz już świtało. Przycumowali łódki do powykręcanych, wystających z brzegu korzeni jakichś dziwnych drzew, które tworzyły całe rusztowania na skraju puszczy.
+
+Dobyto skrzynek, w których dzwoniły butelki z wódką.
+
+- Pijcie, chłopcy - powiedział Wujek, gdy odbito wieka z tych skrzynek. - Pijcie dla kurażu, i w drogę. Nie ma czasu do stracenia.
+
+Krzyś wódki nie pił, bo tato mu powtarzał, że od wódki rozum krótki, i chociaż sam chlał na umór, to jak tylko Krzyś zbliżył się do flaszki, dostawał zaraz po łbie, żeby mu nie przyszło do głowy staremu podbierać.
+
+Pociągnij tęgi łyk z butelki dla kurażu -> pekniete_szklo
+Odstaw butelkę i pilnuj skrzynek na brzegu -> straznik_trzezwosci
+
+scene: Pęknięte szkło i piekący łyk
+id: pekniete_szklo
+next: rozdzielanie_broni
+Koledzy wcisnęli mu w garść zieloną flaszkę i śmiali się cicho, szturchając go łokciami. Krzyś zawahał się, pamiętając ciężką rękę ojca, ale przecież ojca tu nie było — był tylko Wujek, który patrzył przyzwalająco.
+
+Pociągnął tęgi haust. Piekący płyn sparzył mu gardło i wycisnął łzy z oczu, aż zakrztusił się i wypuścił butelkę, która roztrzaskała się o korzenie. W brzuchu od razu zrobiło mu się gorąco i dziwnie lekko, a lęk przed ciemną puszczą rozpłynął się we mgle.
+
+scene: Strażnik trzeźwości
+id: straznik_trzezwosci
+next: rozdzielanie_broni
+Krzyś pokręcił prędko głową i cofnął rękę, jakby szkło parzyło. Koledzy parsknęli śmiechem, ale kapitan Arvo uniósł dłoń i uciszył ich jednym spojrzeniem.
+
+- Dobry chłopak z ciebie, Krzysiu. Czyste naczynie dla Boskiej Dziewicy — pochwalił go cicho Wujek, klepiąc po ramieniu, a serce Krzysia urosło z dumy tak bardzo, że gotów był iść w ogień bez ani jednej kropli gorzałki.
+
+scene: Rozdzielanie broni
+id: rozdzielanie_broni
+next: rozwidlenie_na_brzegu
+Gdy opróżnione butelki potoczyły się w błoto między korzeniami, starsi funkcjonariusze zaczęli sprawdzać zamki skałkowych strzelb i ostrzyć rzeźnickie tasaki na osełkach. Dla Krzysia nie starczyło już ani muszkietu, ani nawet krótkiego kordelasu.
+
+Chłopak zabrał więc z kanu swoje ciężkie, okute żelazem wiosło. Kiedy stanął w szeregu, trzymając je oburącz przed piersią jak halabardę, kilku podpitych policjantów zarechotało pod nosem, lecz on patrzył tylko prosto w twarz kapitana.
+
+scene: Rozwidlenie na brzegu puszczy
+id: rozwidlenie_na_brzegu
+Przed nimi otwierały się dwie drogi w głąb mrocznego brzegu. Główna ścieżka pięła się stromo między pokracznymi pniami lasu butelkowców, gdzie na oddział miał czekać tajemniczy przewodnik kapitana Arvo, natomiast po prawej stronie ciągnęły się czarne, dymiące siarką torfowiska, którymi boczna czujka miała oskrzydlić kryjówkę wyrzutków.
+
+Ruszaj za głównym oddziałem w las butelkowców -> chapter:krew_pod_butelkowcami
+Obejdź wzgórze z boczną czujką przez czarne torfowiska -> chapter:czarne_torfowiska

@@ -1,0 +1,307 @@
+.topbar
+  grid-row 1
+  grid-column 1
+  position relative
+  z-index 200
+  display flex
+  align-items center
+  justify-content space-between
+  padding 6px
+  min-height 36px
+  background --bg-topbar
+  border-bottom 1px solid --border-subtle
+  flex-shrink 0
+  gap 12px
+  -webkit-app-region drag
+
+.topbar button
+  -webkit-app-region no-drag
+
+.topbar-left, .topbar-right
+  display flex
+  align-items center
+
+.topbar-left
+  gap 10px
+  min-width 0
+
+.topbar-right
+  position relative
+  gap 14px
+  flex-shrink 0
+
+.topbar-hamburger-btn, .top-action-btn.topbar-hamburger-btn
+  display none !important
+
+.topbar-actions-menu
+  display flex
+  align-items center
+  gap 14px
+
+.brand-logo
+  font-family --font-serif
+  font-size 13px
+  font-weight 700
+  letter-spacing 0.4px
+  color --text-primary
+  padding 2px 6px
+  white-space nowrap
+  overflow hidden
+  text-overflow ellipsis
+  user-select none
+
+.brand-logo-short
+  display none
+
+.topbar-tab
+  display inline-flex
+  align-items center
+  justify-content center
+  gap 6px
+  padding 4px 8px
+  border none !important
+  text-decoration none !important
+  background transparent
+  color --text-secondary
+  font-family --font-sans
+  font-size 12px
+  cursor pointer
+  white-space nowrap
+  max-width 240px
+  overflow hidden
+  text-overflow ellipsis
+  flex-shrink 0
+
+.topbar-tab:hover
+  color --text-primary
+  border none !important
+  text-decoration none !important
+
+#tab-player
+  flex-shrink 1
+  min-width 0
+
+.tab-icon
+  width 14px
+  height 14px
+  display block
+  flex-shrink 0
+  pointer-events none
+
+.tab-label
+  overflow hidden
+  text-overflow ellipsis
+  white-space nowrap
+
+.topbar-tab.active
+  color --text-primary
+  font-weight 600
+  border none !important
+  text-decoration none !important
+
+.top-action-btn
+  display inline-flex
+  align-items center
+  justify-content center
+  padding 4px
+  border none !important
+  text-decoration none !important
+  background transparent
+  color --text-secondary
+  font-size 11px
+  cursor pointer
+
+.top-action-btn:hover
+  color --text-primary
+  border none !important
+  text-decoration none !important
+
+.top-action-btn:disabled, .top-action-btn.is-disabled, body[data-imageless-locked="true"] #btn-toggle-imageless
+  opacity 0.38
+  cursor not-allowed
+  pointer-events none
+  color --text-muted
+
+.btn-quit-app
+  color --text-secondary
+  font-weight 400
+
+.action-icon
+  width 15px
+  height 15px
+  display block
+  flex-shrink 0
+  pointer-events none
+
+#icon-imageless-on, #icon-zoom-out, #icon-theme-moon
+  display none
+
+body[data-imageless="true"] #icon-imageless-off, body[data-imageless-locked="true"] #icon-imageless-off
+  display none
+
+body[data-imageless="true"] #icon-imageless-on, body[data-imageless-locked="true"] #icon-imageless-on
+  display block
+
+body[data-ui-scale="large"] #icon-zoom-in
+  display none
+
+body[data-ui-scale="large"] #icon-zoom-out
+  display block
+
+body[data-theme="light"] #icon-theme-sun
+  display none
+
+body[data-theme="light"] #icon-theme-moon
+  display block
+
+body[data-ui-scale="large"]
+  .topbar
+    padding 10px 14px
+    min-height 50px
+    gap 16px
+
+  .topbar-left
+    gap 14px
+
+  .topbar-right, .topbar-actions-menu
+    gap 18px
+
+  .brand-logo
+    font-size 16px
+    padding 4px 8px
+
+  .topbar-tab
+    padding 6px 10px
+    font-size 14px
+
+  .tab-icon
+    width 18px
+    height 18px
+
+  .top-action-btn
+    padding 8px
+    font-size 14px
+
+  .action-icon
+    width 22px
+    height 22px
+
+/* @dev-only-start */
+.device-frame .topbar
+  padding 6px
+
+.topbar
+  @switch preview
+    portrait, landscape
+      padding 6px
+      gap 8px
+
+.desktop-only-btn
+  display switch(preview)
+    portrait, landscape none !important
+
+.topbar-left
+  @switch preview
+    portrait
+      gap 6px
+
+.topbar-left .brand-logo:not(.brand-logo-short):not(:only-child)
+  display switch(preview)
+    portrait none !important
+
+.brand-logo-short
+  display switch(preview)
+    portrait inline-block !important
+
+.topbar-tab
+  @switch preview
+    portrait
+      padding 6px 8px
+      max-width none
+
+.tab-label
+  display switch(preview)
+    portrait none !important
+
+.tab-icon
+  @switch preview
+    portrait
+      width 16px
+      height 16px
+
+.topbar-hamburger-btn, .top-action-btn.topbar-hamburger-btn
+  display switch(preview)
+    portrait inline-flex !important
+
+.topbar-actions-menu
+  @switch preview
+    portrait
+      display none
+      position absolute
+      top calc(100% + 6px)
+      right 0
+      background --bg-obsidian
+      border 1px solid --text-primary
+      padding 6px 10px
+      gap 12px
+      align-items center
+      z-index 120
+      box-shadow 0 6px 18px rgba(0, 0, 0, 0.45)
+
+.topbar-actions-menu.open
+  display switch(preview)
+    portrait flex !important
+/* @dev-only-end */
+
+@media (max-width: 900px)
+  .topbar
+    padding 6px
+    gap 8px
+
+  .desktop-only-btn
+    display none !important
+
+@media (max-width: 620px)
+  .topbar
+    padding 6px 8px
+    gap 6px
+
+  .topbar-left
+    gap 6px
+
+  .topbar-hamburger-btn, .top-action-btn.topbar-hamburger-btn
+    display inline-flex !important
+
+  .topbar-actions-menu
+    display none
+    position absolute
+    top calc(100% + 6px)
+    right 0
+    background --bg-obsidian
+    border 1px solid --text-primary
+    padding 6px 10px
+    gap 12px
+    align-items center
+    z-index 120
+    box-shadow 0 6px 18px rgba(0, 0, 0, 0.45)
+
+  .topbar-actions-menu.open
+    display flex !important
+
+@media (max-width: 480px)
+  .topbar-left .brand-logo:not(.brand-logo-short):not(:only-child)
+    display none !important
+
+  .brand-logo-short
+    display inline-block !important
+
+  .topbar-tab
+    padding 6px 8px
+    max-width none
+
+  .tab-label
+    display none !important
+
+  .tab-icon
+    width 16px
+    height 16px

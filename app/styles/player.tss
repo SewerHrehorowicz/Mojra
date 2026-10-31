@@ -1,0 +1,875 @@
+.player-layout
+  display flex
+  flex-direction column
+  flex 1
+  height 100%
+  overflow hidden
+  position relative
+
+.player-bg-stage
+  position absolute
+  top 0
+  bottom 0
+  left 0
+  width calc(100% - min(640px, 50%))
+  max-width calc(100% - 380px)
+  height 100%
+  z-index 0
+  pointer-events none
+  overflow hidden
+  background --bg-obsidian
+
+.player-bg-img, .scene-portrait-img
+  width 100%
+  height 100%
+  object-fit cover
+  object-position center
+  display block
+
+// Desktop right-column reader with solid opaque dark/light background
+.story-scroll-feed
+  position relative
+  z-index 2
+  flex 1
+  height 100%
+  overflow-y auto
+  width min(640px, 50%)
+  min-width 380px
+  margin-left auto
+  background --bg-obsidian
+  border-left 1px solid --border-subtle
+  padding 0
+  display flex
+  flex-direction column
+  align-items stretch
+
+// Imageless Mode: disable images, center text thread, and let it take more space when available
+.player-layout.is-imageless .player-bg-stage, body[data-imageless="true"] .player-bg-stage, .player-layout.is-imageless .scene-illustration-spacer, body[data-imageless="true"] .scene-illustration-spacer
+  display none !important
+
+.player-layout.is-imageless .story-scroll-feed, body[data-imageless="true"] .story-scroll-feed
+  width min(960px, 100%)
+  max-width 960px
+  min-width 0
+  margin-left auto
+  margin-right auto
+  border-left 1px solid --border-subtle
+  border-right 1px solid --border-subtle
+
+.player-layout.is-imageless .scene-card.has-illustration .scene-body-block, body[data-imageless="true"] .scene-card.has-illustration .scene-body-block
+  min-height 0
+
+@media (max-width: 960px)
+  .player-layout.is-imageless .story-scroll-feed, body[data-imageless="true"] .story-scroll-feed
+    border-left none
+    border-right none
+
+.history-stack
+  width 100%
+  flex-shrink 0
+  display flex
+  flex-direction column
+  background transparent
+
+.history-stack .scene-card
+  content-visibility auto
+  contain-intrinsic-size auto 320px
+
+.history-stack, .active-scene-stage
+  will-change transform
+  transition transform 0.42s cubic-bezier(0.22, 1.35, 0.36, 1)
+
+.story-scroll-feed.is-overscrolling .history-stack, .story-scroll-feed.is-overscrolling .active-scene-stage
+  transition transform 0.07s ease-out
+
+.active-scene-stage
+  width 100%
+  flex-shrink 0
+  min-height calc(100% - 27px)
+  display flex
+  flex-direction column
+  justify-content flex-start
+  margin-top -1px
+
+.scroll-more-cue
+  position sticky
+  bottom 0
+  left 0
+  right 0
+  width 100%
+  height 54px
+  margin-top -54px
+  flex-shrink 0
+  z-index 25
+  pointer-events none
+  display flex
+  align-items flex-end
+  justify-content center
+  padding-bottom 6px
+  background linear-gradient(to bottom, transparent 0%, --bg-obsidian 80%)
+
+.scroll-more-dots
+  font-family --font-serif
+  font-size 20px
+  line-height 1
+  letter-spacing 4px
+  color --text-secondary
+  opacity 0.85
+
+.reader-global-meta + .active-scene-stage, .history-stack > .scene-card:first-child, .active-scene-stage > .scene-card:first-child
+  margin-top 0
+
+// Minimal borderless scene section with collapsed 1px horizontal lines
+.scene-card
+  width 100%
+  background transparent
+  border none
+  padding 0
+  margin-top -1px
+  transition color 0.8s ease, opacity 0.8s ease
+
+@keyframes sceneCardEnter
+  0%
+    opacity 0
+    transform translateY(36px)
+  100%
+    opacity 1
+    transform translateY(0)
+
+.scene-card.scene-entering
+  animation sceneCardEnter 1.6s cubic-bezier(0.16, 1, 0.3, 1) both
+
+.scene-card.scene-focused
+  color --text-primary
+
+.scene-card.scene-dimmed
+  color --text-muted
+  cursor pointer
+
+.scene-card.scene-dimmed .scene-header-block, .scene-card.scene-dimmed .scene-body-block
+  background --bg-obsidian
+
+.scene-card.scene-dimmed .scene-header-block > *, .scene-card.scene-dimmed .scene-illustration-spacer > *, .scene-card.scene-dimmed .scene-body-block > *
+  opacity 0.32
+  transition opacity 0.2s ease
+
+.scene-card.scene-dimmed:hover .scene-header-block > *, .scene-card.scene-dimmed:hover .scene-illustration-spacer > *, .scene-card.scene-dimmed:hover .scene-body-block > *
+  opacity 0.55
+
+.active-scene-stage .scene-card
+  border-bottom none
+  flex 1
+  display flex
+  flex-direction column
+
+// Sticky Scene Headers & Global Meta
+.reader-global-meta
+  position sticky
+  top 0
+  z-index 20
+  width 100%
+  height 28px
+  display flex
+  align-items center
+  background --bg-obsidian
+  border-bottom 1px solid --border-subtle
+  margin-bottom -1px
+  padding 0 36px
+  flex-shrink 0
+
+.scene-chapter-pill
+  font-size 10px
+  text-transform uppercase
+  letter-spacing 1.2px
+  color --text-muted
+  white-space nowrap
+  overflow hidden
+  text-overflow ellipsis
+  max-width 100%
+  display block
+
+.scene-header-block
+  position sticky
+  top 27px
+  z-index 10
+  width 100%
+  background --bg-obsidian
+  padding 10px 36px
+  border-top 1px solid --border-subtle
+  border-bottom 1px solid --border-subtle
+
+.scene-title-row
+  display flex
+  align-items center
+  justify-content space-between
+  gap 12px
+  margin 0
+  width 100%
+  min-width 0
+
+.scene-title-with-badge
+  display flex
+  align-items center
+  gap 8px
+  min-width 0
+  flex 1
+
+.present-scene-badge
+  display inline-flex
+  align-items center
+  justify-content center
+  color --text-primary
+  flex-shrink 0
+
+.present-scene-icon
+  width 15px
+  height 15px
+  display block
+
+.scene-title
+  font-family --font-serif
+  font-size 25px
+  line-height 1.25
+  font-weight 400
+  letter-spacing 0.2px
+  margin 0
+  color inherit
+  white-space nowrap
+  overflow hidden
+  text-overflow ellipsis
+  min-width 0
+
+.scene-title-present, .scene-card[data-present-scene="true"] .scene-title
+  font-weight 700
+
+// Contextual rewind action on focused past scene
+.scene-contextual-rewind
+  opacity 0
+  pointer-events none
+  transition opacity 0.18s ease
+  flex-shrink 0
+  display flex
+  align-items center
+
+.scene-card.scene-focused .scene-contextual-rewind
+  opacity 1
+  pointer-events auto
+
+.scene-card.scene-dimmed .scene-contextual-rewind, .scene-card.scene-dimmed:hover .scene-contextual-rewind
+  opacity 0
+  pointer-events none
+
+.scene-contextual-rewind-floating
+  position absolute
+  top 10px
+  right 16px
+  z-index 6
+
+.contextual-rewind-btn
+  display inline-flex
+  align-items center
+  justify-content center
+  background transparent
+  border none !important
+  text-decoration none !important
+  color --text-secondary
+  padding 4px
+  cursor pointer
+
+.contextual-rewind-btn:hover
+  color --text-primary
+
+.rewind-icon
+  width 15px
+  height 15px
+  display block
+  flex-shrink 0
+  pointer-events none
+
+// Scene Body, Prose & Choices
+.scene-illustration-spacer
+  display none
+
+.scene-body-block
+  position relative
+  width 100%
+  flex 1
+  background --bg-obsidian
+  padding 14px 44px 40px 36px
+
+.scene-card.scene-untitled .scene-body-block
+  border-top 1px solid --border-subtle
+  padding-top 24px
+
+.scene-prose
+  font-family --font-sans
+  font-weight 300
+  font-size 17px
+  line-height 1.62
+  letter-spacing 0.2px
+  color inherit
+  user-select text
+
+.scene-prose p
+  margin-bottom 18px
+
+.scene-prose blockquote
+  border-left 1px solid --text-primary
+  padding-left 18px
+  margin 20px 0
+  font-style italic
+  color --text-secondary
+
+.scene-divider
+  border none
+  border-top 1px solid --border-subtle
+  margin 24px 0
+
+.scene-choices-list
+  display flex
+  flex-direction column
+  margin-top 28px
+  border-top 1px solid --border-subtle
+
+.choice-btn
+  display flex
+  align-items center
+  justify-content space-between
+  width 100%
+  text-align left
+  padding 14px 4px
+  border none
+  border-bottom 1px solid --border-subtle
+  background transparent
+  color --text-secondary
+  font-size 15px
+  line-height 1.48
+  font-weight 400
+  cursor pointer
+  transition color 0.15s ease
+
+.choice-btn:hover, .choice-btn:focus-within
+  color --text-primary
+
+.choice-btn:hover .choice-arrow, .choice-btn:focus-within .choice-arrow
+  color --text-primary
+
+.choice-label-text
+  flex 1
+  min-width 0
+  font-family --font-sans
+  font-size inherit
+  line-height inherit
+  font-weight inherit
+  color inherit
+
+.choice-btn .contextual-rewind-btn
+  padding 0
+
+.choice-btn.choice-taken
+  font-weight 600
+
+.choice-arrow
+  font-family --font-sans
+  font-size 22px
+  line-height 1
+  color --text-secondary
+  margin-left 14px
+  flex-shrink 0
+  display inline-flex
+  align-items center
+  justify-content center
+  transition color 0.15s ease
+
+.choice-branch-icon
+  width 18px
+  height 18px
+  display block
+
+// Right-edge scene history jump rail
+.story-history-rail
+  position absolute
+  right 0
+  top 50%
+  transform translateY(-50%)
+  z-index 24
+  display flex
+  flex-direction column
+  align-items flex-end
+  gap 2px
+  max-height calc(100% - 96px)
+  overflow-y auto
+  padding 8px 6px
+  border-radius 6px 0 0 6px !important
+  background light-dark(rgba(255, 255, 255, 0.5), rgba(0, 0, 0, 0.5))
+
+.history-rail-tick
+  background transparent
+  border none
+  padding 5px 3px
+  cursor pointer
+  display flex
+  align-items center
+  justify-content flex-end
+
+.history-rail-tick:hover .history-rail-bar
+  opacity 0.75
+  background --text-secondary
+
+.history-rail-tick.active .history-rail-bar
+  opacity 1
+  background --text-primary
+
+.history-rail-bar
+  display block
+  width 8px
+  height 2px
+  background --text-muted
+  opacity 0.35
+  transition opacity 0.16s ease, background-color 0.16s ease
+
+// Minimalistic Book Progress Bar (Narrationless Read Mode)
+.reader-progress-footer
+  position relative
+  z-index 5
+  background --bg-topbar
+  border-top 1px solid --border-subtle
+  padding 8px 18px
+  flex-shrink 0
+
+.reader-book-progress
+  -webkit-appearance none
+  appearance none
+  display block
+  width 100%
+  max-width 960px
+  height 3px
+  margin 0 auto
+  border none
+  border-radius 999px !important
+  background --border-subtle
+  overflow hidden
+
+.reader-book-progress::-webkit-progress-bar
+  background --border-subtle
+
+.reader-book-progress::-webkit-progress-value
+  background --text-secondary
+  transition width 0.25s ease
+
+.reader-book-progress::-moz-progress-bar
+  background --text-secondary
+  transition width 0.25s ease
+
+// Minimal Audio Deck
+.audio-deck
+  position relative
+  z-index 5
+  background --bg-topbar
+  border-top 1px solid --border-subtle
+  padding 6px 18px
+  flex-shrink 0
+
+.audio-deck-inner
+  max-width 960px
+  margin 0 auto
+  display flex
+  align-items center
+  justify-content space-between
+  gap 14px
+
+.audio-transport
+  display flex
+  align-items center
+  gap 12px
+
+.deck-play-btn
+  width 31px
+  height 31px
+  padding 0
+  border none
+  background transparent
+  color --text-secondary
+  display inline-flex
+  align-items center
+  justify-content center
+  cursor pointer
+
+.deck-play-btn:hover
+  color --text-primary
+
+.deck-play-icon
+  width 29px
+  height 29px
+  display block
+
+.audio-progress-wrap
+  flex 1 1 0%
+  min-width 48px
+  display flex
+  align-items center
+  gap 12px
+
+.audio-time-display
+  font-family --font-sans
+  font-size 12px
+  color --text-secondary
+  white-space nowrap
+  flex-shrink 0
+
+.audio-seek-slider
+  -webkit-appearance none
+  appearance none
+  flex 1 1 0%
+  width 0
+  min-width 48px
+  border-radius 999px !important
+  background linear-gradient(to right, --text-secondary 0%, --text-secondary --seek-pct(0%), --border-subtle --seek-pct(0%), --border-subtle 100%)
+  cursor pointer
+  height 4px
+  outline none
+
+.audio-seek-slider::-webkit-slider-thumb
+  -webkit-appearance none
+  appearance none
+  width 12px
+  height 12px
+  border-radius 50% !important
+  background --text-secondary
+  border none
+  cursor pointer
+
+.audio-seek-slider:hover::-webkit-slider-thumb
+  background --text-primary
+
+.audio-seek-slider::-moz-range-thumb
+  width 12px
+  height 12px
+  border-radius 50% !important
+  background --text-secondary
+  border none
+  cursor pointer
+
+.audio-seek-slider:hover::-moz-range-thumb
+  background --text-primary
+
+.audio-options-col
+  display flex
+  align-items center
+  gap 14px
+  flex-shrink 0
+
+.deck-chip
+  background transparent
+  border none !important
+  text-decoration none !important
+  color --text-secondary
+  padding 4px
+  font-family --font-sans
+  font-size 12px
+  cursor pointer
+  display inline-flex
+  align-items center
+  justify-content center
+
+.deck-chip-icon
+  width 15px
+  height 15px
+  display block
+  flex-shrink 0
+  pointer-events none
+
+.deck-chip:hover, .deck-chip.chip-active
+  color --text-primary
+  border none !important
+  text-decoration none !important
+
+@media (max-width: 620px)
+  .audio-time-display
+    display none
+
+@media (max-width: 220px)
+  .audio-progress-wrap
+    display none
+
+/* @dev-only-start */
+@switch preview
+  portrait
+    .player-bg-stage
+      display none
+
+    .story-scroll-feed
+      width 100%
+      min-width 0
+      margin-left 0
+      border-left none
+
+    .reader-global-meta
+      padding 0 18px
+
+    .scene-header-block
+      height 40px
+      display flex
+      align-items center
+      padding 0 18px
+
+    .scene-title
+      font-size 22px
+
+    .scene-illustration-spacer
+      display block
+      position sticky
+      top 67px
+      z-index 1
+      width 100%
+      height 240px
+      flex-shrink 0
+      overflow hidden
+      background --bg-obsidian
+      pointer-events none
+
+    .scene-body-block
+      position relative
+      z-index 5
+      padding 16px 32px 32px 18px
+      border-top none
+
+    .scene-card.has-illustration .scene-body-block
+      min-height 240px
+      border-top 1px solid --border-subtle
+      margin-top -1px
+
+    .scene-card.scene-untitled .scene-illustration-spacer
+      top 27px
+      border-top 1px solid --border-subtle
+
+    .scene-card.scene-untitled .scene-body-block
+      border-top 1px solid --border-subtle
+      padding-top 20px
+
+    .scene-prose
+      font-size 16px
+      line-height 1.58
+
+    .audio-time-display
+      display none
+
+  landscape
+    .active-scene-stage
+      min-height calc(100% - 23px)
+
+    .reader-global-meta
+      height 24px
+      padding 0 20px
+
+    .scene-header-block
+      top 23px
+      padding 5px 20px
+
+    .scene-title
+      font-size 20px
+      line-height 1.2
+
+    .scene-body-block
+      padding 8px 32px 24px 20px
+
+    .scene-card.scene-untitled .scene-body-block
+      border-top 1px solid --border-subtle
+      padding-top 14px
+
+    .scene-prose
+      font-size 15px
+      line-height 1.55
+
+    .scene-prose p
+      margin-bottom 12px
+
+    .audio-deck
+      padding 4px 16px
+
+  portrait, landscape
+    .choice-btn
+      font-size 14px
+/* @dev-only-end */
+
+@media (max-width: 720px) and (orientation: portrait)
+  .player-bg-stage
+    display none
+
+  .story-scroll-feed
+    width 100%
+    min-width 0
+    margin-left 0
+    border-left none
+
+  .reader-global-meta
+    padding 0 18px
+
+  .scene-header-block
+    height 40px
+    display flex
+    align-items center
+    padding 0 18px
+
+  .scene-title
+    font-size 22px
+
+  .scene-illustration-spacer
+    display block
+    position sticky
+    top 67px
+    z-index 1
+    width 100%
+    height 240px
+    flex-shrink 0
+    overflow hidden
+    background --bg-obsidian
+    pointer-events none
+
+  .scene-body-block
+    position relative
+    z-index 5
+    padding 16px 32px 32px 18px
+    border-top none
+
+  .scene-card.has-illustration .scene-body-block
+    min-height 240px
+    border-top 1px solid --border-subtle
+    margin-top -1px
+
+  .scene-card.scene-untitled .scene-illustration-spacer
+    top 27px
+    border-top 1px solid --border-subtle
+
+  .scene-card.scene-untitled .scene-body-block
+    border-top 1px solid --border-subtle
+    padding-top 20px
+
+  .scene-prose
+    font-size 16px
+    line-height 1.58
+
+  .choice-btn
+    font-size 14px
+
+@media (max-height: 500px) and (orientation: landscape)
+  .active-scene-stage
+    min-height calc(100% - 23px)
+
+  .reader-global-meta
+    height 24px
+    padding 0 20px
+
+  .scene-header-block
+    top 23px
+    padding 5px 20px
+
+  .scene-title
+    font-size 20px
+    line-height 1.2
+
+  .scene-body-block
+    padding 8px 32px 24px 20px
+
+  .scene-card.scene-untitled .scene-body-block
+    border-top 1px solid --border-subtle
+    padding-top 14px
+
+  .scene-prose
+    font-size 15px
+    line-height 1.55
+
+  .scene-prose p
+    margin-bottom 12px
+
+  .choice-btn
+    font-size 14px
+
+  .audio-deck
+    padding 4px 16px
+
+// Large UI Controls Mode (UI Zoom)
+body[data-ui-scale="large"]
+  .reader-global-meta
+    height 36px
+
+  .scene-chapter-pill
+    font-size 12px
+
+  .scene-header-block
+    top 35px
+    padding 13px 36px
+
+  .active-scene-stage
+    min-height calc(100% - 35px)
+
+  .present-scene-icon
+    width 20px
+    height 20px
+
+  .contextual-rewind-btn
+    padding 8px
+
+  .rewind-icon
+    width 22px
+    height 22px
+
+  .scene-prose
+    font-size 19px
+    line-height 1.64
+
+  .story-history-rail
+    gap 4px
+    padding 10px 8px
+
+  .history-rail-tick
+    padding 7px 5px
+
+  .history-rail-bar
+    width 14px
+    height 3px
+
+  .history-rail-tick:hover .history-rail-bar
+    width 24px
+
+  .history-rail-tick.present-tick .history-rail-bar
+    width 28px
+
+  .reader-progress-footer
+    padding 12px 24px
+
+  .reader-book-progress
+    height 5px
+
+  .audio-deck
+    padding 10px 24px
+
+  .deck-play-btn
+    width 44px
+    height 44px
+
+  .deck-play-icon
+    width 40px
+    height 40px
+
+  .audio-time-display
+    font-size 15px
+
+  .audio-seek-slider
+    height 6px
+
+  .audio-seek-slider::-webkit-slider-thumb
+    width 18px
+    height 18px
+
+  .audio-seek-slider::-moz-range-thumb
+    width 18px
+    height 18px
+
+  .deck-chip
+    font-size 15px
+    padding 5px 4px
+
+  .deck-chip-icon
+    width 22px
+    height 22px

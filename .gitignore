@@ -1,0 +1,14 @@
+# Compiled binaries & distribution bundles
+/storyteller
+/storyteller.exe
+/dist/
+*.syso
+*.test
+*.out
+
+# Local user saves & runtime state
+/saves/
+
+# OS & editor metadata
+.DS_Store
+.kilo/

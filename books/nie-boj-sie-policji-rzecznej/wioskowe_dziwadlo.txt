@@ -1,0 +1,96 @@
+chapter: Wioskowe dziwadło
+id: wioskowe_dziwadlo
+
+scene: Wstyd w warsztacie
+id: warsztat
+image: images/warsztat.jpg
+Stało się więc, i Krzyś wstąpił do policji rzecznej. Chłopak nie za mądry to był, raczej z rodzaju głupkowatych i dziwadeł wioskowych, z których to podśmiewają się za ich plecami. Capił gnojem, ale zawsze się grzecznie uśmiechał. Ojciec bił go niemiłosiernie, po pysku go prał i pasem po plecach, bo ten Krzyś miał dwie lewe ręce, do roboty w warsztacie nijak się nie nadawał, wszystko psuł, choć z całych sił się starał, tak mu zależało, żeby tato był zadowolony, żeby nie krzyczał i się nie złościł, przez co w stresie psuł tylko bardziej.
+
+Zaszyj się w trzcinach nad ciemną wodą -> samotnosc_nad_woda
+Obserwuj z ukrycia patrol na przystani -> patrol_na_przystani
+
+scene: Samotność nad czarną wodą
+id: samotnosc_nad_woda
+next: pod_skrzydlami_wujka
+Kiedy w warsztacie znów pękło strugane stylisko, a ojciec aż poczerwieniał na twarzy, Krzyś uciekł za przystań. Siedział długo w gęstych szuwarach, patrząc w nieruchomą, czarną toń umierającej rzeki i ściskając obolałe dłonie.
+
+Myślał, że już zawsze będzie tylko popychadłem, aż na drewnianym pomoście zadudniły ciężkie, podkute buty patrolu. Werbownicy mieli na sobie czyste mundury i nie śmiali się z niego, gdy niezdarnie podniósł się z błota.
+
+scene: Patrol na przystani
+id: patrol_na_przystani
+next: pod_skrzydlami_wujka
+Krzyś przywarł za stertą beczek po dziegciu, patrząc z zapartym tchem, jak szeroka łódź patrolowa dobija do spróchniałych pali przystani. Nawet najwięksi krzykacze z karczmy milkli na widok granatowych płaszczy i srebrnych blach na piersiach funkcjonariuszy.
+
+Nawet jego własny ojciec, który w warsztacie ryczał jak tur i tłukł pasem na oślep, teraz stał na brzegu z czapką w garści, kłaniając się nisko przed siwowłosym oficerem. Krzyś poczuł wówczas dziwne ukłucie w piersi — gorące pragnienie, by kiedyś to przed nim tak pochylano głowy.
+
+scene: Pod skrzydłami Wujka
+id: pod_skrzydlami_wujka
+next: koszary_i_mundur
+Jako taki właśnie wyrzutek stał się idealnym kandydatem do rzecznej policji. Tam przyjęli go z otwartymi rękami i dali poczucie przynależności do czegoś większego, czegoś wspaniałego. Szczególnie kapitan rzecznej policji, Arvo, zwany przez wszystkich Wujkiem, wziął go pod swoje skrzydła.
+
+- Nie bój się, Krzysiu - tak do niego mówił kapitan Arvo, zawsze z tym swoim łagodnym, ojcowskim uśmiechem. - Nie bój się policji rzecznej. Policja rzeczna jest jak rodzina.
+
+Krzyś chłonął te słowa całym sobą, całym swym prostym, spragnionym akceptacji serduszkiem.
+
+scene: Koszary i wykrochmalony mundur
+id: koszary_i_mundur
+image: images/mundur_i_posilki.jpg
+Dali mu też koledzy od razu mundur, czysty i wykrochmalony, dali mu ciepłą strawę, jakiej w życiu nie jadł, a także łóżko w koszarach, na którym spał jak król - w domu miał bowiem siennik rzucony w kącie, a pod głowę - własne buty.
+
+Kiedy pierwszy raz zapiął mosiężne guziki na piersi i przejrzał się w mętnej szybie koszarowego okna, ledwie sam siebie rozpoznał. Nikt już nie wytykał go palcami ani nie wołał za nim „wioskowe dziwadło”.
+
+Połóż się na koszarowej pryczy i słuchaj starszych -> noc_w_koszarach
+Ćwicz do upadłego chwyty ciężkim wiosłem -> musztra_z_wioslem
+
+scene: Noc w koszarach
+id: noc_w_koszarach
+next: prawy_i_wielki
+W nocy, gdy łojowe świece przygasły, a po długiej sali niosło się chrapanie starszych funkcjonariuszy, Krzyś leżał pod kocem pachnącym szarym mydłem i słuchał szeptów z sąsiednich prycz. Ogromny brodacz zwany Niedźwiedziem opowiadał o leśnych osadach na północy, gdzie kryją się bezbożni zatruwacze wody.
+
+Młody Matti dopytywał z przejęciem, czy to prawda, że w głębi puszczy mieszkają demony, lecz Niedźwiedź tylko splunął na deski podłogi i stwierdził, że dobre dębowe wiosło i ołów z muszkietu radzą sobie z każdym czartem.
+
+scene: Musztra z wiosłem
+id: musztra_z_wioslem
+next: prawy_i_wielki
+Zamiast spać, Krzyś wymknął się na wybrukowany dziedziniec za zbrojownią. Choć w ciesielskim warsztacie wszystko leciało mu z rąk, tutaj miał przed sobą tylko ciężkie, jesionowe wiosło o okutym piórze.
+
+Powtarzał w kółko proste komendy sierżanta: krok, zamach z biodra, pchnięcie kantem, zastawa. Nie trzeba było mierzyć calówką ani heblować pod wymiar — wystarczyła ślepa siła ramion, a tej wyrośniętemu chłopakowi nigdy nie brakowało.
+
+scene: Prawy i Wielki
+id: prawy_i_wielki
+Tłumaczyli mu wiele, a on z tego niewiele rozumiał. Ważne dla niego było, że go chwalą, po plecach poklepują i wreszcie czuje się potrzebny. A o czym mówili? Mówili o Królowej Rzek, Boskiej Dziewicy, wspaniałej i czystej jak źródlana woda, mówili o rzece, która umiera i o tym, że to przez wyrzutków i mętów oraz innych wykolejeńców, co kryją się po lasach, i że z tymi trzeba walczyć, trzeba ich wyplenić jak chwasty z ogrodu, aby rzeka znowu mogła żyć.
+
+Powtarzali, że jak będzie posłuszny to wyrośnie na kogoś Prawego i Wielkiego. Popłynął w końcu Krzyś na poważną akcję, bo choć był w policji rzecznej już trochę to jak dotąd pływał tylko na patrole. Pływali na tych patrolach większą łódką, Krzysiu grzecznie wiosłował z innymi chłopakami, i nie działo się nic złego, czasem kogoś wylegitymowali, częściej na sam ich widok na nabrzeżach zapadała cisza, przerywały się rozmowy, a ludzie przemykali szybko pod ścianami, unikając ich wzroku. Wtedy to Krzysiu czuł się naprawdę Prawy i Wielki, wypinał dumnie pierś, na której wisiało jego imię i jego numer.
+
+Przeszukaj podejrzaną łódź starego rybaka -> rewizja_rybaka
+Skonfiskuj sieci kłusownikom pod mostem -> konfiskata_sieci
+
+scene: Rewizja starego rybaka
+id: rewizja_rybaka
+next: odprawa_przed_wyprawa
+Podczas jednego z ostatnich patroli zatrzymali na mieliźnie płaskodenną krypę starego rybaka, który próbował przemycić w beczkach solone śnięte leszcze. Starzec trząsł się i całował rękaw kapitana Arvo, przysięgając, że jego wnuki puchną z głodu.
+
+Krzyś na rozkaz wywrócił beczki kopniakiem prosto w czarny muł. Gdy patrzył, jak rybak wybiera z błota pojedyncze ryby, nie czuł już dawnego wstydu — czuł tylko surową dumę, że strzeże czystości świętego nurtu przed chciwą biedotą.
+
+scene: Konfiskata sieci pod mostem
+id: konfiskata_sieci
+next: odprawa_przed_wyprawa
+Pod kamiennym przęsłem starego mostu przyłapali dwóch wyrostków stawiających gęste wiersze w zakazanym zakolu. Kiedyś ci sami chłopcy rzucali w Krzysia zgniłymi brukwią i ogryzkami pod warsztatem jego ojca.
+
+Teraz, widząc jego mundur i uniesione wiosło, pobledli jak płótno i porzucili kosze, uciekając po śliskich kamieniach. Krzyś porąbał ich plecione sieci na strzępy, uśmiechając się szeroko, gdy starsi policjanci klepali go z uznaniem po karku.
+
+scene: Odprawa przed wyprawą
+id: odprawa_przed_wyprawa
+next: rozdzial_lodzi
+Pewnego mglistego wieczoru w koszarach ogłoszono alarm bojowy. Kapitan Arvo zebrał cały oddział w zadymionej sali odpraw, gdzie na drewnianym stole rozłożono mapę północnych rozlewisk, poznaczoną czarnymi krzyżykami.
+
+- Chłopcy, nadszedł czas próby - przemówił Wujek uroczyście, wodząc palcem wzdłuż krętego koryta rzeki. - W górze nurtu, za starą śluzą i lasem butelkowców, zalęgło się gniazdo najgorszej zarazy. Płyniemy tam jeszcze przed świtem, by oczyścić ziemię dla Boskiej Dziewicy.
+
+scene: Rozdział łodzi na nabrzeżu
+id: rozdzial_lodzi
+Na mokrym nabrzeżu paliły się smolne pochodnie, a zbrojmistrz wydawał muszkiety, tasaki i skrzynki z prochem. Oddział podzielono na dwie grupy: główną flotyllę siedmiu kanu pod osobistym dowództwem kapitana Arvo oraz mniejszy pododdział pod komendą sierżanta Niedźwiedzia, który miał ruszyć bocznym kanałem, by sforsować starą, zardzewiałą śluzę kwarantanny.
+
+Wujek zatrzymał się przy Krzysiu, poprawił mu kołnierz wykrochmalonego munduru i pozwolił samemu wybrać miejsce w szyku.
+
+Wsiądź do pierwszego kanu u boku kapitana Arvo -> chapter:w_gore_umierajacej_rzeki
+Płyń nocną szpicą z Niedźwiedziem ku starej śluzie -> chapter:zatopiona_sluza

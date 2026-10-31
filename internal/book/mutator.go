@@ -1,0 +1,806 @@
+package book
+
+import (
+	"archive/zip"
+	"bytes"
+	"fmt"
+	"image/color"
+	"io"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+)
+
+// SaveBookMetadataToDisk writes data.txt for an unpacked book.
+func SaveBookMetadataToDisk(b *Book) error {
+	if b.IsPacked {
+		return fmt.Errorf("nie można edytować spakowanego archiwum .stbook bezpośrednio")
+	}
+	dataPath := filepath.Join(b.RootPath, "data.txt")
+	return os.WriteFile(dataPath, []byte(SerializeDataFile(b)), 0644)
+}
+
+// SaveBookScenesToDisk writes all modified source .txt files, data.txt, and editor.txt back to the book directory.
+func SaveBookScenesToDisk(b *Book) error {
+	if b.IsPacked {
+		return fmt.Errorf("nie można edytować spakowanego archiwum .stbook bezpośrednio; rozpakuj książkę do katalogu books/%s", b.ID)
+	}
+	if err := os.MkdirAll(b.RootPath, 0755); err != nil {
+		return err
+	}
+
+	_ = SaveBookMetadataToDisk(b)
+
+	filesSet := make(map[string]bool)
+	trackedFiles := make(map[string]bool)
+	activeFiles := make(map[string]bool)
+	for _, tf := range b.TextFiles {
+		filesSet[tf] = true
+		trackedFiles[strings.ToLower(filepath.Base(tf))] = true
+	}
+	for _, sc := range b.Scenes {
+		if strings.TrimSpace(sc.Chapter) == "" {
+			sc.Chapter = "Rozdział 1"
+		}
+		sf := b.ChapterFileNameFor(sc.Chapter, sc.ChapterID)
+		sc.SourceFile = sf
+		filesSet[sf] = true
+		activeFiles[strings.ToLower(filepath.Base(sf))] = true
+	}
+	for i := range b.Chapters {
+		ch := &b.Chapters[i]
+		ch.SourceFile = ch.FileName()
+	}
+	if len(filesSet) == 0 {
+		filesSet["rozdzial_1.txt"] = true
+		activeFiles["rozdzial_1.txt"] = true
+	}
+
+	var updatedTextFiles []string
+	for sf := range filesSet {
+		cleanName := filepath.Base(sf)
+		lowerClean := strings.ToLower(cleanName)
+		if !strings.HasSuffix(lowerClean, ".txt") || lowerClean == "data.txt" || lowerClean == "editor.txt" || lowerClean == "nodes.txt" {
+			cleanName = "rozdzial_1.txt"
+			lowerClean = "rozdzial_1.txt"
+		}
+		if !activeFiles[lowerClean] {
+			if trackedFiles[lowerClean] {
+				_ = os.Remove(filepath.Join(b.RootPath, cleanName))
+			}
+			continue
+		}
+		serialized := SerializeScenesForFile(b, cleanName)
+		outPath := filepath.Join(b.RootPath, cleanName)
+		if strings.TrimSpace(serialized) == "" && len(activeFiles) > 0 && !activeFiles[lowerClean] {
+			if trackedFiles[lowerClean] {
+				_ = os.Remove(outPath)
+			}
+			continue
+		}
+		if err := os.WriteFile(outPath, []byte(serialized), 0644); err != nil {
+			return err
+		}
+		updatedTextFiles = append(updatedTextFiles, cleanName)
+	}
+	sortStoryFiles(updatedTextFiles)
+	b.TextFiles = updatedTextFiles
+
+	_ = SaveBookEditorStateToDisk(b)
+	return nil
+}
+
+// SaveBookEditorStateToDisk writes editor.txt inside the book directory with node (x, y) coordinates and canvas pan/zoom.
+func SaveBookEditorStateToDisk(b *Book) error {
+	if b == nil || b.IsPacked || b.RootPath == "" {
+		return nil
+	}
+	editorPath := filepath.Join(b.RootPath, "editor.txt")
+	return os.WriteFile(editorPath, []byte(SerializeEditorFile(b)), 0644)
+}
+
+// InsertSceneBetween inserts a new scene into the book between parentSceneID and childSceneID
+// (or after parentSceneID if childSceneID is empty), updates links, and writes back to the .txt file.
+func InsertSceneBetween(b *Book, parentSceneID, childSceneID, newSceneName string) (*Scene, error) {
+	if b.IsPacked {
+		return nil, fmt.Errorf("książka jest spakowana (.stbook)")
+	}
+	cleanName := SanitizePlainText(newSceneName)
+	if cleanName == "" {
+		cleanName = fmt.Sprintf("Nowa Scena %d", len(b.Scenes)+1)
+	}
+
+	var parent *Scene
+	parentIdx := len(b.Scenes) - 1
+	for i, sc := range b.Scenes {
+		if sc.ID == parentSceneID {
+			parent = sc
+			parentIdx = i
+			break
+		}
+	}
+
+	chapterName := "Rozdział 1"
+	chapterID := ""
+	sourceFile := "rozdzial_1.txt"
+	if parent != nil {
+		if parent.Chapter != "" {
+			chapterName = parent.Chapter
+		}
+		if parent.ChapterID != "" {
+			chapterID = parent.ChapterID
+		}
+		if parent.SourceFile != "" && !strings.EqualFold(parent.SourceFile, "story.txt") {
+			sourceFile = parent.SourceFile
+		} else {
+			sourceFile = b.ChapterFileNameFor(chapterName, chapterID)
+		}
+	} else if len(b.Chapters) > 0 {
+		lastCh := b.Chapters[len(b.Chapters)-1]
+		chapterName = lastCh.Name
+		chapterID = lastCh.ExplicitID
+		sourceFile = lastCh.FileName()
+	}
+
+	newScene := &Scene{
+		Name:       cleanName,
+		Chapter:    chapterName,
+		ChapterID:  chapterID,
+		Text:       "Nowy fragment opowieści...",
+		SourceFile: sourceFile,
+	}
+
+	if parent != nil {
+		relinked := false
+		for i := range parent.Choices {
+			ch := &parent.Choices[i]
+			if childSceneID != "" && ch.TargetSceneID == childSceneID {
+				var childName string
+				for _, sc := range b.Scenes {
+					if sc.ID == childSceneID {
+						if sc.ExplicitID != "" {
+							childName = sc.ExplicitID
+						} else {
+							childName = sc.Name
+						}
+						break
+					}
+				}
+				if ch.IsImplicit {
+					ch.IsImplicit = false
+					ch.Label = "Dalej"
+				}
+				ch.Target = newScene.Name
+				if childName != "" {
+					newScene.Choices = append(newScene.Choices, Choice{
+						Label:  "Dalej",
+						Target: childName,
+					})
+				}
+				relinked = true
+				break
+			}
+		}
+		if !relinked {
+			if len(parent.Choices) == 1 && parent.Choices[0].IsImplicit {
+				oldTargetID := parent.Choices[0].TargetSceneID
+				parent.Choices = []Choice{{
+					Label:  "Dalej",
+					Target: newScene.Name,
+				}}
+				for _, sc := range b.Scenes {
+					if sc.ID == oldTargetID {
+						targetRef := sc.Name
+						if sc.ExplicitID != "" {
+							targetRef = sc.ExplicitID
+						}
+						newScene.Choices = []Choice{{
+							Label:  "Dalej",
+							Target: targetRef,
+						}}
+						break
+					}
+				}
+			} else {
+				parent.ExplicitEnd = false
+				parent.Choices = append(parent.Choices, Choice{
+					Label:  "Przejdź dalej",
+					Target: newScene.Name,
+				})
+			}
+		}
+	}
+
+	insertPos := parentIdx + 1
+	if insertPos < 0 || insertPos > len(b.Scenes) {
+		insertPos = len(b.Scenes)
+	}
+	b.Scenes = append(b.Scenes[:insertPos], append([]*Scene{newScene}, b.Scenes[insertPos:]...)...)
+
+	FinalizeBook(b)
+	if err := SaveBookScenesToDisk(b); err != nil {
+		return nil, err
+	}
+	return newScene, nil
+}
+
+// InsertSceneBefore inserts a new scene directly before targetSceneID, relinking incoming transitions
+// (or updating the book start scene if targetSceneID was the root scene) and writing back to disk.
+func InsertSceneBefore(b *Book, targetSceneID, newSceneName string) (*Scene, error) {
+	if b.IsPacked {
+		return nil, fmt.Errorf("książka jest spakowana (.stbook)")
+	}
+	cleanName := SanitizePlainText(newSceneName)
+	if cleanName == "" {
+		cleanName = fmt.Sprintf("Nowa scena %d", len(b.Scenes)+1)
+	}
+
+	var target *Scene
+	targetIdx := 0
+	for i, sc := range b.Scenes {
+		if sc.ID == targetSceneID {
+			target = sc
+			targetIdx = i
+			break
+		}
+	}
+	if target == nil && len(b.Scenes) > 0 {
+		target = b.Scenes[0]
+		targetIdx = 0
+	}
+
+	chapterName := "Rozdział 1"
+	chapterID := ""
+	sourceFile := "rozdzial_1.txt"
+	targetRef := ""
+	if target != nil {
+		if target.Chapter != "" {
+			chapterName = target.Chapter
+		}
+		if target.ChapterID != "" {
+			chapterID = target.ChapterID
+		}
+		if target.SourceFile != "" && !strings.EqualFold(target.SourceFile, "story.txt") {
+			sourceFile = target.SourceFile
+		} else {
+			sourceFile = b.ChapterFileNameFor(chapterName, chapterID)
+		}
+		if target.ExplicitID != "" {
+			targetRef = target.ExplicitID
+		} else {
+			targetRef = target.Name
+		}
+	}
+
+	newScene := &Scene{
+		Name:       cleanName,
+		Chapter:    chapterName,
+		ChapterID:  chapterID,
+		Text:       "Nowy fragment opowieści...",
+		SourceFile: sourceFile,
+	}
+	if targetRef != "" {
+		newScene.Choices = []Choice{
+			{
+				Label:  "Dalej",
+				Target: targetRef,
+			},
+		}
+	}
+
+	relinkedCount := 0
+	if target != nil {
+		for _, sc := range b.Scenes {
+			for i := range sc.Choices {
+				ch := &sc.Choices[i]
+				if ch.TargetSceneID == target.ID {
+					if ch.IsImplicit {
+						ch.IsImplicit = false
+						ch.Label = "Dalej"
+					}
+					ch.Target = newScene.Name
+					relinkedCount++
+				}
+			}
+		}
+		if relinkedCount == 0 && (b.StartSceneID == target.ID || targetIdx == 0) {
+			b.StartSceneID = newScene.Name
+			b.RawStart = newScene.Name
+		}
+	}
+
+	b.Scenes = append(b.Scenes[:targetIdx], append([]*Scene{newScene}, b.Scenes[targetIdx:]...)...)
+
+	FinalizeBook(b)
+	if err := SaveBookScenesToDisk(b); err != nil {
+		return nil, err
+	}
+	return newScene, nil
+}
+
+// CreateStandaloneScene appends a new unconnected scene to the book and optionally sets its (x, y) node coordinates.
+func CreateStandaloneScene(b *Book, newSceneName string, x, y int, hasCoords bool) (*Scene, error) {
+	return CreateStandaloneSceneInChapter(b, newSceneName, "", x, y, hasCoords)
+}
+
+// CreateStandaloneSceneInChapter appends a new unconnected scene in the specified chapter (or last chapter if empty)
+// without any artificial coordinate bounds.
+func CreateStandaloneSceneInChapter(b *Book, newSceneName, targetChapter string, x, y int, hasCoords bool) (*Scene, error) {
+	if b.IsPacked {
+		return nil, fmt.Errorf("książka jest spakowana (.stbook)")
+	}
+	cleanName := SanitizePlainText(newSceneName)
+	if cleanName == "" {
+		cleanName = fmt.Sprintf("Nowa scena %d", len(b.Scenes)+1)
+	}
+
+	chapterName := SanitizePlainText(targetChapter)
+	chapterID := ""
+	sourceFile := "rozdzial_1.txt"
+	insertIdx := len(b.Scenes)
+	matchedChapter := false
+
+	if len(b.Scenes) > 0 {
+		last := b.Scenes[len(b.Scenes)-1]
+		if chapterName == "" {
+			if hasCoords {
+				px := x + 96
+				py := y + 48
+				type chBounds struct {
+					name    string
+					id      string
+					minX    int
+					minY    int
+					maxX    int
+					maxY    int
+					hasNode bool
+				}
+				var groups []*chBounds
+				byCh := make(map[string]*chBounds)
+				for _, sc := range b.Scenes {
+					chN := strings.TrimSpace(sc.Chapter)
+					if chN == "" {
+						chN = "Rozdział 1"
+					}
+					k := strings.ToLower(chN)
+					g, ok := byCh[k]
+					if !ok {
+						g = &chBounds{name: chN, id: sc.ChapterID}
+						byCh[k] = g
+						groups = append(groups, g)
+					}
+					if g.id == "" && sc.ChapterID != "" {
+						g.id = sc.ChapterID
+					}
+					sx, sy := sc.X, sc.Y
+					sw, sh := 192, 96
+					if !g.hasNode {
+						g.minX, g.minY = sx-24, sy-52
+						g.maxX, g.maxY = sx+sw+24, sy+sh+44
+						g.hasNode = true
+					} else {
+						if sx-24 < g.minX {
+							g.minX = sx - 24
+						}
+						if sy-52 < g.minY {
+							g.minY = sy - 52
+						}
+						if sx+sw+24 > g.maxX {
+							g.maxX = sx + sw + 24
+						}
+						if sy+sh+44 > g.maxY {
+							g.maxY = sy + sh + 44
+						}
+					}
+				}
+				bestDistSq := int(^uint(0) >> 1)
+				for _, g := range groups {
+					dx := 0
+					if px < g.minX {
+						dx = g.minX - px
+					} else if px > g.maxX {
+						dx = px - g.maxX
+					}
+					dy := 0
+					if py < g.minY {
+						dy = g.minY - py
+					} else if py > g.maxY {
+						dy = py - g.maxY
+					}
+					dSq := dx*dx + dy*dy
+					if dSq < bestDistSq {
+						bestDistSq = dSq
+						chapterName = g.name
+						chapterID = g.id
+					}
+				}
+			}
+			if chapterName == "" && last.Chapter != "" {
+				chapterName = last.Chapter
+				chapterID = last.ChapterID
+			}
+			for i, sc := range b.Scenes {
+				if strings.EqualFold(strings.TrimSpace(sc.Chapter), chapterName) {
+					insertIdx = i + 1
+					matchedChapter = true
+					if chapterID == "" && sc.ChapterID != "" {
+						chapterID = sc.ChapterID
+					}
+				}
+			}
+			sourceFile = b.ChapterFileNameFor(chapterName, chapterID)
+		} else {
+			for i, sc := range b.Scenes {
+				if strings.EqualFold(strings.TrimSpace(sc.Chapter), chapterName) {
+					insertIdx = i + 1
+					matchedChapter = true
+					if sc.ChapterID != "" {
+						chapterID = sc.ChapterID
+					}
+					if sc.SourceFile != "" && !strings.EqualFold(sc.SourceFile, "story.txt") {
+						sourceFile = sc.SourceFile
+					}
+				}
+			}
+			if !matchedChapter {
+				chapterID = SanitizeChapterID(chapterName)
+				sourceFile = b.ChapterFileNameFor(chapterName, chapterID)
+			} else if sourceFile == "" {
+				sourceFile = b.ChapterFileNameFor(chapterName, chapterID)
+			}
+		}
+	}
+	if chapterName == "" {
+		chapterName = "Rozdział 1"
+		chapterID = "rozdzial_1"
+		sourceFile = "rozdzial_1.txt"
+	}
+
+	newScene := &Scene{
+		Name:        cleanName,
+		Chapter:     chapterName,
+		ChapterID:   chapterID,
+		Text:        "Nowy fragment opowieści...",
+		SourceFile:  sourceFile,
+		ExplicitEnd: true,
+	}
+
+	if insertIdx > 0 && insertIdx <= len(b.Scenes) {
+		prev := b.Scenes[insertIdx-1]
+		if len(prev.Choices) == 1 && prev.Choices[0].IsImplicit && (strings.EqualFold(prev.Choices[0].Target, "Next") || strings.EqualFold(prev.Choices[0].Target, "Dalej")) {
+			if insertIdx < len(b.Scenes) {
+				nextSc := b.Scenes[insertIdx]
+				ref := nextSc.Name
+				if nextSc.ExplicitID != "" {
+					ref = nextSc.ExplicitID
+				}
+				prev.Choices[0].Target = ref
+				prev.ExplicitNext = ref
+			} else {
+				prev.Choices = nil
+				prev.ExplicitEnd = true
+			}
+		}
+	}
+
+	if insertIdx >= 0 && insertIdx < len(b.Scenes) {
+		b.Scenes = append(b.Scenes[:insertIdx], append([]*Scene{newScene}, b.Scenes[insertIdx:]...)...)
+	} else {
+		b.Scenes = append(b.Scenes, newScene)
+	}
+
+	if b.Layout == nil {
+		b.Layout = make(map[string]NodePosition)
+	}
+	if hasCoords {
+		pos := NodePosition{X: x, Y: y, HasXY: true}
+		b.Layout[cleanName] = pos
+		b.Layout[NormalizeLookupKey(cleanName)] = pos
+	}
+
+	FinalizeBook(b)
+	if hasCoords {
+		newScene.X = x
+		newScene.Y = y
+		pos := NodePosition{Row: newScene.Row, Col: newScene.Col, X: x, Y: y, HasXY: true}
+		b.Layout[newScene.ID] = pos
+		b.Layout[cleanName] = pos
+		b.Layout[NormalizeLookupKey(cleanName)] = pos
+	}
+	if err := SaveBookScenesToDisk(b); err != nil {
+		return nil, err
+	}
+	return newScene, nil
+}
+
+// CreateNewBook scaffolds a brand new book directory with data.txt, story.txt, cover.png, and optional narration/imageless mode.
+func CreateNewBook(booksDir, title, author string, narrated bool, imageless ...bool) (*Book, error) {
+	cleanTitle := SanitizePlainText(title)
+	if cleanTitle == "" {
+		cleanTitle = "Nowa Opowieść"
+	}
+	cleanAuthor := SanitizePlainText(author)
+	if cleanAuthor == "" {
+		cleanAuthor = "Autor"
+	}
+	id := SanitizeBookID(cleanTitle)
+	bookDir := filepath.Join(booksDir, id)
+	if _, err := os.Stat(bookDir); err == nil {
+		id = fmt.Sprintf("%s-%d", id, time.Now().Unix()%1000)
+		bookDir = filepath.Join(booksDir, id)
+	}
+	if err := os.MkdirAll(filepath.Join(bookDir, "images"), 0755); err != nil {
+		return nil, err
+	}
+	if narrated {
+		if err := os.MkdirAll(filepath.Join(bookDir, "voice"), 0755); err != nil {
+			return nil, err
+		}
+	}
+
+	narratedStr := "false"
+	if narrated {
+		narratedStr = "true"
+	}
+	imagelessStr := "false"
+	if len(imageless) > 0 && imageless[0] {
+		imagelessStr = "true"
+	}
+
+	dataContent := fmt.Sprintf("title: %s\nauthor: %s\ndescription: Interaktywna opowieść utworzona w StoryTeller Studio.\nnarrated: %s\nimageless: %s\nstart: poczatek\n", cleanTitle, cleanAuthor, narratedStr, imagelessStr)
+	if err := os.WriteFile(filepath.Join(bookDir, "data.txt"), []byte(dataContent), 0644); err != nil {
+		return nil, err
+	}
+
+	storyContent := `chapter: Rozdział 1
+id: rozdzial_1
+
+scene: Początek drogi
+id: poczatek
+image: images/poczatek.png
+next: rozdroze
+Stoisz u progu nowej przygody. Wiatr niesie odległe echo dawnej pieśni.
+
+scene: Rozdroże
+id: rozdroze
+end: true
+Dotarłeś do celu podróży. Możesz rozbudować tę historię w Node Studio.
+`
+	if err := os.WriteFile(filepath.Join(bookDir, "rozdzial_1.txt"), []byte(storyContent), 0644); err != nil {
+		return nil, err
+	}
+
+	_ = GenerateAtmosphericPNG(filepath.Join(bookDir, "cover.png"), 400, 560, color.RGBA{24, 30, 44, 255}, color.RGBA{214, 158, 76, 255}, 1)
+	_ = GenerateAtmosphericPNG(filepath.Join(bookDir, "images", "poczatek.png"), 640, 360, color.RGBA{20, 32, 38, 255}, color.RGBA{120, 180, 165, 255}, 2)
+
+	return LoadBookFromDir(bookDir)
+}
+
+// ImportBookMediaFromDisk validates and copies one or more image (.png, .jpg, .jpeg, .webp)
+// or audio (.ogg, .flac, .mp3) files from disk into the unpacked book's images/ or voice/ subdirectory,
+// returning the relative book paths (e.g. "images/foo.png" or "voice/bar.ogg").
+func ImportBookMediaFromDisk(b *Book, rawPaths []string, kind string) ([]string, error) {
+	if b == nil {
+		return nil, fmt.Errorf("brak aktywnej książki")
+	}
+	if b.IsPacked {
+		return nil, fmt.Errorf("nie można dodawać plików multimedialnych do spakowanego archiwum .stbook")
+	}
+	if strings.TrimSpace(b.RootPath) == "" {
+		return nil, fmt.Errorf("brak ścieżki katalogu książki na dysku")
+	}
+
+	normKind := strings.ToLower(strings.TrimSpace(kind))
+	if !b.Narrated && (normKind == "audio" || normKind == "voice") {
+		return nil, fmt.Errorf("książka nie posiada narracji (narrated: false) — nagrania głosowe są wyłączone")
+	}
+	var candidateFiles []string
+
+	for _, rawEntry := range rawPaths {
+		for _, part := range strings.Split(strings.ReplaceAll(rawEntry, "\r\n", "\n"), "\n") {
+			part = strings.TrimSpace(part)
+			if part == "" {
+				continue
+			}
+			absPath, err := ExpandLocalPath(part)
+			if err != nil {
+				return nil, err
+			}
+			info, err := os.Stat(absPath)
+			if err != nil {
+				return nil, fmt.Errorf("nie znaleziono pliku na dysku: %s", absPath)
+			}
+			if info.IsDir() {
+				entries, rErr := os.ReadDir(absPath)
+				if rErr != nil {
+					return nil, rErr
+				}
+				for _, e := range entries {
+					if e.IsDir() || strings.HasPrefix(e.Name(), ".") {
+						continue
+					}
+					childPath := filepath.Join(absPath, e.Name())
+					switch normKind {
+					case "image", "img":
+						if isRasterImageFilename(childPath) {
+							candidateFiles = append(candidateFiles, childPath)
+						}
+					case "audio", "voice":
+						if b.Narrated && isAudioFilename(childPath) {
+							candidateFiles = append(candidateFiles, childPath)
+						}
+					default:
+						if isRasterImageFilename(childPath) || (b.Narrated && isAudioFilename(childPath)) {
+							candidateFiles = append(candidateFiles, childPath)
+						}
+					}
+				}
+				continue
+			}
+			candidateFiles = append(candidateFiles, absPath)
+		}
+	}
+
+	if len(candidateFiles) == 0 {
+		return nil, fmt.Errorf("nie wybrano żadnych obsługiwanych plików multimedialnych")
+	}
+
+	cleanRoot := canonicalPathKey(b.RootPath)
+	var imported []string
+
+	for _, absPath := range candidateFiles {
+		ext := strings.ToLower(filepath.Ext(absPath))
+		if ext == ".wav" {
+			return nil, fmt.Errorf("format .wav nie jest obsługiwany (zbyt duży rozmiar) — użyj .ogg, .flac lub .mp3")
+		}
+		isImg := isRasterImageFilename(absPath)
+		isAud := isAudioFilename(absPath)
+
+		if isAud && !b.Narrated {
+			return nil, fmt.Errorf("książka nie posiada narracji (narrated: false) — nagrania głosowe są wyłączone")
+		}
+		if (normKind == "image" || normKind == "img") && !isImg {
+			return nil, fmt.Errorf("nieobsługiwany format obrazu „%s” (dozwolone: .png, .jpg, .jpeg, .webp)", filepath.Base(absPath))
+		}
+		if (normKind == "audio" || normKind == "voice") && !isAud {
+			return nil, fmt.Errorf("nieobsługiwany format audio „%s” (dozwolone: .ogg, .flac, .mp3)", filepath.Base(absPath))
+		}
+		if !isImg && !isAud {
+			return nil, fmt.Errorf("nieobsługiwany format pliku „%s” (obrazy: .png, .jpg, .webp; audio: .ogg, .flac, .mp3)", filepath.Base(absPath))
+		}
+
+		srcFile, err := os.Open(absPath)
+		if err != nil {
+			return nil, fmt.Errorf("nie można otworzyć pliku „%s”: %w", filepath.Base(absPath), err)
+		}
+		info, statErr := srcFile.Stat()
+		if statErr != nil || info.IsDir() {
+			_ = srcFile.Close()
+			return nil, fmt.Errorf("nieprawidłowy plik multimedialny: %s", filepath.Base(absPath))
+		}
+		if info.Size() <= 0 {
+			_ = srcFile.Close()
+			return nil, fmt.Errorf("plik „%s” jest pusty", filepath.Base(absPath))
+		}
+		if info.Size() > maxMediaEntryBytes {
+			_ = srcFile.Close()
+			return nil, fmt.Errorf("plik „%s” przekracza dopuszczalny limit rozmiaru (100 MB)", filepath.Base(absPath))
+		}
+
+		var hdr [512]byte
+		n, _ := io.ReadFull(srcFile, hdr[:])
+		if !validateMediaHeader(absPath, hdr[:n]) {
+			_ = srcFile.Close()
+			return nil, fmt.Errorf("plik „%s” ma nieprawidłowy lub uszkodzony nagłówek formatu", filepath.Base(absPath))
+		}
+
+		// If the file is already inside the book's directory tree, reference it directly without copying over itself
+		cleanSrc := canonicalPathKey(absPath)
+		if strings.HasPrefix(cleanSrc, cleanRoot+string(os.PathSeparator)) {
+			_ = srcFile.Close()
+			if rel, rErr := filepath.Rel(cleanRoot, cleanSrc); rErr == nil {
+				relSlash := SanitizeRelativeMediaPath(filepath.ToSlash(rel))
+				if relSlash != "" {
+					imported = append(imported, relSlash)
+					continue
+				}
+			}
+		}
+
+		subDir := "voice"
+		if isImg {
+			subDir = "images"
+		}
+		baseName := filepath.Base(SanitizeRelativeMediaPath(filepath.Base(absPath)))
+		baseName = strings.TrimLeft(baseName, ".")
+		if baseName == "" || baseName == "." {
+			_ = srcFile.Close()
+			return nil, fmt.Errorf("nieprawidłowa nazwa pliku: %s", filepath.Base(absPath))
+		}
+
+		targetDir := filepath.Join(b.RootPath, subDir)
+		if err := os.MkdirAll(targetDir, 0755); err != nil {
+			_ = srcFile.Close()
+			return nil, err
+		}
+
+		dstPath := filepath.Join(targetDir, baseName)
+		if _, err := srcFile.Seek(0, io.SeekStart); err != nil {
+			_ = srcFile.Close()
+			return nil, err
+		}
+
+		tmpDst := dstPath + ".tmp"
+		_ = os.Remove(tmpDst)
+		outFile, err := os.OpenFile(tmpDst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+		if err != nil {
+			_ = srcFile.Close()
+			return nil, fmt.Errorf("błąd zapisu pliku multimedialnego „%s”: %w", baseName, err)
+		}
+		_, copyErr := io.Copy(outFile, io.LimitReader(srcFile, maxMediaEntryBytes+1))
+		closeErr := outFile.Close()
+		_ = srcFile.Close()
+		if copyErr != nil || closeErr != nil {
+			_ = os.Remove(tmpDst)
+			if copyErr != nil {
+				return nil, copyErr
+			}
+			return nil, closeErr
+		}
+		_ = os.Remove(dstPath)
+		if err := os.Rename(tmpDst, dstPath); err != nil {
+			_ = os.Remove(tmpDst)
+			return nil, err
+		}
+
+		imported = append(imported, subDir+"/"+baseName)
+	}
+
+	return imported, nil
+}
+
+// PackBookToZip packages an unpacked book directory into a single .stbook archive (including subdirectories).
+func PackBookToZip(bookDir, outZipPath string) error {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+
+	err := filepath.WalkDir(bookDir, func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if d.IsDir() {
+			if path != bookDir && strings.HasPrefix(d.Name(), ".") {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if strings.HasPrefix(d.Name(), ".") {
+			return nil
+		}
+		rel, err := filepath.Rel(bookDir, path)
+		if err != nil {
+			return err
+		}
+		relSlash := filepath.ToSlash(rel)
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		w, err := zw.Create(relSlash)
+		if err != nil {
+			return err
+		}
+		_, err = w.Write(raw)
+		return err
+	})
+	if err != nil {
+		_ = zw.Close()
+		return err
+	}
+	if err := zw.Close(); err != nil {
+		return err
+	}
+	return os.WriteFile(outZipPath, buf.Bytes(), 0644)
+}

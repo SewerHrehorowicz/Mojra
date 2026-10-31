@@ -1,0 +1,92 @@
+chapter: Powrót w blasku chwały
+id: powrot_w_kajdanach
+
+scene: Odbicie od pogorzeliska
+id: odbicie_od_zgorzeliska
+next: mycie_wiosel
+Siedem kanu — teraz już z przerzedzoną załogą — odbiło od rusztowania z korzeni i ruszyło z powrotem na południe, niesione leniwym prądem umierającej rzeki. Za ich plecami łuna pożaru powoli bladła w porannej mgle, a w powietrzu unosił się ciężki swąd spalenizny.
+
+Nikt w łodziach nie śpiewał ani nie żartował; słychać było tylko miarowy plusk wioseł i ciche jęki rannych złożonych na dnie czółen.
+
+scene: Mycie wioseł w ciemnym nurcie
+id: mycie_wiosel
+Krzyś siedział na swoim miejscu na dziobie pierwszego kanu. Z każdym zanurzeniem wiosła w rzece z jesionowego pióra spływały do wody długie, brunatne smugi zaschniętej krwi i siwe włosy, które przykleiły się do okucia podczas rzezi w osadzie.
+
+Szoruj zapamiętale drzazgi z zaschniętej krwi -> krwawe_drzazgi
+Patrz tępo w odbicie własnej twarzy w czarnej wodzie -> odbicie_w_toni
+
+scene: Krwawe drzazgi
+id: krwawe_drzazgi
+next: przemowa_zwyciezcow
+Krzyś tarł mokre drewno dłonią i rękawem munduru, wbijając sobie pod paznokcie ostre drzazgi, lecz czerwone plamy wżarły się głęboko w słoje jesionu i za nic nie chciały zejść. Im mocniej szorował, tym bardziej wydawało mu się, że cała rzeka wokół kanu gęstnieje od posoki.
+
+W końcu opuścił obolałe dłonie na kolana, rozumiejąc, że tego wiosła nie domyje już żadna woda na świecie.
+
+scene: Odbicie w czarnej toni
+id: odbicie_w_toni
+next: przemowa_zwyciezcow
+W gładkiej, oleistej tafli między kożuchami trupich lilii Krzyś zobaczył swoją twarz. Nie była to już okrągła, wystraszona gęba wioskowego dziwadła z ciesielskiego warsztatu — patrzyły na niego zapadnięte, martwe oczy człowieka, który zatłukł na śmierć bezbronnego chłopaka pod drzewem.
+
+Zadrżał, gdy tuż obok jego odbicia w wodzie zamajaczyła uśmiechnięta twarz kapitana Arvo.
+
+scene: Przemowa zwycięzców
+id: przemowa_zwyciezcow
+next: mgla_nad_delta
+Gdy słońce wzeszło wyżej nad lasem, kapitan Arvo wyprostował się w kanu i powiódł po ludziach jasnym, natchnionym wzrokiem.
+
+- Spisaliście się dzielnie, synowie! - zawołał dźwięcznym głosem, tak że słychać go było we wszystkich siedmiu łodziach. - Gniazdo zatruwaczy zostało wypalone do gołej ziemi! Boska Dziewica patrzy na was z wdzięcznością, a w mieście czeka na was żołd, gorąca strawa i chwała Prawych i Wielkich!
+
+scene: Mgła nad rzeczną deltą
+id: mgla_nad_delta
+Po południu flotylla wpłynęła w szeroką deltę poniżej starej śluzy, gdzie w gęstej mgle majaczyły już pierwsze rybackie chaty i wieżyczki miejskiej przystani. Kanu sunęły blisko porośniętego trzciną brzegu, skąd do rodzinnej wioski Krzysia prowadziła ukryta ścieżka przez łąki.
+
+Krzyś ściskał w dłoniach swoje ciężkie wiosło, czując, że za chwilę przybije do koszarowego pomostu, z którego nie będzie już odwrotu.
+
+Wiosłuj równo z innymi ku światłom przystani -> parada_na_nabrzezu
+Wyskocz po cichu z kanu w gęste trzciny przed miastem -> dezerter_z_mgly
+
+scene: Dezerter z mgły
+id: dezerter_z_mgly
+end: true
+Gdy gęsty tuman mgły zasłonił dziób łodzi przed wzrokiem Wujka, Krzyś zsunął się bezszelestnie przez burtę w płytką wodę przy trzcinowisku. Zerwał z piersi blaszaną tabliczkę ze swoim imieniem i numerem, cisnął ją w czarny muł i pobiegł na oślep przez moczary, z dala od rzeki, koszar i ojcowskiego warsztatu.
+
+Stał się jednym z tych leśnych wyrzutków, na których jeszcze rano polował — wiecznym zbiegiem nasłuchującym w nocy plusku policyjnych wioseł.
+
+scene: Parada na nabrzeżu
+id: parada_na_nabrzezu
+Na głównym nabrzeżu czekała już orkiestra i tłum gapiów spędzonych przez miejską straż. Ludzie stali w grobowym milczeniu, patrząc z przerażeniem na osmalone, zbryzgane krwią mundury funkcjonariuszy wychodzących z siedmiu kanu.
+
+Kapitan Arvo otworzył szkatułkę z odznaczeniami z białego metalu i wywołał przed szereg imię Krzysia jako przykład najwierniejszego młodego rekruta.
+
+Wystąp przed szereg, by odebrać odznaczenie od kapitana -> medal_z_bialego_metalu
+Opuść głowę i wymknij się z nabrzeża na krótki urlop -> powrot_do_warsztatu
+
+scene: Medal z białego metalu
+id: medal_z_bialego_metalu
+end: true
+Krzyś wystąpił krok naprzód, wypinając dumnie pierś, podczas gdy Wujek przypinał mu do wykrochmalonego kołnierza zimną gwiazdkę z białego metalu. W tłumie na przystani nikt nie śmiał się już pod nosem; wszyscy spuszczali wzrok, kłaniając się nisko.
+
+W pustym sercu Krzysia nie zostało już nic z dawnego chłopaka — był teraz naprawdę Prawy i Wielki, i sam uśmiechnął się łagodnie do stojącego na brzegu obdartego wyrostka, szepcząc cicho: „Nie bój się policji rzecznej, synku”.
+
+scene: Powrót do ojcowskiego warsztatu
+id: powrot_do_warsztatu
+Po rozwiązaniu szyku Krzyś nie poszedł z innymi do koszarowej stołówki. Ruszył brukowaną uliczką na skraj osady, niosąc na ramieniu swoje pęknięte, ciemne od posoki wiosło, aż stanął przed niskimi drzwiami ciesielskiego warsztatu.
+
+Z wnętrza dobiegał znajomy stukot młotka i pijackie przekleństwa jego ojca, który właśnie zamierzał się rzemiennym pasem na młodszego czeladnika.
+
+Wejdź do środka ze swoim okutym wiosłem w garści -> wioslo_w_warsztacie
+Odwróć się od progu i wróć samotnie na nocny pomost -> skok_w_czarna_ton
+
+scene: Wiosło w warsztacie
+id: wioslo_w_warsztacie
+end: true
+Krzyś pchnął drzwi warsztatu tak mocno, że uderzyły o ścianę. Ojciec odwrócił się z pasem w ręku, otwierając usta do zwykłego ryku, lecz zamarł na widok zakrwawionego munduru i martwych oczu syna.
+
+Krzyś nie powiedział ani słowa — uniósł tylko wysoko swoje jesionowe wiosło dokładnie tak, jak nauczył go w lesie kapitan Arvo, a w ciasnej izbie pełnej strużyn znów zapadła ta sama cisza, co w chacie na północy.
+
+scene: Skok w czarną toń
+id: skok_w_czarna_ton
+end: true
+Krzyś cofnął dłoń z klamki warsztatu, rozumiejąc, że nie ma już dla niego domu ani tutaj, ani w koszarach Wujka. Zszedł wolno na pusty, nocny pomost przystani, gdzie pod zgniłymi palami przelewała się gęsta, czarna woda umierającej rzeki.
+
+Postawił swoje wiosło pod ścianą magazynu, zapiął ostatni mosiężny guzik pod szyją i zrobił spokojny krok w ciemną toń, pozwalając, by rzeka Boskiej Dziewicy zamknęła się nad jego głową.

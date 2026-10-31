@@ -1,0 +1,156 @@
+*, *::before, *::after
+  box-sizing border-box
+  margin 0
+  padding 0
+  border-radius 0 !important
+  scrollbar-width none !important
+  -ms-overflow-style none !important
+
+*::-webkit-scrollbar
+  display none !important
+  width 0 !important
+  height 0 !important
+
+*::-webkit-resizer
+  display none !important
+
+html, body
+  width 100%
+  height 100%
+  overflow hidden
+  background-color --bg-obsidian
+  color --text-primary
+  font-family --font-sans
+  -webkit-font-smoothing antialiased
+  user-select none
+
+button, input, textarea, select
+  font-family inherit
+
+input, textarea
+  user-select text
+  -webkit-user-select text
+  cursor text
+
+.hidden
+  display none !important
+
+// Shared Buttons
+.btn
+  display inline-flex
+  align-items center
+  justify-content center
+  gap 8px
+  padding 7px 14px
+  font-family --font-sans
+  font-size 11px
+  font-weight 500
+  text-transform uppercase
+  letter-spacing 0.7px
+  border 1px solid --border-strong
+  background --bg-obsidian
+  color --text-primary
+  cursor pointer
+  transition border-color 0.15s ease, background 0.15s ease, color 0.15s ease, opacity 0.15s ease
+
+.btn:hover
+  border-color --text-primary
+  background --bg-elevated
+
+.btn-primary
+  background --accent-bg
+  color --accent-fg-inverted
+  border-color --accent-bg
+  font-weight 600
+
+.btn-primary:hover
+  opacity 0.88
+  background --accent-bg
+  border-color --accent-bg
+
+.btn-danger
+  color --accent-danger
+  border-color --accent-danger
+  background --bg-obsidian
+
+.btn-danger:hover
+  color #ffffff
+  background --accent-danger
+  border-color --accent-danger
+
+.btn-sm
+  padding 5px 10px
+  font-size 10px
+
+.btn-icon
+  width 14px
+  height 14px
+
+.node-close-btn
+  width 30px
+  height 30px
+  display inline-flex
+  align-items center
+  justify-content center
+  background transparent
+  border none !important
+  text-decoration none !important
+  color --text-secondary
+  cursor pointer
+  padding 0
+  flex-shrink 0
+  transition color 0.15s ease
+
+.node-close-btn:hover
+  color --text-primary
+
+.node-close-icon
+  width 15px
+  height 15px
+  display block
+  flex-shrink 0
+  pointer-events none
+
+body[data-ui-scale="large"]
+  .btn
+    padding 11px 20px
+    font-size 14px
+    gap 10px
+
+  .btn-sm
+    padding 9px 16px
+    font-size 13px
+
+  .btn-icon
+    width 18px
+    height 18px
+
+  .node-close-btn
+    width 38px
+    height 38px
+
+  .node-close-icon
+    width 22px
+    height 22px
+
+// Shared Warning Callout
+.book-warnings-box
+  margin-top 10px
+  padding 10px 14px
+  background --bg-elevated
+  border 1px solid --accent-danger
+  color --text-primary
+  font-size 12px
+
+.book-warnings-title
+  font-family --font-sans
+  font-size 11px
+  font-weight 600
+  color --accent-danger
+  margin-bottom 6px
+
+.book-warnings-list
+  margin 0
+  padding-left 18px
+  color --text-secondary
+  line-height 1.5

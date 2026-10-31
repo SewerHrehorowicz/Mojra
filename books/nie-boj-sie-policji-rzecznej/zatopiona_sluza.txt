@@ -1,0 +1,79 @@
+chapter: Zatopiona śluza
+id: zatopiona_sluza
+
+scene: Kanał kwarantanny
+id: kanal_kwarantanny
+Nocna szpica pod komendą sierżanta Niedźwiedzia odbiła od głównego koryta w wąski, wyłożony cegłą kanał dawnej kwarantanny. Nad wodą wisiał tu ciężki odór zardzewiałego żelaza i gnijącego drewna, a wysokie mury porastał śliski, czarny mech.
+
+Drogę na północ zagradzały potężne wrota starej śluzy oraz przycumowana do nich, nawpół zatopiona barka szpitalna z czasów wielkiej zarazy.
+
+Wejdź z bosakiem na pokład gnijącej barki -> barka_kwarantanny
+Napręż łańcuchy przy kole zębatym śluzy -> kolo_zebate_sluzy
+
+scene: Barka kwarantanny
+id: barka_kwarantanny
+next: straznik_zardzewialych_wrot
+Krzyś przeskoczył na śliski, przegniły pokład barki, podpierając się wiosłem. Deski uginały się pod jego podkutymi butami z głuchym mlaskaniem, a pod zerwanym brezentem leżały szeregi zardzewiałych noszy i potłuczone słoje po wapnie.
+
+Kiedy przecinał cumę blokującą przepust, z ciemnej ładowni pod jego stopami dobiegło ciche, chrapliwe drapanie w grodzie, jakby pod pokładem wciąż ktoś żył w stojącej wodzie.
+
+scene: Koło zębate śluzy
+id: kolo_zebate_sluzy
+next: straznik_zardzewialych_wrot
+Sierżant Niedźwiedź zaprzągł Krzysia i dwóch innych rekrutów do olbrzymiego, żeliwnego koła kołowrotu na kamiennym przyczółku. Łańcuchy grube jak ludzkie ramię jęczały przeraźliwie, ociekając rudym szlamem, gdy napierali piersiami na drewniane drągi.
+
+Krzyś zaparł się z całych sił, aż poczuł w ustach słony smak krwi z przygryzionej wargi. Kiedy zardzewiała zapadka wreszcie puściła, Niedźwiedź klepnął go ciężką łapą w plecy, chwaląc, że ma grzbiet mocniejszy niż muł pociągowy.
+
+scene: Strażnik zardzewiałych wrót
+id: straznik_zardzewialych_wrot
+next: komora_topielcow
+Z kamiennej budki śluzowego wyszedł wówczas zgarbiony starzec z latarnią w dłoni i bielmem na jednym oku. Miał na sobie wypłowiały płaszcz dawnej straży wodnej, lecz zamiast salutować, patrzył ponuro na uzbrojonych policjantów.
+
+- Po co otwieracie północny kanał? - zachrypiał śluzowy. - Tam w górze woda jest czarna jak smoła, a ci, którzy uciekli w las, chcieli tylko uchronić dzieci przed gniciem żywcem.
+
+Niedźwiedź bez słowa trzasnął starca kolbą muszkietu w ramię i kazał mu rzucić pęk żelaznych kluczy.
+
+scene: Komora topielców
+id: komora_topielcow
+Pośrodku ceglanej grobli znajdowała się żeliwna krata zakrywająca dawną komorę filtracyjną, w której trzymano przykutych za kostki przemytników i zbiegów z miasta. Woda sięgała im już do piersi, a otwarcie głównych wrót śluzy oznaczało, że za chwilę wezbrana fala zaleje komorę po sam strop.
+
+Jeden z uwięzionych wyciągnął sine dłonie przez pręty prosto ku butom Krzysia, błagając o okruch chleba albo otwarcie kłódki.
+
+Wsuń więźniowi przez kratę suchar z kieszeni -> chleb_przez_krate
+Zatrzaśnij żelazną klapę na rozkaz Niedźwiedzia -> zatopienie_komory
+
+scene: Chleb przez kratę
+id: chleb_przez_krate
+next: otwarcie_przepustu
+Rozglądając się trwożnie, czy nikt z kolegów nie patrzy, Krzyś wyjął z kieszeni munduru twardy koszarowy suchar i wsunął go między oślizgłe pręty. Więzień chwycił pieczywo zachłannie, lecz zanim zdążył je przełknąć, nadbiegł sierżant Niedźwiedź.
+
+Sierżant kopnął żelazną pokrywę komory, zatrzaskując ją z ogłuszającym hukiem, i pogroził Krzysiowi palcem, warcząc, że litość wobec rzecznych szczurów to zdrada Boskiej Dziewicy.
+
+scene: Zatopienie komory
+id: zatopienie_komory
+next: otwarcie_przepustu
+Krzyś przypomniał sobie słowa Wujka o wyplenianiu chwastów z ogrodu. Cofnął stopę, uniósł ciężką żeliwną klapę i spuścił ją z całym impetem na kratę, odcinając uwięzionym dopływ powietrza i światła.
+
+Spod żelaza jeszcze przez chwilę dobiegało głuche łomotanie pięści i bulgotanie połykanej wody, aż wszystko zagłuszył ryk otwieranego wodospadu.
+
+scene: Otwarcie przepustu
+id: otwarcie_przepustu
+next: sygnal_latarnia
+Potężne, okute blachą wrota śluzy rozwarły się z przeciągłym zgrzytem, wypuszczając spiętrzoną masę czarnej wody, piany i połamanych gałęzi. Łódź szpicy zakołysała się gwałtownie na wirach, lecz Krzyś utrzymał ją w nurcie mocnymi pociągnięciami wiosła.
+
+Droga na północ stała otworem, a z głębi rozlewisk powiało słodkawym odorem trupich lilii.
+
+scene: Sygnał czerwoną latarnią
+id: sygnal_latarnia
+next: wybor_szlaku_za_sluza
+Sierżant Niedźwiedź wszedł na szczyt ceglanego filaru i trzykrotnie zatoczył krąg latarnią o czerwonym szkle, dając znak głównej flotylli kapitana Arvo, że zapora została sforsowana.
+
+W oddali, na ciemnej tafli szerokiej rzeki, zamigotały w odpowiedzi pojedyncze ogniki siedmiu kanu płynących pod prąd.
+
+scene: Wybór szlaku za śluzą
+id: wybor_szlaku_za_sluza
+Za śluzą kanał łączył się z rozległym rozlewiskiem. Część ludzi Niedźwiedzia miała zaczekać na kanu kapitana Arvo, część ruszyć od razu brzegiem w stronę lasu butelkowców, a najlżejsza czółenka miały przebić się skrótem przez czarne torfowiska.
+
+Dołącz do siedmiu kanu kapitana Arvo na głównym nurcie -> chapter:w_gore_umierajacej_rzeki
+Ruszaj brzegiem wprost w las butelkowców -> chapter:krew_pod_butelkowcami
+Poprowadź szpicę skrótem przez czarne torfowiska -> chapter:czarne_torfowiska

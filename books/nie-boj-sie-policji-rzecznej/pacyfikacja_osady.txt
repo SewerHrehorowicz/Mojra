@@ -1,0 +1,126 @@
+chapter: Pacyfikacja osady
+id: pacyfikacja_osady
+
+scene: Wejście do osady
+id: wejscie_do_osady
+image: images/wejscie_do_osady.jpg
+next: matka_pod_spichlerzem
+W końcu dotarli do osady. Zwiadowca już wcześniej zniknął gdzieś z przodu i teraz przy wejściu do obozu leżał zabity strażnik z poderżniętym gardłem. Chaty były tu nędzne, sklecone z byle czego: z gałęzi, gliny, mchu, jakichś starych desek i szmat.
+
+Weszli do środka tyralierą. Ci z muszkietami strzelali do każdego, kto wyskoczył im przed lufy, a nie wyglądał jak kobieta albo dziecko.
+
+Krzyś szedł z innymi, ściskając swoje wiosło. Po tym jak ubił tamtego chłopaka pod drzewem coś w nim pękło, ale i coś stwardniało - już nie myślał tyle, tylko rozglądał się czujnie, gotów bić każdego, kogo mu wskażą.
+
+scene: Matka pod spichlerzem
+id: matka_pod_spichlerzem
+next: lzy_w_blocie
+Obok spichlerza siedział na ziemi jakiś człowiek, oparty plecami o ścianę, z dziurą w piersi. Jeszcze dychał, charczał krwawo, a nad nim zawodziła kobieta z małym dzieckiem na ręku.
+
+Jeden z naszych, wielki chłop z brodą, zwany Niedźwiedziem, podszedł, chwycił kobietę za włosy, odciągnął od konającego i pchnął w błoto, aż dziecko wypadło jej z rąk i uderzyło główką o kamień, kwiląc cicho, po czym zaraz umilkło.
+
+Niedźwiedź zarechotał i zaczął rozpinać spodnie, a kobieta próbowała odpełznąć, zawodząc i wyciągając ręce do nieruchomego dziecka.
+
+scene: Łzy w błocie
+id: lzy_w_blocie
+Krzyś zatrzymał się i patrzył na to szeroko otwartymi oczami. Wiedział, że to źle, że tak nie można, przecież to dziecko małe, a tamta kobieta płacze… Chciał coś powiedzieć, ale głos uwięzł mu w gardle. Zresztą, obok przeszedł Wujek, spojrzał tylko przelotnie na całą scenę i nawet nie zwolnił kroku, idąc dalej i dyrygując ludźmi.
+
+- Palić wszystko! - krzyczał. - Nic ma tu nie zostać! Wyplenić chwasty do gołej ziemi!
+
+Krzyś stał tak pośrodku tego piekła, ściskając swoje wiosło. Zewsząd dobiegały krzyki, płacz dzieci, zawodzenie kobiet, trzask łamanych kości i huk wystrzałów.
+
+Idź za głosem Wujka w stronę koślawej chaty -> w_strone_chaty
+Zejdź za spichlerz ku ziemiance uzdrowicieli -> piwnica_uzdrowicieli
+Rzuć płonącą żagiew w słomiany dach spichlerza -> podpalenie_spichlerza
+
+scene: Piwnica uzdrowicieli
+id: piwnica_uzdrowicieli
+next: dzieci_w_goraczce
+Chcąc uciec od widoku Niedźwiedzia, Krzyś skręcił za węgiel spichlerza, gdzie w skarpie wykopano niską ziemiankę osłoniętą derką. Wyważył kopniakiem przegniłe drzwiczki i wszedł po glinianych stopniach w dół, trzymając wiosło przed sobą.
+
+W półmroku pachniało tu naparem z kory wierzbowej i czystą, przegotowaną wodą, a na półkach stały równym rzędem gliniane miseczki z okładami z bagiennej róży.
+
+scene: Dzieci w gorączce
+id: dzieci_w_goraczce
+next: ciesla_z_toporem
+Na posłaniach z paproci leżało kilkoro dzieci o skórze pokrytej czarnymi wrzodami od rzecznej wody. Stara zielarka próbowała zasłonić je własnym ciałem, powtarzając, że ci ludzie uciekli do lasu tylko dlatego, że w dole rzeki woda wypalała im wnętrzności.
+
+Zanim Krzyś zdołał cokolwiek odpowiedzieć, do ziemianki wpadło dwóch policjantów z tasakami, odpychając go na bok i przewracając kociołek z wrzątkiem prosto na posłania. Krzyś wybiegł z powrotem na powierzchnię, czując, jak dym gryzie go w gardło.
+
+scene: Podpalenie spichlerza
+id: podpalenie_spichlerza
+next: ciesla_z_toporem
+Krzyś chwycił upuszczoną przez kogoś smolną pochodnię i cisnął ją wysoko w poszycie spichlerza, chcąc zagłuszyć w sobie bezradność hukiem ognia. Sucha trzcina zajęła się błyskawicznie, strzelając w niebo snopami rudych iskier.
+
+Ze środka buchnął czarny dym, a wraz z nim przeraźliwy krzyk ludzi, którzy zabarykadowali się wewnątrz między workami spleśniałego ziarna. Belki stropu trzeszczały, waląc się do środka, a żar bił tak mocno, że Krzyś musiał cofnąć się w głąb uliczki.
+
+scene: W stronę koślawej chaty
+id: w_strone_chaty
+next: furia_wiosla
+- Krzysiu, na co czekasz?! - wydarł się na niego któryś z policjantów, przebiegając obok z pochodnią w ręku. - Bierz się do roboty!
+
+Więc Krzyś ruszył przed siebie, jak we śnie, w stronę najbliższej chaty, z której wybiegała właśnie jakaś staruszka, niosąc w rękach zawiniątko. Na widok Krzysia z zakrwawionym wiosłem zatrzymała się i zaczęła cofać, mamrocząc coś jakby modlitwę.
+
+Krzyś wszedł za nią do ciemnego, śmierdzącego stęchlizną wnętrza. Staruszka wcisnęła się w kąt, za krzywy stół, trzęsąc się jak osika i zasłaniając tym swoim tobołkiem.
+
+scene: Furia wiosła
+id: furia_wiosla
+Krzyś patrzył na nią, a w głowie huczały mu słowa Wujka: „Wyplenić chwasty! Dla Boskiej Dziewicy! Bądź Prawy i Wielki!”.
+
+Staruszka patrzyła na niego swoimi wyblakłymi, załzawionymi oczami.
+
+- Synku… - wyszeptała drżącym głosem. - Zlituj się nad starą kobietą…
+
+„Synku”. Tak samo mówił Wujek, kiedy wbijał nóż w serce Mattiego. Tak samo mówił jego ojciec, zanim ściągnął pas ze spodni, kiedy chciał uśpić jego czujność, żeby nie uciekł, a potem bił, bił, aż Krzyś sikał pod siebie z bólu i strachu.
+
+Zatrać się w ślepej furii i uderz wiosłem -> slepa_furia
+Opuść wiosło i wypchnij staruszkę przez okno na tyłach -> przeblysk_litosci
+
+scene: Ślepa furia
+id: slepa_furia
+next: ciesla_z_toporem
+Coś w Krzysiu pękło ostatecznie. Cały ten strach, cały ten ból i upokorzenie z całego życia wezbrały w nim czarną, gorącą falą. Wydał z siebie dziki, zwierzęcy ryk i rzucił się na staruszkę z wiosłem.
+
+Odbiło się wiosło od koślawego stołu, wywalił więc ten stół kopniakiem, aż poleciał w kąt, a staruszka zapiszczała cienko, jak mysz pod miotłą.
+
+Trzasnął więc ją sztorcem wiosła w sam środek twarzy, aż nos w pół złamał i wbił do środka. Dalej więc tłuc ją wiosłem, niechże zamknie się w końcu, niech zdechnie! Czemu nie zdychasz, ty stara kurwo! - darł się Krzyś, okładając babinę wiosłem, tłukąc jej twarz na mielone, a potem ostrą częścią pióra krajając na krwistą sałatkę.
+
+Ryczał - wściekły, czerwony i rozpalony, jakby go trawił od środka ogień. Wziął zamach, wciąż rycząc jak bestia, aby głośniej, aby gardło zedrzeć - i przypierdolił z całym impetem, tnąc babciną głowę na dwie niemal równe części.
+
+scene: Przebłysk litości
+id: przeblysk_litosci
+next: ciesla_z_toporem
+Krzyś zamachnął się już ciężkim wiosłem nad siwą głową staruszki, lecz w ostatniej chwili zobaczył w jej załzawionych oczach ten sam śmiertelny strach, który widział wcześniej u Daniela i u małego dziecka pod spichlerzem. Czerwona mgła przed jego oczami pękła.
+
+Zamiast ciąć ostrą krawędzią pióra, pchnął babuleńkę drzewcem w stronę wybitego okna w butwiejącej dykcie, aż wypadła w pokrzywy za chatą. Zaraz jednak odwrócił się ku środkowi izby — i usłyszał ciężkie kroki w progu.
+
+scene: Cieśla z ciesielskim toporem
+id: ciesla_z_toporem
+W progu warsztatowej szopy stanął barczysty mężczyzna w skórzanym fartuchu, ściskający w dłoniach szeroki topór ciesielski. Miał takie same przekrwione, wściekłe oczy i pobrużdżoną twarz jak ojciec Krzysia, kiedy zamierzał się na niego w warsztacie.
+
+- Bydlaki w mundurach! - zaryczał cieśla, unosząc żelazo nad głowę. - Nawet tutaj nie dacie ludziom żyć!
+
+Natrzyj na cieślę, widząc w nim twarz własnego ojca -> zemsta_na_ciesli
+Uskocz przed ostrzem w zadymioną sień -> obraz_rzezi
+
+scene: Zemsta na cieśli
+id: zemsta_na_ciesli
+next: obraz_rzezi
+Krzyś nie widział przed sobą osadnika — widział ojca zdejmującego rzemienny pas. Zanim ciężki topór opadł, chłopak pchnął z całej siły okutym końcem wiosła prosto w krtań brodacza, a gdy tamten zacharczał i wypuścił broń, poprawił płaskim piórem przez skroń.
+
+Cieśla runął w wióry i strużyny, zupełnie jak w rodzinnym warsztacie, a Krzyś stał nad nim ciężko dysząc, aż z sąsiednich izb buchnął jeszcze gęstszy fetor krwi.
+
+scene: Obraz rzezi
+id: obraz_rzezi
+next: plac_w_plomieniach
+Rozejrzał się wokół, dysząc, i wówczas zgroza go ogarnęła. Koledzy mordowali bez litości, jakby to nie oni byli, a diabły jakieś w ich ciała przyobleczone.
+
+Staruszki, kobiety, dzieci - w kałużach krwi na klepisku, na zrujnowane mebla ponabijane, a to na widły; z roztrzaskanymi głowami, ze śliskimi wnętrznościami wylewających się z rozprutych brzuchów… i brzuszków. Dzieci, jak bezwładne, mięsne laleczki.
+
+Wypadł więc Krzysiu na zewnątrz, nie mogąc dłużej na to patrzeć, nie mogąc oddawać oddechu, bo dusił się tym przesiąkniętym krwią powietrzem, mdliło go i czuł już, że zaraz mu się cofnie. Chwycił otwarte drzwi, żeby się nie wywrócić, a wyrwał je prawie z zawiasów. Taka słabość go zdjęła, że nogi zrobiły się jakby u szmacianej kukły.
+
+scene: Plac w płomieniach
+id: plac_w_plomieniach
+Na środku osady płonęły już niemal wszystkie dachy, a słup tłustego dymu zasłonił niebo. Część niedobitków próbowała przedrzeć się przez tylne opłotki ku zalanym wodą szuwarom, podczas gdy na głównym majdanie spośród ognia wyłoniła się czarna, pajęcza sylwetka zwiadowcy.
+
+Wyjdź na zadymiony majdan, gdzie krąży czarny zwiadowca -> chapter:kruk_z_piekiel
+Biegnij za uciekinierami w zalane wodą szuwary -> chapter:ucieczka_przez_szuwary
