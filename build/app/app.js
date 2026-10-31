@@ -17,17 +17,7 @@ function qsa(sel, root) {
 }
 
 function getOrCreateUITooltip() {
-  let tip = qs("#ui-tooltip");
-  if (!tip) {
-    const appRoot = qs("#app") || document.body;
-    if (appRoot) {
-      tip = document.createElement("div");
-      tip.id = "ui-tooltip";
-      tip.className = "ui-tooltip hidden";
-      appRoot.appendChild(tip);
-    }
-  }
-  return tip;
+  return qs("#ui-tooltip");
 }
 
 function hideUITooltip() {
@@ -414,6 +404,10 @@ async function sendServerAction(actionName, params) {
     }
   }
 
+  if (actionName !== "SaveAudioTime" && typeof cancelMediaPrefetchQueue === "function") {
+    cancelMediaPrefetchQueue();
+  }
+
   const prevAudio = qs("#story-audio");
   const prevWasPlaying = prevAudio ? !prevAudio.paused && !prevAudio.ended : false;
   const prevAudioTime = prevAudio ? prevAudio.currentTime || 0 : 0;
@@ -470,16 +464,7 @@ async function sendServerAction(actionName, params) {
   }
 
   if (targetSelector === "#modals-root") {
-    let modalsRoot = qs("#modals-root");
-    if (!modalsRoot) {
-      const appRoot = qs("#app");
-      if (appRoot) {
-        modalsRoot = document.createElement("div");
-        modalsRoot.id = "modals-root";
-        modalsRoot.className = "modals-root";
-        appRoot.appendChild(modalsRoot);
-      }
-    }
+    const modalsRoot = qs("#modals-root");
     const prevModalFeed = qs(".scene-text-editor-feed", modalsRoot);
     const prevModalScrollTop = prevModalFeed ? prevModalFeed.scrollTop : 0;
     if (modalsRoot) {
@@ -1081,15 +1066,116 @@ function setPlayButtonVisual(isPlaying) {
 }
 
 let autoAdvanceFallbackTimer = null;
+let activePrefetchController = null;
+const prefetchedMediaCache = new Set();
+
+function cancelMediaPrefetchQueue() {
+  if (activePrefetchController) {
+    activePrefetchController.abort();
+    activePrefetchController = null;
+  }
+}
+
+function waitForImageReady(imgEl, signal) {
+  return new Promise((resolve) => {
+    if (!imgEl || !imgEl.getAttribute("src") || imgEl.complete) {
+      resolve();
+      return;
+    }
+    const done = () => {
+      imgEl.removeEventListener("load", done);
+      imgEl.removeEventListener("error", done);
+      resolve();
+    };
+    imgEl.addEventListener("load", done, { once: true });
+    imgEl.addEventListener("error", done, { once: true });
+    if (signal) {
+      signal.addEventListener("abort", done, { once: true });
+    }
+  });
+}
+
+function waitForAudioReady(audioEl, signal) {
+  return new Promise((resolve) => {
+    if (!audioEl || !audioEl.getAttribute("data-audio-url") || audioEl.readyState >= 4) {
+      resolve();
+      return;
+    }
+    const done = () => {
+      audioEl.removeEventListener("canplaythrough", done);
+      audioEl.removeEventListener("error", done);
+      resolve();
+    };
+    audioEl.addEventListener("canplaythrough", done, { once: true });
+    audioEl.addEventListener("error", done, { once: true });
+    if (signal) {
+      signal.addEventListener("abort", done, { once: true });
+    }
+  });
+}
+
+async function scheduleCurrentSceneMediaPrefetch(audioEl) {
+  cancelMediaPrefetchQueue();
+  const stage = qs("#active-scene-stage");
+  if (!stage || typeof AbortController === "undefined") return;
+
+  const rawUrls = stage.getAttribute("data-prefetch-urls") || "";
+  if (!rawUrls) return;
+
+  const urls = rawUrls
+    .split(";")
+    .map((u) => u.trim())
+    .filter(Boolean);
+  if (urls.length === 0) return;
+
+  const controller = new AbortController();
+  activePrefetchController = controller;
+  const signal = controller.signal;
+
+  const bgImg = qs("#player-bg-img");
+  const portraitImg = qs(".scene-portrait-img", stage);
+  await Promise.all([
+    waitForAudioReady(audioEl, signal),
+    waitForImageReady(bgImg, signal),
+    waitForImageReady(portraitImg, signal)
+  ]);
+
+  if (signal.aborted) return;
+
+  for (let i = 0; i < urls.length; i++) {
+    if (signal.aborted) return;
+    const targetUrl = urls[i];
+    if (!targetUrl || prefetchedMediaCache.has(targetUrl)) {
+      continue;
+    }
+    try {
+      const resp = await fetch(targetUrl, {
+        method: "GET",
+        credentials: "same-origin",
+        signal: signal
+      });
+      if (resp && resp.ok) {
+        await resp.arrayBuffer();
+        prefetchedMediaCache.add(targetUrl);
+      }
+    } catch (_) {
+      if (signal.aborted) return;
+    }
+  }
+}
 
 function initAudioController(shouldAutoPlay, preservedTime) {
   if (autoAdvanceFallbackTimer) {
     clearTimeout(autoAdvanceFallbackTimer);
     autoAdvanceFallbackTimer = null;
   }
+  cancelMediaPrefetchQueue();
 
   const audio = qs("#story-audio");
-  if (!audio) return;
+  if (!audio) {
+    scheduleCurrentSceneMediaPrefetch(null);
+    return;
+  }
 
   const url = audio.getAttribute("data-audio-url") || "";
   const resumeTime =
@@ -1099,11 +1185,26 @@ function initAudioController(shouldAutoPlay, preservedTime) {
   const speed = parseFloat(audio.getAttribute("data-speed") || "1") || 1.0;
   const autoChoiceOn = audio.getAttribute("data-auto-choice") === "true";
   const slider = qs("#audio-seek-slider");
+  const playBtn = qs("#btn-audio-play");
   const hasNextChoices = qsa('#active-scene-stage .choice-btn[action="ChooseBranch"]').length > 0;
 
+  const setBufferingState = (buffering) => {
+    if (playBtn) {
+      playBtn.classList.toggle("is-buffering", Boolean(buffering));
+    }
+  };
+
   if (url) {
+    audio.preload = "auto";
     audio.src = url;
     audio.playbackRate = speed;
+    if (audio.readyState < 4) {
+      setBufferingState(true);
+      const clearBuffering = () => setBufferingState(false);
+      audio.addEventListener("canplaythrough", clearBuffering, { once: true });
+      audio.addEventListener("playing", clearBuffering, { once: true });
+      audio.addEventListener("error", clearBuffering, { once: true });
+    }
     if (resumeTime > 0.2) {
       audio.addEventListener(
         "loadedmetadata",
@@ -1115,16 +1216,21 @@ function initAudioController(shouldAutoPlay, preservedTime) {
         { once: true }
       );
     }
+    audio.load();
     if (shouldAutoPlay) {
+      let autoPlayStarted = false;
       const startPlay = () => {
+        if (autoPlayStarted) return;
+        autoPlayStarted = true;
+        setBufferingState(false);
         audio.playbackRate = speed;
         audio.play().catch(() => {});
       };
-      if (audio.readyState >= 1) {
+      if (audio.readyState >= 4) {
         startPlay();
       } else {
-        audio.addEventListener("loadedmetadata", startPlay, { once: true });
-        startPlay();
+        setBufferingState(true);
+        audio.addEventListener("canplaythrough", startPlay, { once: true });
       }
     }
   } else if (shouldAutoPlay && autoChoiceOn && hasNextChoices) {
@@ -1133,7 +1239,7 @@ function initAudioController(shouldAutoPlay, preservedTime) {
     }, 1500);
   }
 
-  const playBtn = qs("#btn-audio-play");
+  scheduleCurrentSceneMediaPrefetch(audio);
 
   if (playBtn) {
     playBtn.addEventListener("click", () => {
@@ -1145,7 +1251,21 @@ function initAudioController(shouldAutoPlay, preservedTime) {
         if (audio.getAttribute("data-auto-choice") === "true") {
           autoPlayChainActive = true;
         }
-        audio.play().catch(() => {});
+        if (audio.readyState >= 4) {
+          setBufferingState(false);
+          audio.play().catch(() => {});
+        } else {
+          setBufferingState(true);
+          audio.addEventListener(
+            "canplaythrough",
+            () => {
+              setBufferingState(false);
+              audio.play().catch(() => {});
+            },
+            { once: true }
+          );
+          audio.load();
+        }
       } else {
         autoPlayChainActive = false;
         audio.pause();
@@ -1681,18 +1801,16 @@ function updateFocusedSceneByViewport() {
   const bgStage = qs("#player-bg-stage");
   if (bgStage && bestCard && document.body.getAttribute("data-imageless") !== "true") {
     const imgUrl = bestCard.getAttribute("data-scene-image") || "";
-    let bgImg = qs("#player-bg-img", bgStage);
-    if (imgUrl) {
-      if (!bgImg) {
-        bgImg = document.createElement("img");
-        bgImg.id = "player-bg-img";
-        bgImg.className = "player-bg-img";
-        bgStage.appendChild(bgImg);
+    const bgImg = qs("#player-bg-img", bgStage);
+    if (bgImg) {
+      if (imgUrl) {
+        if (bgImg.getAttribute("src") !== imgUrl) {
+          bgImg.setAttribute("src", imgUrl);
+        }
+        bgImg.classList.remove("hidden");
+      } else {
+        bgImg.classList.add("hidden");
       }
-      if (bgImg.getAttribute("src") !== imgUrl) {
-        bgImg.setAttribute("src", imgUrl);
-      }
-      bgImg.classList.remove("hidden");
     }
   }
 }
@@ -2351,6 +2469,9 @@ function initStudioWebGLContext(canvas) {
       vMode = 0.0;
       vPxRange = 4.5;
       vec2 uvs = mix(aUV.xy, aUV.zw, aUnit);
+      if (aUV.y < -0.5 && aRect.w > aRect.z) {
+        uvs.x = mix(aUV.x, aUV.z, aUnit.y);
+      }
       vUV = uvs;
       vec2 screenPos;
       if (aUV.x < -80000.0) {
@@ -2580,6 +2701,11 @@ function pushSolidBorderQuads(x, y, w, h, thickness, packedColor) {
   pushSolidQuad(x + w - t, y + t, t, h - t * 2, packedColor);
 }
 
+function computeAlignedDashSpan(len, period) {
+  const n = Math.max(1, Math.round(len / period - 0.54));
+  return (n + 0.54) * period;
+}
+
 function pushDashedSegmentQuad(x1, y1, x2, y2, thickness, period, packedColor) {
   const dx = x2 - x1;
   const dy = y2 - y1;
@@ -2587,20 +2713,38 @@ function pushDashedSegmentQuad(x1, y1, x2, y2, thickness, period, packedColor) {
   if (len < 0.5) return;
   const halfT = thickness * 0.5;
   const negPeriod = -period;
+  const span = computeAlignedDashSpan(len, period);
   if (Math.abs(dx) >= Math.abs(dy)) {
     const minX = Math.min(x1, x2);
-    pushQuadInstance(minX, y1 - halfT, len, thickness, 0, negPeriod, len, negPeriod, packedColor);
+    pushQuadInstance(minX, y1 - halfT, len, thickness, 0, negPeriod, span, negPeriod, packedColor);
   } else {
     const minY = Math.min(y1, y2);
-    pushQuadInstance(x1 - halfT, minY, thickness, len, 0, negPeriod, len, negPeriod, packedColor);
+    pushQuadInstance(x1 - halfT, minY, thickness, len, 0, negPeriod, span, negPeriod, packedColor);
   }
 }
 
+function pushDashedHeaderDividerQuad(x, y, w, thickness, period, packedColor) {
+  const nW = Math.max(1, Math.round(w / period - 0.54));
+  if (nW <= 2) {
+    return;
+  }
+  const worldPeriodW = w / (nW + 0.54);
+  const startX = x + worldPeriodW;
+  const innerW = w - worldPeriodW * 2.0;
+  const span = (nW - 2 + 0.54) * period;
+  pushQuadInstance(startX, y, innerW, thickness, 0, -period, span, -period, packedColor);
+}
+
 function pushDashedRectQuads(x, y, w, h, thickness, period, packedColor) {
-  pushDashedSegmentQuad(x, y, x + w, y, thickness, period, packedColor);
-  pushDashedSegmentQuad(x, y + h, x + w, y + h, thickness, period, packedColor);
-  pushDashedSegmentQuad(x, y, x, y + h, thickness, period, packedColor);
-  pushDashedSegmentQuad(x + w, y, x + w, y + h, thickness, period, packedColor);
+  const t = thickness;
+  const negPeriod = -period;
+  const spanW = computeAlignedDashSpan(w, period);
+  const innerH = Math.max(1, h - t * 2);
+  const spanH = computeAlignedDashSpan(innerH, period);
+  pushQuadInstance(x, y, w, t, 0, negPeriod, spanW, negPeriod, packedColor);
+  pushQuadInstance(x, y + h - t, w, t, 0, negPeriod, spanW, negPeriod, packedColor);
+  pushQuadInstance(x, y + t, t, innerH, 0, negPeriod, spanH, negPeriod, packedColor);
+  pushQuadInstance(x + w - t, y + t, t, innerH, 0, negPeriod, spanH, negPeriod, packedColor);
 }
 
 function pushWirePolylineQuads(pts, thickness, isDashed, packedColor) {
@@ -2711,28 +2855,31 @@ function pushShapedTextQuads(shaped, originX, centerY, packedColor) {
   }
 }
 
-function pushPortQuads(x, y, isHoveredOrActive, theme, isUnreachable) {
-  if (isHoveredOrActive) {
-    const sp = studioGL.uv.portHover;
-    const hs = sp.size * 0.5;
-    pushQuadInstance(x - hs, y - hs, sp.size, sp.size, sp.u0, sp.v0, sp.u1, sp.v1, theme.textPrimary);
-    return;
-  }
+function pushPortQuads(x, y, isConnected, isHoveredOrActive, theme, isUnreachable) {
   const fillSp = studioGL.uv.portFill;
-  const ringSp = studioGL.uv.portRing;
   const hs = fillSp.size * 0.5;
+  const portColor =
+    typeof isHoveredOrActive === "number"
+      ? isHoveredOrActive
+      : isHoveredOrActive
+        ? theme.textPrimary
+        : isUnreachable
+          ? theme.unreachWire
+          : theme.borderStrong;
   pushQuadInstance(x - hs, y - hs, fillSp.size, fillSp.size, fillSp.u0, fillSp.v0, fillSp.u1, fillSp.v1, theme.bgObsidian);
-  pushQuadInstance(
-    x - hs,
-    y - hs,
-    ringSp.size,
-    ringSp.size,
-    ringSp.u0,
-    ringSp.v0,
-    ringSp.u1,
-    ringSp.v1,
-    isUnreachable ? theme.borderStrong : theme.textPrimary
-  );
+  const sp = isConnected ? studioGL.uv.portHover : studioGL.uv.portRing;
+  pushQuadInstance(x - hs, y - hs, sp.size, sp.size, sp.u0, sp.v0, sp.u1, sp.v1, portColor);
+}
+
+function isHoveredPortItemConnected(hovered) {
+  if (!hovered) return false;
+  if (hovered.type === "scene-out-port") {
+    return Boolean(hovered.port && hovered.port.connected);
+  }
+  if (hovered.type === "chapter-out-port") {
+    return Boolean(hovered.outPort && hovered.outPort.connected);
+  }
+  return false;
 }
 
 function compileStaticSceneQuads(theme) {
@@ -2754,7 +2901,7 @@ function compileStaticSceneQuads(theme) {
     pushSolidQuad(ch.x, ch.y, ch.w, ch.h, theme.chapterFill);
     pushSolidQuad(ch.x + 1, ch.y + 1, ch.w - 2, 27, theme.bgElevated);
     pushDashedRectQuads(ch.x, ch.y, ch.w, ch.h, 1, 9.0, theme.borderStrong);
-    pushDashedSegmentQuad(ch.x, ch.y + 28, ch.x + ch.w, ch.y + 28, 1, 9.0, theme.borderStrong);
+    pushDashedHeaderDividerQuad(ch.x, ch.y + 28, ch.w, 1, 9.0, theme.borderStrong);
     pushQuadInstance(
       ch.x + 4,
       ch.y + 3,
@@ -2864,30 +3011,118 @@ function compileStaticSceneQuads(theme) {
     const ch = chapters[i];
     if (ch.hidden) continue;
     if (!ch.isRoot) {
-      pushPortQuads(ch.inX, ch.inY, false, theme, false);
+      pushPortQuads(ch.inX, ch.inY, Boolean(ch.inConnected), false, theme, false);
     }
     for (let j = 0; j < ch.outPorts.length; j++) {
       const op = ch.outPorts[j];
-      pushPortQuads(op.x, op.y, false, theme, false);
+      pushPortQuads(op.x, op.y, Boolean(op.connected), false, theme, false);
     }
   }
 
   for (let i = 0; i < nodes.length; i++) {
     const nd = nodes[i];
     if (nd.hasInputPort) {
-      pushPortQuads(nd.x + nd.inOx, nd.y + nd.inOy, false, theme, nd.unreachable);
+      pushPortQuads(nd.x + nd.inOx, nd.y + nd.inOy, Boolean(nd.inConnected), false, theme, nd.unreachable);
     }
     if (nd.hasChoices && nd.ports.length > 0) {
       for (let j = 0; j < nd.ports.length; j++) {
         const pt = nd.ports[j];
-        pushPortQuads(nd.x + pt.ox, nd.y + pt.oy, false, theme, nd.unreachable);
+        pushPortQuads(nd.x + pt.ox, nd.y + pt.oy, Boolean(pt.connected), false, theme, nd.unreachable);
       }
     } else if (nd.implicitPort) {
-      pushPortQuads(nd.x + nd.implicitPort.ox, nd.y + nd.implicitPort.oy, false, theme, nd.unreachable);
+      pushPortQuads(
+        nd.x + nd.implicitPort.ox,
+        nd.y + nd.implicitPort.oy,
+        Boolean(nd.implicitPort.connected),
+        false,
+        theme,
+        nd.unreachable
+      );
     }
   }
 
   studioGL.staticInstCount = studioGL.instCursor;
+}
+
+function chapterMatchesTargetLower(ch, targetLower) {
+  if (!ch || !targetLower) return false;
+  return ch.nameLower === targetLower || ch.refLower === targetLower;
+}
+
+function collectHoveredConnectionWires(hoveredWire) {
+  if (!hoveredWire) return [];
+  if (hoveredWire.kind === "scene-to-scene") {
+    return [hoveredWire];
+  }
+  const allWires = studioGraphState.wires || [];
+  const result = [];
+  const seen = new Set();
+  const pushUnique = (w) => {
+    if (w && !seen.has(w)) {
+      seen.add(w);
+      result.push(w);
+    }
+  };
+
+  pushUnique(hoveredWire);
+
+  if (hoveredWire.kind === "scene-to-chapter-out") {
+    const fromCh = hoveredWire.fromChapterObj;
+    const targetLower = hoveredWire.targetChapterLower;
+    const toCh = studioGraphState.chapterByKey.get(targetLower);
+    for (let i = 0; i < allWires.length; i++) {
+      const w = allWires[i];
+      if (
+        w.kind === "chapter-to-chapter" &&
+        w.fromChapterObj === fromCh &&
+        (w.toChapterObj === toCh || chapterMatchesTargetLower(w.toChapterObj, targetLower))
+      ) {
+        pushUnique(w);
+      } else if (
+        w.kind === "chapter-in-to-entry" &&
+        (w.toChapterObj === toCh || chapterMatchesTargetLower(w.toChapterObj, targetLower))
+      ) {
+        pushUnique(w);
+      }
+    }
+  } else if (hoveredWire.kind === "chapter-to-chapter") {
+    const fromCh = hoveredWire.fromChapterObj;
+    const toCh = hoveredWire.toChapterObj;
+    for (let i = 0; i < allWires.length; i++) {
+      const w = allWires[i];
+      if (
+        w.kind === "scene-to-chapter-out" &&
+        w.fromChapterObj === fromCh &&
+        chapterMatchesTargetLower(toCh, w.targetChapterLower)
+      ) {
+        pushUnique(w);
+      } else if (w.kind === "chapter-in-to-entry" && w.toChapterObj === toCh) {
+        pushUnique(w);
+      }
+    }
+  } else if (hoveredWire.kind === "chapter-in-to-entry") {
+    const toCh = hoveredWire.toChapterObj;
+    const upstreamFromChapters = new Set();
+    for (let i = 0; i < allWires.length; i++) {
+      const w = allWires[i];
+      if (w.kind === "chapter-to-chapter" && w.toChapterObj === toCh) {
+        pushUnique(w);
+        if (w.fromChapterObj) upstreamFromChapters.add(w.fromChapterObj);
+      }
+    }
+    for (let i = 0; i < allWires.length; i++) {
+      const w = allWires[i];
+      if (
+        w.kind === "scene-to-chapter-out" &&
+        upstreamFromChapters.has(w.fromChapterObj) &&
+        chapterMatchesTargetLower(toCh, w.targetChapterLower)
+      ) {
+        pushUnique(w);
+      }
+    }
+  }
+
+  return result;
 }
 
 function appendDynamicOverlayQuads(theme) {
@@ -2898,29 +3133,77 @@ function appendDynamicOverlayQuads(theme) {
   const gesture = activeCanvasGesture;
   const gripSp = studioGL.uv.grip;
 
+  const renderChapterPortsOverlay = (ch) => {
+    if (!ch || ch.hidden) return;
+    if (!ch.isRoot) {
+      pushPortQuads(ch.inX, ch.inY, Boolean(ch.inConnected), false, theme, false);
+    }
+    for (let j = 0; j < ch.outPorts.length; j++) {
+      const op = ch.outPorts[j];
+      pushPortQuads(op.x, op.y, Boolean(op.connected), false, theme, false);
+    }
+  };
+
   if (gesture && gesture.type === "chapter-drag" && gesture.chapter && gesture.dragConfirmed) {
     const ch = gesture.chapter;
-    pushSolidBorderQuads(ch.x, ch.y, ch.w, ch.h, 1.5, theme.textPrimary);
+    pushSolidBorderQuads(ch.x, ch.y, ch.w, ch.h, 1, theme.textPrimary);
+    renderChapterPortsOverlay(ch);
   } else if (studioGraphState.selectedChapterKey) {
     const selCh = studioGraphState.chapterByKey.get(studioGraphState.selectedChapterKey);
     if (selCh && !selCh.hidden) {
-      pushSolidBorderQuads(selCh.x, selCh.y, selCh.w, selCh.h, 1.5, theme.textPrimary);
+      pushSolidBorderQuads(selCh.x, selCh.y, selCh.w, selCh.h, 1, theme.textSecondary);
+      renderChapterPortsOverlay(selCh);
     }
   }
 
-  if (hoveredWire) {
-    pushWirePolylineQuads(hoveredWire.pts, 2, false, theme.textPrimary);
-    if (hoveredWire.fromNode) {
-      pushPortQuads(hoveredWire.x1, hoveredWire.y1, true, theme, false);
-    } else if (hoveredWire.fromChapterOutPort) {
-      pushPortQuads(hoveredWire.fromChapterOutPort.x, hoveredWire.fromChapterOutPort.y, true, theme, false);
+  const isNodeDragging = Boolean(gesture && gesture.type === "node-drag");
+  const nodeHighlightColor = isNodeDragging ? theme.textPrimary : theme.textSecondary;
+  selectedNodeIds.forEach((selId) => {
+    const nd = studioGraphState.nodeById.get(selId);
+    if (!nd) return;
+    pushSolidBorderQuads(nd.x, nd.y, nd.w, nd.h, 1, nodeHighlightColor);
+    if (nd.hasInputPort) {
+      pushPortQuads(nd.x + nd.inOx, nd.y + nd.inOy, Boolean(nd.inConnected), false, theme, nd.unreachable);
     }
-    if (hoveredWire.toNode) {
-      pushPortQuads(hoveredWire.x2, hoveredWire.y2, true, theme, false);
-    } else if (hoveredWire.toChapterOutPort) {
-      pushPortQuads(hoveredWire.toChapterOutPort.x, hoveredWire.toChapterOutPort.y, true, theme, false);
-    } else if (hoveredWire.toChapterObj) {
-      pushPortQuads(hoveredWire.toChapterObj.inX, hoveredWire.toChapterObj.inY, true, theme, false);
+    if (nd.hasChoices && nd.ports.length > 0) {
+      for (let j = 0; j < nd.ports.length; j++) {
+        const pt = nd.ports[j];
+        pushPortQuads(nd.x + pt.ox, nd.y + pt.oy, Boolean(pt.connected), false, theme, nd.unreachable);
+      }
+    } else if (nd.implicitPort) {
+      pushPortQuads(
+        nd.x + nd.implicitPort.ox,
+        nd.y + nd.implicitPort.oy,
+        Boolean(nd.implicitPort.connected),
+        false,
+        theme,
+        nd.unreachable
+      );
+    }
+  });
+
+  if (hoveredWire) {
+    const chain = collectHoveredConnectionWires(hoveredWire);
+    for (let i = 0; i < chain.length; i++) {
+      const hw = chain[i];
+      pushWirePolylineQuads(hw.pts, 2, false, theme.textSecondary);
+    }
+    for (let i = 0; i < chain.length; i++) {
+      const hw = chain[i];
+      if (hw.fromNode) {
+        pushPortQuads(hw.x1, hw.y1, true, theme.textSecondary, theme, false);
+      } else if (hw.fromChapterOutPort) {
+        pushPortQuads(hw.fromChapterOutPort.x, hw.fromChapterOutPort.y, true, theme.textSecondary, theme, false);
+      } else if (hw.kind === "chapter-in-to-entry" && hw.fromChapterObj) {
+        pushPortQuads(hw.fromChapterObj.inX, hw.fromChapterObj.inY, Boolean(hw.fromChapterObj.inConnected), theme.textSecondary, theme, false);
+      }
+      if (hw.toNode) {
+        pushPortQuads(hw.x2, hw.y2, true, theme.textSecondary, theme, false);
+      } else if (hw.toChapterOutPort) {
+        pushPortQuads(hw.toChapterOutPort.x, hw.toChapterOutPort.y, true, theme.textSecondary, theme, false);
+      } else if (hw.toChapterObj) {
+        pushPortQuads(hw.toChapterObj.inX, hw.toChapterObj.inY, true, theme.textSecondary, theme, false);
+      }
     }
   }
 
@@ -2976,45 +3259,61 @@ function appendDynamicOverlayQuads(theme) {
       );
       pushWirePolylineQuads(ptsTemp, 2, true, theme.textPrimary);
     }
-    pushPortQuads(gesture.startX, gesture.startY, true, theme, false);
+    const startConnected =
+      gesture.type === "wire-connect"
+        ? Boolean(gesture.sourcePort ? gesture.sourcePort.connected : gesture.hasExistingTarget)
+        : Boolean(gesture.activeChapterOutPort && gesture.activeChapterOutPort.connected);
+    pushPortQuads(gesture.startX, gesture.startY, startConnected, true, theme, false);
     if (gesture.hoveredSceneNode) {
       const tnd = gesture.hoveredSceneNode;
-      pushPortQuads(tnd.x + tnd.inOx, tnd.y + tnd.inOy, true, theme, false);
+      pushPortQuads(tnd.x + tnd.inOx, tnd.y + tnd.inOy, Boolean(tnd.inConnected), true, theme, false);
     }
     if (gesture.hoveredChapterIn) {
-      pushPortQuads(gesture.hoveredChapterIn.inX, gesture.hoveredChapterIn.inY, true, theme, false);
+      pushPortQuads(
+        gesture.hoveredChapterIn.inX,
+        gesture.hoveredChapterIn.inY,
+        Boolean(gesture.hoveredChapterIn.inConnected),
+        true,
+        theme,
+        false
+      );
     }
     if (gesture.hoveredChapterOutPort) {
-      pushPortQuads(gesture.hoveredChapterOutPort.x, gesture.hoveredChapterOutPort.y, true, theme, false);
+      pushPortQuads(
+        gesture.hoveredChapterOutPort.x,
+        gesture.hoveredChapterOutPort.y,
+        Boolean(gesture.hoveredChapterOutPort.connected),
+        true,
+        theme,
+        false
+      );
     }
   }
 
-  selectedNodeIds.forEach((selId) => {
-    const nd = studioGraphState.nodeById.get(selId);
-    if (!nd) return;
-    pushSolidBorderQuads(nd.x, nd.y, nd.w, nd.h, 2, theme.textPrimary);
-    if (nd.hasInputPort) {
-      pushPortQuads(nd.x + nd.inOx, nd.y + nd.inOy, false, theme, nd.unreachable);
-    }
-    if (nd.hasChoices && nd.ports.length > 0) {
-      for (let j = 0; j < nd.ports.length; j++) {
-        const pt = nd.ports[j];
-        pushPortQuads(nd.x + pt.ox, nd.y + pt.oy, false, theme, nd.unreachable);
-      }
-    } else if (nd.implicitPort) {
-      pushPortQuads(nd.x + nd.implicitPort.ox, nd.y + nd.implicitPort.oy, false, theme, nd.unreachable);
-    }
-  });
-
   if (hovered) {
-    if (hovered.type === "scene-out-port" || hovered.type === "scene-in-port" || hovered.type === "chapter-out-port" || hovered.type === "chapter-in-port") {
-      pushPortQuads(hovered.x, hovered.y, true, theme, false);
+    if (
+      hovered.type === "scene-out-port" ||
+      hovered.type === "chapter-out-port"
+    ) {
+      pushPortQuads(hovered.x, hovered.y, isHoveredPortItemConnected(hovered), true, theme, false);
     } else if (hovered.type === "node-grip" && hovered.node) {
       const nd = hovered.node;
-      pushBorderedBoxQuads(nd.x + 4, nd.y + 6, 20, 22, 1, theme.borderSubtle, theme.bgElevated);
       pushQuadInstance(
         nd.x + 4,
         nd.y + 6,
+        gripSp.w,
+        gripSp.h,
+        gripSp.u0 + 30.0,
+        gripSp.v0,
+        gripSp.u1 + 30.0,
+        gripSp.v1,
+        theme.textPrimary
+      );
+    } else if (hovered.type === "chapter-grip" && hovered.chapter && !hovered.chapter.hidden) {
+      const ch = hovered.chapter;
+      pushQuadInstance(
+        ch.x + 4,
+        ch.y + 3,
         gripSp.w,
         gripSp.h,
         gripSp.u0 + 30.0,
@@ -3135,7 +3434,7 @@ function recomputeNodeMetrics(node) {
   node.bottom = node.y + node.h;
   node.inOx = NODE_CARD_WIDTH * 0.5;
   node.inOy = 0;
-  node.hasInputPort = !node.isStart && !node.isEntry;
+  node.hasInputPort = !node.isStart;
 
   if (portCount > 0) {
     for (let i = 0; i < node.ports.length; i++) {
@@ -3143,17 +3442,32 @@ function recomputeNodeMetrics(node) {
       p.isBottom = false;
       p.ox = NODE_CARD_WIDTH;
       p.oy = NODE_HEADER_HEIGHT + i * NODE_CHOICE_ROW_HEIGHT + NODE_CHOICE_ROW_HEIGHT * 0.5;
+      p.connected = Boolean((p.targetId && p.targetId.toUpperCase() !== "END") || (p.targetChapter && p.targetChapter.trim()));
     }
+    node.implicitPort = null;
   } else {
-    node.implicitPort = {
-      idx: 0,
-      label: "Dalej",
-      targetId: node.impTarget || "",
-      targetChapter: node.impChapter || "",
-      isBottom: true,
-      ox: NODE_CARD_WIDTH * 0.5,
-      oy: node.h
-    };
+    const impTarget = node.impTarget || "";
+    const impChapter = node.impChapter || "";
+    const impConnected = Boolean((impTarget && impTarget.toUpperCase() !== "END") || (impChapter && impChapter.trim()));
+    if (!node.implicitPort) {
+      node.implicitPort = {
+        idx: 0,
+        label: "Dalej",
+        targetId: impTarget,
+        targetChapter: impChapter,
+        connected: impConnected,
+        isBottom: true,
+        ox: NODE_CARD_WIDTH * 0.5,
+        oy: node.h
+      };
+    } else {
+      node.implicitPort.targetId = impTarget;
+      node.implicitPort.targetChapter = impChapter;
+      node.implicitPort.connected = impConnected;
+      node.implicitPort.isBottom = true;
+      node.implicitPort.ox = NODE_CARD_WIDTH * 0.5;
+      node.implicitPort.oy = node.h;
+    }
   }
 }
 
@@ -3165,13 +3479,14 @@ function recomputeChapterPortPositions(ch) {
   ch.inX = ch.x + ch.w * 0.5;
   ch.inY = ch.y;
   if (!ch.outPorts || ch.outPorts.length === 0) {
-    ch.outPorts = [{ idx: 0, target: "", targetLower: "", x: ch.x + ch.w * 0.5, y: ch.y + ch.h }];
+    ch.outPorts = [{ idx: 0, target: "", targetLower: "", connected: false, x: ch.x + ch.w * 0.5, y: ch.y + ch.h }];
     return;
   }
   const m = ch.outPorts.length;
   for (let i = 0; i < m; i++) {
     const op = ch.outPorts[i];
     op.idx = i;
+    op.connected = Boolean(op.targetLower);
     op.x = ch.x + ch.w * 0.5 + (i - (m - 1) * 0.5) * CHAPTER_OUT_PORT_PITCH;
     op.y = ch.y + ch.h;
   }
@@ -4235,6 +4550,29 @@ function routeSingleWireBasePts(w, nodeObstacles, chapterObstacles) {
       toCh.id
     );
     w.basePts = simplifyOrthogonalPoints(rawPts);
+  } else if (w.kind === "chapter-in-to-entry") {
+    const ch = w.toChapterObj;
+    const toNode = w.toNode;
+    w.x1 = ch.inX;
+    w.y1 = ch.inY;
+    w.x2 = toNode.x + toNode.inOx;
+    w.y2 = toNode.y + toNode.inOy;
+    w.unreachable = toNode.unreachable;
+    const rawPts = buildWireWaypoints(
+      w.x1,
+      w.y1,
+      w.x2,
+      w.y2,
+      ch.y + 28,
+      0,
+      toNode.x,
+      toNode.x + toNode.w,
+      true,
+      nodeObstacles,
+      "",
+      toNode.id
+    );
+    w.basePts = simplifyOrthogonalPoints(rawPts);
   }
   w.bbox = computeWireBBox(w.basePts);
 }
@@ -4243,6 +4581,27 @@ function buildWireCatalogFromMemory() {
   const nodes = studioGraphState.nodes;
   const chapters = studioGraphState.chapters;
   const wires = [];
+
+  for (let i = 0; i < chapters.length; i++) {
+    const ch = chapters[i];
+    ch.inConnected = false;
+    for (let j = 0; j < ch.outPorts.length; j++) {
+      ch.outPorts[j].connected = Boolean(ch.outPorts[j].targetLower);
+    }
+  }
+
+  for (let i = 0; i < nodes.length; i++) {
+    const nd = nodes[i];
+    nd.inConnected = false;
+    for (let j = 0; j < nd.ports.length; j++) {
+      const pt = nd.ports[j];
+      pt.connected = Boolean((pt.targetId && pt.targetId.toUpperCase() !== "END") || (pt.targetChapter && pt.targetChapter.trim()));
+    }
+    if (nd.implicitPort) {
+      const ip = nd.implicitPort;
+      ip.connected = Boolean((ip.targetId && ip.targetId.toUpperCase() !== "END") || (ip.targetChapter && ip.targetChapter.trim()));
+    }
+  }
 
   for (let i = 0; i < nodes.length; i++) {
     const fromNode = nodes[i];
@@ -4262,6 +4621,7 @@ function buildWireCatalogFromMemory() {
         const fromCh = studioGraphState.chapterByKey.get(fromNode.chapterLower);
         if (!fromCh || fromCh.hidden) continue;
         const targetChLower = targetChapter.toLowerCase();
+        pt.connected = true;
         wires.push({
           kind: "scene-to-chapter-out",
           fromNode: fromNode,
@@ -4292,6 +4652,8 @@ function buildWireCatalogFromMemory() {
       if (fromNode.chapterLower && toNode.chapterLower && fromNode.chapterLower !== toNode.chapterLower) {
         continue;
       }
+      pt.connected = true;
+      toNode.inConnected = true;
       wires.push({
         kind: "scene-to-scene",
         fromNode: fromNode,
@@ -4320,11 +4682,50 @@ function buildWireCatalogFromMemory() {
   for (let i = 0; i < chapters.length; i++) {
     const fromCh = chapters[i];
     if (fromCh.hidden) continue;
+    if (!fromCh.isRoot) {
+      let entryNode = fromCh.startSceneId ? studioGraphState.nodeById.get(fromCh.startSceneId) : null;
+      if (!entryNode || entryNode.chapterLower !== fromCh.nameLower) {
+        entryNode = null;
+        for (let k = 0; k < nodes.length; k++) {
+          if (nodes[k].chapterLower === fromCh.nameLower && (nodes[k].isEntry || !entryNode)) {
+            entryNode = nodes[k];
+            if (nodes[k].isEntry) break;
+          }
+        }
+      }
+      if (entryNode) {
+        entryNode.inConnected = true;
+        wires.push({
+          kind: "chapter-in-to-entry",
+          fromNode: null,
+          toNode: entryNode,
+          fromChapterObj: fromCh,
+          toChapterObj: fromCh,
+          fromChapterOutPort: null,
+          toChapterOutPort: null,
+          portRef: null,
+          portIdx: 0,
+          isBottomPort: true,
+          targetChapterLower: fromCh.nameLower,
+          targetGroupKey: "scene:" + entryNode.id,
+          unreachable: entryNode.unreachable,
+          x1: 0,
+          y1: 0,
+          x2: 0,
+          y2: 0,
+          basePts: [],
+          pts: [],
+          bbox: null
+        });
+      }
+    }
     for (let j = 0; j < fromCh.outPorts.length; j++) {
       const op = fromCh.outPorts[j];
       if (!op.targetLower) continue;
       const toCh = studioGraphState.chapterByKey.get(op.targetLower);
       if (!toCh || toCh.hidden || toCh === fromCh) continue;
+      op.connected = true;
+      toCh.inConnected = true;
       wires.push({
         kind: "chapter-to-chapter",
         fromNode: null,
@@ -5017,38 +5418,24 @@ function syncNodeSelectionDOM() {
       }
       const listEl = qs("#context-multi-scene-list", multiPanel);
       if (listEl) {
-        listEl.textContent = "";
-        selectedItems.forEach((item) => {
-          const row = document.createElement("div");
-          row.className = "context-multi-scene-item";
-          row.setAttribute("data-multi-scene-id", item.id);
-
-          const infoBtn = document.createElement("button");
-          infoBtn.type = "button";
-          infoBtn.className = "context-multi-scene-select-btn";
-          infoBtn.setAttribute("data-multi-select-scene", item.id);
-
-          const titleSpan = document.createElement("span");
-          titleSpan.className = "context-multi-scene-title";
-          titleSpan.textContent = item.title;
-          infoBtn.appendChild(titleSpan);
-
-          if (item.chapter) {
-            const metaSpan = document.createElement("span");
-            metaSpan.className = "context-multi-scene-meta";
-            metaSpan.textContent = item.chapter;
-            infoBtn.appendChild(metaSpan);
+        const itemById = new Map();
+        selectedItems.forEach((it) => {
+          itemById.set(it.id, it);
+        });
+        qsa(".context-multi-scene-item", listEl).forEach((row) => {
+          const rowId = row.getAttribute("data-multi-scene-id") || "";
+          const item = itemById.get(rowId);
+          row.classList.toggle("hidden", !item);
+          if (item) {
+            const titleSpan = qs(".context-multi-scene-title", row);
+            if (titleSpan && item.title) {
+              titleSpan.textContent = item.title;
+            }
+            const metaSpan = qs(".context-multi-scene-meta", row);
+            if (metaSpan && item.chapter) {
+              metaSpan.textContent = item.chapter;
+            }
           }
-
-          const deselectBtn = document.createElement("button");
-          deselectBtn.type = "button";
-          deselectBtn.className = "node-icon-btn context-multi-scene-deselect-btn";
-          deselectBtn.setAttribute("data-multi-deselect-scene", item.id);
-          deselectBtn.textContent = "✕";
-
-          row.appendChild(infoBtn);
-          row.appendChild(deselectBtn);
-          listEl.appendChild(row);
         });
       }
       const delBtn = qs("#btn-delete-selected-scenes", multiPanel);
@@ -5224,41 +5611,7 @@ function hitTestStudioCanvas(wx, wy) {
     }
   }
 
-  // 3. Scene input ports
-  for (let i = nodes.length - 1; i >= 0; i--) {
-    const nd = nodes[i];
-    if (!nd.hasInputPort) continue;
-    const px = nd.x + nd.inOx;
-    const py = nd.y + nd.inOy;
-    const dx = wx - px;
-    const dy = wy - py;
-    if (dx * dx + dy * dy <= portHitRSq) {
-      return {
-        type: "scene-in-port",
-        node: nd,
-        x: px,
-        y: py
-      };
-    }
-  }
-
-  // 4. Chapter input ports
-  for (let i = chapters.length - 1; i >= 0; i--) {
-    const ch = chapters[i];
-    if (ch.hidden || ch.isRoot) continue;
-    const dx = wx - ch.inX;
-    const dy = wy - ch.inY;
-    if (dx * dx + dy * dy <= portHitRSq) {
-      return {
-        type: "chapter-in-port",
-        chapter: ch,
-        x: ch.inX,
-        y: ch.inY
-      };
-    }
-  }
-
-  // 5. Scene node cards (+ Wybór button, grip ⋮⋮, or card body)
+  // 3. Scene node cards (+ Wybór button, grip ⋮⋮, or card body)
   const addChoiceShaped = typeof shapeTextGlyphs === "function" ? shapeTextGlyphs(FONT_BTN, "+ WYBÓR", 80) : null;
   const addChoiceBtnW = addChoiceShaped ? Math.ceil(addChoiceShaped.totalW) + 20 : 72;
   for (let i = nodes.length - 1; i >= 0; i--) {
@@ -5275,7 +5628,7 @@ function hitTestStudioCanvas(wx, wy) {
     }
   }
 
-  // 6. Chapter group headers (grip ⋮⋮ or title)
+  // 4. Chapter group headers (grip ⋮⋮ or title)
   for (let i = chapters.length - 1; i >= 0; i--) {
     const ch = chapters[i];
     if (ch.hidden) continue;
@@ -5287,7 +5640,7 @@ function hitTestStudioCanvas(wx, wy) {
     }
   }
 
-  // 7. Static wires
+  // 5. Static wires
   const wires = studioGraphState.wires;
   const wireTolSq = 49; // 7px world radius
   for (let i = wires.length - 1; i >= 0; i--) {
@@ -5330,9 +5683,7 @@ function updateCanvasHoverCursor(viewport, hit) {
   }
   switch (hit.type) {
     case "scene-out-port":
-    case "scene-in-port":
     case "chapter-out-port":
-    case "chapter-in-port":
       viewport.style.cursor = "crosshair";
       break;
     case "node-grip":
@@ -5340,11 +5691,8 @@ function updateCanvasHoverCursor(viewport, hit) {
       viewport.style.cursor = "grab";
       break;
     case "chapter-title":
-      viewport.style.cursor = "text";
-      break;
     case "add-choice-btn":
     case "node-card":
-    case "wire":
       viewport.style.cursor = "pointer";
       break;
     default:
@@ -5651,6 +5999,7 @@ function beginWireConnectGesture(hit, viewport, isTouch) {
     isTouch: Boolean(isTouch),
     viewport: viewport,
     fromNode: nd,
+    sourcePort: pt,
     fromSceneId: nd.id,
     fromChapter: nd.chapter,
     choiceIdx: String(hit.portIdx),
@@ -6684,9 +7033,9 @@ function bindEditorCanvasEvents() {
       return;
     }
 
-    if (hit.type === "chapter-grip" || hit.type === "chapter-title" || hit.type === "chapter-in-port") {
+    if (hit.type === "chapter-grip" || hit.type === "chapter-title") {
       e.preventDefault();
-      beginChapterDragGesture(hit.chapter, viewport, e.clientX, e.clientY, false, hit.type === "chapter-title" || hit.type === "chapter-in-port");
+      beginChapterDragGesture(hit.chapter, viewport, e.clientX, e.clientY, false, hit.type === "chapter-title");
       return;
     }
 
@@ -6698,7 +7047,7 @@ function bindEditorCanvasEvents() {
       return;
     }
 
-    if (hit.type === "node-card" || hit.type === "scene-in-port") {
+    if (hit.type === "node-card") {
       e.preventDefault();
       const sceneId = hit.node.id;
       if (isMultiModifier) {
@@ -6960,14 +7309,9 @@ const LOWEND_ANDROID_MULTIPLIER = 6.0;
   };
 
   function ensurePerfOverlayDOM() {
-    const viewport = typeof qs === "function" ? qs("#timeline-scroll-viewport") : document.getElementById("timeline-scroll-viewport");
-    if (!viewport) return null;
-    let el = document.getElementById("editor-perf-overlay");
-    if (!el) {
-      el = document.createElement("div");
-      el.id = "editor-perf-overlay";
-      el.className = "editor-perf-overlay";
-      viewport.appendChild(el);
+    const el = typeof qs === "function" ? qs("#editor-perf-overlay") : document.getElementById("editor-perf-overlay");
+    if (el) {
+      el.classList.remove("hidden");
     }
     return el;
   }

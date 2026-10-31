@@ -13,6 +13,29 @@ import (
 	"sync"
 )
 
+type NodeKind int
+
+const (
+	NodeElement NodeKind = iota
+	NodeDoctype
+	NodeDef
+	NodeComponent
+	NodeSlot
+	NodeIf
+	NodeElif
+	NodeElse
+	NodeFor
+	NodeWith
+	NodeText
+	NodeRaw
+	NodeSVG
+)
+
+type CondClass struct {
+	Name string
+	Cond string
+}
+
 type AttrPair struct {
 	Key         string
 	Val         string
@@ -20,13 +43,18 @@ type AttrPair struct {
 }
 
 type Node struct {
+	Kind        NodeKind
 	Tag         string
 	IsComponent bool
 	Classes     []string
+	CondClasses []CondClass
 	ID          string
 	Attrs       []AttrPair
 	Text        string
-	Mapping     string
+	Expr        string
+	ContextExpr string
+	LoopIdx     string
+	LoopVal     string
 	RawSVG      string
 	Children    []*Node
 	Indent      int
@@ -99,9 +127,9 @@ func (c *RenderContext) WithVar(key string, val any) *RenderContext {
 
 var (
 	attrPairRe = regexp.MustCompile(`([a-zA-Z_:][a-zA-Z0-9_.:-]*)(?:\s*=\s*"([^"]*)")?`)
-	attrKeyRe  = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_-]*$`)
+	attrKeyRe  = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_.:-]*$`)
 	validTagRe = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_-]*$`)
-	validIDRe  = regexp.MustCompile(`^[a-zA-Z0-9_.{}-]+$`)
+	validIDRe  = regexp.MustCompile(`^[a-zA-Z0-9_.{}$-]+$`)
 	svgEventRe = regexp.MustCompile(`(?i)\bon[a-z0-9_]+\s*=`)
 )
 
@@ -132,153 +160,204 @@ var voidWithoutSlashTags = map[string]bool{
 }
 
 var boolAttrs = map[string]bool{
-	"required": true,
-	"readonly": true,
-	"checked":  true,
-	"disabled": true,
-	"selected": true,
-	"multiple": true,
-	"download": true,
+	"autofocus": true,
+	"required":  true,
+	"readonly":  true,
+	"checked":   true,
+	"disabled":  true,
+	"selected":  true,
+	"multiple":  true,
+	"download":  true,
+	"open":      true,
+	"controls":  true,
 }
 
-// ParseTemplateString parses .tpl source (including '->' data mappings, conditionals, elif/else, and loops)
-// and enforces a strict compile-time check forbidding inline CSS, inline JS, or reorder arrow buttons.
+func isTPLComment(trimmed string) bool {
+	return trimmed == "" || strings.HasPrefix(trimmed, "//") || trimmed == "#" || strings.HasPrefix(trimmed, "# ")
+}
+
+// ParseTemplateString parses Workflow-format .tpl source and enforces compile-time security gates.
 func ParseTemplateString(source, name string) (*ParsedTemplate, error) {
 	rawLines := strings.Split(strings.ReplaceAll(source, "\r\n", "\n"), "\n")
 	var rootNodes []*Node
 	var stack []*Node
 
-	for idx, line := range rawLines {
+	appendNode := func(n *Node) error {
+		if len(stack) > 0 {
+			parent := stack[len(stack)-1]
+			if parent.Kind == NodeElement && strings.EqualFold(parent.Tag, "script") {
+				return fmt.Errorf(
+					"tpl compile error in %s.tpl:%d: inline JS inside <script> is strictly forbidden in .tpl files; put all JavaScript in app/js/*.js and reference it via script src: /app.js",
+					name, n.Line,
+				)
+			}
+			parent.Children = append(parent.Children, n)
+		} else {
+			rootNodes = append(rootNodes, n)
+		}
+		stack = append(stack, n)
+		return nil
+	}
+
+	for idx, rawLine := range rawLines {
 		lineNum := idx + 1
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" || strings.HasPrefix(trimmed, "//") {
+		trimmed := strings.TrimSpace(rawLine)
+		if isTPLComment(trimmed) {
 			continue
 		}
 
-		indent := countLeadingIndent(line)
-		content := trimmed
+		if strings.HasPrefix(trimmed, ". ") || strings.HasPrefix(trimmed, ".\t") {
+			return nil, fmt.Errorf("tpl compile error in %s.tpl:%d: '. ' property continuation syntax is not supported; use indented 'key: val'", name, lineNum)
+		}
+		if findUnquotedArrow(trimmed) >= 0 {
+			return nil, fmt.Errorf("tpl compile error in %s.tpl:%d: '->' syntax is not supported; use '{...}' blocks or inline '{expr}'", name, lineNum)
+		}
+		if containsUnquotedQuestionEquals(trimmed) {
+			return nil, fmt.Errorf("tpl compile error in %s.tpl:%d: '?=' syntax is not supported; use '?:' conditional syntax", name, lineNum)
+		}
 
+		indent := countLeadingIndent(rawLine)
 		for len(stack) > 0 && stack[len(stack)-1].Indent >= indent {
 			stack = stack[:len(stack)-1]
 		}
 
-		// Normalize Workflow-style control keywords (if:, elif:, else:, for:, raw:) to canonical mappings
-		if norm, ok := normalizeControlKeywordLine(content); ok {
-			content = norm
-		}
-
-		if isScalarMappingLine(content) {
-			if len(stack) == 0 {
-				return nil, fmt.Errorf(
-					"tpl compile error in %s.tpl:%d: mapping line %q must be indented under an element",
-					name, lineNum, content,
-				)
-			}
+		if len(stack) > 0 && (stack[len(stack)-1].Kind == NodeElement || stack[len(stack)-1].Kind == NodeComponent) && isAttrOrCondClassContinuation(trimmed) {
 			parent := stack[len(stack)-1]
-			parent.Mapping = strings.TrimSpace(content[2:])
+			if err := parseTokensIntoNode(parent, trimmed, name, lineNum); err != nil {
+				return nil, err
+			}
 			continue
 		}
 
-		if isAttrLine(content) {
-			if len(stack) == 0 {
-				return nil, fmt.Errorf(
-					"tpl compile error in %s.tpl:%d: attribute or text line %q must be indented under an element",
-					name, lineNum, content,
-				)
+		switch {
+		case strings.EqualFold(trimmed, "doctype html"):
+			if err := appendNode(&Node{Kind: NodeDoctype, Indent: indent, Line: lineNum, File: name}); err != nil {
+				return nil, err
 			}
-			parent := stack[len(stack)-1]
-			attrContent := content
-			lineMapping := ""
-			if arrowIdx := findUnquotedArrow(attrContent); arrowIdx >= 0 {
-				lineMapping = strings.TrimSpace(attrContent[arrowIdx+2:])
-				attrContent = strings.TrimSpace(attrContent[:arrowIdx])
-			}
-			lineAttrs, lineClasses, lineText, err := parseAttrsClassesAndText(attrContent, name, lineNum)
+
+		case isBraceWrapped(trimmed):
+			n, err := parseBraceLine(trimmed, indent, name, lineNum)
 			if err != nil {
 				return nil, err
 			}
-			parent.Attrs = append(parent.Attrs, lineAttrs...)
-			parent.Classes = append(parent.Classes, lineClasses...)
-			if lineText != "" {
-				if parent.Text == "" {
-					parent.Text = lineText
-				} else {
-					parent.Text += " " + lineText
+			if err := appendNode(n); err != nil {
+				return nil, err
+			}
+
+		case strings.HasPrefix(trimmed, "def:"):
+			defName := strings.TrimSpace(trimmed[4:])
+			if defName == "" {
+				return nil, fmt.Errorf("tpl compile error in %s.tpl:%d: empty def:", name, lineNum)
+			}
+			if err := appendNode(&Node{Kind: NodeDef, Tag: defName, Indent: indent, Line: lineNum, File: name}); err != nil {
+				return nil, err
+			}
+
+		case strings.HasPrefix(trimmed, "if:"):
+			expr := unwrapOuterBraces(strings.TrimSpace(trimmed[3:]))
+			if expr == "" {
+				return nil, fmt.Errorf("tpl compile error in %s.tpl:%d: empty if:", name, lineNum)
+			}
+			if err := appendNode(&Node{Kind: NodeIf, Expr: expr, Indent: indent, Line: lineNum, File: name}); err != nil {
+				return nil, err
+			}
+
+		case strings.HasPrefix(trimmed, "elif:"):
+			expr := unwrapOuterBraces(strings.TrimSpace(trimmed[5:]))
+			if expr == "" {
+				return nil, fmt.Errorf("tpl compile error in %s.tpl:%d: empty elif:", name, lineNum)
+			}
+			if err := appendNode(&Node{Kind: NodeElif, Expr: expr, Indent: indent, Line: lineNum, File: name}); err != nil {
+				return nil, err
+			}
+
+		case trimmed == "else:":
+			if err := appendNode(&Node{Kind: NodeElse, Indent: indent, Line: lineNum, File: name}); err != nil {
+				return nil, err
+			}
+
+		case strings.HasPrefix(trimmed, "with:"):
+			expr := unwrapOuterBraces(strings.TrimSpace(trimmed[5:]))
+			if expr == "" {
+				return nil, fmt.Errorf("tpl compile error in %s.tpl:%d: empty with:", name, lineNum)
+			}
+			if err := appendNode(&Node{Kind: NodeWith, Expr: expr, Indent: indent, Line: lineNum, File: name}); err != nil {
+				return nil, err
+			}
+
+		case strings.HasPrefix(trimmed, "for:"):
+			n, err := parseForSpec(strings.TrimSpace(trimmed[4:]), indent, name, lineNum)
+			if err != nil {
+				return nil, err
+			}
+			if err := appendNode(n); err != nil {
+				return nil, err
+			}
+
+		case trimmed == "@slot":
+			if err := appendNode(&Node{Kind: NodeSlot, Tag: "slot", IsComponent: true, Indent: indent, Line: lineNum, File: name}); err != nil {
+				return nil, err
+			}
+
+		case strings.HasPrefix(trimmed, "@"):
+			compNode, err := parseComponentLine(trimmed, indent, name, lineNum)
+			if err != nil {
+				return nil, err
+			}
+			if err := appendNode(compNode); err != nil {
+				return nil, err
+			}
+
+		case strings.HasPrefix(trimmed, "svg:"):
+			rest := strings.TrimSpace(trimmed[4:])
+			kindTok, nextPos := nextTPLToken(rest, 0)
+			actTok, _ := nextTPLToken(rest, nextPos)
+			if err := appendNode(&Node{Kind: NodeSVG, Tag: "svg", Expr: kindTok, ContextExpr: actTok, Indent: indent, Line: lineNum, File: name}); err != nil {
+				return nil, err
+			}
+
+		case strings.HasPrefix(trimmed, "raw:"):
+			expr := unwrapOuterBraces(strings.TrimSpace(trimmed[4:]))
+			if expr == "" {
+				return nil, fmt.Errorf("tpl compile error in %s.tpl:%d: empty raw:", name, lineNum)
+			}
+			if err := appendNode(&Node{Kind: NodeRaw, Expr: expr, Indent: indent, Line: lineNum, File: name}); err != nil {
+				return nil, err
+			}
+
+		case strings.HasPrefix(trimmed, `"`) || strings.HasPrefix(trimmed, "$") || strings.HasPrefix(trimmed, "("):
+			if len(stack) == 0 {
+				return nil, fmt.Errorf("tpl compile error in %s.tpl:%d: text or expression line %q must be indented under an element", name, lineNum, trimmed)
+			}
+			if strings.HasPrefix(trimmed, `"`) {
+				unq, nextIdx, err := readQuotedString(trimmed, 0, name, lineNum)
+				if err != nil {
+					return nil, err
+				}
+				if strings.TrimSpace(trimmed[nextIdx:]) != "" {
+					return nil, fmt.Errorf("tpl compile error in %s.tpl:%d: unexpected trailing tokens after string literal", name, lineNum)
+				}
+				if err := appendNode(&Node{Kind: NodeText, Text: `"` + unq + `"`, Indent: indent, Line: lineNum, File: name}); err != nil {
+					return nil, err
+				}
+			} else {
+				if err := appendNode(&Node{Kind: NodeText, Expr: trimmed, Indent: indent, Line: lineNum, File: name}); err != nil {
+					return nil, err
 				}
 			}
-			if lineMapping != "" {
-				parent.Mapping = lineMapping
+
+		default:
+			if isAttrOrCondClassContinuation(trimmed) && len(stack) == 0 {
+				return nil, fmt.Errorf("tpl compile error in %s.tpl:%d: attribute line %q must be indented under an element", name, lineNum, trimmed)
 			}
-			continue
-		}
-
-		mapping := ""
-		if arrowIdx := findUnquotedArrow(content); arrowIdx >= 0 {
-			mapping = normalizeArrowMapping(strings.TrimSpace(content[arrowIdx+2:]))
-			content = strings.TrimSpace(content[:arrowIdx])
-		}
-
-		selectorPart, rest := splitFirstToken(content)
-		attrs, extraClasses, textContent, err := parseAttrsClassesAndText(rest, name, lineNum)
-		if err != nil {
-			return nil, err
-		}
-
-		tag := "div"
-		isComp := false
-		var classes []string
-		idVal := ""
-
-		if selectorPart != "" {
-			parts := splitSelectorParts(selectorPart)
-			if len(parts) > 0 && parts[0] != "" && !strings.HasPrefix(selectorPart, "@") {
-				tag = strings.TrimSpace(parts[0])
+			elNode, err := parseElementLine(trimmed, indent, name, lineNum)
+			if err != nil {
+				return nil, err
 			}
-			for i := 1; i+1 < len(parts); i += 2 {
-				sep := parts[i]
-				val := strings.TrimSpace(parts[i+1])
-				if val == "" {
-					continue
-				}
-				switch sep {
-				case "@":
-					tag = val
-					isComp = true
-				case ".":
-					classes = append(classes, val)
-				case "#":
-					idVal = val
-				}
+			if err := appendNode(elNode); err != nil {
+				return nil, err
 			}
 		}
-		classes = append(classes, extraClasses...)
-
-		node := &Node{
-			Tag:         tag,
-			IsComponent: isComp,
-			Classes:     classes,
-			ID:          idVal,
-			Attrs:       attrs,
-			Text:        textContent,
-			Mapping:     mapping,
-			Indent:      indent,
-			Line:        lineNum,
-			File:        name,
-		}
-
-		if len(stack) > 0 {
-			parent := stack[len(stack)-1]
-			if strings.EqualFold(parent.Tag, "script") {
-				return nil, fmt.Errorf(
-					"tpl compile error in %s.tpl:%d: inline JS inside <script> is strictly forbidden in .tpl files; put all JavaScript in app/js/*.js and reference it via script src: /app.js",
-					name, lineNum,
-				)
-			}
-			parent.Children = append(parent.Children, node)
-		} else {
-			rootNodes = append(rootNodes, node)
-		}
-		stack = append(stack, node)
 	}
 
 	if err := validateNodesRecursive(rootNodes); err != nil {
@@ -291,44 +370,25 @@ func ParseTemplateString(source, name string) (*ParsedTemplate, error) {
 	}, nil
 }
 
-func normalizeControlKeywordLine(content string) (string, bool) {
-	switch {
-	case strings.HasPrefix(content, "if:"):
-		return "-> if " + strings.TrimSpace(content[3:]), true
-	case strings.HasPrefix(content, "elif:"):
-		return "-> elif " + strings.TrimSpace(content[5:]), true
-	case content == "else:":
-		return "-> else", true
-	case strings.HasPrefix(content, "for:"):
-		spec := strings.TrimSpace(content[4:])
-		if inIdx := strings.Index(spec, " in "); inIdx > 0 {
-			varsPart := strings.TrimSpace(spec[:inIdx])
-			listPart := strings.TrimSpace(spec[inIdx+4:])
-			return "-> " + listPart + " as " + varsPart, true
+func containsUnquotedQuestionEquals(s string) bool {
+	inQuotes := false
+	for i := 0; i < len(s)-1; i++ {
+		if s[i] == '\\' {
+			i++
+			continue
 		}
-		return "-> " + spec, true
-	case strings.HasPrefix(content, "raw:"):
-		return "-> html:" + strings.TrimSpace(content[4:]), true
-	default:
-		return content, false
+		if s[i] == '"' {
+			inQuotes = !inQuotes
+			continue
+		}
+		if !inQuotes && s[i] == '?' && s[i+1] == '=' {
+			return true
+		}
 	}
+	return false
 }
 
-func normalizeArrowMapping(mapping string) string {
-	if strings.HasPrefix(mapping, "else if ") {
-		return "elif " + strings.TrimSpace(mapping[8:])
-	}
-	if mapping == "else:" {
-		return "else"
-	}
-	return mapping
-}
-
-func isElseOrElifMapping(mapping string) bool {
-	return mapping == "else" || strings.HasPrefix(mapping, "elif ")
-}
-
-// findUnquotedArrow finds "->" outside of double-quoted strings and parentheses.
+// findUnquotedArrow finds "->" outside of double-quoted strings and parentheses (also used by tss.go).
 func findUnquotedArrow(s string) int {
 	inQuotes := false
 	parenDepth := 0
@@ -360,31 +420,48 @@ func findUnquotedArrow(s string) int {
 	return -1
 }
 
-func validateNodesRecursive(nodes []*Node) error {
-	for i, n := range nodes {
-		mapping := strings.TrimSpace(n.Mapping)
-		if isElseOrElifMapping(mapping) {
-			if i == 0 {
-				return fmt.Errorf("tpl compile error in %s.tpl:%d: %q must immediately follow an 'if' or 'elif' block", n.File, n.Line, mapping)
+func isBraceWrapped(s string) bool {
+	s = strings.TrimSpace(s)
+	if len(s) < 2 || s[0] != '{' || s[len(s)-1] != '}' {
+		return false
+	}
+	depth := 0
+	inQuotes := false
+	for i := 0; i < len(s); i++ {
+		ch := s[i]
+		if inQuotes {
+			if ch == '\\' && i+1 < len(s) {
+				i++
+				continue
 			}
-			prevMap := strings.TrimSpace(nodes[i-1].Mapping)
-			if !strings.HasPrefix(prevMap, "if ") && !strings.HasPrefix(prevMap, "elif ") {
-				return fmt.Errorf("tpl compile error in %s.tpl:%d: %q must immediately follow an 'if' or 'elif' block", n.File, n.Line, mapping)
+			if ch == '"' {
+				inQuotes = false
 			}
+			continue
 		}
-		if err := validateNoInlineCSSOrJS(n); err != nil {
-			return err
+		if ch == '"' {
+			inQuotes = true
+			continue
 		}
-		if err := validateNodesRecursive(n.Children); err != nil {
-			return err
+		if ch == '{' {
+			depth++
+		} else if ch == '}' {
+			depth--
+			if depth == 0 && i < len(s)-1 {
+				return false
+			}
 		}
 	}
-	return nil
+	return depth == 0
 }
 
-func splitFirstToken(s string) (string, string) {
+func isParenWrapped(s string) bool {
+	s = strings.TrimSpace(s)
+	if len(s) < 2 || s[0] != '(' || s[len(s)-1] != ')' {
+		return false
+	}
+	depth := 0
 	inQuotes := false
-	parenDepth := 0
 	for i := 0; i < len(s); i++ {
 		ch := s[i]
 		if inQuotes {
@@ -402,219 +479,539 @@ func splitFirstToken(s string) (string, string) {
 			continue
 		}
 		if ch == '(' {
-			parenDepth++
-			continue
-		}
-		if ch == ')' && parenDepth > 0 {
-			parenDepth--
-			continue
-		}
-		if parenDepth == 0 && (ch == ' ' || ch == '\t') {
-			return s[:i], strings.TrimSpace(s[i+1:])
+			depth++
+		} else if ch == ')' {
+			depth--
+			if depth == 0 && i < len(s)-1 {
+				return false
+			}
 		}
 	}
-	return s, ""
+	return depth == 0
 }
 
-func isScalarMappingLine(content string) bool {
-	if !strings.HasPrefix(content, "->") {
-		return false
+func unwrapOuterBraces(s string) string {
+	s = strings.TrimSpace(s)
+	if isBraceWrapped(s) {
+		return strings.TrimSpace(s[1 : len(s)-1])
 	}
-	mapping := normalizeArrowMapping(strings.TrimSpace(content[2:]))
-	if mapping == "" {
-		return false
-	}
-	if strings.HasPrefix(mapping, "if ") || strings.HasPrefix(mapping, "elif ") || mapping == "else" || strings.Contains(mapping, " as ") {
-		return false
-	}
-	return true
+	return s
 }
 
-func isControlKeywordName(k string) bool {
-	switch k {
-	case "if", "elif", "else", "for", "with", "raw", "def":
+func hasBraceKeyword(inner, kw string) bool {
+	if !strings.HasPrefix(inner, kw) {
+		return false
+	}
+	if len(inner) == len(kw) {
 		return true
+	}
+	next := inner[len(kw)]
+	return next == ' ' || next == '\t' || next == '('
+}
+
+func parseForSpec(spec string, indent int, fileName string, lineNum int) (*Node, error) {
+	spec = strings.TrimSpace(spec)
+	if spec == "" {
+		return nil, fmt.Errorf("tpl compile error in %s.tpl:%d: empty for block", fileName, lineNum)
+	}
+	n := &Node{Kind: NodeFor, Indent: indent, Line: lineNum, File: fileName}
+	if inIdx := strings.Index(spec, " in "); inIdx > 0 {
+		varsPart := strings.TrimSpace(spec[:inIdx])
+		n.Expr = unwrapOuterBraces(strings.TrimSpace(spec[inIdx+4:]))
+		if commaIdx := strings.IndexByte(varsPart, ','); commaIdx > 0 {
+			n.LoopIdx = strings.TrimPrefix(strings.TrimSpace(varsPart[:commaIdx]), "$")
+			n.LoopVal = strings.TrimPrefix(strings.TrimSpace(varsPart[commaIdx+1:]), "$")
+		} else {
+			n.LoopVal = strings.TrimPrefix(varsPart, "$")
+		}
+	} else {
+		n.Expr = unwrapOuterBraces(spec)
+	}
+	return n, nil
+}
+
+func parseBraceLine(trimmed string, indent int, fileName string, lineNum int) (*Node, error) {
+	inner := strings.TrimSpace(trimmed[1 : len(trimmed)-1])
+	if inner == "" {
+		return nil, fmt.Errorf("tpl compile error in %s.tpl:%d: empty {} block", fileName, lineNum)
+	}
+	switch {
+	case inner == "else":
+		return &Node{Kind: NodeElse, Indent: indent, Line: lineNum, File: fileName}, nil
+
+	case inner == "slot":
+		return &Node{Kind: NodeSlot, Tag: "slot", IsComponent: true, Indent: indent, Line: lineNum, File: fileName}, nil
+
+	case hasBraceKeyword(inner, "def"):
+		defName := strings.TrimSpace(inner[3:])
+		if defName == "" {
+			return nil, fmt.Errorf("tpl compile error in %s.tpl:%d: empty {def}", fileName, lineNum)
+		}
+		return &Node{Kind: NodeDef, Tag: defName, Indent: indent, Line: lineNum, File: fileName}, nil
+
+	case hasBraceKeyword(inner, "if"):
+		rest := strings.TrimSpace(inner[2:])
+		if rest == "" {
+			return nil, fmt.Errorf("tpl compile error in %s.tpl:%d: empty {if}", fileName, lineNum)
+		}
+		return &Node{Kind: NodeIf, Expr: rest, Indent: indent, Line: lineNum, File: fileName}, nil
+
+	case hasBraceKeyword(inner, "elif"):
+		rest := strings.TrimSpace(inner[4:])
+		if rest == "" {
+			return nil, fmt.Errorf("tpl compile error in %s.tpl:%d: empty {elif}", fileName, lineNum)
+		}
+		return &Node{Kind: NodeElif, Expr: rest, Indent: indent, Line: lineNum, File: fileName}, nil
+
+	case strings.HasPrefix(inner, "else if ") || strings.HasPrefix(inner, "else if\t"):
+		rest := strings.TrimSpace(inner[7:])
+		if rest == "" {
+			return nil, fmt.Errorf("tpl compile error in %s.tpl:%d: empty {else if}", fileName, lineNum)
+		}
+		return &Node{Kind: NodeElif, Expr: rest, Indent: indent, Line: lineNum, File: fileName}, nil
+
+	case hasBraceKeyword(inner, "with"):
+		rest := strings.TrimSpace(inner[4:])
+		if rest == "" {
+			return nil, fmt.Errorf("tpl compile error in %s.tpl:%d: empty {with}", fileName, lineNum)
+		}
+		return &Node{Kind: NodeWith, Expr: rest, Indent: indent, Line: lineNum, File: fileName}, nil
+
+	case hasBraceKeyword(inner, "for"):
+		return parseForSpec(strings.TrimSpace(inner[3:]), indent, fileName, lineNum)
+
+	case hasBraceKeyword(inner, "raw"):
+		rest := strings.TrimSpace(inner[3:])
+		if rest == "" {
+			return nil, fmt.Errorf("tpl compile error in %s.tpl:%d: empty {raw}", fileName, lineNum)
+		}
+		return &Node{Kind: NodeRaw, Expr: rest, Indent: indent, Line: lineNum, File: fileName}, nil
+
+	case hasBraceKeyword(inner, "svg"):
+		rest := strings.TrimSpace(inner[3:])
+		kindTok, nextPos := nextTPLToken(rest, 0)
+		actTok, _ := nextTPLToken(rest, nextPos)
+		return &Node{Kind: NodeSVG, Tag: "svg", Expr: kindTok, ContextExpr: actTok, Indent: indent, Line: lineNum, File: fileName}, nil
+
 	default:
-		return false
+		return &Node{Kind: NodeText, Expr: inner, Indent: indent, Line: lineNum, File: fileName}, nil
 	}
 }
 
-func isAttrLine(content string) bool {
-	if strings.HasPrefix(content, "->") {
-		return false
-	}
-	if strings.HasPrefix(content, `"`) || strings.HasPrefix(content, "[") {
+func isAttrOrCondClassContinuation(trimmed string) bool {
+	if strings.HasPrefix(trimmed, "[") {
 		return true
 	}
-	first, _ := splitFirstToken(content)
-	if strings.HasPrefix(first, ".") || strings.HasPrefix(first, "#") || strings.HasPrefix(first, "@") {
+	if strings.HasPrefix(trimmed, "@") || strings.HasPrefix(trimmed, `"`) || strings.HasPrefix(trimmed, "$") || strings.HasPrefix(trimmed, "(") || strings.HasPrefix(trimmed, "{") {
 		return false
 	}
-	if strings.HasSuffix(first, "?:") {
-		key := strings.TrimSuffix(first, "?:")
-		return attrKeyRe.MatchString(key) && !isControlKeywordName(key)
+	for _, kw := range []string{"def:", "if:", "elif:", "else:", "for:", "with:", "raw:", "svg:", "doctype "} {
+		if strings.HasPrefix(trimmed, kw) || trimmed == "else:" {
+			return false
+		}
 	}
-	if strings.HasSuffix(first, ":") {
-		key := strings.TrimSuffix(first, ":")
-		return attrKeyRe.MatchString(key) && !isControlKeywordName(key)
+	firstTok, _ := nextTPLToken(trimmed, 0)
+	if strings.HasPrefix(firstTok, ".") {
+		return strings.Contains(firstTok, "?:")
 	}
-	if qIdx := strings.Index(first, "?="); qIdx > 0 {
-		key := first[:qIdx]
-		return attrKeyRe.MatchString(key) && !isControlKeywordName(key)
+	if strings.HasPrefix(firstTok, "#") {
+		return false
 	}
-	if eqIdx := strings.IndexByte(first, '='); eqIdx > 0 {
-		key := first[:eqIdx]
-		return attrKeyRe.MatchString(key) && !isControlKeywordName(key)
-	}
-	return false
+	return strings.HasSuffix(firstTok, ":") || strings.Contains(firstTok, "=") || strings.Contains(firstTok, ":")
 }
 
-func parseAttrsAndText(rest, file string, line int) ([]AttrPair, string, error) {
-	attrs, _, text, err := parseAttrsClassesAndText(rest, file, line)
-	return attrs, text, err
-}
-
-func parseAttrsClassesAndText(rest, file string, line int) ([]AttrPair, []string, string, error) {
-	var attrs []AttrPair
-	var extraClasses []string
-	var text string
-	i := 0
-	n := len(rest)
-
-	for i < n {
-		for i < n && (rest[i] == ' ' || rest[i] == '\t') {
-			i++
-		}
-		if i >= n {
-			break
-		}
-
-		if rest[i] == '[' {
-			end := strings.IndexByte(rest[i:], ']')
-			if end < 0 {
-				return nil, nil, "", fmt.Errorf("tpl compile error in %s.tpl:%d: unclosed '[' in attributes", file, line)
-			}
-			rawBlock := rest[i+1 : i+end]
-			for _, pm := range attrPairRe.FindAllStringSubmatch(rawBlock, -1) {
-				attrs = append(attrs, AttrPair{Key: pm[1], Val: pm[2]})
-			}
-			i += end + 1
-			continue
-		}
-
-		if rest[i] == '"' {
-			val, nextIdx, err := readQuotedString(rest, i, file, line)
-			if err != nil {
-				return nil, nil, "", err
-			}
-			if text == "" {
-				text = val
-			} else {
-				text += " " + val
-			}
-			i = nextIdx
-			continue
-		}
-
-		if rest[i] == '.' {
-			tok, nextPos := readTokenWithParensAndQuotes(rest, i)
-			if len(tok) > 1 {
-				extraClasses = append(extraClasses, tok[1:])
-				i = nextPos
-				continue
-			}
-		}
-
-		tokStart := i
-		for i < n && rest[i] != ' ' && rest[i] != '\t' && rest[i] != ':' && rest[i] != '=' && !(rest[i] == '?' && i+1 < n && (rest[i+1] == ':' || rest[i+1] == '=')) {
-			i++
-		}
-		key := rest[tokStart:i]
-		isCondAttr := false
-		hasSep := false
-		if i+1 < n && rest[i] == '?' && (rest[i+1] == ':' || rest[i+1] == '=') {
-			isCondAttr = true
-			hasSep = true
-			i += 2
-		} else if i < n && (rest[i] == ':' || rest[i] == '=') {
-			hasSep = true
-			i++
-		}
-
-		if hasSep && attrKeyRe.MatchString(key) {
-			for i < n && (rest[i] == ' ' || rest[i] == '\t') {
-				i++
-			}
-			if i >= n {
-				attrs = append(attrs, AttrPair{Key: key, Val: "", Conditional: isCondAttr})
-				break
-			}
-			if rest[i] == '"' {
-				val, nextIdx, err := readQuotedString(rest, i, file, line)
-				if err != nil {
-					return nil, nil, "", err
-				}
-				attrs = append(attrs, AttrPair{Key: key, Val: val, Conditional: isCondAttr})
-				i = nextIdx
-			} else if rest[i] == '(' {
-				val, nextIdx := readTokenWithParensAndQuotes(rest, i)
-				attrs = append(attrs, AttrPair{Key: key, Val: val, Conditional: isCondAttr})
-				i = nextIdx
-			} else {
-				valStart := i
-				for i < n && rest[i] != ' ' && rest[i] != '\t' {
-					i++
-				}
-				attrs = append(attrs, AttrPair{Key: key, Val: rest[valStart:i], Conditional: isCondAttr})
-			}
-			continue
-		}
-
-		return nil, nil, "", fmt.Errorf("tpl compile error in %s.tpl:%d: unexpected token %q", file, line, rest[tokStart:])
-	}
-
-	return attrs, extraClasses, text, nil
-}
-
-func readTokenWithParensAndQuotes(s string, start int) (string, int) {
+func nextTPLToken(s string, start int) (string, int) {
 	n := len(s)
 	i := start
-	inQuotes := false
+	for i < n && (s[i] == ' ' || s[i] == '\t') {
+		i++
+	}
+	if i >= n {
+		return "", n
+	}
+	var b strings.Builder
 	parenDepth := 0
+	braceDepth := 0
+	inQuotes := false
 	for i < n {
 		ch := s[i]
 		if inQuotes {
 			if ch == '\\' && i+1 < n {
+				b.WriteByte(s[i])
+				b.WriteByte(s[i+1])
 				i += 2
 				continue
 			}
 			if ch == '"' {
 				inQuotes = false
 			}
+			b.WriteByte(ch)
 			i++
 			continue
 		}
 		if ch == '"' {
 			inQuotes = true
+			b.WriteByte(ch)
 			i++
 			continue
 		}
 		if ch == '(' {
 			parenDepth++
+			b.WriteByte(ch)
 			i++
 			continue
 		}
-		if ch == ')' && parenDepth > 0 {
-			parenDepth--
+		if ch == ')' {
+			if parenDepth > 0 {
+				parenDepth--
+			}
+			b.WriteByte(ch)
 			i++
 			continue
 		}
-		if parenDepth == 0 && (ch == ' ' || ch == '\t') {
+		if ch == '{' {
+			braceDepth++
+			b.WriteByte(ch)
+			i++
+			continue
+		}
+		if ch == '}' {
+			if braceDepth > 0 {
+				braceDepth--
+			}
+			b.WriteByte(ch)
+			i++
+			continue
+		}
+		if parenDepth == 0 && braceDepth == 0 && (ch == ' ' || ch == '\t') {
+			j := i
+			for j < n && (s[j] == ' ' || s[j] == '\t') {
+				j++
+			}
+			cur := b.String()
+			if strings.HasSuffix(cur, "=") || (strings.HasPrefix(cur, ".") && strings.HasSuffix(cur, "?:")) {
+				i = j
+				continue
+			}
+			if j < n && (s[j] == '=' || (strings.HasPrefix(cur, ".") && strings.HasPrefix(s[j:], "?:"))) {
+				if strings.HasPrefix(s[j:], "?:") {
+					b.WriteString("?:")
+					j += 2
+				} else {
+					b.WriteByte('=')
+					j++
+				}
+				for j < n && (s[j] == ' ' || s[j] == '\t') {
+					j++
+				}
+				i = j
+				continue
+			}
+			if j < n && cur != "" && !strings.HasSuffix(cur, ":") && (strings.HasPrefix(s[j:], "?:") || s[j] == ':') {
+				if strings.HasPrefix(s[j:], "?:") {
+					b.WriteString("?:")
+					i = j + 2
+				} else {
+					b.WriteByte(':')
+					i = j + 1
+				}
+				break
+			}
 			break
 		}
+		b.WriteByte(ch)
 		i++
 	}
-	return s[start:i], i
+	return b.String(), i
+}
+
+func parseComponentLine(trimmed string, indent int, fileName string, lineNum int) (*Node, error) {
+	firstTok, nextIdx := nextTPLToken(trimmed, 0)
+	rawSel := strings.TrimPrefix(firstTok, "@")
+	if rawSel == "" {
+		return nil, fmt.Errorf("tpl compile error in %s.tpl:%d: missing component name after @", fileName, lineNum)
+	}
+	compName, id, classes, condClasses, err := parseSelectorToken(rawSel, fileName, lineNum)
+	if err != nil {
+		return nil, err
+	}
+	n := &Node{
+		Kind:        NodeComponent,
+		Tag:         compName,
+		IsComponent: true,
+		ID:          id,
+		Classes:     classes,
+		CondClasses: condClasses,
+		Indent:      indent,
+		Line:        lineNum,
+		File:        fileName,
+	}
+	rest := strings.TrimSpace(trimmed[nextIdx:])
+	if rest != "" {
+		if err := parseTokensIntoNode(n, rest, fileName, lineNum); err != nil {
+			return nil, err
+		}
+	}
+	return n, nil
+}
+
+func parseElementLine(trimmed string, indent int, fileName string, lineNum int) (*Node, error) {
+	selTok, nextIdx := nextTPLToken(trimmed, 0)
+	tag, id, classes, condClasses, err := parseSelectorToken(selTok, fileName, lineNum)
+	if err != nil {
+		return nil, err
+	}
+	n := &Node{
+		Kind:        NodeElement,
+		Tag:         tag,
+		ID:          id,
+		Classes:     classes,
+		CondClasses: condClasses,
+		Indent:      indent,
+		Line:        lineNum,
+		File:        fileName,
+	}
+	rest := strings.TrimSpace(trimmed[nextIdx:])
+	if rest != "" {
+		if err := parseTokensIntoNode(n, rest, fileName, lineNum); err != nil {
+			return nil, err
+		}
+	}
+	return n, nil
+}
+
+func parseSelectorToken(sel string, fileName string, lineNum int) (tag string, id string, classes []string, condClasses []CondClass, err error) {
+	tag = "div"
+	i := 0
+	n := len(sel)
+
+	if i < n && sel[i] != '.' && sel[i] != '#' {
+		start := i
+		for i < n && sel[i] != '.' && sel[i] != '#' {
+			i++
+		}
+		tag = sel[start:i]
+	}
+
+	for i < n {
+		sep := sel[i]
+		i++
+		start := i
+		inVar := false
+		parenDepth := 0
+		braceDepth := 0
+		for i < n {
+			ch := sel[i]
+			if ch == '$' {
+				inVar = true
+			} else if ch == '(' {
+				parenDepth++
+			} else if ch == ')' && parenDepth > 0 {
+				parenDepth--
+			} else if ch == '{' {
+				braceDepth++
+			} else if ch == '}' && braceDepth > 0 {
+				braceDepth--
+			} else if parenDepth == 0 && braceDepth == 0 {
+				if ch == '#' {
+					break
+				}
+				if ch == '.' {
+					if !inVar || i+1 >= n || sel[i+1] < 'A' || sel[i+1] > 'Z' {
+						break
+					}
+				}
+			}
+			i++
+		}
+		seg := sel[start:i]
+		if seg == "" {
+			continue
+		}
+		if sep == '#' {
+			id = seg
+		} else if sep == '.' {
+			if qIdx := strings.Index(seg, "?:"); qIdx >= 0 {
+				clsName := strings.TrimSpace(seg[:qIdx])
+				condExpr := unwrapOuterBraces(strings.TrimSpace(seg[qIdx+2:]))
+				if clsName == "" || condExpr == "" {
+					return "", "", nil, nil, fmt.Errorf("tpl compile error in %s.tpl:%d: invalid conditional CSS class %q", fileName, lineNum, seg)
+				}
+				condClasses = append(condClasses, CondClass{Name: clsName, Cond: condExpr})
+			} else {
+				classes = append(classes, seg)
+			}
+		}
+	}
+	return tag, id, classes, condClasses, nil
+}
+
+func formatAttrTokenValue(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if strings.HasPrefix(raw, `"`) && strings.HasSuffix(raw, `"`) && len(raw) >= 2 {
+		return raw
+	}
+	if isBraceWrapped(raw) || isParenWrapped(raw) || strings.HasPrefix(raw, "$") {
+		return raw
+	}
+	return raw
+}
+
+func parseTokensIntoNode(n *Node, rest string, fileName string, lineNum int) error {
+	rest = strings.TrimSpace(rest)
+	if rest == "" {
+		return nil
+	}
+
+	if n.Kind == NodeComponent && len(n.Attrs) == 0 && n.ContextExpr == "" {
+		firstArg, afterFirst := nextTPLToken(rest, 0)
+		if strings.TrimSpace(rest[afterFirst:]) == "" {
+			if isBraceWrapped(firstArg) {
+				n.ContextExpr = unwrapOuterBraces(firstArg)
+				return nil
+			}
+			if !strings.Contains(firstArg, "=") && !strings.Contains(firstArg, ":") && !strings.HasPrefix(firstArg, ".") && !strings.HasPrefix(firstArg, "#") && !strings.HasPrefix(firstArg, `"`) {
+				n.ContextExpr = firstArg
+				return nil
+			}
+		}
+	}
+
+	pos := 0
+	for pos < len(rest) {
+		for pos < len(rest) && (rest[pos] == ' ' || rest[pos] == '\t') {
+			pos++
+		}
+		if pos >= len(rest) {
+			break
+		}
+
+		if rest[pos] == '[' {
+			end := strings.IndexByte(rest[pos:], ']')
+			if end < 0 {
+				return fmt.Errorf("tpl compile error in %s.tpl:%d: unclosed '[' in attributes", fileName, lineNum)
+			}
+			rawBlock := rest[pos+1 : pos+end]
+			for _, pm := range attrPairRe.FindAllStringSubmatch(rawBlock, -1) {
+				n.Attrs = append(n.Attrs, AttrPair{Key: pm[1], Val: `"` + pm[2] + `"`})
+			}
+			pos += end + 1
+			continue
+		}
+
+		if rest[pos] == '"' {
+			unq, nextPos, err := readQuotedString(rest, pos, fileName, lineNum)
+			if err != nil {
+				return err
+			}
+			lit := `"` + unq + `"`
+			if n.Kind == NodeComponent {
+				n.Attrs = append(n.Attrs, AttrPair{Key: "label", Val: lit})
+			} else if n.Text == "" {
+				n.Text = lit
+			} else {
+				n.Text += " " + lit
+			}
+			pos = nextPos
+			continue
+		}
+
+		if rest[pos] == '$' || rest[pos] == '(' || rest[pos] == '{' {
+			tok, nextPos := nextTPLToken(rest, pos)
+			n.Expr = unwrapOuterBraces(tok)
+			pos = nextPos
+			continue
+		}
+
+		tok, nextPos := nextTPLToken(rest, pos)
+		pos = nextPos
+		if tok == "" {
+			break
+		}
+
+		if strings.HasPrefix(tok, ".") || strings.HasPrefix(tok, "#") {
+			subSel := tok
+			if strings.HasPrefix(subSel, ".") {
+				subSel = "div" + subSel
+			} else {
+				subSel = "div" + subSel
+			}
+			_, subID, subClasses, subCondClasses, err := parseSelectorToken(subSel, fileName, lineNum)
+			if err != nil {
+				return err
+			}
+			if subID != "" {
+				n.ID = subID
+			}
+			n.Classes = append(n.Classes, subClasses...)
+			n.CondClasses = append(n.CondClasses, subCondClasses...)
+			continue
+		}
+
+		if strings.HasSuffix(tok, ":") && len(tok) > 1 {
+			cond := strings.HasSuffix(tok, "?:")
+			key := strings.TrimSuffix(strings.TrimSuffix(tok, ":"), "?")
+			valTok, nextValPos := nextTPLToken(rest, pos)
+			if valTok == "" {
+				return fmt.Errorf("tpl compile error in %s.tpl:%d: missing value after %s", fileName, lineNum, tok)
+			}
+			if strings.HasPrefix(valTok, `"`) {
+				unq, _, err := readQuotedString(valTok, 0, fileName, lineNum)
+				if err != nil {
+					return err
+				}
+				valTok = `"` + unq + `"`
+			}
+			pos = nextValPos
+			n.Attrs = append(n.Attrs, AttrPair{Key: key, Val: formatAttrTokenValue(valTok), Conditional: cond})
+			continue
+		}
+
+		if qIdx := strings.Index(tok, "?:"); qIdx > 0 {
+			key := strings.TrimSpace(tok[:qIdx])
+			valRaw := strings.TrimSpace(tok[qIdx+2:])
+			if strings.HasPrefix(valRaw, `"`) {
+				unq, _, err := readQuotedString(valRaw, 0, fileName, lineNum)
+				if err != nil {
+					return err
+				}
+				valRaw = `"` + unq + `"`
+			}
+			n.Attrs = append(n.Attrs, AttrPair{Key: key, Val: formatAttrTokenValue(valRaw), Conditional: true})
+			continue
+		}
+
+		if eqIdx := strings.IndexByte(tok, '='); eqIdx > 0 {
+			key := strings.TrimSpace(tok[:eqIdx])
+			valRaw := strings.TrimSpace(tok[eqIdx+1:])
+			if strings.HasPrefix(valRaw, `"`) {
+				unq, _, err := readQuotedString(valRaw, 0, fileName, lineNum)
+				if err != nil {
+					return err
+				}
+				valRaw = `"` + unq + `"`
+			}
+			n.Attrs = append(n.Attrs, AttrPair{Key: key, Val: formatAttrTokenValue(valRaw), Conditional: false})
+			continue
+		}
+
+		if colonIdx := strings.IndexByte(tok, ':'); colonIdx > 0 {
+			key := strings.TrimSpace(tok[:colonIdx])
+			valRaw := strings.TrimSpace(tok[colonIdx+1:])
+			if strings.HasPrefix(valRaw, `"`) {
+				unq, _, err := readQuotedString(valRaw, 0, fileName, lineNum)
+				if err != nil {
+					return err
+				}
+				valRaw = `"` + unq + `"`
+			}
+			n.Attrs = append(n.Attrs, AttrPair{Key: key, Val: formatAttrTokenValue(valRaw), Conditional: false})
+			continue
+		}
+
+		return fmt.Errorf("tpl compile error in %s.tpl:%d: unexpected token %q", fileName, lineNum, tok)
+	}
+	return nil
 }
 
 func readQuotedString(s string, start int, file string, line int) (string, int, error) {
@@ -635,6 +1032,40 @@ func readQuotedString(s string, start int, file string, line int) (string, int, 
 	return "", i, fmt.Errorf("tpl compile error in %s.tpl:%d: unterminated quoted string", file, line)
 }
 
+func validateNodesRecursive(nodes []*Node) error {
+	for i, n := range nodes {
+		if n.Kind == NodeElif || n.Kind == NodeElse {
+			kw := "else"
+			if n.Kind == NodeElif {
+				kw = "elif " + n.Expr
+			}
+			if i == 0 {
+				return fmt.Errorf("tpl compile error in %s.tpl:%d: %q must immediately follow an 'if' or 'elif' block", n.File, n.Line, kw)
+			}
+			prevKind := nodes[i-1].Kind
+			if prevKind != NodeIf && prevKind != NodeElif && !(n.Kind == NodeElse && prevKind == NodeWith) {
+				return fmt.Errorf("tpl compile error in %s.tpl:%d: %q must immediately follow an 'if' or 'elif' block", n.File, n.Line, kw)
+			}
+		}
+		if n.Kind == NodeElement || n.Kind == NodeComponent {
+			if err := validateNoInlineCSSOrJS(n); err != nil {
+				return err
+			}
+		}
+		if err := validateNodesRecursive(n.Children); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func unquoteLiteral(s string) string {
+	if len(s) >= 2 && s[0] == '"' && s[len(s)-1] == '"' {
+		return s[1 : len(s)-1]
+	}
+	return s
+}
+
 func validateNoInlineCSSOrJS(n *Node) error {
 	if !validTagRe.MatchString(n.Tag) {
 		return fmt.Errorf(
@@ -649,28 +1080,28 @@ func validateNoInlineCSSOrJS(n *Node) error {
 		)
 	}
 	for _, cls := range n.Classes {
-		clsName := cls
-		if qIdx := strings.Index(cls, "?="); qIdx >= 0 {
-			clsName = cls[:qIdx]
-			cond := strings.TrimSpace(cls[qIdx+2:])
-			if clsName == "" || cond == "" {
-				return fmt.Errorf(
-					"tpl compile error in %s.tpl:%d: invalid conditional CSS class %q",
-					n.File, n.Line, cls,
-				)
-			}
-		}
-		if !validIDRe.MatchString(clsName) {
+		if !validIDRe.MatchString(cls) {
 			return fmt.Errorf(
 				"tpl compile error in %s.tpl:%d: invalid CSS class name %q",
 				n.File, n.Line, cls,
 			)
 		}
 	}
+	for _, cc := range n.CondClasses {
+		if cc.Name == "" || cc.Cond == "" || !validIDRe.MatchString(cc.Name) {
+			return fmt.Errorf(
+				"tpl compile error in %s.tpl:%d: invalid conditional CSS class %q",
+				n.File, n.Line, cc.Name,
+			)
+		}
+	}
 
 	tagLower := strings.ToLower(n.Tag)
 	if !n.IsComponent && tagLower == "button" {
-		txt := strings.TrimSpace(n.Text)
+		txt := strings.TrimSpace(unquoteLiteral(n.Text))
+		if txt == "" && len(n.Children) == 1 && n.Children[0].Kind == NodeText {
+			txt = strings.TrimSpace(unquoteLiteral(n.Children[0].Text))
+		}
 		if txt == "↑" || txt == "↓" {
 			return fmt.Errorf(
 				"tpl compile error in %s.tpl:%d: up/down reorder arrow buttons (↑/↓) are strictly forbidden",
@@ -692,7 +1123,7 @@ func validateNoInlineCSSOrJS(n *Node) error {
 	}
 
 	if !n.IsComponent && tagLower == "script" {
-		if n.Text != "" {
+		if n.Text != "" || n.Expr != "" || len(n.Children) > 0 {
 			return fmt.Errorf(
 				"tpl compile error in %s.tpl:%d: inline JS inside <script> is strictly forbidden in .tpl files; move all JavaScript to app/js/*.js",
 				n.File, n.Line,
@@ -701,7 +1132,7 @@ func validateNoInlineCSSOrJS(n *Node) error {
 		hasSrc := false
 		for _, a := range n.Attrs {
 			if strings.EqualFold(a.Key, "src") {
-				srcVal := strings.TrimSpace(a.Val)
+				srcVal := strings.TrimSpace(unquoteLiteral(a.Val))
 				if srcVal != "" {
 					if !strings.HasPrefix(srcVal, "/") || strings.HasPrefix(srcVal, "//") || strings.Contains(srcVal, "..") {
 						return fmt.Errorf(
@@ -722,7 +1153,7 @@ func validateNoInlineCSSOrJS(n *Node) error {
 	}
 
 	if !n.IsComponent && tagLower == "svg" {
-		if n.Text != "" || len(n.Children) > 0 {
+		if n.Text != "" || n.Expr != "" || len(n.Children) > 0 {
 			return fmt.Errorf(
 				"tpl compile error in %s.tpl:%d: inline <svg> is strictly forbidden in .tpl files; move all SVG icons to app/icons/*.svg and reference them via svg src: /icons/...",
 				n.File, n.Line,
@@ -730,7 +1161,7 @@ func validateNoInlineCSSOrJS(n *Node) error {
 		}
 		hasSrc := false
 		for _, a := range n.Attrs {
-			if strings.EqualFold(a.Key, "src") && strings.TrimSpace(a.Val) != "" {
+			if strings.EqualFold(a.Key, "src") && strings.TrimSpace(unquoteLiteral(a.Val)) != "" {
 				hasSrc = true
 			}
 		}
@@ -751,24 +1182,25 @@ func validateNoInlineCSSOrJS(n *Node) error {
 			)
 		}
 		keyLower := strings.ToLower(keyTrimmed)
-		valNormalized := normalizeAttrValueForSecurityCheck(a.Val)
+		rawVal := unquoteLiteral(a.Val)
+		valNormalized := normalizeAttrValueForSecurityCheck(rawVal)
 
 		if keyLower == "style" {
 			return fmt.Errorf(
 				"tpl compile error in %s.tpl:%d: inline CSS attribute [style=%q] is strictly forbidden in .tpl files; use semantic CSS classes in app/styles/*.css instead",
-				n.File, n.Line, a.Val,
+				n.File, n.Line, rawVal,
 			)
 		}
 		if keyLower == "srcdoc" || keyLower == "http-equiv" {
 			return fmt.Errorf(
 				"tpl compile error in %s.tpl:%d: unsafe attribute [%s=%q] is strictly forbidden in .tpl files",
-				n.File, n.Line, a.Key, a.Val,
+				n.File, n.Line, a.Key, rawVal,
 			)
 		}
 		if strings.HasPrefix(keyLower, "on") {
 			return fmt.Errorf(
 				"tpl compile error in %s.tpl:%d: inline JS event handler [%s=%q] is strictly forbidden in .tpl files; bind events in app/js/core.js and app/js/events.js instead",
-				n.File, n.Line, a.Key, a.Val,
+				n.File, n.Line, a.Key, rawVal,
 			)
 		}
 		if strings.HasPrefix(valNormalized, "javascript:") ||
@@ -776,7 +1208,7 @@ func validateNoInlineCSSOrJS(n *Node) error {
 			strings.HasPrefix(valNormalized, "data:") {
 			return fmt.Errorf(
 				"tpl compile error in %s.tpl:%d: javascript:, vbscript:, or data: URL in [%s=%q] is strictly forbidden in .tpl files",
-				n.File, n.Line, a.Key, a.Val,
+				n.File, n.Line, a.Key, rawVal,
 			)
 		}
 	}
@@ -815,6 +1247,17 @@ func validateSafeSVGContent(svgContent, file string, line int, src string) error
 	return nil
 }
 
+func registerDefsFromNodes(templates map[string]*ParsedTemplate, nodes []*Node) {
+	for _, n := range nodes {
+		if n.Kind == NodeDef && n.Tag != "" {
+			templates[n.Tag] = &ParsedTemplate{
+				Name:  n.Tag,
+				Nodes: n.Children,
+			}
+		}
+	}
+}
+
 // LoadTemplatesFromDir parses all .tpl files in templatesDir (plus optional ../components/*/*.tpl) and resolves external SVGs.
 func LoadTemplatesFromDir(templatesDir string, embeddedFS fs.FS) (map[string]*ParsedTemplate, error) {
 	templates := make(map[string]*ParsedTemplate)
@@ -838,6 +1281,7 @@ func LoadTemplatesFromDir(templatesDir string, embeddedFS fs.FS) (map[string]*Pa
 				return nil, err
 			}
 			templates[name] = parsed
+			registerDefsFromNodes(templates, parsed.Nodes)
 		}
 		for _, compTplPath := range discoverComponentFiles(filepath.Dir(templatesDir), ".tpl") {
 			name := strings.TrimSuffix(filepath.Base(compTplPath), ".tpl")
@@ -853,6 +1297,7 @@ func LoadTemplatesFromDir(templatesDir string, embeddedFS fs.FS) (map[string]*Pa
 				return nil, err
 			}
 			templates[name] = parsed
+			registerDefsFromNodes(templates, parsed.Nodes)
 		}
 		return templates, nil
 	}
@@ -879,11 +1324,16 @@ func LoadTemplatesFromDir(templatesDir string, embeddedFS fs.FS) (map[string]*Pa
 				return nil, err
 			}
 			templates[name] = parsed
+			registerDefsFromNodes(templates, parsed.Nodes)
 		}
 		return templates, nil
 	}
 
 	return nil, err
+}
+
+func hasLeadingDoctype(nodes []*Node) bool {
+	return len(nodes) > 0 && nodes[0].Kind == NodeDoctype
 }
 
 // RenderTemplateTo streams a named template directly into w using a pooled buffer.
@@ -898,7 +1348,7 @@ func RenderTemplateTo(w io.Writer, tplName string, components map[string]*Parsed
 	buf := AcquireBuffer()
 	defer ReleaseBuffer(buf)
 
-	if tplName == "index" {
+	if tplName == "index" && !hasLeadingDoctype(tpl.Nodes) {
 		buf.WriteString("<!DOCTYPE html>")
 	}
 	renderNodesToBuffer(buf, tpl.Nodes, components, ctx, 0)
@@ -921,7 +1371,7 @@ func RenderTemplate(tplName string, components map[string]*ParsedTemplate, ctx *
 	buf := AcquireBuffer()
 	defer ReleaseBuffer(buf)
 
-	if tplName == "index" {
+	if tplName == "index" && !hasLeadingDoctype(tpl.Nodes) {
 		buf.WriteString("<!DOCTYPE html>")
 	}
 	renderNodesToBuffer(buf, tpl.Nodes, components, ctx, 0)
@@ -936,7 +1386,9 @@ func TranspileStaticHTML(tpl *ParsedTemplate, components map[string]*ParsedTempl
 	buf := AcquireBuffer()
 	defer ReleaseBuffer(buf)
 
-	buf.WriteString("<!DOCTYPE html>")
+	if !hasLeadingDoctype(tpl.Nodes) {
+		buf.WriteString("<!DOCTYPE html>")
+	}
 	renderNodesToBuffer(buf, tpl.Nodes, components, NewContext(nil), 0)
 	buf.WriteByte('\n')
 	return buf.String()
@@ -962,7 +1414,26 @@ func renderNodesToBuffer(buf *bytes.Buffer, nodes []*Node, components map[string
 	for i := 0; i < len(nodes); i++ {
 		n := nodes[i]
 
-		if n.IsComponent {
+		switch n.Kind {
+		case NodeDoctype:
+			if buf.Len() > 0 {
+				buf.WriteByte('\n')
+			}
+			buf.WriteString("<!DOCTYPE html>")
+
+		case NodeDef:
+			continue
+
+		case NodeSlot:
+			if ctx != nil && len(ctx.slotNodes) > 0 {
+				slotScope := ctx.slotCtx
+				if slotScope == nil {
+					slotScope = ctx
+				}
+				renderNodesToBuffer(buf, ctx.slotNodes, components, slotScope, indent)
+			}
+
+		case NodeComponent:
 			if n.Tag == "slot" {
 				if ctx != nil && len(ctx.slotNodes) > 0 {
 					slotScope := ctx.slotCtx
@@ -978,24 +1449,34 @@ func renderNodesToBuffer(buf *bytes.Buffer, nodes []*Node, components map[string
 				continue
 			}
 			compCtx := ctx
-			if len(n.Attrs) > 0 || len(n.Children) > 0 {
+			if n.ContextExpr != "" && n.ContextExpr != "." && n.ContextExpr != "$" {
+				if subVal, exists := resolvePath(ctx, n.ContextExpr); exists {
+					compCtx = ctx.WithVar(".", subVal)
+				}
+			}
+			if len(n.Attrs) > 0 || len(n.Classes) > 0 || len(n.CondClasses) > 0 || n.ID != "" || len(n.Children) > 0 {
 				var propVars map[string]any
-				if len(n.Attrs) > 0 {
-					propVars = make(map[string]any, len(n.Attrs))
+				if len(n.Attrs) > 0 || len(n.Classes) > 0 || len(n.CondClasses) > 0 || n.ID != "" {
+					propVars = make(map[string]any, len(n.Attrs)+2)
+					if n.ID != "" {
+						propVars["id"] = interpolateString(n.ID, ctx)
+					}
+					if len(n.Classes) > 0 {
+						propVars["class"] = interpolateString(strings.Join(n.Classes, " "), ctx)
+					}
+					for _, cc := range n.CondClasses {
+						propVars[cc.Name] = evalCondition(ctx, cc.Cond)
+					}
 					for _, a := range n.Attrs {
-						if a.Conditional && !evalCondition(ctx, a.Val) {
+						if a.Conditional && !evalCondition(ctx, unwrapOuterBraces(a.Val)) {
 							continue
 						}
-						if v, exists := resolvePath(ctx, a.Val); exists && !strings.Contains(a.Val, "{") {
-							propVars[a.Key] = v
-						} else {
-							propVars[a.Key] = evaluateValueExpr(a.Val, ctx)
-						}
+						propVars[a.Key] = evaluateAttrOrPropAny(a.Val, ctx)
 					}
 				}
 				compCtx = &RenderContext{
 					Vars:      propVars,
-					parent:    ctx,
+					parent:    compCtx,
 					slotNodes: n.Children,
 					slotCtx:   ctx,
 				}
@@ -1005,80 +1486,52 @@ func renderNodesToBuffer(buf *bytes.Buffer, nodes []*Node, components map[string
 				}
 			}
 			renderNodesToBuffer(buf, comp.Nodes, components, compCtx, indent)
-			continue
-		}
 
-		if n.RawSVG != "" {
-			writeSVGNodeToBuffer(buf, n, ctx, indent)
-			continue
-		}
-
-		mapping := strings.TrimSpace(n.Mapping)
-
-		// 1. Conditional chain: "-> if <cond>", followed by optional sibling "-> elif <cond>" / "-> else"
-		if strings.HasPrefix(mapping, "if ") {
+		case NodeIf:
 			chainEnd := i
-			for chainEnd+1 < len(nodes) && isElseOrElifMapping(strings.TrimSpace(nodes[chainEnd+1].Mapping)) {
+			for chainEnd+1 < len(nodes) && (nodes[chainEnd+1].Kind == NodeElif || nodes[chainEnd+1].Kind == NodeElse) {
 				chainEnd++
 			}
 			for bIdx := i; bIdx <= chainEnd; bIdx++ {
 				branch := nodes[bIdx]
-				bMap := strings.TrimSpace(branch.Mapping)
 				matched := false
-				if bMap == "else" {
+				if branch.Kind == NodeElse {
 					matched = true
-				} else if strings.HasPrefix(bMap, "if ") {
-					matched = evalCondition(ctx, bMap[3:])
-				} else if strings.HasPrefix(bMap, "elif ") {
-					matched = evalCondition(ctx, bMap[5:])
+				} else {
+					matched = evalCondition(ctx, branch.Expr)
 				}
 				if matched {
-					isInvisible := branch.Tag == "div" && len(branch.Classes) == 0 && branch.ID == "" && len(branch.Attrs) == 0 && branch.Text == ""
-					if isInvisible {
-						renderNodesToBuffer(buf, branch.Children, components, ctx, indent)
-					} else {
-						renderSingleElementNode(buf, branch, "", components, ctx, indent)
-					}
+					renderNodesToBuffer(buf, branch.Children, components, ctx, indent)
 					break
 				}
 			}
 			i = chainEnd
+
+		case NodeElif, NodeElse:
 			continue
-		}
 
-		if isElseOrElifMapping(mapping) {
-			continue
-		}
-
-		// 2. Loop mapping: "-> list.each() as item" or "-> list as item" or "-> list as idx, item"
-		if mapping != "" && strings.Contains(mapping, " as ") {
-			isInvisibleControlNode := n.Tag == "div" && len(n.Classes) == 0 && n.ID == "" && len(n.Attrs) == 0 && n.Text == ""
-			asIdx := strings.Index(mapping, " as ")
-			listExpr := strings.TrimSpace(mapping[:asIdx])
-			listExpr = strings.TrimSuffix(listExpr, ".each()")
-			varsSpec := strings.TrimSpace(mapping[asIdx+4:])
-			idxVar := ""
-			itemVar := varsSpec
-			if commaIdx := strings.IndexByte(varsSpec, ','); commaIdx > 0 {
-				idxVar = strings.TrimPrefix(strings.TrimSpace(varsSpec[:commaIdx]), "$")
-				itemVar = strings.TrimPrefix(strings.TrimSpace(varsSpec[commaIdx+1:]), "$")
-			} else {
-				itemVar = strings.TrimPrefix(itemVar, "$")
+		case NodeWith:
+			var elseNode *Node
+			if i+1 < len(nodes) && nodes[i+1].Kind == NodeElse {
+				elseNode = nodes[i+1]
+				i++
+			}
+			val, ok := resolvePath(ctx, n.Expr)
+			if ok && isTruthy(val) {
+				withCtx := ctx.WithVar(".", val)
+				renderNodesToBuffer(buf, n.Children, components, withCtx, indent)
+			} else if elseNode != nil {
+				renderNodesToBuffer(buf, elseNode.Children, components, ctx, indent)
 			}
 
-			rawList, _ := resolvePath(ctx, listExpr)
+		case NodeFor:
+			rawList, _ := resolvePath(ctx, strings.TrimSuffix(n.Expr, ".each()"))
+			itemVar := n.LoopVal
+			if itemVar == "" {
+				itemVar = "."
+			}
+			idxVar := n.LoopIdx
 
-			if !isInvisibleControlNode {
-				writeLineIndent(buf, indent)
-				buf.WriteByte('<')
-				buf.WriteString(n.Tag)
-				writeElementAttrs(buf, n, ctx, "")
-				buf.WriteByte('>')
-			}
-			childIndent := indent
-			if !isInvisibleControlNode {
-				childIndent = indent + 1
-			}
 			var itemCtx RenderContext
 			if ctx != nil {
 				itemCtx.parent = ctx
@@ -1104,65 +1557,86 @@ func renderNodesToBuffer(buf *bytes.Buffer, nodes []*Node, components map[string
 				itemCtx.localVal = item
 				if useIdx {
 					idxCtx.localVal = idx
-					renderNodesToBuffer(buf, n.Children, components, &idxCtx, childIndent)
+					renderNodesToBuffer(buf, n.Children, components, &idxCtx, indent)
 				} else {
-					renderNodesToBuffer(buf, n.Children, components, &itemCtx, childIndent)
+					renderNodesToBuffer(buf, n.Children, components, &itemCtx, indent)
 				}
 			})
 
-			if !isInvisibleControlNode {
+		case NodeText:
+			txt := evalTextNodeString(n, ctx)
+			if txt != "" {
 				writeLineIndent(buf, indent)
-				buf.WriteString("</")
-				buf.WriteString(n.Tag)
-				buf.WriteByte('>')
+				writeEscapedHTML(buf, txt)
 			}
-			continue
-		}
 
-		renderSingleElementNode(buf, n, mapping, components, ctx, indent)
+		case NodeRaw:
+			rawStr := evalRawNodeString(n, ctx)
+			if rawStr != "" {
+				writeLineIndent(buf, indent)
+				buf.WriteString(rawStr)
+			}
+
+		case NodeSVG:
+			if n.RawSVG != "" {
+				writeSVGNodeToBuffer(buf, n, ctx, indent)
+			}
+
+		case NodeElement:
+			if n.RawSVG != "" {
+				writeSVGNodeToBuffer(buf, n, ctx, indent)
+				continue
+			}
+			renderSingleElementNode(buf, n, components, ctx, indent)
+		}
 	}
 }
 
-func renderSingleElementNode(buf *bytes.Buffer, n *Node, mapping string, components map[string]*ParsedTemplate, ctx *RenderContext, indent int) {
-	mappedText := n.Text
-	mappedSrc := ""
-	isRawHTML := false
-	resolvedFromCtx := false
-	if mapping != "" {
-		resolvedFromCtx = true
-		if strings.HasPrefix(mapping, "html:") {
-			rawKey := strings.TrimSpace(strings.TrimPrefix(mapping, "html:"))
-			if v, ok := resolvePath(ctx, rawKey); ok {
-				mappedText = valToString(v)
-				isRawHTML = true
-			}
-		} else if strings.HasPrefix(mapping, `"`) && strings.HasSuffix(mapping, `"`) && len(mapping) >= 2 {
-			mappedText = interpolateString(mapping[1:len(mapping)-1], ctx)
-		} else if strings.HasPrefix(mapping, "(") && strings.HasSuffix(mapping, ")") {
-			mappedText = evaluateValueExpr(mapping, ctx)
-		} else if v, ok := resolvePath(ctx, mapping); ok {
-			strVal := valToString(v)
-			if n.Tag == "img" {
-				if strings.TrimSpace(strVal) == "" {
+func evalTextNodeString(n *Node, ctx *RenderContext) string {
+	if n.Expr != "" {
+		return evaluateValueExpr(n.Expr, ctx)
+	}
+	if n.Text != "" {
+		return evaluateAttrString(n.Text, ctx)
+	}
+	return ""
+}
+
+func evalRawNodeString(n *Node, ctx *RenderContext) string {
+	expr := strings.TrimSpace(n.Expr)
+	if strings.HasPrefix(expr, `"`) && strings.HasSuffix(expr, `"`) && len(expr) >= 2 {
+		return interpolateString(expr[1:len(expr)-1], ctx)
+	}
+	if v, ok := resolvePath(ctx, expr); ok {
+		return valToString(v)
+	}
+	return evaluateValueExpr(expr, ctx)
+}
+
+func renderSingleElementNode(buf *bytes.Buffer, n *Node, components map[string]*ParsedTemplate, ctx *RenderContext, indent int) {
+	if n.Tag == "img" {
+		for _, a := range n.Attrs {
+			if strings.EqualFold(a.Key, "src") {
+				resolvedSrc := strings.TrimSpace(evaluateAttrString(a.Val, ctx))
+				if resolvedSrc == "" {
 					return
 				}
-				mappedSrc = strVal
-			} else {
-				mappedText = strVal
 			}
-		} else if n.Tag == "img" {
-			return
 		}
 	}
 
-	if strings.Contains(mappedText, "{") && !isRawHTML && !resolvedFromCtx {
-		mappedText = interpolateString(mappedText, ctx)
+	var inlineText string
+	var inlineRaw bool
+	if n.Expr != "" {
+		inlineText = evaluateValueExpr(n.Expr, ctx)
+	} else if n.Text != "" {
+		inlineText = evaluateAttrString(n.Text, ctx)
 	}
 
 	writeLineIndent(buf, indent)
 	buf.WriteByte('<')
 	buf.WriteString(n.Tag)
-	writeElementAttrs(buf, n, ctx, mappedSrc)
+	writeElementAttrs(buf, n, ctx)
 
 	if selfClosingTags[n.Tag] {
 		if voidWithoutSlashTags[n.Tag] {
@@ -1176,10 +1650,23 @@ func renderSingleElementNode(buf *bytes.Buffer, n *Node, mapping string, compone
 	buf.WriteByte('>')
 
 	if len(n.Children) == 0 {
-		if isRawHTML {
-			buf.WriteString(mappedText)
+		if inlineRaw {
+			buf.WriteString(inlineText)
 		} else {
-			writeEscapedHTML(buf, mappedText)
+			writeEscapedHTML(buf, inlineText)
+		}
+		buf.WriteString("</")
+		buf.WriteString(n.Tag)
+		buf.WriteByte('>')
+		return
+	}
+
+	if inlineText == "" && len(n.Children) == 1 && (n.Children[0].Kind == NodeText || n.Children[0].Kind == NodeRaw) {
+		ch := n.Children[0]
+		if ch.Kind == NodeRaw {
+			buf.WriteString(evalRawNodeString(ch, ctx))
+		} else {
+			writeEscapedHTML(buf, evalTextNodeString(ch, ctx))
 		}
 		buf.WriteString("</")
 		buf.WriteString(n.Tag)
@@ -1188,12 +1675,12 @@ func renderSingleElementNode(buf *bytes.Buffer, n *Node, mapping string, compone
 	}
 
 	posAfterOpen := buf.Len()
-	if mappedText != "" {
+	if inlineText != "" {
 		writeLineIndent(buf, indent+1)
-		if isRawHTML {
-			buf.WriteString(mappedText)
+		if inlineRaw {
+			buf.WriteString(inlineText)
 		} else {
-			writeEscapedHTML(buf, mappedText)
+			writeEscapedHTML(buf, inlineText)
 		}
 	}
 	posBeforeChildren := buf.Len()
@@ -1207,11 +1694,11 @@ func renderSingleElementNode(buf *bytes.Buffer, n *Node, mapping string, compone
 	}
 
 	buf.Truncate(posAfterOpen)
-	if mappedText != "" {
-		if isRawHTML {
-			buf.WriteString(mappedText)
+	if inlineText != "" {
+		if inlineRaw {
+			buf.WriteString(inlineText)
 		} else {
-			writeEscapedHTML(buf, mappedText)
+			writeEscapedHTML(buf, inlineText)
 		}
 	}
 	buf.WriteString("</")
@@ -1233,9 +1720,9 @@ func writeSVGNodeToBuffer(buf *bytes.Buffer, n *Node, ctx *RenderContext, indent
 			rem = ""
 		}
 		writeLineIndent(buf, indent)
-		if firstLine && strings.HasPrefix(line, "<svg") && (len(n.Classes) > 0 || n.ID != "") {
+		if firstLine && strings.HasPrefix(line, "<svg") && (len(n.Classes) > 0 || len(n.CondClasses) > 0 || n.ID != "") {
 			buf.WriteString("<svg")
-			writeResolvedClassAndID(buf, n.Classes, n.ID, ctx)
+			writeResolvedClassAndID(buf, n.Classes, n.CondClasses, n.ID, ctx)
 			buf.WriteString(line[4:])
 		} else {
 			buf.WriteString(line)
@@ -1244,18 +1731,16 @@ func writeSVGNodeToBuffer(buf *bytes.Buffer, n *Node, ctx *RenderContext, indent
 	}
 }
 
-func writeResolvedClassAndID(buf *bytes.Buffer, rawClasses []string, rawID string, ctx *RenderContext) {
+func resolveClassSegment(seg string, ctx *RenderContext) string {
+	if isBraceWrapped(seg) {
+		return evaluateValueExpr(unwrapOuterBraces(seg), ctx)
+	}
+	return interpolateString(seg, ctx)
+}
+
+func writeResolvedClassAndID(buf *bytes.Buffer, rawClasses []string, condClasses []CondClass, rawID string, ctx *RenderContext) {
 	wroteClassAttr := false
-	for _, c := range rawClasses {
-		clsPart := c
-		if qIdx := strings.Index(c, "?="); qIdx > 0 {
-			cond := c[qIdx+2:]
-			if !evalCondition(ctx, cond) {
-				continue
-			}
-			clsPart = c[:qIdx]
-		}
-		resolved := interpolateString(clsPart, ctx)
+	writeClassTokens := func(resolved string) {
 		i := 0
 		for i < len(resolved) {
 			for i < len(resolved) && (resolved[i] == ' ' || resolved[i] == '\t') {
@@ -1280,26 +1765,104 @@ func writeResolvedClassAndID(buf *bytes.Buffer, rawClasses []string, rawID strin
 			}
 		}
 	}
+
+	for _, c := range rawClasses {
+		writeClassTokens(resolveClassSegment(c, ctx))
+	}
+	for _, cc := range condClasses {
+		if !evalCondition(ctx, cc.Cond) {
+			continue
+		}
+		writeClassTokens(resolveClassSegment(cc.Name, ctx))
+	}
 	if wroteClassAttr {
 		buf.WriteByte('"')
 	}
 	if rawID != "" {
 		buf.WriteString(` id="`)
-		writeEscapedHTML(buf, interpolateString(rawID, ctx))
+		writeEscapedHTML(buf, resolveClassSegment(rawID, ctx))
 		buf.WriteByte('"')
 	}
 }
 
-func writeElementAttrs(buf *bytes.Buffer, n *Node, ctx *RenderContext, extraSrc string) {
-	writeResolvedClassAndID(buf, n.Classes, n.ID, ctx)
-	if extraSrc != "" {
-		buf.WriteString(` src="`)
-		writeEscapedHTML(buf, extraSrc)
-		buf.WriteByte('"')
+func evaluateAttrOrPropAny(raw string, ctx *RenderContext) any {
+	trimmed := strings.TrimSpace(raw)
+	if isBraceWrapped(trimmed) {
+		inner := unwrapOuterBraces(trimmed)
+		if v, ok := resolvePath(ctx, inner); ok && !strings.ContainsAny(inner, " \t?:|!=") {
+			return v
+		}
+		return evaluateValueExpr(inner, ctx)
 	}
+	if strings.HasPrefix(trimmed, `"`) && strings.HasSuffix(trimmed, `"`) && len(trimmed) >= 2 {
+		return interpolateString(trimmed[1:len(trimmed)-1], ctx)
+	}
+	if isParenWrapped(trimmed) || strings.HasPrefix(trimmed, "$") {
+		return evaluateValueExpr(trimmed, ctx)
+	}
+	if trimmed == "true" {
+		return true
+	}
+	if trimmed == "false" {
+		return false
+	}
+	if v, ok := resolvePath(ctx, trimmed); ok {
+		return v
+	}
+	return interpolateString(trimmed, ctx)
+}
+
+func evaluateAttrString(raw string, ctx *RenderContext) string {
+	trimmed := strings.TrimSpace(raw)
+	if isBraceWrapped(trimmed) {
+		return evaluateValueExpr(unwrapOuterBraces(trimmed), ctx)
+	}
+	if strings.HasPrefix(trimmed, `"`) && strings.HasSuffix(trimmed, `"`) && len(trimmed) >= 2 {
+		return interpolateString(trimmed[1:len(trimmed)-1], ctx)
+	}
+	if isParenWrapped(trimmed) || strings.HasPrefix(trimmed, "$") {
+		return evaluateValueExpr(trimmed, ctx)
+	}
+	return interpolateString(trimmed, ctx)
+}
+
+func writeElementAttrs(buf *bytes.Buffer, n *Node, ctx *RenderContext) {
+	var extraClasses []string
+	var extraCondClasses []CondClass
+	var resolvedID = n.ID
+
 	for _, a := range n.Attrs {
+		if a.Key == "class" {
+			if a.Conditional {
+				extraCondClasses = append(extraCondClasses, CondClass{Name: a.Val, Cond: unwrapOuterBraces(a.Val)})
+			} else {
+				extraClasses = append(extraClasses, evaluateAttrString(a.Val, ctx))
+			}
+		} else if a.Key == "id" && resolvedID == "" {
+			if !a.Conditional || evalCondition(ctx, unwrapOuterBraces(a.Val)) {
+				resolvedID = evaluateAttrString(a.Val, ctx)
+			}
+		}
+	}
+
+	allClasses := n.Classes
+	if len(extraClasses) > 0 {
+		allClasses = append(append([]string(nil), extraClasses...), n.Classes...)
+	}
+	allCondClasses := n.CondClasses
+	if len(extraCondClasses) > 0 {
+		allCondClasses = append(append([]CondClass(nil), n.CondClasses...), extraCondClasses...)
+	}
+
+	writeResolvedClassAndID(buf, allClasses, allCondClasses, resolvedID, ctx)
+
+	for _, a := range n.Attrs {
+		if a.Key == "class" || a.Key == "id" {
+			continue
+		}
 		if a.Conditional {
-			if !evalCondition(ctx, a.Val) {
+			condExpr := unwrapOuterBraces(a.Val)
+			if !evalCondition(ctx, condExpr) {
 				continue
 			}
 			if boolAttrs[a.Key] {
@@ -1310,10 +1873,7 @@ func writeElementAttrs(buf *bytes.Buffer, n *Node, ctx *RenderContext, extraSrc 
 				buf.WriteByte('"')
 				continue
 			}
-			val := evaluateValueExpr(a.Val, ctx)
-			if v, ok := resolvePath(ctx, strings.TrimSpace(a.Val)); ok && !strings.Contains(a.Val, "{") {
-				val = valToString(v)
-			}
+			val := evaluateValueExpr(condExpr, ctx)
 			if val == "" {
 				continue
 			}
@@ -1325,9 +1885,9 @@ func writeElementAttrs(buf *bytes.Buffer, n *Node, ctx *RenderContext, extraSrc 
 			continue
 		}
 
-		val := evaluateValueExpr(a.Val, ctx)
+		val := evaluateAttrString(a.Val, ctx)
 		if boolAttrs[a.Key] {
-			if val == "false" || val == "0" || (val == "" && strings.Contains(a.Val, "{")) {
+			if val == "false" || val == "0" || (val == "" && (strings.Contains(a.Val, "{") || strings.Contains(a.Val, "$"))) {
 				continue
 			}
 			if val == "" || val == "true" || val == "1" || val == a.Key {
@@ -1348,30 +1908,199 @@ func writeElementAttrs(buf *bytes.Buffer, n *Node, ctx *RenderContext, extraSrc 
 }
 
 func evaluateValueExpr(raw string, ctx *RenderContext) string {
-	trimmed := strings.TrimSpace(raw)
-	if strings.HasPrefix(trimmed, "(") && strings.HasSuffix(trimmed, ")") && len(trimmed) > 2 {
-		inner := strings.TrimSpace(trimmed[1 : len(trimmed)-1])
-		if strings.HasPrefix(inner, "if ") {
-			condTok, rest := splitFirstToken(strings.TrimSpace(inner[3:]))
-			thenTok, elseRest := splitFirstToken(rest)
-			elseTok, _ := splitFirstToken(elseRest)
-			var chosen string
-			if evalCondition(ctx, condTok) {
-				chosen = thenTok
-			} else {
-				chosen = elseTok
+	expr := strings.TrimSpace(raw)
+	for isBraceWrapped(expr) || isParenWrapped(expr) {
+		expr = strings.TrimSpace(expr[1 : len(expr)-1])
+	}
+	if expr == "" {
+		return ""
+	}
+
+	if pipeIdx := findTopLevelSinglePipe(expr); pipeIdx >= 0 {
+		left := evaluateValueExpr(expr[:pipeIdx], ctx)
+		if left != "" && left != "false" {
+			return left
+		}
+		return evaluateValueExpr(expr[pipeIdx+1:], ctx)
+	}
+
+	if qIdx, colonIdx := findTopLevelTernary(expr); qIdx >= 0 && colonIdx > qIdx {
+		cond := strings.TrimSpace(expr[:qIdx])
+		thenExpr := strings.TrimSpace(expr[qIdx+1 : colonIdx])
+		elseExpr := strings.TrimSpace(expr[colonIdx+1:])
+		if evalCondition(ctx, cond) {
+			return evaluateValueExpr(thenExpr, ctx)
+		}
+		return evaluateValueExpr(elseExpr, ctx)
+	}
+
+	if strings.HasPrefix(expr, "if ") {
+		condTok, rest := splitFirstToken(strings.TrimSpace(expr[3:]))
+		thenTok, elseRest := splitFirstToken(rest)
+		elseTok, _ := splitFirstToken(elseRest)
+		if evalCondition(ctx, condTok) {
+			return evaluateValueExpr(thenTok, ctx)
+		}
+		return evaluateValueExpr(elseTok, ctx)
+	}
+
+	if strings.HasPrefix(expr, `"`) && strings.HasSuffix(expr, `"`) && len(expr) >= 2 {
+		return interpolateString(expr[1:len(expr)-1], ctx)
+	}
+
+	if v, ok := resolvePath(ctx, expr); ok {
+		return valToString(v)
+	}
+
+	if strings.Contains(expr, "{") || strings.Contains(expr, "$") {
+		return interpolateString(expr, ctx)
+	}
+	return ""
+}
+
+func findTopLevelSinglePipe(s string) int {
+	parenDepth, braceDepth := 0, 0
+	inQuotes := false
+	for i := 0; i < len(s); i++ {
+		ch := s[i]
+		if inQuotes {
+			if ch == '\\' && i+1 < len(s) {
+				i++
+				continue
 			}
-			chosen = strings.TrimSpace(chosen)
-			if strings.HasPrefix(chosen, `"`) && strings.HasSuffix(chosen, `"`) && len(chosen) >= 2 {
-				return interpolateString(chosen[1:len(chosen)-1], ctx)
+			if ch == '"' {
+				inQuotes = false
 			}
-			if v, ok := resolvePath(ctx, chosen); ok {
-				return valToString(v)
+			continue
+		}
+		if ch == '"' {
+			inQuotes = true
+			continue
+		}
+		switch ch {
+		case '(':
+			parenDepth++
+		case ')':
+			if parenDepth > 0 {
+				parenDepth--
 			}
-			return interpolateString(chosen, ctx)
+		case '{':
+			braceDepth++
+		case '}':
+			if braceDepth > 0 {
+				braceDepth--
+			}
+		case '|':
+			if parenDepth == 0 && braceDepth == 0 {
+				if (i+1 < len(s) && s[i+1] == '|') || (i > 0 && s[i-1] == '|') {
+					continue
+				}
+				return i
+			}
 		}
 	}
-	return interpolateString(raw, ctx)
+	return -1
+}
+
+func findTopLevelTernary(s string) (int, int) {
+	parenDepth, braceDepth := 0, 0
+	inQuotes := false
+	qIdx := -1
+	ternaryDepth := 0
+	for i := 0; i < len(s); i++ {
+		ch := s[i]
+		if inQuotes {
+			if ch == '\\' && i+1 < len(s) {
+				i++
+				continue
+			}
+			if ch == '"' {
+				inQuotes = false
+			}
+			continue
+		}
+		if ch == '"' {
+			inQuotes = true
+			continue
+		}
+		switch ch {
+		case '(':
+			parenDepth++
+		case ')':
+			if parenDepth > 0 {
+				parenDepth--
+			}
+		case '{':
+			braceDepth++
+		case '}':
+			if braceDepth > 0 {
+				braceDepth--
+			}
+		case '?':
+			if parenDepth == 0 && braceDepth == 0 {
+				if i+1 < len(s) && (s[i+1] == ':' || s[i+1] == '=') {
+					continue
+				}
+				if qIdx < 0 {
+					qIdx = i
+				} else {
+					ternaryDepth++
+				}
+			}
+		case ':':
+			if parenDepth == 0 && braceDepth == 0 && qIdx >= 0 {
+				if ternaryDepth > 0 {
+					ternaryDepth--
+				} else {
+					return qIdx, i
+				}
+			}
+		}
+	}
+	return -1, -1
+}
+
+func splitFirstToken(s string) (string, string) {
+	inQuotes := false
+	parenDepth := 0
+	braceDepth := 0
+	for i := 0; i < len(s); i++ {
+		ch := s[i]
+		if inQuotes {
+			if ch == '\\' && i+1 < len(s) {
+				i++
+				continue
+			}
+			if ch == '"' {
+				inQuotes = false
+			}
+			continue
+		}
+		if ch == '"' {
+			inQuotes = true
+			continue
+		}
+		if ch == '(' {
+			parenDepth++
+			continue
+		}
+		if ch == ')' && parenDepth > 0 {
+			parenDepth--
+			continue
+		}
+		if ch == '{' {
+			braceDepth++
+			continue
+		}
+		if ch == '}' && braceDepth > 0 {
+			braceDepth--
+			continue
+		}
+		if parenDepth == 0 && braceDepth == 0 && (ch == ' ' || ch == '\t') {
+			return s[:i], strings.TrimSpace(s[i+1:])
+		}
+	}
+	return s, ""
 }
 
 func evalCondition(ctx *RenderContext, cond string) bool {
@@ -1379,7 +2108,7 @@ func evalCondition(ctx *RenderContext, cond string) bool {
 	if cond == "" {
 		return false
 	}
-	for strings.HasPrefix(cond, "(") && strings.HasSuffix(cond, ")") && isBalancedParens(cond[1:len(cond)-1]) {
+	for isBraceWrapped(cond) || (strings.HasPrefix(cond, "(") && strings.HasSuffix(cond, ")") && isBalancedParens(cond[1:len(cond)-1])) {
 		cond = strings.TrimSpace(cond[1 : len(cond)-1])
 	}
 	if strings.HasPrefix(cond, "not ") {
@@ -1471,6 +2200,7 @@ func isBalancedParens(s string) bool {
 
 func findTopLevelCondOp(s, op string) int {
 	depth := 0
+	braceDepth := 0
 	inQuotes := false
 	opLen := len(op)
 	for i := 0; i <= len(s)-opLen; i++ {
@@ -1497,22 +2227,33 @@ func findTopLevelCondOp(s, op string) int {
 			depth--
 			continue
 		}
-		if depth == 0 && s[i:i+opLen] == op {
+		if ch == '{' {
+			braceDepth++
+			continue
+		}
+		if ch == '}' && braceDepth > 0 {
+			braceDepth--
+			continue
+		}
+		if depth == 0 && braceDepth == 0 && s[i:i+opLen] == op {
 			return i
 		}
 	}
 	return -1
 }
 
+func isIdentTokenByte(b byte) bool {
+	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9') || b == '_' || b == '.'
+}
+
 func interpolateString(s string, ctx *RenderContext) string {
-	openIdx := strings.IndexByte(s, '{')
-	if openIdx < 0 || ctx == nil {
+	if ctx == nil || (!strings.Contains(s, "{") && !strings.Contains(s, "$")) {
 		return s
 	}
 	var b strings.Builder
 	b.Grow(len(s) + 16)
 	last := 0
-	i := openIdx
+	i := 0
 	for i < len(s) {
 		if s[i] == '{' {
 			closeOff := strings.IndexByte(s[i+1:], '}')
@@ -1531,6 +2272,26 @@ func interpolateString(s string, ctx *RenderContext) string {
 				continue
 			}
 		}
+		if s[i] == '$' && i+1 < len(s) && s[i+1] != '{' {
+			j := i + 1
+			if s[j] == '$' {
+				j++
+			}
+			startIdent := j
+			for j < len(s) && isIdentTokenByte(s[j]) {
+				j++
+			}
+			if j > startIdent {
+				b.WriteString(s[last:i])
+				key := s[i:j]
+				if v, ok := resolvePath(ctx, key); ok {
+					b.WriteString(valToString(v))
+				}
+				i = j
+				last = i
+				continue
+			}
+		}
 		i++
 	}
 	if last < len(s) {
@@ -1539,14 +2300,50 @@ func interpolateString(s string, ctx *RenderContext) string {
 	return b.String()
 }
 
+func lookupFieldOnVal(curr any, part string) (any, bool) {
+	switch typed := curr.(type) {
+	case map[string]any:
+		if v, exists := typed[part]; exists {
+			return v, true
+		}
+		for k, v := range typed {
+			if strings.EqualFold(k, part) {
+				return v, true
+			}
+		}
+	case map[string]string:
+		if v, exists := typed[part]; exists {
+			return v, true
+		}
+		for k, v := range typed {
+			if strings.EqualFold(k, part) {
+				return v, true
+			}
+		}
+	}
+	return nil, false
+}
+
 func lookupRootVar(ctx *RenderContext, key string) (any, bool) {
 	for cur := ctx; cur != nil; cur = cur.parent {
-		if cur.hasLocal && cur.localKey == key {
-			return cur.localVal, true
+		if cur.hasLocal {
+			if cur.localKey == key {
+				return cur.localVal, true
+			}
+			if cur.localKey == "." {
+				if v, ok := lookupFieldOnVal(cur.localVal, key); ok {
+					return v, true
+				}
+			}
 		}
 		if cur.Vars != nil {
 			if v, ok := cur.Vars[key]; ok {
 				return v, true
+			}
+			for k, v := range cur.Vars {
+				if strings.EqualFold(k, key) {
+					return v, true
+				}
 			}
 		}
 	}
@@ -1557,16 +2354,49 @@ func resolvePath(ctx *RenderContext, path string) (any, bool) {
 	if ctx == nil || path == "" {
 		return nil, false
 	}
+	path = strings.TrimSpace(path)
+	if isBraceWrapped(path) {
+		path = unwrapOuterBraces(path)
+	}
+	if path == "." || path == "$" || path == "this" {
+		for cur := ctx; cur != nil; cur = cur.parent {
+			if cur.hasLocal && cur.localKey == "." {
+				return cur.localVal, true
+			}
+		}
+		return ctx.Vars, true
+	}
+	if path == "$$" || path == "root" || path == "$." {
+		for ctx.parent != nil {
+			ctx = ctx.parent
+		}
+		return ctx.Vars, true
+	}
 	if strings.HasPrefix(path, "$$.") {
 		path = path[3:]
+		for ctx.parent != nil {
+			ctx = ctx.parent
+		}
+	} else if strings.HasPrefix(path, "$$") {
+		path = path[2:]
+		for ctx.parent != nil {
+			ctx = ctx.parent
+		}
+	} else if strings.HasPrefix(path, "$.") {
+		path = path[2:]
+		for ctx.parent != nil {
+			ctx = ctx.parent
+		}
+	} else if strings.HasPrefix(path, "root.") {
+		path = path[5:]
 		for ctx.parent != nil {
 			ctx = ctx.parent
 		}
 	} else if strings.HasPrefix(path, "$") {
 		path = path[1:]
 	}
-	if strings.HasPrefix(path, "{") && strings.HasSuffix(path, "}") && len(path) >= 2 {
-		path = strings.TrimSpace(path[1 : len(path)-1])
+	if isBraceWrapped(path) {
+		path = unwrapOuterBraces(path)
 	}
 	if path == "" {
 		return nil, false
@@ -1594,22 +2424,11 @@ func resolvePath(ctx *RenderContext, path string) (any, bool) {
 		} else {
 			rest = ""
 		}
-		switch typed := curr.(type) {
-		case map[string]any:
-			v, exists := typed[part]
-			if !exists {
-				return nil, false
-			}
-			curr = v
-		case map[string]string:
-			v, exists := typed[part]
-			if !exists {
-				return nil, false
-			}
-			curr = v
-		default:
+		nextVal, exists := lookupFieldOnVal(curr, part)
+		if !exists {
 			return nil, false
 		}
+		curr = nextVal
 	}
 	return curr, true
 }
@@ -1630,6 +2449,8 @@ func isTruthy(v any) bool {
 	case []map[string]any:
 		return len(t) > 0
 	case []any:
+		return len(t) > 0
+	case []string:
 		return len(t) > 0
 	}
 	return true
@@ -1696,12 +2517,19 @@ func resolveExternalSVGs(templatesDir string, embeddedFS fs.FS, nodes []*Node) e
 		appDir = filepath.Dir(templatesDir)
 	}
 	for _, n := range nodes {
-		if !n.IsComponent && strings.EqualFold(n.Tag, "svg") {
+		if (!n.IsComponent && strings.EqualFold(n.Tag, "svg")) || n.Kind == NodeSVG {
 			var src string
-			for _, a := range n.Attrs {
-				if strings.EqualFold(a.Key, "src") {
-					src = strings.TrimSpace(a.Val)
-					break
+			if n.Kind == NodeSVG {
+				src = strings.TrimSpace(unquoteLiteral(n.Expr))
+				if src != "" && !strings.HasPrefix(src, "/") && !strings.HasSuffix(src, ".svg") {
+					src = "/icons/" + src + ".svg"
+				}
+			} else {
+				for _, a := range n.Attrs {
+					if strings.EqualFold(a.Key, "src") {
+						src = strings.TrimSpace(unquoteLiteral(a.Val))
+						break
+					}
 				}
 			}
 			rel := filepath.FromSlash(strings.TrimPrefix(src, "/"))
@@ -1791,41 +2619,6 @@ func writeEscapedHTML(buf *bytes.Buffer, s string) {
 	}
 }
 
-func escapeStaticHTML(s string) string {
-	if !hasHTMLSpecialChars(s) {
-		return s
-	}
-	var b strings.Builder
-	b.Grow(len(s) + 8)
-	last := 0
-	for i := 0; i < len(s); i++ {
-		var esc string
-		switch s[i] {
-		case '&':
-			esc = "&amp;"
-		case '<':
-			esc = "&lt;"
-		case '>':
-			esc = "&gt;"
-		case '"':
-			esc = "&quot;"
-		case '\'':
-			esc = "&#x27;"
-		default:
-			continue
-		}
-		if i > last {
-			b.WriteString(s[last:i])
-		}
-		b.WriteString(esc)
-		last = i + 1
-	}
-	if last < len(s) {
-		b.WriteString(s[last:])
-	}
-	return b.String()
-}
-
 func countLeadingIndent(s string) int {
 	n := 0
 	for i := 0; i < len(s); i++ {
@@ -1836,76 +2629,4 @@ func countLeadingIndent(s string) int {
 		}
 	}
 	return n
-}
-
-func splitSelectorParts(content string) []string {
-	var parts []string
-	last := 0
-	braceDepth := 0
-	parenDepth := 0
-	inCond := false
-	condDots := 0
-
-	for i := 0; i < len(content); i++ {
-		ch := content[i]
-		if ch == '{' {
-			braceDepth++
-			continue
-		}
-		if ch == '}' {
-			if braceDepth > 0 {
-				braceDepth--
-			}
-			continue
-		}
-		if ch == '(' {
-			parenDepth++
-			continue
-		}
-		if ch == ')' {
-			if parenDepth > 0 {
-				parenDepth--
-			}
-			continue
-		}
-		if braceDepth == 0 && parenDepth == 0 {
-			if ch == '?' && i+1 < len(content) && content[i+1] == '=' {
-				inCond = true
-				condDots = 0
-				i++
-				continue
-			}
-			if ch == '#' || ch == '@' {
-				inCond = false
-				condDots = 0
-				parts = append(parts, content[last:i])
-				parts = append(parts, string(ch))
-				last = i + 1
-				continue
-			}
-			if ch == '.' {
-				if inCond {
-					nextSep := len(content)
-					for j := i + 1; j < len(content); j++ {
-						if content[j] == '.' || content[j] == '#' || content[j] == '@' {
-							nextSep = j
-							break
-						}
-					}
-					nextSeg := content[i+1 : nextSep]
-					if condDots == 0 && nextSeg != "" && !strings.Contains(nextSeg, "?=") && !strings.Contains(nextSeg, "-") && !strings.Contains(nextSeg, "{") {
-						condDots++
-						continue
-					}
-				}
-				inCond = false
-				condDots = 0
-				parts = append(parts, content[last:i])
-				parts = append(parts, ".")
-				last = i + 1
-			}
-		}
-	}
-	parts = append(parts, content[last:])
-	return parts
 }

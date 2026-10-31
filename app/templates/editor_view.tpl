@@ -2,14 +2,14 @@ section.view-panel#view-editor
     .studio-workspace-full
         .canvas-toolbar
             .canvas-toolbar-left
-                -> if has_active_book
+                {if has_active_book}
                     input.canvas-legend.canvas-book-title-input#editor-book-title-input
                         type: text
                         name: title
                         value: "{active_book_title}"
                         data-old-title: "{active_book_title}"
                         placeholder: "Tytuł książki..."
-                -> else
+                {else}
                     span.canvas-legend "Brak aktywnej książki"
                 span.canvas-selection-badge.hidden#canvas-selection-badge "0 zaznaczonych"
             .canvas-toolbar-right
@@ -34,24 +34,24 @@ section.view-panel#view-editor
                     data-hint: "Automatycznie rozmieść węzły na siatce"
                     svg.action-icon src: /icons/nodes.svg
                 .canvas-history-controls
-                    button.top-action-btn.is-disabled?=!can_undo#btn-editor-undo
+                    button.top-action-btn#btn-editor-undo .is-disabled?: {!can_undo}
                         type: button
                         action: UndoEditor
-                        disabled?=!can_undo
+                        disabled?: {!can_undo}
                         data-hint: "{undo_title}"
                         svg.action-icon src: /icons/reset.svg
-                    button.top-action-btn.is-disabled?=!can_redo#btn-editor-redo
+                    button.top-action-btn#btn-editor-redo .is-disabled?: {!can_redo}
                         type: button
                         action: RedoEditor
-                        disabled?=!can_redo
+                        disabled?: {!can_redo}
                         data-hint: "{redo_title}"
                         svg.action-icon src: /icons/redo.svg
-                    button.top-action-btn.active?=show_editor_history_panel
+                    button.top-action-btn .active?: {show_editor_history_panel}
                         type: button
                         action: ToggleEditorHistoryPanel
                         data-hint: "Historia zmian i wersje"
                         svg.action-icon src: /icons/history.svg
-                        span.history-unsaved-badge.hidden?=!has_unnamed_edits#history-unsaved-badge -> unnamed_edits_count
+                        span.history-unsaved-badge#history-unsaved-badge .hidden?: {!has_unnamed_edits} {unnamed_edits_count}
                 .canvas-zoom-controls
                     button.top-action-btn
                         type: button
@@ -70,26 +70,26 @@ section.view-panel#view-editor
                         data-canvas-zoom: "fit"
                         data-hint: "Dopasuj widok do węzłów (F)"
                         svg.action-icon src: /icons/fullscreen.svg
-                button.top-action-btn.active?=book_settings_open#btn-book-settings
+                button.top-action-btn#btn-book-settings .active?: {book_settings_open}
                     type: button
                     action: ToggleBookSettings
                     data-hint: "Ustawienia książki (tytuł, autor, scena początkowa)"
                     svg.action-icon src: /icons/settings.svg
-                button.top-action-btn.active?=book_narrated
+                button.top-action-btn .active?: {book_narrated}
                     type: button
                     action: ToggleBookNarrated
                     data-hint: "{book_narrated_label}"
-                    -> if book_narrated
+                    {if book_narrated}
                         svg.action-icon src: /icons/mic.svg
-                    -> else
+                    {else}
                         svg.action-icon src: /icons/mic-off.svg
-                button.top-action-btn.active?=book_imageless
+                button.top-action-btn .active?: {book_imageless}
                     type: button
                     action: ToggleBookImageless
                     data-hint: "{book_imageless_label}"
-                    -> if book_imageless
+                    {if book_imageless}
                         svg.action-icon src: /icons/image-off.svg
-                    -> else
+                    {else}
                         svg.action-icon src: /icons/image.svg
                 button.top-action-btn
                     type: button
@@ -102,11 +102,12 @@ section.view-panel#view-editor
                     data-hint: "Pomoc edytora węzłów"
                     svg.action-icon src: /icons/help.svg
 
-        -> if has_book_warnings
+        {if has_book_warnings}
             .studio-warnings-banner
-                .book-warnings-title -> "⚠ Ostrzeżenia parsera i walidacji książki ({book_warning_count}):"
-                ul.book-warnings-list -> book_warnings.each() as w
-                    li -> w.text
+                .book-warnings-title "⚠ Ostrzeżenia parsera i walidacji książki ({book_warning_count}):"
+                ul.book-warnings-list
+                    {for w in book_warnings}
+                        li {w.text}
 
         .editor-workspace-body#editor-workspace-body
             @editor_context_panel
@@ -114,7 +115,8 @@ section.view-panel#view-editor
 
             .timeline-scroll-viewport#timeline-scroll-viewport
                 canvas.studio-canvas#studio-canvas
-                pre.hidden#studio-graph-data -> studio_graph_payload
+                .editor-perf-overlay.hidden#editor-perf-overlay
+                pre.hidden#studio-graph-data {studio_graph_payload}
                 input.chapter-group-title-input.canvas-floating-chapter-input.hidden#canvas-chapter-input
                     type: text
                     placeholder: "Nazwa rozdziału..."
@@ -132,7 +134,7 @@ section.view-panel#view-editor
                     button.canvas-context-item#btn-context-reset-view
                         type: button
                         "Dopasuj widok do węzłów (Fit)"
-                -> if not has_active_book
+                {if not has_active_book}
                     .editor-empty-state#editor-empty-state
                         .editor-empty-card
                             h3.editor-empty-title "Brak otwartej książki"

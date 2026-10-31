@@ -1,4 +1,4 @@
--> if show_qr_modal
+{if show_qr_modal}
     .modal-backdrop
         data-backdrop-action: CloseQRModal
         .modal-card
@@ -9,12 +9,12 @@
                     button.btn.btn-sm
                         type: button
                         action: ToggleTheme
-                        -> "Motyw: {theme_toggle_label}"
+                        "Motyw: {theme_toggle_label}"
                     button.btn.btn-sm
                         type: button
                         action: ToggleImageless
-                        disabled?=imageless_locked
-                        -> "Obrazy: {imageless_toggle_label}"
+                        disabled?: {imageless_locked}
+                        "Obrazy: {imageless_toggle_label}"
                     button.btn.btn-sm
                         type: button
                         action: SetUIScale
@@ -25,7 +25,7 @@
                         action: SetUIScale
                         data-scale: large
                         "+ Powiększ UI"
-                -> if dev_mode
+                {if dev_mode}
                     .settings-modal-actions
                         button.btn.btn-sm
                             type: button
@@ -36,14 +36,14 @@
                         img.qr-image
                             src: /api/lan-qr.png
                             alt: "Kod QR połączenia LAN"
-                    .lan-url-box -> lan_url
+                    .lan-url-box {lan_url}
                 .modal-actions
                     button.btn
                         type: button
                         action: CloseQRModal
                         "Zamknij"
 
--> if show_new_book_modal
+{if show_new_book_modal}
     .modal-backdrop
         data-backdrop-action: CloseNewBookModal
         .modal-card
@@ -86,7 +86,7 @@
                         type: submit
                         "Utwórz książkę"
 
--> if show_add_book_modal
+{if show_add_book_modal}
     .modal-backdrop
         data-backdrop-action: CloseAddBookModal
         .modal-card.modal-card-lg
@@ -140,25 +140,25 @@
                         action: CloseAddBookModal
                         "Zamknij"
 
--> if show_scene_text_modal
+{if show_scene_text_modal}
     .modal-backdrop.scene-text-fullscreen-backdrop#modal-scene-text
         data-backdrop-action: CloseSceneTextModal
-        .player-layout.scene-text-book-layout.is-imageless?=scene_text_modal_is_imageless
+        .player-layout.scene-text-book-layout .is-imageless?: {scene_text_modal_is_imageless}
             .player-bg-stage
-                -> if scene_text_modal_has_image
+                {if scene_text_modal_has_image}
                     img.player-bg-img
                         alt: "{scene_text_modal_name}"
-                        -> scene_text_modal_image_url
+                        src: {scene_text_modal_image_url}
             .story-scroll-feed.scene-text-editor-feed
                 .reader-global-meta
-                    span.scene-chapter-pill -> scene_text_modal_header_meta
+                    span.scene-chapter-pill {scene_text_modal_header_meta}
                     .scene-text-editor-top-bar
                         button.scene-text-back-btn
                             type: button
                             action: CloseSceneTextModal
                             "← Wróć do edytora"
                 .active-scene-stage.scene-text-editor-stage
-                    form.scene-card.scene-focused.scene-text-editor-card.has-illustration?=scene_text_modal_has_image#form-scene-text
+                    form.scene-card.scene-focused.scene-text-editor-card#form-scene-text .has-illustration?: {scene_text_modal_has_image}
                         action: SaveSceneTextModal
                         input
                             type: hidden
@@ -168,25 +168,25 @@
                             type: hidden
                             name: scene_settings_open
                             value: "{scene_text_modal_settings_open_val}"
-                        -> if scene_text_modal_has_incoming
+                        {if scene_text_modal_has_incoming}
                             .scene-incoming-list
-                                -> scene_text_modal_incoming.each() as inc
+                                {for inc in scene_text_modal_incoming}
                                     button.choice-btn.incoming-choice-btn
                                         type: button
                                         action: NavigateSceneTextModal
                                         data-scene: "{inc.scene_id}"
                                         span.incoming-choice-content
-                                            span.incoming-scene-name -> inc.scene_name
-                                            -> if inc.has_choice_label
+                                            span.incoming-scene-name {inc.scene_name}
+                                            {if inc.has_choice_label}
                                                 span.incoming-choice-sep "—"
-                                                span.incoming-choice-label -> inc.choice_label
+                                                span.incoming-choice-label {inc.choice_label}
                                         span.choice-arrow.incoming-choice-arrow "↑"
                         .scene-header-block
                             .scene-title-row
                                 .scene-title-with-badge
                                     span.present-scene-badge
                                         svg.present-scene-icon src: /icons/asterisk.svg
-                                    -> if scene_text_modal_is_start
+                                    {if scene_text_modal_is_start}
                                         span.node-start-indicator
                                             data-hint: "Ta scena jest punktem startowym (korzeniem) opowieści"
                                             svg.scene-star-icon src: /icons/star.svg
@@ -195,12 +195,12 @@
                                         name: name
                                         value: "{scene_text_modal_raw_name}"
                                         placeholder: "Nazwa sceny (opcjonalna przy ID)..."
-                                button.contextual-rewind-btn.scene-settings-toggle-btn.active?=scene_text_modal_settings_open
+                                button.contextual-rewind-btn.scene-settings-toggle-btn .active?: {scene_text_modal_settings_open}
                                     type: button
                                     data-scene-settings-toggle: "true"
                                     data-hint: "Ustawienia sceny"
                                     svg.scene-settings-icon src: /icons/settings.svg
-                            .scene-settings-block.hidden?=!scene_text_modal_settings_open#modal-scene-settings-block
+                            .scene-settings-block#modal-scene-settings-block .hidden?: {!scene_text_modal_settings_open}
                                 .scene-settings-row
                                     span.node-meta-key "id:"
                                     input.node-meta-input
@@ -218,21 +218,22 @@
                                         button.custom-select-trigger
                                             type: button
                                             data-select-toggle: "true"
-                                            span.custom-select-label -> scene_text_modal_current_image_label
+                                            span.custom-select-label {scene_text_modal_current_image_label}
                                             span.custom-select-caret "▾"
-                                        .custom-select-menu.hidden -> scene_text_modal_image_options.each() as img_opt
-                                            button.custom-select-option.active?=img_opt.is_active
-                                                type: button
-                                                data-select-value: "{img_opt.value}"
-                                                data-select-label: "{img_opt.label}"
-                                                -> img_opt.label
+                                        .custom-select-menu.hidden
+                                            {for img_opt in scene_text_modal_image_options}
+                                                button.custom-select-option .active?: {img_opt.is_active}
+                                                    type: button
+                                                    data-select-value: "{img_opt.value}"
+                                                    data-select-label: "{img_opt.label}"
+                                                    {img_opt.label}
                                     button.node-icon-btn.node-media-add-btn
                                         type: button
                                         action: BrowseAddBookMedia
                                         data-kind: image
                                         data-scene: "{scene_text_modal_id}"
                                         svg.media-plus-icon src: /icons/plus.svg
-                                -> if scene_text_modal_book_narrated
+                                {if scene_text_modal_book_narrated}
                                     .scene-settings-row
                                         span.node-meta-key "voice:"
                                         .custom-select.node-media-select
@@ -243,33 +244,34 @@
                                             button.custom-select-trigger
                                                 type: button
                                                 data-select-toggle: "true"
-                                                span.custom-select-label -> scene_text_modal_current_voice_label
+                                                span.custom-select-label {scene_text_modal_current_voice_label}
                                                 span.custom-select-caret "▾"
-                                            .custom-select-menu.hidden -> scene_text_modal_voice_options.each() as voice_opt
-                                                button.custom-select-option.active?=voice_opt.is_active
-                                                    type: button
-                                                    data-select-value: "{voice_opt.value}"
-                                                    data-select-label: "{voice_opt.label}"
-                                                    -> voice_opt.label
+                                            .custom-select-menu.hidden
+                                                {for voice_opt in scene_text_modal_voice_options}
+                                                    button.custom-select-option .active?: {voice_opt.is_active}
+                                                        type: button
+                                                        data-select-value: "{voice_opt.value}"
+                                                        data-select-label: "{voice_opt.label}"
+                                                        {voice_opt.label}
                                         button.node-icon-btn.node-media-add-btn
                                             type: button
                                             action: BrowseAddBookMedia
                                             data-kind: audio
                                             data-scene: "{scene_text_modal_id}"
                                             svg.media-plus-icon src: /icons/plus.svg
-                        -> if scene_text_modal_has_image
+                        {if scene_text_modal_has_image}
                             .scene-illustration-spacer
                                 img.scene-portrait-img
                                     alt: "{scene_text_modal_name}"
-                                    -> scene_text_modal_image_url
+                                    src: {scene_text_modal_image_url}
                         .scene-body-block.scene-text-editor-body
                             textarea.scene-prose.modal-scene-textarea#modal-scene-textarea
                                 name: text
                                 rows: 14
                                 placeholder: "Wpisz treść sceny..."
-                                -> scene_text_modal_text
+                                {scene_text_modal_text}
                             .scene-choices-list
-                                -> if scene_text_modal_is_terminal
+                                {if scene_text_modal_is_terminal}
                                     .choice-btn.modal-choice-row
                                         button.modal-choice-lead-btn
                                             type: button
@@ -286,21 +288,22 @@
                                                     type: button
                                                     data-select-toggle: "true"
                                                     data-hint: "{scene_text_modal_terminal_selected_label}"
-                                                    span.choice-port-icon.port-filled?=scene_text_modal_terminal_port_filled
-                                                .custom-select-menu.hidden -> scene_text_modal_terminal_target_options.each() as opt
-                                                    button.custom-select-option.active?=opt.is_active
-                                                        type: button
-                                                        data-select-value: "{opt.value}"
-                                                        data-select-label: "{opt.short_label}"
-                                                        -> opt.label
+                                                    span.choice-port-icon .port-filled?: {scene_text_modal_terminal_port_filled}
+                                                .custom-select-menu.hidden
+                                                    {for opt in scene_text_modal_terminal_target_options}
+                                                        button.custom-select-option .active?: {opt.is_active}
+                                                            type: button
+                                                            data-select-value: "{opt.value}"
+                                                            data-select-label: "{opt.short_label}"
+                                                            {opt.label}
                                             button.contextual-rewind-btn.modal-choice-nav-btn
                                                 type: button
                                                 action: NavigateSceneTextModal
                                                 data-scene: "{scene_text_modal_start_id}"
                                                 span.choice-arrow "↺"
-                                -> else
-                                    -> scene_text_modal_choices.each() as ch
-                                        -> if ch.is_editable
+                                {else}
+                                    {for ch in scene_text_modal_choices}
+                                        {if ch.is_editable}
                                             .choice-btn.modal-choice-row
                                                 input.choice-label-text.node-inline-title
                                                     type: text
@@ -318,13 +321,14 @@
                                                             type: button
                                                             data-select-toggle: "true"
                                                             data-hint: "{ch.selected_label}"
-                                                            span.choice-port-icon.port-filled?=ch.is_filled
-                                                        .custom-select-menu.hidden -> ch.target_options.each() as opt
-                                                            button.custom-select-option.active?=opt.is_active
-                                                                type: button
-                                                                data-select-value: "{opt.value}"
-                                                                data-select-label: "{opt.short_label}"
-                                                                -> opt.label
+                                                            span.choice-port-icon .port-filled?: {ch.is_filled}
+                                                        .custom-select-menu.hidden
+                                                            {for opt in ch.target_options}
+                                                                button.custom-select-option .active?: {opt.is_active}
+                                                                    type: button
+                                                                    data-select-value: "{opt.value}"
+                                                                    data-select-label: "{opt.short_label}"
+                                                                    {opt.label}
                                                     button.node-icon-btn.node-choice-btn.node-choice-remove
                                                         type: button
                                                         action: PromptRemoveChoice
@@ -338,14 +342,14 @@
                                                         data-choice-idx: "{ch.idx}"
                                                         data-hint: "Przejdź do sceny docelowej"
                                                         @scene_choice_arrow
-                                        -> else
+                                        {else}
                                             .choice-btn.modal-choice-row
                                                 button.modal-choice-lead-btn
                                                     type: button
                                                     action: NavigateSceneTextModal
                                                     data-scene: "{ch.target_scene_id}"
                                                     data-choice-idx: "{ch.idx}"
-                                                    span.choice-label-text -> ch.label
+                                                    span.choice-label-text {ch.label}
                                                 .modal-choice-controls
                                                     .custom-select.node-choice-select.modal-choice-select
                                                         input.custom-select-input
@@ -356,20 +360,21 @@
                                                             type: button
                                                             data-select-toggle: "true"
                                                             data-hint: "{ch.selected_label}"
-                                                            span.choice-port-icon.port-filled?=ch.is_filled
-                                                        .custom-select-menu.hidden -> ch.target_options.each() as opt
-                                                            button.custom-select-option.active?=opt.is_active
-                                                                type: button
-                                                                data-select-value: "{opt.value}"
-                                                                data-select-label: "{opt.short_label}"
-                                                                -> opt.label
+                                                            span.choice-port-icon .port-filled?: {ch.is_filled}
+                                                        .custom-select-menu.hidden
+                                                            {for opt in ch.target_options}
+                                                                button.custom-select-option .active?: {opt.is_active}
+                                                                    type: button
+                                                                    data-select-value: "{opt.value}"
+                                                                    data-select-label: "{opt.short_label}"
+                                                                    {opt.label}
                                                     button.contextual-rewind-btn.modal-choice-nav-btn
                                                         type: button
                                                         action: NavigateSceneTextModal
                                                         data-scene: "{ch.target_scene_id}"
                                                         data-choice-idx: "{ch.idx}"
                                                         data-hint: "Przejdź do sceny docelowej"
-                                                        span.choice-arrow -> ch.arrow
+                                                        span.choice-arrow {ch.arrow}
                                 button.node-icon-btn.node-media-add-btn.modal-add-choice-btn
                                     type: button
                                     action: AddChoice
@@ -378,7 +383,7 @@
                 .scroll-more-cue.hidden#modal-scroll-more-cue
                     span.scroll-more-dots "..."
 
--> if show_editor_help_modal
+{if show_editor_help_modal}
     .modal-backdrop
         data-backdrop-action: CloseEditorHelpModal
         .modal-card.modal-card-lg
@@ -420,20 +425,20 @@
                         action: CloseEditorHelpModal
                         "Rozumiem"
 
--> if show_confirm_modal
+{if show_confirm_modal}
     .modal-backdrop#modal-confirm
         data-backdrop-action: ConfirmModalClose
         .modal-card
             .modal-header
-                h3.modal-title -> confirm_title
+                h3.modal-title {confirm_title}
             .modal-body
-                p.modal-desc -> confirm_message
+                p.modal-desc {confirm_message}
                 .modal-actions
                     button.btn
                         type: button
                         action: ConfirmModalClose
                         "Anuluj"
-                    button.btn.btn-danger?=confirm_is_danger.btn-primary?=!confirm_is_danger
+                    button.btn .btn-danger?: {confirm_is_danger} .btn-primary?: {!confirm_is_danger}
                         type: button
                         action: ConfirmModalAccept
                         "Potwierdź"

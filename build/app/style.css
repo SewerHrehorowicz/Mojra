@@ -1466,6 +1466,11 @@ body[data-imageless="true"] .scene-card.has-illustration .scene-body-block {
   color: var(--text-primary);
 }
 
+.deck-play-btn.is-buffering {
+  opacity: 0.45;
+  cursor: progress;
+}
+
 .deck-play-icon {
   width: 29px;
   height: 29px;
@@ -2874,12 +2879,13 @@ body[data-android="true"] .editor-context-panel {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: var(--text-secondary);
+  color: var(--border-strong);
   cursor: pointer;
   transition: color 0.15s ease;
 }
 
 .custom-select-trigger.choice-port-trigger:hover,
+.custom-select-trigger.choice-port-trigger:focus-visible,
 .custom-select.open .custom-select-trigger.choice-port-trigger {
   border: none;
   color: var(--text-primary);
@@ -2893,16 +2899,11 @@ body[data-android="true"] .editor-context-panel {
   border: 2px solid currentColor;
   background: transparent;
   pointer-events: none;
-  transition: background 0.15s ease, border-color 0.15s ease, transform 0.12s ease;
+  transition: background 0.15s ease, border-color 0.15s ease;
 }
 
 .choice-port-icon.port-filled {
   background: currentColor;
-}
-
-.custom-select-trigger.choice-port-trigger:hover .choice-port-icon,
-.custom-select.open .custom-select-trigger.choice-port-trigger .choice-port-icon {
-  transform: scale(1.18);
 }
 
 .custom-select-trigger {

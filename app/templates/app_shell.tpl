@@ -1,10 +1,10 @@
 @topbar
 main.workspace#workspace
-    -> if is_view_library
+    {if is_view_library}
         @library_view
-    -> elif is_view_player
+    {elif is_view_player}
         @player_view
-    -> elif is_view_editor
+    {elif is_view_editor}
         @editor_view
 .modals-root#modals-root
     @modals

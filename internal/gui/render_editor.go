@@ -268,7 +268,10 @@ func (s *Server) buildEditorNodeMap(sc *book.Scene, isSelected bool) map[string]
 			if isSelected {
 				selectedVal, selectedLabel, targetOptions = s.buildChoiceTargetOptions(sc, ch)
 			}
-			isFilled := !ch.IsEnding && ch.TargetSceneID != "" && !strings.EqualFold(ch.TargetSceneID, "END") && !strings.EqualFold(selectedVal, "END")
+			isFilled := !ch.IsEnding &&
+				((ch.TargetSceneID != "" && !strings.EqualFold(ch.TargetSceneID, "END")) ||
+					(ch.IsChapterLink && ch.TargetChapterID != "")) &&
+				(!isSelected || !strings.EqualFold(selectedVal, "END"))
 
 			ports = append(ports, map[string]any{
 				"idx":            chIdx,
@@ -368,8 +371,23 @@ func (s *Server) populateEditorBookAndChapterSettings(vars map[string]any) {
 		vars["book_settings_open"] = false
 		vars["has_selected_chapter"] = false
 		vars["is_node_inspector_hidden"] = false
+		vars["multi_scene_items"] = nil
 		return
 	}
+
+	multiSceneItems := make([]map[string]any, 0, len(s.ActiveBook.Scenes))
+	for _, sc := range s.ActiveBook.Scenes {
+		scCh := strings.TrimSpace(sc.Chapter)
+		if scCh == "" {
+			scCh = "Rozdział 1"
+		}
+		multiSceneItems = append(multiSceneItems, map[string]any{
+			"id":      sc.ID,
+			"title":   sc.DisplayName(),
+			"chapter": scCh,
+		})
+	}
+	vars["multi_scene_items"] = multiSceneItems
 
 	vars["book_settings_open"] = s.BookSettingsOpen
 	vars["active_book_author"] = s.ActiveBook.Author

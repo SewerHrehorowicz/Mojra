@@ -428,6 +428,9 @@ function initStudioWebGLContext(canvas) {
       vMode = 0.0;
       vPxRange = 4.5;
       vec2 uvs = mix(aUV.xy, aUV.zw, aUnit);
+      if (aUV.y < -0.5 && aRect.w > aRect.z) {
+        uvs.x = mix(aUV.x, aUV.z, aUnit.y);
+      }
       vUV = uvs;
       vec2 screenPos;
       if (aUV.x < -80000.0) {
@@ -657,6 +660,11 @@ function pushSolidBorderQuads(x, y, w, h, thickness, packedColor) {
   pushSolidQuad(x + w - t, y + t, t, h - t * 2, packedColor);
 }
 
+function computeAlignedDashSpan(len, period) {
+  const n = Math.max(1, Math.round(len / period - 0.54));
+  return (n + 0.54) * period;
+}
+
 function pushDashedSegmentQuad(x1, y1, x2, y2, thickness, period, packedColor) {
   const dx = x2 - x1;
   const dy = y2 - y1;
@@ -664,20 +672,38 @@ function pushDashedSegmentQuad(x1, y1, x2, y2, thickness, period, packedColor) {
   if (len < 0.5) return;
   const halfT = thickness * 0.5;
   const negPeriod = -period;
+  const span = computeAlignedDashSpan(len, period);
   if (Math.abs(dx) >= Math.abs(dy)) {
     const minX = Math.min(x1, x2);
-    pushQuadInstance(minX, y1 - halfT, len, thickness, 0, negPeriod, len, negPeriod, packedColor);
+    pushQuadInstance(minX, y1 - halfT, len, thickness, 0, negPeriod, span, negPeriod, packedColor);
   } else {
     const minY = Math.min(y1, y2);
-    pushQuadInstance(x1 - halfT, minY, thickness, len, 0, negPeriod, len, negPeriod, packedColor);
+    pushQuadInstance(x1 - halfT, minY, thickness, len, 0, negPeriod, span, negPeriod, packedColor);
   }
 }
 
+function pushDashedHeaderDividerQuad(x, y, w, thickness, period, packedColor) {
+  const nW = Math.max(1, Math.round(w / period - 0.54));
+  if (nW <= 2) {
+    return;
+  }
+  const worldPeriodW = w / (nW + 0.54);
+  const startX = x + worldPeriodW;
+  const innerW = w - worldPeriodW * 2.0;
+  const span = (nW - 2 + 0.54) * period;
+  pushQuadInstance(startX, y, innerW, thickness, 0, -period, span, -period, packedColor);
+}
+
 function pushDashedRectQuads(x, y, w, h, thickness, period, packedColor) {
-  pushDashedSegmentQuad(x, y, x + w, y, thickness, period, packedColor);
-  pushDashedSegmentQuad(x, y + h, x + w, y + h, thickness, period, packedColor);
-  pushDashedSegmentQuad(x, y, x, y + h, thickness, period, packedColor);
-  pushDashedSegmentQuad(x + w, y, x + w, y + h, thickness, period, packedColor);
+  const t = thickness;
+  const negPeriod = -period;
+  const spanW = computeAlignedDashSpan(w, period);
+  const innerH = Math.max(1, h - t * 2);
+  const spanH = computeAlignedDashSpan(innerH, period);
+  pushQuadInstance(x, y, w, t, 0, negPeriod, spanW, negPeriod, packedColor);
+  pushQuadInstance(x, y + h - t, w, t, 0, negPeriod, spanW, negPeriod, packedColor);
+  pushQuadInstance(x, y + t, t, innerH, 0, negPeriod, spanH, negPeriod, packedColor);
+  pushQuadInstance(x + w - t, y + t, t, innerH, 0, negPeriod, spanH, negPeriod, packedColor);
 }
 
 function pushWirePolylineQuads(pts, thickness, isDashed, packedColor) {
@@ -788,28 +814,31 @@ function pushShapedTextQuads(shaped, originX, centerY, packedColor) {
   }
 }
 
-function pushPortQuads(x, y, isHoveredOrActive, theme, isUnreachable) {
-  if (isHoveredOrActive) {
-    const sp = studioGL.uv.portHover;
-    const hs = sp.size * 0.5;
-    pushQuadInstance(x - hs, y - hs, sp.size, sp.size, sp.u0, sp.v0, sp.u1, sp.v1, theme.textPrimary);
-    return;
-  }
+function pushPortQuads(x, y, isConnected, isHoveredOrActive, theme, isUnreachable) {
   const fillSp = studioGL.uv.portFill;
-  const ringSp = studioGL.uv.portRing;
   const hs = fillSp.size * 0.5;
+  const portColor =
+    typeof isHoveredOrActive === "number"
+      ? isHoveredOrActive
+      : isHoveredOrActive
+        ? theme.textPrimary
+        : isUnreachable
+          ? theme.unreachWire
+          : theme.borderStrong;
   pushQuadInstance(x - hs, y - hs, fillSp.size, fillSp.size, fillSp.u0, fillSp.v0, fillSp.u1, fillSp.v1, theme.bgObsidian);
-  pushQuadInstance(
-    x - hs,
-    y - hs,
-    ringSp.size,
-    ringSp.size,
-    ringSp.u0,
-    ringSp.v0,
-    ringSp.u1,
-    ringSp.v1,
-    isUnreachable ? theme.borderStrong : theme.textPrimary
-  );
+  const sp = isConnected ? studioGL.uv.portHover : studioGL.uv.portRing;
+  pushQuadInstance(x - hs, y - hs, sp.size, sp.size, sp.u0, sp.v0, sp.u1, sp.v1, portColor);
+}
+
+function isHoveredPortItemConnected(hovered) {
+  if (!hovered) return false;
+  if (hovered.type === "scene-out-port") {
+    return Boolean(hovered.port && hovered.port.connected);
+  }
+  if (hovered.type === "chapter-out-port") {
+    return Boolean(hovered.outPort && hovered.outPort.connected);
+  }
+  return false;
 }
 
 function compileStaticSceneQuads(theme) {
@@ -831,7 +860,7 @@ function compileStaticSceneQuads(theme) {
     pushSolidQuad(ch.x, ch.y, ch.w, ch.h, theme.chapterFill);
     pushSolidQuad(ch.x + 1, ch.y + 1, ch.w - 2, 27, theme.bgElevated);
     pushDashedRectQuads(ch.x, ch.y, ch.w, ch.h, 1, 9.0, theme.borderStrong);
-    pushDashedSegmentQuad(ch.x, ch.y + 28, ch.x + ch.w, ch.y + 28, 1, 9.0, theme.borderStrong);
+    pushDashedHeaderDividerQuad(ch.x, ch.y + 28, ch.w, 1, 9.0, theme.borderStrong);
     pushQuadInstance(
       ch.x + 4,
       ch.y + 3,
@@ -941,30 +970,118 @@ function compileStaticSceneQuads(theme) {
     const ch = chapters[i];
     if (ch.hidden) continue;
     if (!ch.isRoot) {
-      pushPortQuads(ch.inX, ch.inY, false, theme, false);
+      pushPortQuads(ch.inX, ch.inY, Boolean(ch.inConnected), false, theme, false);
     }
     for (let j = 0; j < ch.outPorts.length; j++) {
       const op = ch.outPorts[j];
-      pushPortQuads(op.x, op.y, false, theme, false);
+      pushPortQuads(op.x, op.y, Boolean(op.connected), false, theme, false);
     }
   }
 
   for (let i = 0; i < nodes.length; i++) {
     const nd = nodes[i];
     if (nd.hasInputPort) {
-      pushPortQuads(nd.x + nd.inOx, nd.y + nd.inOy, false, theme, nd.unreachable);
+      pushPortQuads(nd.x + nd.inOx, nd.y + nd.inOy, Boolean(nd.inConnected), false, theme, nd.unreachable);
     }
     if (nd.hasChoices && nd.ports.length > 0) {
       for (let j = 0; j < nd.ports.length; j++) {
         const pt = nd.ports[j];
-        pushPortQuads(nd.x + pt.ox, nd.y + pt.oy, false, theme, nd.unreachable);
+        pushPortQuads(nd.x + pt.ox, nd.y + pt.oy, Boolean(pt.connected), false, theme, nd.unreachable);
       }
     } else if (nd.implicitPort) {
-      pushPortQuads(nd.x + nd.implicitPort.ox, nd.y + nd.implicitPort.oy, false, theme, nd.unreachable);
+      pushPortQuads(
+        nd.x + nd.implicitPort.ox,
+        nd.y + nd.implicitPort.oy,
+        Boolean(nd.implicitPort.connected),
+        false,
+        theme,
+        nd.unreachable
+      );
     }
   }
 
   studioGL.staticInstCount = studioGL.instCursor;
+}
+
+function chapterMatchesTargetLower(ch, targetLower) {
+  if (!ch || !targetLower) return false;
+  return ch.nameLower === targetLower || ch.refLower === targetLower;
+}
+
+function collectHoveredConnectionWires(hoveredWire) {
+  if (!hoveredWire) return [];
+  if (hoveredWire.kind === "scene-to-scene") {
+    return [hoveredWire];
+  }
+  const allWires = studioGraphState.wires || [];
+  const result = [];
+  const seen = new Set();
+  const pushUnique = (w) => {
+    if (w && !seen.has(w)) {
+      seen.add(w);
+      result.push(w);
+    }
+  };
+
+  pushUnique(hoveredWire);
+
+  if (hoveredWire.kind === "scene-to-chapter-out") {
+    const fromCh = hoveredWire.fromChapterObj;
+    const targetLower = hoveredWire.targetChapterLower;
+    const toCh = studioGraphState.chapterByKey.get(targetLower);
+    for (let i = 0; i < allWires.length; i++) {
+      const w = allWires[i];
+      if (
+        w.kind === "chapter-to-chapter" &&
+        w.fromChapterObj === fromCh &&
+        (w.toChapterObj === toCh || chapterMatchesTargetLower(w.toChapterObj, targetLower))
+      ) {
+        pushUnique(w);
+      } else if (
+        w.kind === "chapter-in-to-entry" &&
+        (w.toChapterObj === toCh || chapterMatchesTargetLower(w.toChapterObj, targetLower))
+      ) {
+        pushUnique(w);
+      }
+    }
+  } else if (hoveredWire.kind === "chapter-to-chapter") {
+    const fromCh = hoveredWire.fromChapterObj;
+    const toCh = hoveredWire.toChapterObj;
+    for (let i = 0; i < allWires.length; i++) {
+      const w = allWires[i];
+      if (
+        w.kind === "scene-to-chapter-out" &&
+        w.fromChapterObj === fromCh &&
+        chapterMatchesTargetLower(toCh, w.targetChapterLower)
+      ) {
+        pushUnique(w);
+      } else if (w.kind === "chapter-in-to-entry" && w.toChapterObj === toCh) {
+        pushUnique(w);
+      }
+    }
+  } else if (hoveredWire.kind === "chapter-in-to-entry") {
+    const toCh = hoveredWire.toChapterObj;
+    const upstreamFromChapters = new Set();
+    for (let i = 0; i < allWires.length; i++) {
+      const w = allWires[i];
+      if (w.kind === "chapter-to-chapter" && w.toChapterObj === toCh) {
+        pushUnique(w);
+        if (w.fromChapterObj) upstreamFromChapters.add(w.fromChapterObj);
+      }
+    }
+    for (let i = 0; i < allWires.length; i++) {
+      const w = allWires[i];
+      if (
+        w.kind === "scene-to-chapter-out" &&
+        upstreamFromChapters.has(w.fromChapterObj) &&
+        chapterMatchesTargetLower(toCh, w.targetChapterLower)
+      ) {
+        pushUnique(w);
+      }
+    }
+  }
+
+  return result;
 }
 
 function appendDynamicOverlayQuads(theme) {
@@ -975,29 +1092,77 @@ function appendDynamicOverlayQuads(theme) {
   const gesture = activeCanvasGesture;
   const gripSp = studioGL.uv.grip;
 
+  const renderChapterPortsOverlay = (ch) => {
+    if (!ch || ch.hidden) return;
+    if (!ch.isRoot) {
+      pushPortQuads(ch.inX, ch.inY, Boolean(ch.inConnected), false, theme, false);
+    }
+    for (let j = 0; j < ch.outPorts.length; j++) {
+      const op = ch.outPorts[j];
+      pushPortQuads(op.x, op.y, Boolean(op.connected), false, theme, false);
+    }
+  };
+
   if (gesture && gesture.type === "chapter-drag" && gesture.chapter && gesture.dragConfirmed) {
     const ch = gesture.chapter;
-    pushSolidBorderQuads(ch.x, ch.y, ch.w, ch.h, 1.5, theme.textPrimary);
+    pushSolidBorderQuads(ch.x, ch.y, ch.w, ch.h, 1, theme.textPrimary);
+    renderChapterPortsOverlay(ch);
   } else if (studioGraphState.selectedChapterKey) {
     const selCh = studioGraphState.chapterByKey.get(studioGraphState.selectedChapterKey);
     if (selCh && !selCh.hidden) {
-      pushSolidBorderQuads(selCh.x, selCh.y, selCh.w, selCh.h, 1.5, theme.textPrimary);
+      pushSolidBorderQuads(selCh.x, selCh.y, selCh.w, selCh.h, 1, theme.textSecondary);
+      renderChapterPortsOverlay(selCh);
     }
   }
 
-  if (hoveredWire) {
-    pushWirePolylineQuads(hoveredWire.pts, 2, false, theme.textPrimary);
-    if (hoveredWire.fromNode) {
-      pushPortQuads(hoveredWire.x1, hoveredWire.y1, true, theme, false);
-    } else if (hoveredWire.fromChapterOutPort) {
-      pushPortQuads(hoveredWire.fromChapterOutPort.x, hoveredWire.fromChapterOutPort.y, true, theme, false);
+  const isNodeDragging = Boolean(gesture && gesture.type === "node-drag");
+  const nodeHighlightColor = isNodeDragging ? theme.textPrimary : theme.textSecondary;
+  selectedNodeIds.forEach((selId) => {
+    const nd = studioGraphState.nodeById.get(selId);
+    if (!nd) return;
+    pushSolidBorderQuads(nd.x, nd.y, nd.w, nd.h, 1, nodeHighlightColor);
+    if (nd.hasInputPort) {
+      pushPortQuads(nd.x + nd.inOx, nd.y + nd.inOy, Boolean(nd.inConnected), false, theme, nd.unreachable);
     }
-    if (hoveredWire.toNode) {
-      pushPortQuads(hoveredWire.x2, hoveredWire.y2, true, theme, false);
-    } else if (hoveredWire.toChapterOutPort) {
-      pushPortQuads(hoveredWire.toChapterOutPort.x, hoveredWire.toChapterOutPort.y, true, theme, false);
-    } else if (hoveredWire.toChapterObj) {
-      pushPortQuads(hoveredWire.toChapterObj.inX, hoveredWire.toChapterObj.inY, true, theme, false);
+    if (nd.hasChoices && nd.ports.length > 0) {
+      for (let j = 0; j < nd.ports.length; j++) {
+        const pt = nd.ports[j];
+        pushPortQuads(nd.x + pt.ox, nd.y + pt.oy, Boolean(pt.connected), false, theme, nd.unreachable);
+      }
+    } else if (nd.implicitPort) {
+      pushPortQuads(
+        nd.x + nd.implicitPort.ox,
+        nd.y + nd.implicitPort.oy,
+        Boolean(nd.implicitPort.connected),
+        false,
+        theme,
+        nd.unreachable
+      );
+    }
+  });
+
+  if (hoveredWire) {
+    const chain = collectHoveredConnectionWires(hoveredWire);
+    for (let i = 0; i < chain.length; i++) {
+      const hw = chain[i];
+      pushWirePolylineQuads(hw.pts, 2, false, theme.textSecondary);
+    }
+    for (let i = 0; i < chain.length; i++) {
+      const hw = chain[i];
+      if (hw.fromNode) {
+        pushPortQuads(hw.x1, hw.y1, true, theme.textSecondary, theme, false);
+      } else if (hw.fromChapterOutPort) {
+        pushPortQuads(hw.fromChapterOutPort.x, hw.fromChapterOutPort.y, true, theme.textSecondary, theme, false);
+      } else if (hw.kind === "chapter-in-to-entry" && hw.fromChapterObj) {
+        pushPortQuads(hw.fromChapterObj.inX, hw.fromChapterObj.inY, Boolean(hw.fromChapterObj.inConnected), theme.textSecondary, theme, false);
+      }
+      if (hw.toNode) {
+        pushPortQuads(hw.x2, hw.y2, true, theme.textSecondary, theme, false);
+      } else if (hw.toChapterOutPort) {
+        pushPortQuads(hw.toChapterOutPort.x, hw.toChapterOutPort.y, true, theme.textSecondary, theme, false);
+      } else if (hw.toChapterObj) {
+        pushPortQuads(hw.toChapterObj.inX, hw.toChapterObj.inY, true, theme.textSecondary, theme, false);
+      }
     }
   }
 
@@ -1053,45 +1218,61 @@ function appendDynamicOverlayQuads(theme) {
       );
       pushWirePolylineQuads(ptsTemp, 2, true, theme.textPrimary);
     }
-    pushPortQuads(gesture.startX, gesture.startY, true, theme, false);
+    const startConnected =
+      gesture.type === "wire-connect"
+        ? Boolean(gesture.sourcePort ? gesture.sourcePort.connected : gesture.hasExistingTarget)
+        : Boolean(gesture.activeChapterOutPort && gesture.activeChapterOutPort.connected);
+    pushPortQuads(gesture.startX, gesture.startY, startConnected, true, theme, false);
     if (gesture.hoveredSceneNode) {
       const tnd = gesture.hoveredSceneNode;
-      pushPortQuads(tnd.x + tnd.inOx, tnd.y + tnd.inOy, true, theme, false);
+      pushPortQuads(tnd.x + tnd.inOx, tnd.y + tnd.inOy, Boolean(tnd.inConnected), true, theme, false);
     }
     if (gesture.hoveredChapterIn) {
-      pushPortQuads(gesture.hoveredChapterIn.inX, gesture.hoveredChapterIn.inY, true, theme, false);
+      pushPortQuads(
+        gesture.hoveredChapterIn.inX,
+        gesture.hoveredChapterIn.inY,
+        Boolean(gesture.hoveredChapterIn.inConnected),
+        true,
+        theme,
+        false
+      );
     }
     if (gesture.hoveredChapterOutPort) {
-      pushPortQuads(gesture.hoveredChapterOutPort.x, gesture.hoveredChapterOutPort.y, true, theme, false);
+      pushPortQuads(
+        gesture.hoveredChapterOutPort.x,
+        gesture.hoveredChapterOutPort.y,
+        Boolean(gesture.hoveredChapterOutPort.connected),
+        true,
+        theme,
+        false
+      );
     }
   }
 
-  selectedNodeIds.forEach((selId) => {
-    const nd = studioGraphState.nodeById.get(selId);
-    if (!nd) return;
-    pushSolidBorderQuads(nd.x, nd.y, nd.w, nd.h, 2, theme.textPrimary);
-    if (nd.hasInputPort) {
-      pushPortQuads(nd.x + nd.inOx, nd.y + nd.inOy, false, theme, nd.unreachable);
-    }
-    if (nd.hasChoices && nd.ports.length > 0) {
-      for (let j = 0; j < nd.ports.length; j++) {
-        const pt = nd.ports[j];
-        pushPortQuads(nd.x + pt.ox, nd.y + pt.oy, false, theme, nd.unreachable);
-      }
-    } else if (nd.implicitPort) {
-      pushPortQuads(nd.x + nd.implicitPort.ox, nd.y + nd.implicitPort.oy, false, theme, nd.unreachable);
-    }
-  });
-
   if (hovered) {
-    if (hovered.type === "scene-out-port" || hovered.type === "scene-in-port" || hovered.type === "chapter-out-port" || hovered.type === "chapter-in-port") {
-      pushPortQuads(hovered.x, hovered.y, true, theme, false);
+    if (
+      hovered.type === "scene-out-port" ||
+      hovered.type === "chapter-out-port"
+    ) {
+      pushPortQuads(hovered.x, hovered.y, isHoveredPortItemConnected(hovered), true, theme, false);
     } else if (hovered.type === "node-grip" && hovered.node) {
       const nd = hovered.node;
-      pushBorderedBoxQuads(nd.x + 4, nd.y + 6, 20, 22, 1, theme.borderSubtle, theme.bgElevated);
       pushQuadInstance(
         nd.x + 4,
         nd.y + 6,
+        gripSp.w,
+        gripSp.h,
+        gripSp.u0 + 30.0,
+        gripSp.v0,
+        gripSp.u1 + 30.0,
+        gripSp.v1,
+        theme.textPrimary
+      );
+    } else if (hovered.type === "chapter-grip" && hovered.chapter && !hovered.chapter.hidden) {
+      const ch = hovered.chapter;
+      pushQuadInstance(
+        ch.x + 4,
+        ch.y + 3,
         gripSp.w,
         gripSp.h,
         gripSp.u0 + 30.0,

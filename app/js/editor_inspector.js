@@ -526,38 +526,24 @@ function syncNodeSelectionDOM() {
       }
       const listEl = qs("#context-multi-scene-list", multiPanel);
       if (listEl) {
-        listEl.textContent = "";
-        selectedItems.forEach((item) => {
-          const row = document.createElement("div");
-          row.className = "context-multi-scene-item";
-          row.setAttribute("data-multi-scene-id", item.id);
-
-          const infoBtn = document.createElement("button");
-          infoBtn.type = "button";
-          infoBtn.className = "context-multi-scene-select-btn";
-          infoBtn.setAttribute("data-multi-select-scene", item.id);
-
-          const titleSpan = document.createElement("span");
-          titleSpan.className = "context-multi-scene-title";
-          titleSpan.textContent = item.title;
-          infoBtn.appendChild(titleSpan);
-
-          if (item.chapter) {
-            const metaSpan = document.createElement("span");
-            metaSpan.className = "context-multi-scene-meta";
-            metaSpan.textContent = item.chapter;
-            infoBtn.appendChild(metaSpan);
+        const itemById = new Map();
+        selectedItems.forEach((it) => {
+          itemById.set(it.id, it);
+        });
+        qsa(".context-multi-scene-item", listEl).forEach((row) => {
+          const rowId = row.getAttribute("data-multi-scene-id") || "";
+          const item = itemById.get(rowId);
+          row.classList.toggle("hidden", !item);
+          if (item) {
+            const titleSpan = qs(".context-multi-scene-title", row);
+            if (titleSpan && item.title) {
+              titleSpan.textContent = item.title;
+            }
+            const metaSpan = qs(".context-multi-scene-meta", row);
+            if (metaSpan && item.chapter) {
+              metaSpan.textContent = item.chapter;
+            }
           }
-
-          const deselectBtn = document.createElement("button");
-          deselectBtn.type = "button";
-          deselectBtn.className = "node-icon-btn context-multi-scene-deselect-btn";
-          deselectBtn.setAttribute("data-multi-deselect-scene", item.id);
-          deselectBtn.textContent = "✕";
-
-          row.appendChild(infoBtn);
-          row.appendChild(deselectBtn);
-          listEl.appendChild(row);
         });
       }
       const delBtn = qs("#btn-delete-selected-scenes", multiPanel);

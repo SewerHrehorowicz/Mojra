@@ -1,6 +1,6 @@
 aside.editor-context-panel#editor-context-panel
-    -> if has_selected_node
-        form.editor-context-form.hidden?=is_node_inspector_hidden#editor-context-form
+    {if has_selected_node}
+        form.editor-context-form#editor-context-form .hidden?: {is_node_inspector_hidden}
             action: SaveScene
             data-context-scene-id: "{selected_node.id}"
             input
@@ -28,20 +28,21 @@ aside.editor-context-panel#editor-context-panel
                             type: button
                             data-select-toggle: "true"
                             "▾"
-                    .custom-select-menu.hidden -> selected_node.chapter_options.each() as ch_opt
-                        button.custom-select-option.active?=ch_opt.is_active
-                            type: button
-                            data-select-value: "{ch_opt.value}"
-                            data-select-label: "{ch_opt.label}"
-                            -> ch_opt.label
+                    .custom-select-menu.hidden
+                        {for ch_opt in selected_node.chapter_options}
+                            button.custom-select-option .active?: {ch_opt.is_active}
+                                type: button
+                                data-select-value: "{ch_opt.value}"
+                                data-select-label: "{ch_opt.label}"
+                                {ch_opt.label}
 
             .context-panel-section
                 .node-title-row
-                    -> if selected_node.is_start_scene
+                    {if selected_node.is_start_scene}
                         span.node-start-indicator
                             data-hint: "Scena początkowa (START)"
                             svg.scene-star-icon src: /icons/star.svg
-                    -> elif selected_node.is_chapter_entry
+                    {elif selected_node.is_chapter_entry}
                         span.node-start-indicator.node-chapter-entry-indicator
                             data-hint: "Wejście rozdziału"
                             svg.scene-star-icon src: /icons/star.svg
@@ -70,21 +71,22 @@ aside.editor-context-panel#editor-context-panel
                             button.custom-select-trigger
                                 type: button
                                 data-select-toggle: "true"
-                                span.custom-select-label -> selected_node.current_image_label
+                                span.custom-select-label {selected_node.current_image_label}
                                 span.custom-select-caret "▾"
-                            .custom-select-menu.hidden -> selected_node.image_options.each() as img_opt
-                                button.custom-select-option.active?=img_opt.is_active
-                                    type: button
-                                    data-select-value: "{img_opt.value}"
-                                    data-select-label: "{img_opt.label}"
-                                    -> img_opt.label
+                            .custom-select-menu.hidden
+                                {for img_opt in selected_node.image_options}
+                                    button.custom-select-option .active?: {img_opt.is_active}
+                                        type: button
+                                        data-select-value: "{img_opt.value}"
+                                        data-select-label: "{img_opt.label}"
+                                        {img_opt.label}
                         button.node-icon-btn.node-media-add-btn
                             type: button
                             action: BrowseAddBookMedia
                             data-kind: image
                             data-scene: "{selected_node.id}"
                             svg.media-plus-icon src: /icons/plus.svg
-                    -> if book_narrated
+                    {if book_narrated}
                         .node-meta-row
                             span.node-meta-key "voice:"
                             .custom-select.node-media-select
@@ -95,14 +97,15 @@ aside.editor-context-panel#editor-context-panel
                                 button.custom-select-trigger
                                     type: button
                                     data-select-toggle: "true"
-                                    span.custom-select-label -> selected_node.current_voice_label
+                                    span.custom-select-label {selected_node.current_voice_label}
                                     span.custom-select-caret "▾"
-                                .custom-select-menu.hidden -> selected_node.voice_options.each() as voice_opt
-                                    button.custom-select-option.active?=voice_opt.is_active
-                                        type: button
-                                        data-select-value: "{voice_opt.value}"
-                                        data-select-label: "{voice_opt.label}"
-                                        -> voice_opt.label
+                                .custom-select-menu.hidden
+                                    {for voice_opt in selected_node.voice_options}
+                                        button.custom-select-option .active?: {voice_opt.is_active}
+                                            type: button
+                                            data-select-value: "{voice_opt.value}"
+                                            data-select-label: "{voice_opt.label}"
+                                            {voice_opt.label}
                             button.node-icon-btn.node-media-add-btn
                                 type: button
                                 action: BrowseAddBookMedia
@@ -118,42 +121,45 @@ aside.editor-context-panel#editor-context-panel
                     data-hint: "Edytuj treść sceny w widoku książki"
                     "Edytuj treść"
 
-            -> if selected_node.has_node_warnings
-                ul.node-warnings-list -> selected_node.node_warnings.each() as nw
-                    li -> nw.text
+            {if selected_node.has_node_warnings}
+                ul.node-warnings-list
+                    {for nw in selected_node.node_warnings}
+                        li {nw.text}
 
             .context-panel-section.context-choices-section
-                -> if selected_node.has_choices
-                    .context-choices-list -> selected_node.ports.each() as pt
-                        .context-choice-item
-                            input.node-choice-label
-                                type: text
-                                name: "choice_label_{pt.idx}"
-                                data-choice-idx: "{pt.idx}"
-                                value: "{pt.raw_label}"
-                                placeholder: "Tekst wyboru..."
-                            .custom-select.node-choice-select
-                                input.custom-select-input
-                                    type: hidden
-                                    name: "choice_target_{pt.idx}"
-                                    value: "{pt.selected_value}"
-                                button.custom-select-trigger.choice-port-trigger
-                                    type: button
-                                    data-select-toggle: "true"
-                                    data-hint: "{pt.selected_label}"
-                                    span.choice-port-icon.port-filled?=pt.is_filled
-                                .custom-select-menu.hidden -> pt.target_options.each() as opt
-                                    button.custom-select-option.active?=opt.is_active
+                {if selected_node.has_choices}
+                    .context-choices-list
+                        {for pt in selected_node.ports}
+                            .context-choice-item
+                                input.node-choice-label
+                                    type: text
+                                    name: "choice_label_{pt.idx}"
+                                    data-choice-idx: "{pt.idx}"
+                                    value: "{pt.raw_label}"
+                                    placeholder: "Tekst wyboru..."
+                                .custom-select.node-choice-select
+                                    input.custom-select-input
+                                        type: hidden
+                                        name: "choice_target_{pt.idx}"
+                                        value: "{pt.selected_value}"
+                                    button.custom-select-trigger.choice-port-trigger
                                         type: button
-                                        data-select-value: "{opt.value}"
-                                        data-select-label: "{opt.short_label}"
-                                        -> opt.label
-                            button.node-icon-btn.node-choice-btn.node-choice-remove
-                                type: button
-                                action: PromptRemoveChoice
-                                data-scene: "{selected_node.id}"
-                                data-choice-idx: "{pt.idx}"
-                                svg.choice-trash-icon src: /icons/trash.svg
+                                        data-select-toggle: "true"
+                                        data-hint: "{pt.selected_label}"
+                                        span.choice-port-icon .port-filled?: {pt.is_filled}
+                                    .custom-select-menu.hidden
+                                        {for opt in pt.target_options}
+                                            button.custom-select-option .active?: {opt.is_active}
+                                                type: button
+                                                data-select-value: "{opt.value}"
+                                                data-select-label: "{opt.short_label}"
+                                                {opt.label}
+                                button.node-icon-btn.node-choice-btn.node-choice-remove
+                                    type: button
+                                    action: PromptRemoveChoice
+                                    data-scene: "{selected_node.id}"
+                                    data-choice-idx: "{pt.idx}"
+                                    svg.choice-trash-icon src: /icons/trash.svg
                 button.btn.btn-sm.node-add-choice-btn
                     type: button
                     action: AddChoice
@@ -168,8 +174,8 @@ aside.editor-context-panel#editor-context-panel
                     svg.btn-icon src: /icons/trash.svg
                     span "Usuń scenę"
 
-    -> if selected_chapter
-        form.editor-chapter-form.hidden?=!has_selected_chapter#editor-chapter-form
+    {if selected_chapter}
+        form.editor-chapter-form#editor-chapter-form .hidden?: {!has_selected_chapter}
             action: SaveChapterSettings
             data-context-chapter: "{selected_chapter.name}"
             input
@@ -199,17 +205,18 @@ aside.editor-context-panel#editor-context-panel
                             button.custom-select-trigger
                                 type: button
                                 data-select-toggle: "true"
-                                span.custom-select-label -> selected_chapter.start_scene_label
+                                span.custom-select-label {selected_chapter.start_scene_label}
                                 span.custom-select-caret "▾"
-                            .custom-select-menu.hidden -> selected_chapter.start_scene_options.each() as ch_st_opt
-                                button.custom-select-option.active?=ch_st_opt.is_active
-                                    type: button
-                                    data-select-value: "{ch_st_opt.value}"
-                                    data-select-label: "{ch_st_opt.label}"
-                                    -> ch_st_opt.label
+                            .custom-select-menu.hidden
+                                {for ch_st_opt in selected_chapter.start_scene_options}
+                                    button.custom-select-option .active?: {ch_st_opt.is_active}
+                                        type: button
+                                        data-select-value: "{ch_st_opt.value}"
+                                        data-select-label: "{ch_st_opt.label}"
+                                        {ch_st_opt.label}
 
-    -> if has_active_book
-        form.editor-book-form.hidden?=!book_settings_open#editor-book-form
+    {if has_active_book}
+        form.editor-book-form#editor-book-form .hidden?: {!book_settings_open}
             action: SaveBookSettings
             .context-panel-section
                 input.node-inline-title#book-settings-title-input
@@ -230,14 +237,15 @@ aside.editor-context-panel#editor-context-panel
                             button.custom-select-trigger
                                 type: button
                                 data-select-toggle: "true"
-                                span.custom-select-label -> book_start_chapter_name
+                                span.custom-select-label {book_start_chapter_name}
                                 span.custom-select-caret "▾"
-                            .custom-select-menu.hidden -> book_start_chapter_options.each() as bk_ch_opt
-                                button.custom-select-option.active?=bk_ch_opt.is_active
-                                    type: button
-                                    data-select-value: "{bk_ch_opt.value}"
-                                    data-select-label: "{bk_ch_opt.label}"
-                                    -> bk_ch_opt.label
+                            .custom-select-menu.hidden
+                                {for bk_ch_opt in book_start_chapter_options}
+                                    button.custom-select-option .active?: {bk_ch_opt.is_active}
+                                        type: button
+                                        data-select-value: "{bk_ch_opt.value}"
+                                        data-select-label: "{bk_ch_opt.label}"
+                                        {bk_ch_opt.label}
                     .node-meta-row
                         span.node-meta-key "start:"
                         .custom-select.node-media-select.book-start-scene-select#book-start-scene-select
@@ -248,14 +256,15 @@ aside.editor-context-panel#editor-context-panel
                             button.custom-select-trigger
                                 type: button
                                 data-select-toggle: "true"
-                                span.custom-select-label -> book_start_scene_label
+                                span.custom-select-label {book_start_scene_label}
                                 span.custom-select-caret "▾"
-                            .custom-select-menu.hidden -> book_start_scene_options.each() as bk_st_opt
-                                button.custom-select-option.active?=bk_st_opt.is_active
-                                    type: button
-                                    data-select-value: "{bk_st_opt.value}"
-                                    data-select-label: "{bk_st_opt.label}"
-                                    -> bk_st_opt.label
+                            .custom-select-menu.hidden
+                                {for bk_st_opt in book_start_scene_options}
+                                    button.custom-select-option .active?: {bk_st_opt.is_active}
+                                        type: button
+                                        data-select-value: "{bk_st_opt.value}"
+                                        data-select-label: "{bk_st_opt.label}"
+                                        {bk_st_opt.label}
                     .node-meta-row
                         span.node-meta-key "author:"
                         input.node-meta-input
@@ -269,12 +278,24 @@ aside.editor-context-panel#editor-context-panel
                             name: description
                             rows: 4
                             placeholder: "Krótki opis książki..."
-                            -> active_book_description
+                            {active_book_description}
 
     .editor-multi-panel.hidden#editor-multi-panel
         .context-panel-section
             label.node-micro-label#multi-select-count-label "Zaznaczone sceny"
             .context-multi-scene-list#context-multi-scene-list
+                {for ms in multi_scene_items}
+                    .context-multi-scene-item.hidden
+                        data-multi-scene-id: "{ms.id}"
+                        button.context-multi-scene-select-btn
+                            type: button
+                            data-multi-select-scene: "{ms.id}"
+                            span.context-multi-scene-title {ms.title}
+                            span.context-multi-scene-meta {ms.chapter}
+                        button.node-icon-btn.context-multi-scene-deselect-btn
+                            type: button
+                            data-multi-deselect-scene: "{ms.id}"
+                            "✕"
         .context-danger-zone
             button.btn.btn-sm.context-delete-btn#btn-delete-selected-scenes
                 type: button

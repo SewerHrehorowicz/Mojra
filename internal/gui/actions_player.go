@@ -10,165 +10,172 @@ import (
 	"storyteller/internal/book"
 )
 
-func (s *Server) handlePlayerAction(action string, w http.ResponseWriter, r *http.Request) (toast string, wroteResponse bool, handled bool) {
-	switch action {
-	case "SaveAudioTime":
-		if s.ActiveBook != nil && s.Save != nil {
-			if t, err := strconv.ParseFloat(r.FormValue("time"), 64); err == nil && t >= 0 {
-				s.Save.AudioTime = t
-				_ = book.UpdateSaveAudioTimeInPlace(s.SavesDir, s.ActiveBook.ID, t, s.ActiveBook.StartSceneID)
-			}
+func (s *Server) saveAudioTime(r *http.Request) string {
+	if s.ActiveBook != nil && s.Save != nil {
+		if t, err := strconv.ParseFloat(r.FormValue("time"), 64); err == nil && t >= 0 {
+			s.Save.AudioTime = t
+			_ = book.UpdateSaveAudioTimeInPlace(s.SavesDir, s.ActiveBook.ID, t, s.ActiveBook.StartSceneID)
 		}
-		w.WriteHeader(http.StatusNoContent)
-		return "", true, true
-
-	case "ChooseBranch":
-		idx, err := strconv.Atoi(r.FormValue("choice_idx"))
-		cur := s.currentScene()
-		if err == nil && cur != nil && idx >= 0 && idx < len(cur.Choices) {
-			toast = s.executeChoiceTransition(cur, cur.Choices[idx])
-		}
-		return toast, false, true
-
-	case "AutoAdvanceImplicit":
-		cur := s.currentScene()
-		if cur != nil && len(cur.Choices) == 1 && !cur.Choices[0].IsEnding && cur.Choices[0].TargetSceneID != "END" {
-			toast = s.executeChoiceTransition(cur, cur.Choices[0])
-		}
-		return toast, false, true
-
-	case "AudioEnded":
-		if s.Settings.AutoChoice {
-			cur := s.currentScene()
-			if cur != nil && len(cur.Choices) > 0 && !cur.ExplicitEnd {
-				idx := rand.Intn(len(cur.Choices))
-				toast = s.executeChoiceTransition(cur, cur.Choices[idx])
-			}
-		}
-		return toast, false, true
-
-	case "RevealHistory":
-		if s.Save != nil && len(s.Save.History) > 0 {
-			s.HistoryRevealed = true
-			s.FocusedHistoryIdx = len(s.Save.History) - 1
-		}
-		return "", false, true
-
-	case "FocusHistoryStep":
-		if stepIdx, err := strconv.Atoi(r.FormValue("step")); err == nil && s.Save != nil && stepIdx >= 0 && stepIdx < len(s.Save.History) {
-			s.HistoryRevealed = true
-			s.FocusedHistoryIdx = stepIdx
-		}
-		return "", false, true
-
-	case "FocusPresent":
-		s.FocusedHistoryIdx = -1
-		s.HistoryRevealed = false
-		return "", false, true
-
-	case "RewindStepNow":
-		if stepIdx, err := strconv.Atoi(r.FormValue("step")); err == nil && s.Save != nil && stepIdx >= 0 && stepIdx < len(s.Save.History) {
-			targetSceneID := s.Save.History[stepIdx].SceneID
-			s.Save.History = s.Save.History[:stepIdx]
-			s.Save.CurrentSceneID = targetSceneID
-			s.Save.AudioTime = 0
-			s.HistoryRevealed = false
-			s.FocusedHistoryIdx = -1
-			_ = book.WriteSaveState(s.SavesDir, s.Save)
-			toast = "Cofnięto opowieść do wybranej sceny."
-		}
-		return toast, false, true
-
-	case "PromptRewindStep":
-		if stepIdx, err := strconv.Atoi(r.FormValue("step")); err == nil && s.Save != nil && stepIdx >= 0 && stepIdx < len(s.Save.History) {
-			entry := s.Save.History[stepIdx]
-			sceneName := entry.SceneName
-			if sc := s.findScene(entry.SceneID); sc != nil {
-				sceneName = sc.DisplayName()
-			}
-			if sceneName == "" {
-				sceneName = entry.SceneID
-			}
-			s.ConfirmTitle = "Wznów od tej sceny"
-			s.ConfirmMessage = fmt.Sprintf("Czy na pewno chcesz wznowić opowieść od sceny „%s”? Późniejszy postęp oraz dokonane wybory zostaną bezpowrotnie wymazane.", sceneName)
-			s.ConfirmPendingAction = "RewindStep"
-			s.ConfirmPendingParam = strconv.Itoa(stepIdx)
-		}
-		return "", false, true
-
-	case "PromptResetProgress":
-		targetBook := s.ActiveBook
-		if reqBookID := strings.TrimSpace(r.FormValue("book")); reqBookID != "" {
-			if found, err := s.findBookByID(book.SanitizeBookID(reqBookID)); err == nil && found != nil {
-				targetBook = found
-			}
-		}
-		if targetBook != nil {
-			s.ConfirmTitle = "Wymaż zapisany postęp"
-			s.ConfirmMessage = fmt.Sprintf("Czy na pewno chcesz wyczyścić historię wyborów i zakładkę dla książki „%s” oraz zacząć od pierwszej sceny?", targetBook.Title)
-			s.ConfirmPendingAction = "ResetProgress"
-			s.ConfirmPendingParam = targetBook.ID
-		}
-		return "", false, true
-
-	case "CycleAudioSpeed":
-		steps := []float64{0.75, 1.0, 1.25, 1.5, 2.0}
-		next := 1.0
-		for i, st := range steps {
-			if st == s.Settings.PlaybackSpeed {
-				next = steps[(i+1)%len(steps)]
-				break
-			}
-		}
-		s.Settings.PlaybackSpeed = next
-		_ = book.SaveAppSettings(s.SavesDir, s.Settings)
-		if s.Save != nil {
-			s.Save.PlaybackSpeed = next
-			_ = book.WriteSaveState(s.SavesDir, s.Save)
-		}
-		return "", false, true
-
-	case "ToggleAutoChoice":
-		s.Settings.AutoChoice = !s.Settings.AutoChoice
-		_ = book.SaveAppSettings(s.SavesDir, s.Settings)
-		if s.Save != nil {
-			s.Save.AutoChoice = s.Settings.AutoChoice
-			_ = book.WriteSaveState(s.SavesDir, s.Save)
-		}
-		return "", false, true
-
-	case "ToggleAutoStrategy":
-		if s.Settings.AutoChoiceStrategy == "random" {
-			s.Settings.AutoChoiceStrategy = "first"
-		} else {
-			s.Settings.AutoChoiceStrategy = "random"
-		}
-		_ = book.SaveAppSettings(s.SavesDir, s.Settings)
-		if s.Save != nil {
-			s.Save.AutoChoiceStrategy = s.Settings.AutoChoiceStrategy
-			_ = book.WriteSaveState(s.SavesDir, s.Save)
-		}
-		return "", false, true
-
-	case "PlayFromScene":
-		if r.FormValue("scene_id") != "" {
-			_ = s.saveSceneFromForm(r)
-		}
-		if scID := strings.TrimSpace(r.FormValue("scene")); scID != "" {
-			s.SelectedSceneID = scID
-		}
-		if s.ActiveBook != nil && s.Save != nil && s.SelectedSceneID != "" {
-			s.Save.CurrentSceneID = s.SelectedSceneID
-			s.Save.AudioTime = 0
-			_ = book.WriteSaveState(s.SavesDir, s.Save)
-			s.Settings.ActiveView = "player"
-			s.SceneTextModalID = ""
-			_ = book.SaveAppSettings(s.SavesDir, s.Settings)
-		}
-		return "", false, true
 	}
+	return ""
+}
 
-	return "", false, false
+func (s *Server) chooseBranch(r *http.Request) string {
+	idx, err := strconv.Atoi(r.FormValue("choice_idx"))
+	cur := s.currentScene()
+	if err == nil && cur != nil && idx >= 0 && idx < len(cur.Choices) {
+		return s.executeChoiceTransition(cur, cur.Choices[idx])
+	}
+	return ""
+}
+
+func (s *Server) autoAdvanceImplicit(_ *http.Request) string {
+	cur := s.currentScene()
+	if cur != nil && len(cur.Choices) == 1 && !cur.Choices[0].IsEnding && cur.Choices[0].TargetSceneID != "END" {
+		return s.executeChoiceTransition(cur, cur.Choices[0])
+	}
+	return ""
+}
+
+func (s *Server) audioEnded(_ *http.Request) string {
+	if s.Settings.AutoChoice {
+		cur := s.currentScene()
+		if cur != nil && len(cur.Choices) > 0 && !cur.ExplicitEnd {
+			idx := rand.Intn(len(cur.Choices))
+			return s.executeChoiceTransition(cur, cur.Choices[idx])
+		}
+	}
+	return ""
+}
+
+func (s *Server) revealHistory(_ *http.Request) string {
+	if s.Save != nil && len(s.Save.History) > 0 {
+		s.HistoryRevealed = true
+		s.FocusedHistoryIdx = len(s.Save.History) - 1
+	}
+	return ""
+}
+
+func (s *Server) focusHistoryStep(r *http.Request) string {
+	if stepIdx, err := strconv.Atoi(r.FormValue("step")); err == nil && s.Save != nil && stepIdx >= 0 && stepIdx < len(s.Save.History) {
+		s.HistoryRevealed = true
+		s.FocusedHistoryIdx = stepIdx
+	}
+	return ""
+}
+
+func (s *Server) focusPresent(_ *http.Request) string {
+	s.FocusedHistoryIdx = -1
+	s.HistoryRevealed = false
+	return ""
+}
+
+func (s *Server) rewindStepNow(r *http.Request) string {
+	if stepIdx, err := strconv.Atoi(r.FormValue("step")); err == nil && s.Save != nil && stepIdx >= 0 && stepIdx < len(s.Save.History) {
+		targetSceneID := s.Save.History[stepIdx].SceneID
+		s.Save.History = s.Save.History[:stepIdx]
+		s.Save.CurrentSceneID = targetSceneID
+		s.Save.AudioTime = 0
+		s.HistoryRevealed = false
+		s.FocusedHistoryIdx = -1
+		_ = book.WriteSaveState(s.SavesDir, s.Save)
+		return "Cofnięto opowieść do wybranej sceny."
+	}
+	return ""
+}
+
+func (s *Server) promptRewindStep(r *http.Request) string {
+	if stepIdx, err := strconv.Atoi(r.FormValue("step")); err == nil && s.Save != nil && stepIdx >= 0 && stepIdx < len(s.Save.History) {
+		entry := s.Save.History[stepIdx]
+		sceneName := entry.SceneName
+		if sc := s.findScene(entry.SceneID); sc != nil {
+			sceneName = sc.DisplayName()
+		}
+		if sceneName == "" {
+			sceneName = entry.SceneID
+		}
+		s.ConfirmTitle = "Wznów od tej sceny"
+		s.ConfirmMessage = fmt.Sprintf("Czy na pewno chcesz wznowić opowieść od sceny „%s”? Późniejszy postęp oraz dokonane wybory zostaną bezpowrotnie wymazane.", sceneName)
+		s.ConfirmPendingAction = "RewindStep"
+		s.ConfirmPendingParam = strconv.Itoa(stepIdx)
+	}
+	return ""
+}
+
+func (s *Server) promptResetProgress(r *http.Request) string {
+	targetBook := s.ActiveBook
+	if reqBookID := strings.TrimSpace(r.FormValue("book")); reqBookID != "" {
+		if found, err := s.findBookByID(book.SanitizeBookID(reqBookID)); err == nil && found != nil {
+			targetBook = found
+		}
+	}
+	if targetBook != nil {
+		s.ConfirmTitle = "Wymaż zapisany postęp"
+		s.ConfirmMessage = fmt.Sprintf("Czy na pewno chcesz wyczyścić historię wyborów i zakładkę dla książki „%s” oraz zacząć od pierwszej sceny?", targetBook.Title)
+		s.ConfirmPendingAction = "ResetProgress"
+		s.ConfirmPendingParam = targetBook.ID
+	}
+	return ""
+}
+
+func (s *Server) cycleAudioSpeed(_ *http.Request) string {
+	steps := []float64{0.75, 1.0, 1.25, 1.5, 2.0}
+	next := 1.0
+	for i, st := range steps {
+		if st == s.Settings.PlaybackSpeed {
+			next = steps[(i+1)%len(steps)]
+			break
+		}
+	}
+	s.Settings.PlaybackSpeed = next
+	_ = book.SaveAppSettings(s.SavesDir, s.Settings)
+	if s.Save != nil {
+		s.Save.PlaybackSpeed = next
+		_ = book.WriteSaveState(s.SavesDir, s.Save)
+	}
+	return ""
+}
+
+func (s *Server) toggleAutoChoice(_ *http.Request) string {
+	s.Settings.AutoChoice = !s.Settings.AutoChoice
+	_ = book.SaveAppSettings(s.SavesDir, s.Settings)
+	if s.Save != nil {
+		s.Save.AutoChoice = s.Settings.AutoChoice
+		_ = book.WriteSaveState(s.SavesDir, s.Save)
+	}
+	return ""
+}
+
+func (s *Server) toggleAutoStrategy(_ *http.Request) string {
+	if s.Settings.AutoChoiceStrategy == "random" {
+		s.Settings.AutoChoiceStrategy = "first"
+	} else {
+		s.Settings.AutoChoiceStrategy = "random"
+	}
+	_ = book.SaveAppSettings(s.SavesDir, s.Settings)
+	if s.Save != nil {
+		s.Save.AutoChoiceStrategy = s.Settings.AutoChoiceStrategy
+		_ = book.WriteSaveState(s.SavesDir, s.Save)
+	}
+	return ""
+}
+
+func (s *Server) playFromScene(r *http.Request) string {
+	if r.FormValue("scene_id") != "" {
+		_ = s.saveSceneFromForm(r)
+	}
+	if scID := strings.TrimSpace(r.FormValue("scene")); scID != "" {
+		s.SelectedSceneID = scID
+	}
+	if s.ActiveBook != nil && s.Save != nil && s.SelectedSceneID != "" {
+		s.Save.CurrentSceneID = s.SelectedSceneID
+		s.Save.AudioTime = 0
+		_ = book.WriteSaveState(s.SavesDir, s.Save)
+		s.Settings.ActiveView = "player"
+		s.SceneTextModalID = ""
+		_ = book.SaveAppSettings(s.SavesDir, s.Settings)
+	}
+	return ""
 }
 
 func (s *Server) executeChoiceTransition(fromScene *book.Scene, choice book.Choice) string {

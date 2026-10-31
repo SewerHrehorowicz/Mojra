@@ -30,115 +30,118 @@ const (
 	targetConfirmModalAccept
 )
 
-// ActionSpec centralizes metadata and DOM chunk target rules for a POST /api/action command.
+// ActionSpec centralizes metadata, DOM chunk target rules, and the 1:1 handler for a POST /api/action command.
 type ActionSpec struct {
 	StandaloneForbidden bool
 	KeepScroll          bool
 	ResetCanvas         bool
 	Target              actionTargetKind
+	NativeCmd           string
+	Handler             func(*Server, *http.Request) string
 }
 
 var actionSpecs = map[string]ActionSpec{
 	// Navigation & Global UI
-	"SwitchView":       {StandaloneForbidden: true, Target: targetAppShell},
-	"OpenBook":         {StandaloneForbidden: true, ResetCanvas: true, Target: targetAppShell},
-	"ToggleTheme":      {KeepScroll: true, Target: targetThemeOrScale},
-	"SetUIScale":       {KeepScroll: true, Target: targetThemeOrScale},
-	"ToggleUIScale":    {KeepScroll: true, Target: targetThemeOrScale},
-	"SetDeviceMode":    {StandaloneForbidden: true, KeepScroll: true, Target: targetThemeOrScale},
-	"ToggleImageless":  {KeepScroll: true, Target: targetImageless},
-	"ToggleFullscreen": {KeepScroll: true, Target: targetNone},
-	"StartWindowDrag":  {Target: targetNone},
-	"QuitApp":          {KeepScroll: true, Target: targetNone},
-	"PromptQuitApp":    {KeepScroll: true, Target: targetNone},
+	"SwitchView":       {StandaloneForbidden: true, Target: targetAppShell, Handler: (*Server).switchView},
+	"OpenBook":         {StandaloneForbidden: true, ResetCanvas: true, Target: targetAppShell, Handler: (*Server).openBook},
+	"ToggleTheme":      {KeepScroll: true, Target: targetThemeOrScale, Handler: (*Server).toggleTheme},
+	"SetUIScale":       {KeepScroll: true, Target: targetThemeOrScale, Handler: (*Server).toggleUIScale},
+	"ToggleUIScale":    {KeepScroll: true, Target: targetThemeOrScale, Handler: (*Server).toggleUIScale},
+	"SetDeviceMode":    {StandaloneForbidden: true, KeepScroll: true, Target: targetThemeOrScale, Handler: (*Server).setDeviceMode},
+	"ToggleImageless":  {KeepScroll: true, Target: targetImageless, Handler: (*Server).toggleImageless},
+	"ToggleFullscreen": {KeepScroll: true, Target: targetNone, NativeCmd: "toggle-fullscreen", Handler: (*Server).toggleFullscreen},
+	"StartWindowDrag":  {Target: targetNone, Handler: (*Server).startWindowDrag},
+	"QuitApp":          {KeepScroll: true, Target: targetNone, NativeCmd: "quit", Handler: (*Server).quitApp},
+	"PromptQuitApp":    {KeepScroll: true, Target: targetNone, NativeCmd: "quit", Handler: (*Server).quitApp},
 
 	// Modals & Confirmations
-	"OpenQRModal":             {KeepScroll: true, Target: targetModals},
-	"CloseQRModal":            {KeepScroll: true, Target: targetModals},
-	"OpenSettingsModal":       {KeepScroll: true, Target: targetModals},
-	"CloseSettingsModal":      {KeepScroll: true, Target: targetModals},
-	"OpenEditorHelpModal":     {StandaloneForbidden: true, KeepScroll: true, Target: targetModals},
-	"CloseEditorHelpModal":    {StandaloneForbidden: true, KeepScroll: true, Target: targetModals},
-	"OpenNewBookModal":        {StandaloneForbidden: true, KeepScroll: true, Target: targetModals},
-	"CloseNewBookModal":       {StandaloneForbidden: true, KeepScroll: true, Target: targetModals},
-	"OpenAddBookModal":        {StandaloneForbidden: true, KeepScroll: true, Target: targetModals},
-	"CloseAddBookModal":       {StandaloneForbidden: true, KeepScroll: true, Target: targetModals},
-	"PromptRewindStep":        {KeepScroll: true, Target: targetModals},
-	"PromptResetProgress":     {KeepScroll: true, Target: targetModals},
-	"PromptRemoveBook":        {StandaloneForbidden: true, Target: targetModals},
-	"PromptDeleteScene":       {StandaloneForbidden: true, Target: targetModals},
-	"PromptDeleteScenes":      {StandaloneForbidden: true, Target: targetModals},
-	"PromptRemoveChoice":      {StandaloneForbidden: true, KeepScroll: true, Target: targetModals},
-	"ConfirmModalClose":       {KeepScroll: true, Target: targetModals},
-	"ConfirmModalAccept":      {Target: targetConfirmModalAccept},
-	"OpenSceneTextModal":      {StandaloneForbidden: true, Target: targetOpenSceneTextModal},
-	"CloseSceneTextModal":     {StandaloneForbidden: true, Target: targetCloseSceneTextModal},
-	"ToggleSceneTextSettings": {StandaloneForbidden: true, Target: targetModals},
-	"NavigateSceneTextModal":  {StandaloneForbidden: true, Target: targetModals},
-	"SaveSceneTextModal":      {Target: targetModals},
+	"OpenQRModal":             {KeepScroll: true, Target: targetModals, Handler: (*Server).openQRModal},
+	"CloseQRModal":            {KeepScroll: true, Target: targetModals, Handler: (*Server).closeQRModal},
+	"OpenSettingsModal":       {KeepScroll: true, Target: targetModals, Handler: (*Server).openQRModal},
+	"CloseSettingsModal":      {KeepScroll: true, Target: targetModals, Handler: (*Server).closeQRModal},
+	"OpenEditorHelpModal":     {StandaloneForbidden: true, KeepScroll: true, Target: targetModals, Handler: (*Server).openEditorHelpModal},
+	"CloseEditorHelpModal":    {StandaloneForbidden: true, KeepScroll: true, Target: targetModals, Handler: (*Server).closeEditorHelpModal},
+	"OpenNewBookModal":        {StandaloneForbidden: true, KeepScroll: true, Target: targetModals, Handler: (*Server).openNewBookModal},
+	"CloseNewBookModal":       {StandaloneForbidden: true, KeepScroll: true, Target: targetModals, Handler: (*Server).closeNewBookModal},
+	"OpenAddBookModal":        {StandaloneForbidden: true, KeepScroll: true, Target: targetModals, Handler: (*Server).openAddBookModal},
+	"CloseAddBookModal":       {StandaloneForbidden: true, KeepScroll: true, Target: targetModals, Handler: (*Server).closeAddBookModal},
+	"PromptRewindStep":        {KeepScroll: true, Target: targetModals, Handler: (*Server).promptRewindStep},
+	"PromptResetProgress":     {KeepScroll: true, Target: targetModals, Handler: (*Server).promptResetProgress},
+	"PromptRemoveBook":        {StandaloneForbidden: true, Target: targetModals, Handler: (*Server).promptRemoveBook},
+	"PromptDeleteScene":       {StandaloneForbidden: true, Target: targetModals, Handler: (*Server).promptDeleteScene},
+	"PromptDeleteScenes":      {StandaloneForbidden: true, Target: targetModals, Handler: (*Server).promptDeleteScenesFromForm},
+	"PromptRemoveChoice":      {StandaloneForbidden: true, KeepScroll: true, Target: targetModals, Handler: (*Server).promptRemoveChoiceFromScene},
+	"ConfirmModalClose":       {KeepScroll: true, Target: targetModals, Handler: (*Server).closeConfirmModal},
+	"ConfirmModalAccept":      {Target: targetConfirmModalAccept, Handler: (*Server).acceptConfirmModalAction},
+	"OpenSceneTextModal":      {StandaloneForbidden: true, Target: targetOpenSceneTextModal, Handler: (*Server).openSceneTextModal},
+	"CloseSceneTextModal":     {StandaloneForbidden: true, Target: targetCloseSceneTextModal, Handler: (*Server).closeSceneTextModal},
+	"ToggleSceneTextSettings": {StandaloneForbidden: true, Target: targetModals, Handler: (*Server).toggleSceneTextSettings},
+	"NavigateSceneTextModal":  {StandaloneForbidden: true, Target: targetModals, Handler: (*Server).navigateSceneTextModal},
+	"SaveSceneTextModal":      {Target: targetModals, Handler: (*Server).saveSceneTextModal},
 
 	// Library & Book Packaging
-	"CreateNewBook":         {StandaloneForbidden: true, ResetCanvas: true, Target: targetAppShell},
-	"BrowseAddBookFromDisk": {StandaloneForbidden: true, ResetCanvas: true, Target: targetAppShell},
-	"AddBookFromDisk":       {StandaloneForbidden: true, ResetCanvas: true, Target: targetAppShell},
-	"AddBookFromURL":        {StandaloneForbidden: true, ResetCanvas: true, Target: targetAppShell},
-	"RemoveBook":            {StandaloneForbidden: true, Target: targetAppShell},
-	"PackBook":              {StandaloneForbidden: true, Target: targetNone},
-	"ExtractEmbeddedBook":   {StandaloneForbidden: true, Target: targetAppShell},
+	"CreateNewBook":         {StandaloneForbidden: true, ResetCanvas: true, Target: targetAppShell, Handler: (*Server).createNewBook},
+	"BrowseAddBookFromDisk": {StandaloneForbidden: true, ResetCanvas: true, Target: targetAppShell, Handler: (*Server).browseAddBookFromDisk},
+	"AddBookFromDisk":       {StandaloneForbidden: true, ResetCanvas: true, Target: targetAppShell, Handler: (*Server).addBookFromDisk},
+	"AddBookFromURL":        {StandaloneForbidden: true, ResetCanvas: true, Target: targetAppShell, Handler: (*Server).addBookFromURLAction},
+	"RemoveBook":            {StandaloneForbidden: true, Target: targetAppShell, Handler: (*Server).removeBookFromForm},
+	"PackBook":              {StandaloneForbidden: true, Target: targetNone, Handler: (*Server).packActiveBook},
+	"ExtractEmbeddedBook":   {StandaloneForbidden: true, Target: targetAppShell, Handler: (*Server).extractEmbeddedBookAction},
 
 	// Player & Audio
-	"ChooseBranch":        {Target: targetBranchOrAudioEnded},
-	"AutoAdvanceImplicit": {Target: targetBranchOrAudioEnded},
-	"AudioEnded":          {Target: targetBranchOrAudioEnded},
-	"RewindStepNow":       {Target: targetPlayerView},
-	"RevealHistory":       {Target: targetPlayerView},
-	"FocusHistoryStep":    {Target: targetPlayerView},
-	"FocusPresent":        {Target: targetPlayerView},
-	"CycleAudioSpeed":     {KeepScroll: true, Target: targetNone},
-	"ToggleAutoChoice":    {KeepScroll: true, Target: targetNone},
-	"ToggleAutoStrategy":  {KeepScroll: true, Target: targetNone},
-	"PlayFromScene":       {StandaloneForbidden: true, Target: targetAppShell},
+	"SaveAudioTime":       {KeepScroll: true, Target: targetNone, Handler: (*Server).saveAudioTime},
+	"ChooseBranch":        {Target: targetBranchOrAudioEnded, Handler: (*Server).chooseBranch},
+	"AutoAdvanceImplicit": {Target: targetBranchOrAudioEnded, Handler: (*Server).autoAdvanceImplicit},
+	"AudioEnded":          {Target: targetBranchOrAudioEnded, Handler: (*Server).audioEnded},
+	"RewindStepNow":       {Target: targetPlayerView, Handler: (*Server).rewindStepNow},
+	"RevealHistory":       {Target: targetPlayerView, Handler: (*Server).revealHistory},
+	"FocusHistoryStep":    {Target: targetPlayerView, Handler: (*Server).focusHistoryStep},
+	"FocusPresent":        {Target: targetPlayerView, Handler: (*Server).focusPresent},
+	"CycleAudioSpeed":     {KeepScroll: true, Target: targetNone, Handler: (*Server).cycleAudioSpeed},
+	"ToggleAutoChoice":    {KeepScroll: true, Target: targetNone, Handler: (*Server).toggleAutoChoice},
+	"ToggleAutoStrategy":  {KeepScroll: true, Target: targetNone, Handler: (*Server).toggleAutoStrategy},
+	"PlayFromScene":       {StandaloneForbidden: true, Target: targetAppShell, Handler: (*Server).playFromScene},
 
 	// Node Studio & Editor
-	"SelectStudioScene":        {StandaloneForbidden: true, Target: targetSelectStudioScene},
-	"SelectStudioChapter":      {StandaloneForbidden: true, Target: targetSelectStudioScene},
-	"OpenBookSettings":         {StandaloneForbidden: true, Target: targetActiveWorkspace},
-	"CloseBookSettings":        {StandaloneForbidden: true, Target: targetActiveWorkspace},
-	"ToggleBookSettings":       {StandaloneForbidden: true, Target: targetActiveWorkspace},
-	"SaveBookSettings":         {StandaloneForbidden: true, Target: targetAppShell},
-	"SaveScene":                {StandaloneForbidden: true, Target: targetActiveWorkspace},
-	"AutoSaveScene":            {StandaloneForbidden: true, Target: targetNone},
-	"SaveEditorState":          {StandaloneForbidden: true, Target: targetNone},
-	"RenameBook":               {StandaloneForbidden: true, Target: targetAppShell},
-	"ToggleBookNarrated":       {StandaloneForbidden: true, Target: targetActiveWorkspace},
-	"ToggleBookImageless":      {StandaloneForbidden: true, Target: targetAppShell},
-	"SetStartScene":            {StandaloneForbidden: true, Target: targetActiveWorkspaceOrModalsWhenSceneTextOpen},
-	"SetBookStartChapter":      {StandaloneForbidden: true, Target: targetActiveWorkspace},
-	"SetChapterStartScene":     {StandaloneForbidden: true, Target: targetActiveWorkspace},
-	"SaveChapterSettings":      {StandaloneForbidden: true, Target: targetActiveWorkspace},
-	"BrowseAddBookMedia":       {StandaloneForbidden: true, Target: targetActiveWorkspaceOrModalsWhenSceneTextOpen},
-	"AddBookMediaFromDisk":     {StandaloneForbidden: true, Target: targetActiveWorkspaceOrModalsWhenSceneTextOpen},
-	"ConnectChoice":            {StandaloneForbidden: true, Target: targetActiveWorkspaceOrModalsWhenSceneTextOpen},
-	"ConnectChapter":           {StandaloneForbidden: true, Target: targetActiveWorkspaceOrModalsWhenSceneTextOpen},
-	"AddChoice":                {StandaloneForbidden: true, Target: targetActiveWorkspaceOrModalsWhenSceneTextOpen},
-	"RemoveChoice":             {StandaloneForbidden: true, Target: targetActiveWorkspaceOrModalsWhenSceneTextOpen},
-	"BranchChoiceScene":        {StandaloneForbidden: true, Target: targetActiveWorkspaceOrModalsWhenSceneTextOpen},
-	"InsertScene":              {StandaloneForbidden: true, Target: targetActiveWorkspace},
-	"InsertSceneBefore":        {StandaloneForbidden: true, Target: targetActiveWorkspace},
-	"CreateSceneAt":            {StandaloneForbidden: true, Target: targetActiveWorkspace},
-	"DeleteScene":              {StandaloneForbidden: true, Target: targetAppShell},
-	"DeleteScenes":             {StandaloneForbidden: true, Target: targetAppShell},
-	"AutoLayoutNodes":          {StandaloneForbidden: true, ResetCanvas: true, Target: targetActiveWorkspace},
-	"RenameChapter":            {StandaloneForbidden: true, Target: targetActiveWorkspace},
-	"AssignChapterToScenes":    {StandaloneForbidden: true, Target: targetActiveWorkspace},
-	"CreateChapterGroup":       {StandaloneForbidden: true, Target: targetActiveWorkspace},
-	"UndoEditor":               {StandaloneForbidden: true, Target: targetUndoRedoWorkspaceOrAppShell},
-	"RedoEditor":               {StandaloneForbidden: true, Target: targetUndoRedoWorkspaceOrAppShell},
-	"RestoreHistoryRevision":   {StandaloneForbidden: true, Target: targetUndoRedoWorkspaceOrAppShell},
-	"ToggleEditorHistoryPanel": {StandaloneForbidden: true, Target: targetActiveWorkspace},
-	"OpenEditorHistoryPanel":   {StandaloneForbidden: true, Target: targetActiveWorkspace},
-	"CloseEditorHistoryPanel":  {StandaloneForbidden: true, Target: targetActiveWorkspace},
-	"SaveHistoryVersion":       {StandaloneForbidden: true, Target: targetActiveWorkspace},
+	"SelectStudioScene":        {StandaloneForbidden: true, Target: targetSelectStudioScene, Handler: (*Server).selectStudioScene},
+	"SelectStudioChapter":      {StandaloneForbidden: true, Target: targetSelectStudioScene, Handler: (*Server).selectStudioChapter},
+	"OpenBookSettings":         {StandaloneForbidden: true, Target: targetActiveWorkspace, Handler: (*Server).openBookSettings},
+	"CloseBookSettings":        {StandaloneForbidden: true, Target: targetActiveWorkspace, Handler: (*Server).closeBookSettings},
+	"ToggleBookSettings":       {StandaloneForbidden: true, Target: targetActiveWorkspace, Handler: (*Server).toggleBookSettings},
+	"SaveBookSettings":         {StandaloneForbidden: true, Target: targetAppShell, Handler: (*Server).saveBookSettings},
+	"SaveScene":                {StandaloneForbidden: true, Target: targetActiveWorkspace, Handler: (*Server).saveSceneAction},
+	"AutoSaveScene":            {StandaloneForbidden: true, Target: targetNone, Handler: (*Server).autoSaveSceneAction},
+	"SaveEditorState":          {StandaloneForbidden: true, Target: targetNone, Handler: (*Server).saveEditorViewportAndNodePositions},
+	"RenameBook":               {StandaloneForbidden: true, Target: targetAppShell, Handler: (*Server).renameBook},
+	"ToggleBookNarrated":       {StandaloneForbidden: true, Target: targetActiveWorkspace, Handler: (*Server).toggleBookNarrated},
+	"ToggleBookImageless":      {StandaloneForbidden: true, Target: targetAppShell, Handler: (*Server).toggleBookImageless},
+	"SetStartScene":            {StandaloneForbidden: true, Target: targetActiveWorkspaceOrModalsWhenSceneTextOpen, Handler: (*Server).setStartScene},
+	"SetBookStartChapter":      {StandaloneForbidden: true, Target: targetActiveWorkspace, Handler: (*Server).setBookStartChapter},
+	"SetChapterStartScene":     {StandaloneForbidden: true, Target: targetActiveWorkspace, Handler: (*Server).setChapterStartScene},
+	"SaveChapterSettings":      {StandaloneForbidden: true, Target: targetActiveWorkspace, Handler: (*Server).saveChapterSettings},
+	"BrowseAddBookMedia":       {StandaloneForbidden: true, Target: targetActiveWorkspaceOrModalsWhenSceneTextOpen, Handler: (*Server).browseAddBookMedia},
+	"AddBookMediaFromDisk":     {StandaloneForbidden: true, Target: targetActiveWorkspaceOrModalsWhenSceneTextOpen, Handler: (*Server).addBookMediaFromDisk},
+	"ConnectChoice":            {StandaloneForbidden: true, Target: targetActiveWorkspaceOrModalsWhenSceneTextOpen, Handler: (*Server).connectChoiceOnScene},
+	"ConnectChapter":           {StandaloneForbidden: true, Target: targetActiveWorkspaceOrModalsWhenSceneTextOpen, Handler: (*Server).connectChapterTransition},
+	"AddChoice":                {StandaloneForbidden: true, Target: targetActiveWorkspaceOrModalsWhenSceneTextOpen, Handler: (*Server).addChoiceToScene},
+	"RemoveChoice":             {StandaloneForbidden: true, Target: targetActiveWorkspaceOrModalsWhenSceneTextOpen, Handler: (*Server).removeChoiceFromScene},
+	"BranchChoiceScene":        {StandaloneForbidden: true, Target: targetActiveWorkspaceOrModalsWhenSceneTextOpen, Handler: (*Server).branchSceneFromChoice},
+	"InsertScene":              {StandaloneForbidden: true, Target: targetActiveWorkspace, Handler: (*Server).insertScene},
+	"InsertSceneBefore":        {StandaloneForbidden: true, Target: targetActiveWorkspace, Handler: (*Server).insertSceneBefore},
+	"CreateSceneAt":            {StandaloneForbidden: true, Target: targetActiveWorkspace, Handler: (*Server).createSceneAt},
+	"DeleteScene":              {StandaloneForbidden: true, Target: targetAppShell, Handler: (*Server).deleteSceneFromForm},
+	"DeleteScenes":             {StandaloneForbidden: true, Target: targetAppShell, Handler: (*Server).deleteScenesFromForm},
+	"AutoLayoutNodes":          {StandaloneForbidden: true, ResetCanvas: true, Target: targetActiveWorkspace, Handler: (*Server).autoLayoutNodes},
+	"RenameChapter":            {StandaloneForbidden: true, Target: targetActiveWorkspace, Handler: (*Server).renameActiveBookChapter},
+	"AssignChapterToScenes":    {StandaloneForbidden: true, Target: targetActiveWorkspace, Handler: (*Server).assignChapterToScenes},
+	"CreateChapterGroup":       {StandaloneForbidden: true, Target: targetActiveWorkspace, Handler: (*Server).createChapterGroup},
+	"UndoEditor":               {StandaloneForbidden: true, Target: targetUndoRedoWorkspaceOrAppShell, Handler: (*Server).undoEditor},
+	"RedoEditor":               {StandaloneForbidden: true, Target: targetUndoRedoWorkspaceOrAppShell, Handler: (*Server).redoEditor},
+	"RestoreHistoryRevision":   {StandaloneForbidden: true, Target: targetUndoRedoWorkspaceOrAppShell, Handler: (*Server).restoreHistoryRevision},
+	"ToggleEditorHistoryPanel": {StandaloneForbidden: true, Target: targetActiveWorkspace, Handler: (*Server).toggleEditorHistoryPanel},
+	"OpenEditorHistoryPanel":   {StandaloneForbidden: true, Target: targetActiveWorkspace, Handler: (*Server).openEditorHistoryPanel},
+	"CloseEditorHistoryPanel":  {StandaloneForbidden: true, Target: targetActiveWorkspace, Handler: (*Server).closeEditorHistoryPanel},
+	"SaveHistoryVersion":       {StandaloneForbidden: true, Target: targetActiveWorkspace, Handler: (*Server).saveHistoryVersion},
 }
 
 func isStandaloneForbiddenAction(action string) bool {
@@ -248,120 +251,147 @@ func validateSameOriginAction(r *http.Request) bool {
 	return true
 }
 
-func (s *Server) handleGlobalOrModalAction(action string, w http.ResponseWriter, r *http.Request) (toast, nativeCmd string, wroteResponse bool) {
-	switch action {
-	case "SwitchView":
-		view := strings.TrimSpace(r.FormValue("view"))
-		if (view == "player" || view == "editor") && s.ActiveBook == nil {
-			if books, err := s.loadBooks(); err == nil && len(books) > 0 {
-				s.setActiveBook(books[0])
-			}
+func (s *Server) switchView(r *http.Request) string {
+	view := strings.TrimSpace(r.FormValue("view"))
+	if (view == "player" || view == "editor") && s.ActiveBook == nil {
+		if books, err := s.loadBooks(); err == nil && len(books) > 0 {
+			s.setActiveBook(books[0])
 		}
-		if view == "library" || view == "player" || view == "editor" {
-			s.Settings.ActiveView = view
-			s.closeAllModals()
-			_ = book.SaveAppSettings(s.SavesDir, s.Settings)
-		}
-
-	case "ToggleTheme":
-		if s.Settings.Theme == "light" {
-			s.Settings.Theme = "dark"
-		} else {
-			s.Settings.Theme = "light"
-		}
-		_ = book.SaveAppSettings(s.SavesDir, s.Settings)
-
-	case "ToggleImageless":
-		if !s.isBookImageless() {
-			s.Settings.Imageless = !s.Settings.Imageless
-			_ = book.SaveAppSettings(s.SavesDir, s.Settings)
-		}
-
-	case "ToggleUIScale", "SetUIScale":
-		reqScale := strings.ToLower(strings.TrimSpace(r.FormValue("scale")))
-		if reqScale == "" {
-			reqScale = strings.ToLower(strings.TrimSpace(r.FormValue("mode")))
-		}
-		if reqScale == "" {
-			switch strings.ToLower(strings.TrimSpace(r.FormValue("dir"))) {
-			case "in", "up", "plus", "+":
-				reqScale = "large"
-			case "out", "down", "minus", "-":
-				reqScale = "small"
-			}
-		}
-		if reqScale == "large" || reqScale == "small" {
-			s.Settings.UIScale = reqScale
-		} else if s.Settings.UIScale == "large" {
-			s.Settings.UIScale = "small"
-		} else {
-			s.Settings.UIScale = "large"
-		}
-		_ = book.SaveAppSettings(s.SavesDir, s.Settings)
-
-	case "SetDeviceMode":
-		if s.DevMode {
-			mode := strings.TrimSpace(r.FormValue("mode"))
-			if mode == "full" || mode == "portrait" || mode == "landscape" {
-				s.Settings.PreviewMode = mode
-				_ = book.SaveAppSettings(s.SavesDir, s.Settings)
-			}
-		}
-
-	case "ToggleFullscreen":
-		ToggleNativeWindowFullscreen()
-		nativeCmd = "toggle-fullscreen"
-
-	case "StartWindowDrag":
-		StartNativeWindowDrag()
-		w.WriteHeader(http.StatusNoContent)
-		return "", "", true
-
-	case "OpenQRModal", "OpenSettingsModal":
-		s.QRModalOpen = true
-
-	case "CloseQRModal", "CloseSettingsModal":
-		s.QRModalOpen = false
-
-	case "OpenEditorHelpModal":
-		s.EditorHelpModalOpen = true
-
-	case "CloseEditorHelpModal":
-		s.EditorHelpModalOpen = false
-
-	case "OpenNewBookModal":
-		s.QRModalOpen = false
-		s.AddBookModalOpen = false
-		s.NewBookModalOpen = true
-
-	case "CloseNewBookModal":
-		s.NewBookModalOpen = false
-
-	case "OpenAddBookModal":
-		s.QRModalOpen = false
-		s.NewBookModalOpen = false
-		s.AddBookModalOpen = true
-
-	case "CloseAddBookModal":
-		s.AddBookModalOpen = false
-
-	case "QuitApp", "PromptQuitApp":
-		s.ConfirmPendingAction = ""
-		s.ConfirmPendingParam = ""
-		nativeCmd = "quit"
-		go func() {
-			s.TriggerShutdown()
-			TerminateNativeWindow()
-		}()
-
-	case "ConfirmModalClose":
-		s.ConfirmPendingAction = ""
-		s.ConfirmPendingParam = ""
-
-	case "ConfirmModalAccept":
-		toast, nativeCmd = s.acceptConfirmModal()
 	}
-	return toast, nativeCmd, false
+	if view == "library" || view == "player" || view == "editor" {
+		s.Settings.ActiveView = view
+		s.closeAllModals()
+		_ = book.SaveAppSettings(s.SavesDir, s.Settings)
+	}
+	return ""
+}
+
+func (s *Server) toggleTheme(_ *http.Request) string {
+	if s.Settings.Theme == "light" {
+		s.Settings.Theme = "dark"
+	} else {
+		s.Settings.Theme = "light"
+	}
+	_ = book.SaveAppSettings(s.SavesDir, s.Settings)
+	return ""
+}
+
+func (s *Server) toggleImageless(_ *http.Request) string {
+	if !s.isBookImageless() {
+		s.Settings.Imageless = !s.Settings.Imageless
+		_ = book.SaveAppSettings(s.SavesDir, s.Settings)
+	}
+	return ""
+}
+
+func (s *Server) toggleUIScale(r *http.Request) string {
+	reqScale := strings.ToLower(strings.TrimSpace(r.FormValue("scale")))
+	if reqScale == "" {
+		reqScale = strings.ToLower(strings.TrimSpace(r.FormValue("mode")))
+	}
+	if reqScale == "" {
+		switch strings.ToLower(strings.TrimSpace(r.FormValue("dir"))) {
+		case "in", "up", "plus", "+":
+			reqScale = "large"
+		case "out", "down", "minus", "-":
+			reqScale = "small"
+		}
+	}
+	if reqScale == "large" || reqScale == "small" {
+		s.Settings.UIScale = reqScale
+	} else if s.Settings.UIScale == "large" {
+		s.Settings.UIScale = "small"
+	} else {
+		s.Settings.UIScale = "large"
+	}
+	_ = book.SaveAppSettings(s.SavesDir, s.Settings)
+	return ""
+}
+
+func (s *Server) setDeviceMode(r *http.Request) string {
+	if s.DevMode {
+		mode := strings.TrimSpace(r.FormValue("mode"))
+		if mode == "full" || mode == "portrait" || mode == "landscape" {
+			s.Settings.PreviewMode = mode
+			_ = book.SaveAppSettings(s.SavesDir, s.Settings)
+		}
+	}
+	return ""
+}
+
+func (s *Server) toggleFullscreen(_ *http.Request) string {
+	ToggleNativeWindowFullscreen()
+	return ""
+}
+
+func (s *Server) startWindowDrag(_ *http.Request) string {
+	StartNativeWindowDrag()
+	return ""
+}
+
+func (s *Server) openQRModal(_ *http.Request) string {
+	s.QRModalOpen = true
+	return ""
+}
+
+func (s *Server) closeQRModal(_ *http.Request) string {
+	s.QRModalOpen = false
+	return ""
+}
+
+func (s *Server) openEditorHelpModal(_ *http.Request) string {
+	s.EditorHelpModalOpen = true
+	return ""
+}
+
+func (s *Server) closeEditorHelpModal(_ *http.Request) string {
+	s.EditorHelpModalOpen = false
+	return ""
+}
+
+func (s *Server) openNewBookModal(_ *http.Request) string {
+	s.QRModalOpen = false
+	s.AddBookModalOpen = false
+	s.NewBookModalOpen = true
+	return ""
+}
+
+func (s *Server) closeNewBookModal(_ *http.Request) string {
+	s.NewBookModalOpen = false
+	return ""
+}
+
+func (s *Server) openAddBookModal(_ *http.Request) string {
+	s.QRModalOpen = false
+	s.NewBookModalOpen = false
+	s.AddBookModalOpen = true
+	return ""
+}
+
+func (s *Server) closeAddBookModal(_ *http.Request) string {
+	s.AddBookModalOpen = false
+	return ""
+}
+
+func (s *Server) quitApp(_ *http.Request) string {
+	s.ConfirmPendingAction = ""
+	s.ConfirmPendingParam = ""
+	go func() {
+		s.TriggerShutdown()
+		TerminateNativeWindow()
+	}()
+	return ""
+}
+
+func (s *Server) closeConfirmModal(_ *http.Request) string {
+	s.ConfirmPendingAction = ""
+	s.ConfirmPendingParam = ""
+	return ""
+}
+
+func (s *Server) acceptConfirmModalAction(_ *http.Request) string {
+	toast, _ := s.acceptConfirmModal()
+	return toast
 }
 
 func (s *Server) acceptConfirmModal() (toast, nativeCmd string) {
@@ -459,27 +489,23 @@ func (s *Server) handleAction(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if t, wrote, ok := s.handlePlayerAction(action, w, r); ok {
-		if wrote {
-			return
+	if spec, ok := actionSpecs[action]; ok && spec.Handler != nil {
+		toast = spec.Handler(s, r)
+		nativeCmd = spec.NativeCmd
+		if action == "ConfirmModalAccept" && prevConfirmAction == "QuitApp" {
+			nativeCmd = "quit"
 		}
-		toast = t
-	} else if t, wrote, ok := s.handleEditorAction(action, w, r); ok {
-		if wrote {
-			return
-		}
-		toast = t
-	} else if t, wrote, ok := s.handleLibraryAction(action, w, r); ok {
-		if wrote {
-			return
-		}
-		toast = t
-	} else {
-		var wrote bool
-		toast, nativeCmd, wrote = s.handleGlobalOrModalAction(action, w, r)
-		if wrote {
-			return
-		}
+	}
+
+	if action == "SaveAudioTime" || action == "StartWindowDrag" {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	if r.FormValue("silent") == "true" {
+		s.writeEditorHistoryHeaders(w)
+		w.WriteHeader(http.StatusNoContent)
+		return
 	}
 
 	targetTpl, targetSelector := s.resolveActionChunkTarget(action, prevConfirmAction, strings.TrimSpace(r.FormValue("scene_id")) != "")

@@ -11,159 +11,164 @@ import (
 	"storyteller/internal/book"
 )
 
-func (s *Server) handleLibraryAction(action string, w http.ResponseWriter, r *http.Request) (toast string, wroteResponse bool, handled bool) {
-	switch action {
-	case "OpenBook":
-		bookID := book.SanitizeBookID(r.FormValue("book"))
-		targetView := strings.TrimSpace(r.FormValue("view"))
-		if targetView != "editor" {
-			targetView = "player"
-		}
-		if b, err := s.findBookByID(bookID); err == nil && b != nil {
-			s.setActiveBook(b)
-			s.Settings.ActiveView = targetView
-			s.closeAllModals()
-			_ = book.SaveAppSettings(s.SavesDir, s.Settings)
-		}
-		return "", false, true
-
-	case "BrowseAddBookFromDisk":
-		mode := strings.ToLower(strings.TrimSpace(r.FormValue("mode")))
-		chooseDir := mode != "file"
-		s.mu.Unlock()
-		picked := PickNativeBookPath(chooseDir)
-		s.mu.Lock()
-		if picked != "" {
-			toast = s.addBookFromDiskPath(picked)
-		}
-		return toast, false, true
-
-	case "AddBookFromDisk":
-		rawPath := strings.TrimSpace(r.FormValue("path"))
-		lowerPath := strings.ToLower(rawPath)
-		if strings.HasPrefix(lowerPath, "http://") || strings.HasPrefix(lowerPath, "https://") {
-			toast = s.addBookFromURL(rawPath)
-		} else {
-			toast = s.addBookFromDiskPath(rawPath)
-		}
-		return toast, false, true
-
-	case "AddBookFromURL":
-		rawURL := strings.TrimSpace(r.FormValue("url"))
-		return s.addBookFromURL(rawURL), false, true
-
-	case "BrowseAddBookMedia":
-		if _, hasSettingsOpen := r.Form["scene_settings_open"]; hasSettingsOpen {
-			s.SceneTextModalSettingsOpen = r.FormValue("scene_settings_open") == "true"
-		}
-		if r.FormValue("scene_id") != "" {
-			_ = s.saveSceneFromForm(r)
-		}
-		if s.ActiveBook != nil && !s.ActiveBook.IsPacked {
-			kind := strings.ToLower(strings.TrimSpace(r.FormValue("kind")))
-			if kind == "" {
-				kind = strings.ToLower(strings.TrimSpace(r.FormValue("media_kind")))
-			}
-			if !s.ActiveBook.Narrated && (kind == "audio" || kind == "voice") {
-				return "Książka nie posiada narracji (narrated: false) — nagrania głosowe są wyłączone", false, true
-			}
-			scID := strings.TrimSpace(r.FormValue("scene"))
-			if scID == "" {
-				scID = strings.TrimSpace(r.FormValue("scene_id"))
-			}
-			if rawPath := strings.TrimSpace(r.FormValue("path")); rawPath != "" {
-				toast = s.addBookMediaFromDiskPaths([]string{rawPath}, kind, scID)
-			} else {
-				s.mu.Unlock()
-				picked := PickNativeMediaPaths(kind)
-				s.mu.Lock()
-				if len(picked) == 0 {
-					w.WriteHeader(http.StatusNoContent)
-					return "", true, true
-				}
-				toast = s.addBookMediaFromDiskPaths(picked, kind, scID)
-			}
-		}
-		return toast, false, true
-
-	case "AddBookMediaFromDisk":
-		if _, hasSettingsOpen := r.Form["scene_settings_open"]; hasSettingsOpen {
-			s.SceneTextModalSettingsOpen = r.FormValue("scene_settings_open") == "true"
-		}
-		if r.FormValue("scene_id") != "" {
-			_ = s.saveSceneFromForm(r)
-		}
-		if s.ActiveBook != nil && !s.ActiveBook.IsPacked {
-			kind := strings.ToLower(strings.TrimSpace(r.FormValue("kind")))
-			if kind == "" {
-				kind = strings.ToLower(strings.TrimSpace(r.FormValue("media_kind")))
-			}
-			if !s.ActiveBook.Narrated && (kind == "audio" || kind == "voice") {
-				return "Książka nie posiada narracji (narrated: false) — nagrania głosowe są wyłączone", false, true
-			}
-			scID := strings.TrimSpace(r.FormValue("scene"))
-			if scID == "" {
-				scID = strings.TrimSpace(r.FormValue("scene_id"))
-			}
-			rawPath := strings.TrimSpace(r.FormValue("path"))
-			toast = s.addBookMediaFromDiskPaths([]string{rawPath}, kind, scID)
-		}
-		return toast, false, true
-
-	case "CreateNewBook":
-		title := r.FormValue("title")
-		author := r.FormValue("author")
-		rawNarr := strings.ToLower(strings.TrimSpace(r.FormValue("narrated")))
-		narrated := rawNarr == "true" || rawNarr == "on" || rawNarr == "1"
-		rawImg := strings.ToLower(strings.TrimSpace(r.FormValue("imageless")))
-		imageless := rawImg == "true" || rawImg == "on" || rawImg == "1"
-		if created, err := book.CreateNewBook(s.BooksDir, title, author, narrated, imageless); err == nil && created != nil {
-			s.NewBookModalOpen = false
-			s.setActiveBook(created)
-			s.Settings.ActiveView = "editor"
-			_ = book.SaveAppSettings(s.SavesDir, s.Settings)
-			toast = "Utworzono nową książkę: " + created.Title
-		} else if err != nil {
-			toast = err.Error()
-		}
-		return toast, false, true
-
-	case "PromptRemoveBook":
-		reqBookID := book.SanitizeBookID(r.FormValue("book"))
-		if b, err := s.findBookByID(reqBookID); err == nil && b != nil {
-			if b.IsExternal {
-				s.ConfirmTitle = "Odepnij książkę z biblioteki"
-				s.ConfirmMessage = fmt.Sprintf("Czy chcesz usunąć książkę „%s” z listy w bibliotece? Oryginalne pliki na dysku (%s) nie zostaną usunięte.", b.Title, b.RootPath)
-			} else {
-				s.ConfirmTitle = "Usuń książkę z biblioteki"
-				s.ConfirmMessage = fmt.Sprintf("Czy na pewno chcesz usunąć książkę „%s” z katalogu biblioteki?", b.Title)
-			}
-			s.ConfirmPendingAction = "RemoveBook"
-			s.ConfirmPendingParam = b.ID
-		}
-		return "", false, true
-
-	case "PackBook":
-		if s.ActiveBook != nil && !s.ActiveBook.IsPacked {
-			distDir := filepath.Join(s.RootDir, "dist")
-			_ = os.MkdirAll(distDir, 0755)
-			outZip := filepath.Join(distDir, s.ActiveBook.ID+".stbook")
-			if err := book.PackBookToZip(s.ActiveBook.RootPath, outZip); err == nil {
-				toast = "Spakowano archiwum: dist/" + s.ActiveBook.ID + ".stbook"
-			} else {
-				toast = err.Error()
-			}
-		}
-		return toast, false, true
-
-	case "ExtractEmbeddedBook":
-		if s.DevMode && !s.StandaloneMode {
-			toast = s.extractEmbeddedDefaultBook()
-		}
-		return toast, false, true
+func (s *Server) openBook(r *http.Request) string {
+	bookID := book.SanitizeBookID(r.FormValue("book"))
+	targetView := strings.TrimSpace(r.FormValue("view"))
+	if targetView != "editor" {
+		targetView = "player"
 	}
+	if b, err := s.findBookByID(bookID); err == nil && b != nil {
+		s.setActiveBook(b)
+		s.Settings.ActiveView = targetView
+		s.closeAllModals()
+		_ = book.SaveAppSettings(s.SavesDir, s.Settings)
+	}
+	return ""
+}
 
-	return "", false, false
+func (s *Server) browseAddBookFromDisk(r *http.Request) string {
+	mode := strings.ToLower(strings.TrimSpace(r.FormValue("mode")))
+	chooseDir := mode != "file"
+	s.mu.Unlock()
+	picked := PickNativeBookPath(chooseDir)
+	s.mu.Lock()
+	if picked != "" {
+		return s.addBookFromDiskPath(picked)
+	}
+	return ""
+}
+
+func (s *Server) addBookFromDisk(r *http.Request) string {
+	rawPath := strings.TrimSpace(r.FormValue("path"))
+	lowerPath := strings.ToLower(rawPath)
+	if strings.HasPrefix(lowerPath, "http://") || strings.HasPrefix(lowerPath, "https://") {
+		return s.addBookFromURL(rawPath)
+	}
+	return s.addBookFromDiskPath(rawPath)
+}
+
+func (s *Server) addBookFromURLAction(r *http.Request) string {
+	rawURL := strings.TrimSpace(r.FormValue("url"))
+	return s.addBookFromURL(rawURL)
+}
+
+func (s *Server) browseAddBookMedia(r *http.Request) string {
+	if _, hasSettingsOpen := r.Form["scene_settings_open"]; hasSettingsOpen {
+		s.SceneTextModalSettingsOpen = r.FormValue("scene_settings_open") == "true"
+	}
+	if r.FormValue("scene_id") != "" {
+		_ = s.saveSceneFromForm(r)
+	}
+	if s.ActiveBook != nil && !s.ActiveBook.IsPacked {
+		kind := strings.ToLower(strings.TrimSpace(r.FormValue("kind")))
+		if kind == "" {
+			kind = strings.ToLower(strings.TrimSpace(r.FormValue("media_kind")))
+		}
+		if !s.ActiveBook.Narrated && (kind == "audio" || kind == "voice") {
+			return "Książka nie posiada narracji (narrated: false) — nagrania głosowe są wyłączone"
+		}
+		scID := strings.TrimSpace(r.FormValue("scene"))
+		if scID == "" {
+			scID = strings.TrimSpace(r.FormValue("scene_id"))
+		}
+		if rawPath := strings.TrimSpace(r.FormValue("path")); rawPath != "" {
+			return s.addBookMediaFromDiskPaths([]string{rawPath}, kind, scID)
+		}
+		s.mu.Unlock()
+		picked := PickNativeMediaPaths(kind)
+		s.mu.Lock()
+		if len(picked) == 0 {
+			r.Form.Set("silent", "true")
+			return ""
+		}
+		return s.addBookMediaFromDiskPaths(picked, kind, scID)
+	}
+	return ""
+}
+
+func (s *Server) addBookMediaFromDisk(r *http.Request) string {
+	if _, hasSettingsOpen := r.Form["scene_settings_open"]; hasSettingsOpen {
+		s.SceneTextModalSettingsOpen = r.FormValue("scene_settings_open") == "true"
+	}
+	if r.FormValue("scene_id") != "" {
+		_ = s.saveSceneFromForm(r)
+	}
+	if s.ActiveBook != nil && !s.ActiveBook.IsPacked {
+		kind := strings.ToLower(strings.TrimSpace(r.FormValue("kind")))
+		if kind == "" {
+			kind = strings.ToLower(strings.TrimSpace(r.FormValue("media_kind")))
+		}
+		if !s.ActiveBook.Narrated && (kind == "audio" || kind == "voice") {
+			return "Książka nie posiada narracji (narrated: false) — nagrania głosowe są wyłączone"
+		}
+		scID := strings.TrimSpace(r.FormValue("scene"))
+		if scID == "" {
+			scID = strings.TrimSpace(r.FormValue("scene_id"))
+		}
+		rawPath := strings.TrimSpace(r.FormValue("path"))
+		return s.addBookMediaFromDiskPaths([]string{rawPath}, kind, scID)
+	}
+	return ""
+}
+
+func (s *Server) createNewBook(r *http.Request) string {
+	title := r.FormValue("title")
+	author := r.FormValue("author")
+	rawNarr := strings.ToLower(strings.TrimSpace(r.FormValue("narrated")))
+	narrated := rawNarr == "true" || rawNarr == "on" || rawNarr == "1"
+	rawImg := strings.ToLower(strings.TrimSpace(r.FormValue("imageless")))
+	imageless := rawImg == "true" || rawImg == "on" || rawImg == "1"
+	if created, err := book.CreateNewBook(s.BooksDir, title, author, narrated, imageless); err == nil && created != nil {
+		s.NewBookModalOpen = false
+		s.setActiveBook(created)
+		s.Settings.ActiveView = "editor"
+		_ = book.SaveAppSettings(s.SavesDir, s.Settings)
+		return "Utworzono nową książkę: " + created.Title
+	} else if err != nil {
+		return err.Error()
+	}
+	return ""
+}
+
+func (s *Server) promptRemoveBook(r *http.Request) string {
+	reqBookID := book.SanitizeBookID(r.FormValue("book"))
+	if b, err := s.findBookByID(reqBookID); err == nil && b != nil {
+		if b.IsExternal {
+			s.ConfirmTitle = "Odepnij książkę z biblioteki"
+			s.ConfirmMessage = fmt.Sprintf("Czy chcesz usunąć książkę „%s” z listy w bibliotece? Oryginalne pliki na dysku (%s) nie zostaną usunięte.", b.Title, b.RootPath)
+		} else {
+			s.ConfirmTitle = "Usuń książkę z biblioteki"
+			s.ConfirmMessage = fmt.Sprintf("Czy na pewno chcesz usunąć książkę „%s” z katalogu biblioteki?", b.Title)
+		}
+		s.ConfirmPendingAction = "RemoveBook"
+		s.ConfirmPendingParam = b.ID
+	}
+	return ""
+}
+
+func (s *Server) removeBookFromForm(r *http.Request) string {
+	return s.removeBookByID(book.SanitizeBookID(r.FormValue("book")))
+}
+
+func (s *Server) packActiveBook(_ *http.Request) string {
+	if s.ActiveBook != nil && !s.ActiveBook.IsPacked {
+		distDir := filepath.Join(s.RootDir, "dist")
+		_ = os.MkdirAll(distDir, 0755)
+		outZip := filepath.Join(distDir, s.ActiveBook.ID+".stbook")
+		if err := book.PackBookToZip(s.ActiveBook.RootPath, outZip); err == nil {
+			return "Spakowano archiwum: dist/" + s.ActiveBook.ID + ".stbook"
+		} else {
+			return err.Error()
+		}
+	}
+	return ""
+}
+
+func (s *Server) extractEmbeddedBookAction(_ *http.Request) string {
+	if s.DevMode && !s.StandaloneMode {
+		return s.extractEmbeddedDefaultBook()
+	}
+	return ""
 }
 
 func (s *Server) addBookFromDiskPath(rawPath string) string {

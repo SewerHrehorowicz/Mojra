@@ -102,7 +102,9 @@ func ParseStoryFile(content string, sourceFileName string, b *Book) {
 		}
 		rawProse := strings.TrimSpace(strings.Join(proseLines, "\n"))
 		currentScene.Text = SanitizePlainText(rawProse)
-		currentScene.HTML = RenderSafeProseHTML(rawProse)
+		if !b.deferProseHTML {
+			currentScene.EnsureHTML()
+		}
 		currentScene.OrderIndex = len(b.Scenes)
 		b.Scenes = append(b.Scenes, currentScene)
 		b.addSceneToChapterWithMeta(currentScene.Chapter, currentScene.ChapterID, currentScene.SourceFile, currentScene.ID)

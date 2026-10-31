@@ -492,6 +492,29 @@ function routeSingleWireBasePts(w, nodeObstacles, chapterObstacles) {
       toCh.id
     );
     w.basePts = simplifyOrthogonalPoints(rawPts);
+  } else if (w.kind === "chapter-in-to-entry") {
+    const ch = w.toChapterObj;
+    const toNode = w.toNode;
+    w.x1 = ch.inX;
+    w.y1 = ch.inY;
+    w.x2 = toNode.x + toNode.inOx;
+    w.y2 = toNode.y + toNode.inOy;
+    w.unreachable = toNode.unreachable;
+    const rawPts = buildWireWaypoints(
+      w.x1,
+      w.y1,
+      w.x2,
+      w.y2,
+      ch.y + 28,
+      0,
+      toNode.x,
+      toNode.x + toNode.w,
+      true,
+      nodeObstacles,
+      "",
+      toNode.id
+    );
+    w.basePts = simplifyOrthogonalPoints(rawPts);
   }
   w.bbox = computeWireBBox(w.basePts);
 }
@@ -500,6 +523,27 @@ function buildWireCatalogFromMemory() {
   const nodes = studioGraphState.nodes;
   const chapters = studioGraphState.chapters;
   const wires = [];
+
+  for (let i = 0; i < chapters.length; i++) {
+    const ch = chapters[i];
+    ch.inConnected = false;
+    for (let j = 0; j < ch.outPorts.length; j++) {
+      ch.outPorts[j].connected = Boolean(ch.outPorts[j].targetLower);
+    }
+  }
+
+  for (let i = 0; i < nodes.length; i++) {
+    const nd = nodes[i];
+    nd.inConnected = false;
+    for (let j = 0; j < nd.ports.length; j++) {
+      const pt = nd.ports[j];
+      pt.connected = Boolean((pt.targetId && pt.targetId.toUpperCase() !== "END") || (pt.targetChapter && pt.targetChapter.trim()));
+    }
+    if (nd.implicitPort) {
+      const ip = nd.implicitPort;
+      ip.connected = Boolean((ip.targetId && ip.targetId.toUpperCase() !== "END") || (ip.targetChapter && ip.targetChapter.trim()));
+    }
+  }
 
   for (let i = 0; i < nodes.length; i++) {
     const fromNode = nodes[i];
@@ -519,6 +563,7 @@ function buildWireCatalogFromMemory() {
         const fromCh = studioGraphState.chapterByKey.get(fromNode.chapterLower);
         if (!fromCh || fromCh.hidden) continue;
         const targetChLower = targetChapter.toLowerCase();
+        pt.connected = true;
         wires.push({
           kind: "scene-to-chapter-out",
           fromNode: fromNode,
@@ -549,6 +594,8 @@ function buildWireCatalogFromMemory() {
       if (fromNode.chapterLower && toNode.chapterLower && fromNode.chapterLower !== toNode.chapterLower) {
         continue;
       }
+      pt.connected = true;
+      toNode.inConnected = true;
       wires.push({
         kind: "scene-to-scene",
         fromNode: fromNode,
@@ -577,11 +624,50 @@ function buildWireCatalogFromMemory() {
   for (let i = 0; i < chapters.length; i++) {
     const fromCh = chapters[i];
     if (fromCh.hidden) continue;
+    if (!fromCh.isRoot) {
+      let entryNode = fromCh.startSceneId ? studioGraphState.nodeById.get(fromCh.startSceneId) : null;
+      if (!entryNode || entryNode.chapterLower !== fromCh.nameLower) {
+        entryNode = null;
+        for (let k = 0; k < nodes.length; k++) {
+          if (nodes[k].chapterLower === fromCh.nameLower && (nodes[k].isEntry || !entryNode)) {
+            entryNode = nodes[k];
+            if (nodes[k].isEntry) break;
+          }
+        }
+      }
+      if (entryNode) {
+        entryNode.inConnected = true;
+        wires.push({
+          kind: "chapter-in-to-entry",
+          fromNode: null,
+          toNode: entryNode,
+          fromChapterObj: fromCh,
+          toChapterObj: fromCh,
+          fromChapterOutPort: null,
+          toChapterOutPort: null,
+          portRef: null,
+          portIdx: 0,
+          isBottomPort: true,
+          targetChapterLower: fromCh.nameLower,
+          targetGroupKey: "scene:" + entryNode.id,
+          unreachable: entryNode.unreachable,
+          x1: 0,
+          y1: 0,
+          x2: 0,
+          y2: 0,
+          basePts: [],
+          pts: [],
+          bbox: null
+        });
+      }
+    }
     for (let j = 0; j < fromCh.outPorts.length; j++) {
       const op = fromCh.outPorts[j];
       if (!op.targetLower) continue;
       const toCh = studioGraphState.chapterByKey.get(op.targetLower);
       if (!toCh || toCh.hidden || toCh === fromCh) continue;
+      op.connected = true;
+      toCh.inConnected = true;
       wires.push({
         kind: "chapter-to-chapter",
         fromNode: null,

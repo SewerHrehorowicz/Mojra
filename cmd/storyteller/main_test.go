@@ -280,4 +280,30 @@ func TestPackageBooksForDistPacksOnlyStbook(t *testing.T) {
 	}
 }
 
+func TestResolveDistRuntimeDirNeverReturnsRepoRoot(t *testing.T) {
+	fakeRepo := t.TempDir()
+	if err := os.WriteFile(filepath.Join(fakeRepo, "go.mod"), []byte("module storyteller\n"), 0644); err != nil {
+		t.Fatalf("WriteFile go.mod failed: %v", err)
+	}
+	sampleSrc := filepath.Join(fakeRepo, "books", "nie-boj-sie-policji-rzecznej")
+	if err := os.MkdirAll(sampleSrc, 0755); err != nil {
+		t.Fatalf("MkdirAll failed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(sampleSrc, "data.txt"), []byte("title: Test\nstart: s1\n"), 0644); err != nil {
+		t.Fatalf("WriteFile data.txt failed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(sampleSrc, "story.txt"), []byte("scene: Scena 1\nid: s1\nend: true\nTreść.\n"), 0644); err != nil {
+		t.Fatalf("WriteFile story.txt failed: %v", err)
+	}
+
+	resolved := resolveDistRuntimeDir(fakeRepo)
+	if filepath.Clean(resolved) == filepath.Clean(fakeRepo) {
+		t.Fatalf("expected resolveDistRuntimeDir to never return repo root %q", fakeRepo)
+	}
+	if _, err := os.Stat(filepath.Join(resolved, "books", "nie-boj-sie-policji-rzecznej.stbook")); err != nil {
+		t.Fatalf("expected packed .stbook in resolved runtime books dir: %v", err)
+	}
+}
+
+
 

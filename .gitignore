@@ -8,6 +8,7 @@
 
 # Local user saves & runtime state
 /saves/
+.history/
 
 # OS & editor metadata
 .DS_Store

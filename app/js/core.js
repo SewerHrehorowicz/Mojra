@@ -16,17 +16,7 @@ function qsa(sel, root) {
 }
 
 function getOrCreateUITooltip() {
-  let tip = qs("#ui-tooltip");
-  if (!tip) {
-    const appRoot = qs("#app") || document.body;
-    if (appRoot) {
-      tip = document.createElement("div");
-      tip.id = "ui-tooltip";
-      tip.className = "ui-tooltip hidden";
-      appRoot.appendChild(tip);
-    }
-  }
-  return tip;
+  return qs("#ui-tooltip");
 }
 
 function hideUITooltip() {
@@ -425,6 +415,10 @@ async function sendServerAction(actionName, params) {
     }
   }
 
+  if (actionName !== "SaveAudioTime" && typeof cancelMediaPrefetchQueue === "function") {
+    cancelMediaPrefetchQueue();
+  }
+
   const prevAudio = qs("#story-audio");
   const prevWasPlaying = prevAudio ? !prevAudio.paused && !prevAudio.ended : false;
   const prevAudioTime = prevAudio ? prevAudio.currentTime || 0 : 0;
@@ -481,16 +475,7 @@ async function sendServerAction(actionName, params) {
   }
 
   if (targetSelector === "#modals-root") {
-    let modalsRoot = qs("#modals-root");
-    if (!modalsRoot) {
-      const appRoot = qs("#app");
-      if (appRoot) {
-        modalsRoot = document.createElement("div");
-        modalsRoot.id = "modals-root";
-        modalsRoot.className = "modals-root";
-        appRoot.appendChild(modalsRoot);
-      }
-    }
+    const modalsRoot = qs("#modals-root");
     const prevModalFeed = qs(".scene-text-editor-feed", modalsRoot);
     const prevModalScrollTop = prevModalFeed ? prevModalFeed.scrollTop : 0;
     if (modalsRoot) {

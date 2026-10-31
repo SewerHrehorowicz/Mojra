@@ -287,27 +287,6 @@ func (s *Server) applySceneFormFields(target *book.Scene, r *http.Request) {
 	}
 }
 
-func (s *Server) defaultTargetNameForScene(sc *book.Scene) string {
-	if s.ActiveBook == nil || len(s.ActiveBook.Scenes) == 0 || sc == nil {
-		return "END"
-	}
-	scCh := strings.TrimSpace(sc.Chapter)
-	for i, cand := range s.ActiveBook.Scenes {
-		if cand.ID == sc.ID {
-			if i+1 < len(s.ActiveBook.Scenes) && strings.EqualFold(strings.TrimSpace(s.ActiveBook.Scenes[i+1].Chapter), scCh) {
-				return s.ActiveBook.Scenes[i+1].ReferenceKey()
-			}
-			break
-		}
-	}
-	for _, cand := range s.ActiveBook.Scenes {
-		if cand.ID != sc.ID && strings.EqualFold(strings.TrimSpace(cand.Chapter), scCh) {
-			return cand.ReferenceKey()
-		}
-	}
-	return "END"
-}
-
 func (s *Server) materializeChoicesForEdit(sc *book.Scene) []book.Choice {
 	var list []book.Choice
 	for _, ch := range sc.Choices {
@@ -355,7 +334,6 @@ func (s *Server) addChoiceToScene(r *http.Request) string {
 	s.applySceneFormFields(target, r)
 	choices := s.materializeChoicesForEdit(target)
 
-	defaultTarget := s.defaultTargetNameForScene(target)
 	if len(choices) == 1 && (choices[0].Label == "" || strings.EqualFold(choices[0].Label, "Dalej")) {
 		choices[0].Label = "Wybór 1"
 	}
@@ -363,17 +341,19 @@ func (s *Server) addChoiceToScene(r *http.Request) string {
 		for len(choices) < 2 {
 			newLabel := fmt.Sprintf("Wybór %d", len(choices)+1)
 			choices = append(choices, book.Choice{
-				Label:    newLabel,
-				Target:   defaultTarget,
-				IsEnding: strings.EqualFold(defaultTarget, "END"),
+				Label:         newLabel,
+				Target:        "END",
+				TargetSceneID: "END",
+				IsEnding:      true,
 			})
 		}
 	} else {
 		newLabel := fmt.Sprintf("Wybór %d", len(choices)+1)
 		choices = append(choices, book.Choice{
-			Label:    newLabel,
-			Target:   defaultTarget,
-			IsEnding: strings.EqualFold(defaultTarget, "END"),
+			Label:         newLabel,
+			Target:        "END",
+			TargetSceneID: "END",
+			IsEnding:      true,
 		})
 	}
 	target.Choices = choices

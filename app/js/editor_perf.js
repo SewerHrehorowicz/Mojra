@@ -26,14 +26,9 @@ const LOWEND_ANDROID_MULTIPLIER = 6.0;
   };
 
   function ensurePerfOverlayDOM() {
-    const viewport = typeof qs === "function" ? qs("#timeline-scroll-viewport") : document.getElementById("timeline-scroll-viewport");
-    if (!viewport) return null;
-    let el = document.getElementById("editor-perf-overlay");
-    if (!el) {
-      el = document.createElement("div");
-      el.id = "editor-perf-overlay";
-      el.className = "editor-perf-overlay";
-      viewport.appendChild(el);
+    const el = typeof qs === "function" ? qs("#editor-perf-overlay") : document.getElementById("editor-perf-overlay");
+    if (el) {
+      el.classList.remove("hidden");
     }
     return el;
   }

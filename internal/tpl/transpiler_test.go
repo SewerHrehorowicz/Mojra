@@ -125,8 +125,18 @@ func TestCompilerRejectsAllCodeInjectionAndInlineStyles(t *testing.T) {
 		},
 		{
 			name:    "rejects dangling else without if",
-			src:     "-> else\n    span \"Fallback\"",
+			src:     "{else}\n    span \"Fallback\"",
 			wantSub: "must immediately follow an 'if' or 'elif' block",
+		},
+		{
+			name:    "rejects legacy arrow syntax",
+			src:     "span.title -> book_title",
+			wantSub: "'->' syntax is not supported",
+		},
+		{
+			name:    "rejects legacy question-equals syntax",
+			src:     "button.btn.active?=is_active \"Klik\"",
+			wantSub: "'?=' syntax is not supported",
 		},
 	}
 
@@ -269,12 +279,13 @@ func TestBuildWorkspaceAppAssets(t *testing.T) {
 
 func TestMultilineAttributesWithMapping(t *testing.T) {
 	src := `
-.custom-select-menu -> image_options.each() as img_opt
-    button.custom-select-option.{img_opt.active_class}
-        type: button
-        data-select-value: "{img_opt.value}"
-        data-select-label: "{img_opt.label}"
-        -> img_opt.label
+.custom-select-menu
+    {for img_opt in image_options}
+        button.custom-select-option .active?: {img_opt.is_active}
+            type: button
+            data-select-value: "{img_opt.value}"
+            data-select-label: "{img_opt.label}"
+            {img_opt.label}
 `
 	parsed, err := ParseTemplateString(src, "multiline_test")
 	if err != nil {
@@ -284,9 +295,9 @@ func TestMultilineAttributesWithMapping(t *testing.T) {
 	ctx := NewContext(map[string]any{
 		"image_options": []map[string]any{
 			{
-				"active_class": "active",
-				"value":        "forest.png",
-				"label":        "forest.png",
+				"is_active": true,
+				"value":     "forest.png",
+				"label":     "forest.png",
 			},
 		},
 	})
@@ -436,8 +447,8 @@ body[data-theme="light"]
 func TestNoSecondaryInterpolationOnDynamicContextValues(t *testing.T) {
 	src := `
 div.card
-    h2.title -> book_title
-    p.sub -> "Autor: {book_author}"
+    h2.title {book_title}
+    p.sub "Autor: {book_author}"
 `
 	parsed, err := ParseTemplateString(src, "sec_interp")
 	if err != nil {
@@ -445,8 +456,8 @@ div.card
 	}
 	components := map[string]*ParsedTemplate{"sec_interp": parsed}
 	ctx := NewContext(map[string]any{
-		"book_title":  "Księga {secret_internal_var}",
-		"book_author": "Jan {secret_internal_var}",
+		"book_title":          "Księga {secret_internal_var}",
+		"book_author":         "Jan {secret_internal_var}",
 		"secret_internal_var": "TOP_SECRET_LEAK",
 	})
 	html := RenderTemplate("sec_interp", components, ctx)
@@ -463,27 +474,27 @@ div.card
 
 func TestConditionalClassesAttrsElifElseAndComponentSlots(t *testing.T) {
 	cardCompSrc := `
-.panel-card.is-highlighted?=active
-    header.panel-hdr -> title
+.panel-card .is-highlighted?: {active}
+    header.panel-hdr {title}
     .panel-body
         @slot
 `
 	pageSrc := `
 .page
-    button.tab-btn.active?=is_active.is-locked?=is_locked.mode-full?=(mode == "full")#main-btn
-        disabled?=is_locked
-        data-hint?: hint_text
-        -> (if is_active "Aktywny" "Nieaktywny")
-    -> if view == "library"
+    button.tab-btn#main-btn .active?: {is_active} .is-locked?: {is_locked} .mode-full?: {mode == "full"}
+        disabled?: {is_locked}
+        data-hint?: {hint_text}
+        {is_active ? "Aktywny" : "Nieaktywny"}
+    {if view == "library"}
         span.view-tag "Biblioteka"
-    -> elif view == "editor"
+    {elif view == "editor"}
         span.view-tag "Edytor"
-    -> else
+    {else}
         span.view-tag "Odtwarzacz"
-    @panel_card title: "Karta Sceny" active: is_active
+    @panel_card title: "Karta Sceny" active: {is_active}
         ul.items
-            for: idx, item in items
-                li.item.first?=(idx == 0) -> "{idx}: {item.name}"
+            {for idx, item in items}
+                li.item .first?: {idx == 0} "{idx}: {item.name}"
 `
 	cardComp, err := ParseTemplateString(cardCompSrc, "panel_card")
 	if err != nil {
@@ -527,7 +538,7 @@ func TestConditionalClassesAttrsElifElseAndComponentSlots(t *testing.T) {
 func TestNoHTMLStringLiteralsInClientJS(t *testing.T) {
 	appDir := filepath.Clean(filepath.Join("..", "..", "app"))
 	jsFiles := JSModuleFiles(appDir)
-	forbidden := []string{"<div", "<span", "<button", "<input", "<label", "<svg", "</"}
+	forbidden := []string{"<div", "<span", "<button", "<input", "<label", "<svg", "</", "createElement("}
 	for _, path := range jsFiles {
 		raw, err := os.ReadFile(path)
 		if err != nil {
@@ -536,7 +547,7 @@ func TestNoHTMLStringLiteralsInClientJS(t *testing.T) {
 		src := string(raw)
 		for _, tok := range forbidden {
 			if strings.Contains(src, tok) {
-				t.Fatalf("forbidden HTML string literal %q found in %s; render all HTML via server .tpl templates", tok, filepath.Base(path))
+				t.Fatalf("forbidden dynamic markup token %q found in %s; render all HTML via server .tpl templates", tok, filepath.Base(path))
 			}
 		}
 	}

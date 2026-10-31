@@ -110,41 +110,7 @@ function hitTestStudioCanvas(wx, wy) {
     }
   }
 
-  // 3. Scene input ports
-  for (let i = nodes.length - 1; i >= 0; i--) {
-    const nd = nodes[i];
-    if (!nd.hasInputPort) continue;
-    const px = nd.x + nd.inOx;
-    const py = nd.y + nd.inOy;
-    const dx = wx - px;
-    const dy = wy - py;
-    if (dx * dx + dy * dy <= portHitRSq) {
-      return {
-        type: "scene-in-port",
-        node: nd,
-        x: px,
-        y: py
-      };
-    }
-  }
-
-  // 4. Chapter input ports
-  for (let i = chapters.length - 1; i >= 0; i--) {
-    const ch = chapters[i];
-    if (ch.hidden || ch.isRoot) continue;
-    const dx = wx - ch.inX;
-    const dy = wy - ch.inY;
-    if (dx * dx + dy * dy <= portHitRSq) {
-      return {
-        type: "chapter-in-port",
-        chapter: ch,
-        x: ch.inX,
-        y: ch.inY
-      };
-    }
-  }
-
-  // 5. Scene node cards (+ Wybór button, grip ⋮⋮, or card body)
+  // 3. Scene node cards (+ Wybór button, grip ⋮⋮, or card body)
   const addChoiceShaped = typeof shapeTextGlyphs === "function" ? shapeTextGlyphs(FONT_BTN, "+ WYBÓR", 80) : null;
   const addChoiceBtnW = addChoiceShaped ? Math.ceil(addChoiceShaped.totalW) + 20 : 72;
   for (let i = nodes.length - 1; i >= 0; i--) {
@@ -161,7 +127,7 @@ function hitTestStudioCanvas(wx, wy) {
     }
   }
 
-  // 6. Chapter group headers (grip ⋮⋮ or title)
+  // 4. Chapter group headers (grip ⋮⋮ or title)
   for (let i = chapters.length - 1; i >= 0; i--) {
     const ch = chapters[i];
     if (ch.hidden) continue;
@@ -173,7 +139,7 @@ function hitTestStudioCanvas(wx, wy) {
     }
   }
 
-  // 7. Static wires
+  // 5. Static wires
   const wires = studioGraphState.wires;
   const wireTolSq = 49; // 7px world radius
   for (let i = wires.length - 1; i >= 0; i--) {
@@ -216,9 +182,7 @@ function updateCanvasHoverCursor(viewport, hit) {
   }
   switch (hit.type) {
     case "scene-out-port":
-    case "scene-in-port":
     case "chapter-out-port":
-    case "chapter-in-port":
       viewport.style.cursor = "crosshair";
       break;
     case "node-grip":
@@ -226,11 +190,8 @@ function updateCanvasHoverCursor(viewport, hit) {
       viewport.style.cursor = "grab";
       break;
     case "chapter-title":
-      viewport.style.cursor = "text";
-      break;
     case "add-choice-btn":
     case "node-card":
-    case "wire":
       viewport.style.cursor = "pointer";
       break;
     default:
@@ -537,6 +498,7 @@ function beginWireConnectGesture(hit, viewport, isTouch) {
     isTouch: Boolean(isTouch),
     viewport: viewport,
     fromNode: nd,
+    sourcePort: pt,
     fromSceneId: nd.id,
     fromChapter: nd.chapter,
     choiceIdx: String(hit.portIdx),
@@ -1570,9 +1532,9 @@ function bindEditorCanvasEvents() {
       return;
     }
 
-    if (hit.type === "chapter-grip" || hit.type === "chapter-title" || hit.type === "chapter-in-port") {
+    if (hit.type === "chapter-grip" || hit.type === "chapter-title") {
       e.preventDefault();
-      beginChapterDragGesture(hit.chapter, viewport, e.clientX, e.clientY, false, hit.type === "chapter-title" || hit.type === "chapter-in-port");
+      beginChapterDragGesture(hit.chapter, viewport, e.clientX, e.clientY, false, hit.type === "chapter-title");
       return;
     }
 
@@ -1584,7 +1546,7 @@ function bindEditorCanvasEvents() {
       return;
     }
 
-    if (hit.type === "node-card" || hit.type === "scene-in-port") {
+    if (hit.type === "node-card") {
       e.preventDefault();
       const sceneId = hit.node.id;
       if (isMultiModifier) {

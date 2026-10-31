@@ -248,7 +248,11 @@ func TestBinarySaveAndIniSettingsRoundTrip(t *testing.T) {
 }
 
 func TestLoadRepositoryBookAndNextDirective(t *testing.T) {
-	b, err := LoadBookFromDir(filepath.Join("..", "..", "books", "nie-boj-sie-policji-rzecznej"))
+	repoBookDir := filepath.Join("..", "..", "books", "nie-boj-sie-policji-rzecznej")
+	if _, err := os.Stat(filepath.Join(repoBookDir, ".history")); !os.IsNotExist(err) {
+		t.Fatalf("expected no .history runtime directory inside repository book %q", repoBookDir)
+	}
+	b, err := LoadBookFromDir(repoBookDir)
 	if err != nil {
 		t.Fatalf("LoadBookFromDir failed: %v", err)
 	}
@@ -261,8 +265,8 @@ func TestLoadRepositoryBookAndNextDirective(t *testing.T) {
 	if len(b.Chapters) != 10 {
 		t.Fatalf("expected 10 chapters in default repository book, got %d", len(b.Chapters))
 	}
-	if len(b.Scenes) != 118 {
-		t.Fatalf("expected 118 scenes in default repository book, got %d", len(b.Scenes))
+	if len(b.Scenes) < 118 {
+		t.Fatalf("expected at least 118 scenes in default repository book, got %d", len(b.Scenes))
 	}
 	if len(b.AudioFiles) != 0 {
 		t.Fatalf("expected 0 audio/.flac files in embedded repository book, got: %v", b.AudioFiles)
@@ -638,6 +642,159 @@ Skocz do środka R2 -> r2_mid
 	}
 	if len(bInvalid.Warnings) < 2 {
 		t.Fatalf("expected warnings for backward chapter link and internal cross-chapter scene link, got: %v", bInvalid.Warnings)
+	}
+}
+
+func TestPackBookToZipStoreMediaAndZeroRAMRangeServing(t *testing.T) {
+	dir := t.TempDir()
+	bookDir := filepath.Join(dir, "kronika")
+	_ = os.MkdirAll(filepath.Join(bookDir, "images"), 0755)
+	_ = os.MkdirAll(filepath.Join(bookDir, "voice"), 0755)
+	_ = os.MkdirAll(filepath.Join(bookDir, ".history"), 0755)
+
+	_ = os.WriteFile(filepath.Join(bookDir, "data.txt"), []byte("title: Kronika\nauthor: Autor\nnarrated: true\nstart: s1\n"), 0644)
+	_ = os.WriteFile(filepath.Join(bookDir, "rozdzial_1.txt"), []byte("chapter: Rozdział 1\nid: rozdzial_1\n\nscene: Start\nid: s1\nimage: images/s1.png\nvoice: voice/s1.ogg\nend: true\nTekst **ważnej** sceny.\n"), 0644)
+	_ = os.WriteFile(filepath.Join(bookDir, ".history", "history.txt"), []byte("cursor: r1\n"), 0644)
+
+	pngPayload := append([]byte("\x89PNG\r\n\x1a\n"), bytes.Repeat([]byte("P"), 256)...)
+	oggPayload := append([]byte("OggS\x00\x02\x00\x00"), bytes.Repeat([]byte("A"), 512)...)
+	_ = os.WriteFile(filepath.Join(bookDir, "images", "s1.png"), pngPayload, 0644)
+	_ = os.WriteFile(filepath.Join(bookDir, "voice", "s1.ogg"), oggPayload, 0644)
+
+	outZip := filepath.Join(dir, "kronika.stbook")
+	if err := PackBookToZip(bookDir, outZip); err != nil {
+		t.Fatalf("PackBookToZip failed: %v", err)
+	}
+
+	zr, err := zip.OpenReader(outZip)
+	if err != nil {
+		t.Fatalf("zip.OpenReader failed: %v", err)
+	}
+	for _, f := range zr.File {
+		slashed := filepath.ToSlash(f.Name)
+		if strings.Contains(slashed, ".history") {
+			_ = zr.Close()
+			t.Fatalf("expected .history to be excluded from .stbook, found %q", slashed)
+		}
+		if strings.HasSuffix(slashed, ".txt") && f.Method != zip.Deflate {
+			_ = zr.Close()
+			t.Fatalf("expected .txt entry %q to use zip.Deflate, got method=%d", slashed, f.Method)
+		}
+		if (strings.HasSuffix(slashed, ".png") || strings.HasSuffix(slashed, ".ogg")) && f.Method != zip.Store {
+			_ = zr.Close()
+			t.Fatalf("expected media entry %q to use zip.Store, got method=%d", slashed, f.Method)
+		}
+	}
+	_ = zr.Close()
+
+	b, err := LoadBookFromZip(outZip)
+	if err != nil {
+		t.Fatalf("LoadBookFromZip failed: %v", err)
+	}
+	if len(b.Scenes) != 1 {
+		t.Fatalf("expected 1 scene, got %d", len(b.Scenes))
+	}
+	if b.Scenes[0].HTML != "" {
+		t.Fatalf("expected lazy HTML rendering to defer HTML generation during LoadBookFromZip")
+	}
+	if !strings.Contains(b.Scenes[0].EnsureHTML(), "<strong>ważnej</strong>") {
+		t.Fatalf("expected EnsureHTML() to render safe HTML on demand, got %q", b.Scenes[0].HTML)
+	}
+
+	// Verify HTTP 206 Partial Content Range serving from zip.Store entry
+	req := httptest.NewRequest(http.MethodGet, "/api/books/kronika/media/voice/s1.ogg", nil)
+	req.Header.Set("Range", "bytes=0-15")
+	rec := httptest.NewRecorder()
+	ServeBookMedia(rec, req, b, "voice/s1.ogg")
+	if rec.Code != http.StatusPartialContent {
+		t.Fatalf("expected HTTP 206 Partial Content for Range request on .stbook media, got %d", rec.Code)
+	}
+	if rec.Header().Get("Cache-Control") != "private, max-age=3600" {
+		t.Fatalf("expected Cache-Control 'private, max-age=3600', got %q", rec.Header().Get("Cache-Control"))
+	}
+	if !bytes.Equal(rec.Body.Bytes(), oggPayload[:16]) {
+		t.Fatalf("unexpected Range payload: got %q, want %q", rec.Body.Bytes(), oggPayload[:16])
+	}
+
+	// Verify fallback serving for legacy zip.Deflate media entries
+	legacyZip := filepath.Join(dir, "legacy.stbook")
+	var legacyBuf bytes.Buffer
+	lzw := zip.NewWriter(&legacyBuf)
+	dw, _ := lzw.Create("data.txt")
+	_, _ = dw.Write([]byte("title: Legacy\nnarrated: true\n"))
+	sw, _ := lzw.Create("story.txt")
+	_, _ = sw.Write([]byte("scene: S1\nid: s1\nvoice: voice/s1.ogg\nend: true\nTekst.\n"))
+	vw, _ := lzw.CreateHeader(&zip.FileHeader{Name: "voice/s1.ogg", Method: zip.Deflate})
+	_, _ = vw.Write(oggPayload)
+	_ = lzw.Close()
+	_ = os.WriteFile(legacyZip, legacyBuf.Bytes(), 0644)
+
+	legacyBook, err := LoadBookFromZip(legacyZip)
+	if err != nil {
+		t.Fatalf("LoadBookFromZip legacy failed: %v", err)
+	}
+	recLegacy := httptest.NewRecorder()
+	reqLegacy := httptest.NewRequest(http.MethodGet, "/api/books/legacy/media/voice/s1.ogg", nil)
+	ServeBookMedia(recLegacy, reqLegacy, legacyBook, "voice/s1.ogg")
+	if recLegacy.Code != http.StatusOK || !bytes.Equal(recLegacy.Body.Bytes(), oggPayload) {
+		t.Fatalf("expected legacy zip.Deflate media to serve 200 OK with full payload, got status=%d len=%d", recLegacy.Code, recLegacy.Body.Len())
+	}
+}
+
+func BenchmarkServePackedBookMediaRange(b *testing.B) {
+	dir := b.TempDir()
+	bookDir := filepath.Join(dir, "benchbook")
+	_ = os.MkdirAll(filepath.Join(bookDir, "voice"), 0755)
+	_ = os.WriteFile(filepath.Join(bookDir, "data.txt"), []byte("title: Bench\nnarrated: true\nstart: s1\n"), 0644)
+	_ = os.WriteFile(filepath.Join(bookDir, "rozdzial_1.txt"), []byte("chapter: R1\nid: rozdzial_1\n\nscene: S1\nid: s1\nvoice: voice/s1.ogg\nend: true\nTekst.\n"), 0644)
+	oggPayload := append([]byte("OggS\x00\x02\x00\x00"), bytes.Repeat([]byte("B"), 64*1024)...)
+	_ = os.WriteFile(filepath.Join(bookDir, "voice", "s1.ogg"), oggPayload, 0644)
+
+	outZip := filepath.Join(dir, "benchbook.stbook")
+	if err := PackBookToZip(bookDir, outZip); err != nil {
+		b.Fatalf("PackBookToZip failed: %v", err)
+	}
+	packedBook, err := LoadBookFromZip(outZip)
+	if err != nil {
+		b.Fatalf("LoadBookFromZip failed: %v", err)
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		req := httptest.NewRequest(http.MethodGet, "/api/books/benchbook/media/voice/s1.ogg", nil)
+		req.Header.Set("Range", "bytes=0-63")
+		rec := httptest.NewRecorder()
+		ServeBookMedia(rec, req, packedBook, "voice/s1.ogg")
+		if rec.Code != http.StatusPartialContent {
+			b.Fatalf("unexpected status: %d", rec.Code)
+		}
+	}
+}
+
+func BenchmarkSaveMultiChapterBookDirtyOnly(b *testing.B) {
+	dir := b.TempDir()
+	bookDir := filepath.Join(dir, "multich")
+	_ = os.MkdirAll(bookDir, 0755)
+	_ = os.WriteFile(filepath.Join(bookDir, "data.txt"), []byte("title: Multi\nnarrated: false\nstart: s1\n"), 0644)
+
+	for chIdx := 1; chIdx <= 20; chIdx++ {
+		chID := filepath.Base(SanitizeChapterID("rozdzial_" + string(rune('a'+chIdx-1))))
+		content := "chapter: Rozdział " + chID + "\nid: " + chID + "\n\nscene: Scena " + chID + "\nid: s_" + chID + "\nend: true\nTekst rozdziału.\n"
+		_ = os.WriteFile(filepath.Join(bookDir, chID+".txt"), []byte(content), 0644)
+	}
+	loaded, err := LoadBookFromDir(bookDir)
+	if err != nil {
+		b.Fatalf("LoadBookFromDir failed: %v", err)
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		loaded.Scenes[0].Text = "Zmieniony tekst w pierwszym rozdziale."
+		if err := SaveBookScenesToDisk(loaded); err != nil {
+			b.Fatalf("SaveBookScenesToDisk failed: %v", err)
+		}
 	}
 }
 

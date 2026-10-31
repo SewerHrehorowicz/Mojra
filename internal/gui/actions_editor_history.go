@@ -167,88 +167,90 @@ func (s *Server) writeEditorHistoryHeaders(w http.ResponseWriter) {
 	}
 }
 
-func (s *Server) handleEditorHistoryAction(action string, r *http.Request) (toast string, handled bool) {
-	switch action {
-	case "UndoEditor":
-		if r.FormValue("scene_id") != "" {
-			_ = s.saveSceneFromForm(r)
-		}
-		if s.ActiveBook != nil && !s.ActiveBook.IsPacked {
-			if selID, lbl, err := book.UndoBookHistory(s.ActiveBook); err == nil {
-				s.reloadActiveBookAfterHistoryRestore(selID)
-				toast = "Cofnięto: " + lbl
-			} else {
-				toast = err.Error()
-			}
-		}
-		return toast, true
-
-	case "RedoEditor":
-		if s.ActiveBook != nil && !s.ActiveBook.IsPacked {
-			if selID, lbl, err := book.RedoBookHistory(s.ActiveBook); err == nil {
-				s.reloadActiveBookAfterHistoryRestore(selID)
-				toast = "Ponowiono: " + lbl
-			} else {
-				toast = err.Error()
-			}
-		}
-		return toast, true
-
-	case "ToggleEditorHistoryPanel":
-		if r.FormValue("scene_id") != "" {
-			_ = s.saveSceneFromForm(r)
-		}
-		s.EditorHistoryPanelOpen = !s.EditorHistoryPanelOpen
-		if s.EditorHistoryPanelOpen {
-			s.ensureHistoryBaselineBeforeMutation()
-		}
-		return "", true
-
-	case "OpenEditorHistoryPanel":
-		if r.FormValue("scene_id") != "" {
-			_ = s.saveSceneFromForm(r)
-		}
-		s.EditorHistoryPanelOpen = true
-		s.ensureHistoryBaselineBeforeMutation()
-		return "", true
-
-	case "CloseEditorHistoryPanel":
-		s.EditorHistoryPanelOpen = false
-		return "", true
-
-	case "SaveHistoryVersion":
-		if r.FormValue("scene_id") != "" {
-			_ = s.saveSceneFromForm(r)
-		}
-		if s.ActiveBook != nil && !s.ActiveBook.IsPacked {
-			verName := strings.TrimSpace(r.FormValue("version_name"))
-			if verName == "" {
-				verName = strings.TrimSpace(r.FormValue("name"))
-			}
-			if ver, err := book.SaveNamedBookVersion(s.ActiveBook, verName, s.SelectedSceneID); err == nil && ver != nil {
-				s.invalidateHistoryCache()
-				s.EditorHistoryPanelOpen = true
-				toast = "Zapisano wersję: " + ver.Label
-			} else if err != nil {
-				toast = err.Error()
-			}
-		}
-		return toast, true
-
-	case "RestoreHistoryRevision":
-		if s.ActiveBook != nil && !s.ActiveBook.IsPacked {
-			revID := strings.TrimSpace(r.FormValue("revision"))
-			if revID == "" {
-				revID = strings.TrimSpace(r.FormValue("rev"))
-			}
-			if selID, lbl, err := book.RestoreBookHistoryRevision(s.ActiveBook, revID); err == nil {
-				s.reloadActiveBookAfterHistoryRestore(selID)
-				toast = "Przywrócono: " + lbl
-			} else {
-				toast = err.Error()
-			}
-		}
-		return toast, true
+func (s *Server) undoEditor(r *http.Request) string {
+	if r.FormValue("scene_id") != "" {
+		_ = s.saveSceneFromForm(r)
 	}
-	return "", false
+	if s.ActiveBook != nil && !s.ActiveBook.IsPacked {
+		if selID, lbl, err := book.UndoBookHistory(s.ActiveBook); err == nil {
+			s.reloadActiveBookAfterHistoryRestore(selID)
+			return "Cofnięto: " + lbl
+		} else {
+			return err.Error()
+		}
+	}
+	return ""
+}
+
+func (s *Server) redoEditor(_ *http.Request) string {
+	if s.ActiveBook != nil && !s.ActiveBook.IsPacked {
+		if selID, lbl, err := book.RedoBookHistory(s.ActiveBook); err == nil {
+			s.reloadActiveBookAfterHistoryRestore(selID)
+			return "Ponowiono: " + lbl
+		} else {
+			return err.Error()
+		}
+	}
+	return ""
+}
+
+func (s *Server) toggleEditorHistoryPanel(r *http.Request) string {
+	if r.FormValue("scene_id") != "" {
+		_ = s.saveSceneFromForm(r)
+	}
+	s.EditorHistoryPanelOpen = !s.EditorHistoryPanelOpen
+	if s.EditorHistoryPanelOpen {
+		s.ensureHistoryBaselineBeforeMutation()
+	}
+	return ""
+}
+
+func (s *Server) openEditorHistoryPanel(r *http.Request) string {
+	if r.FormValue("scene_id") != "" {
+		_ = s.saveSceneFromForm(r)
+	}
+	s.EditorHistoryPanelOpen = true
+	s.ensureHistoryBaselineBeforeMutation()
+	return ""
+}
+
+func (s *Server) closeEditorHistoryPanel(_ *http.Request) string {
+	s.EditorHistoryPanelOpen = false
+	return ""
+}
+
+func (s *Server) saveHistoryVersion(r *http.Request) string {
+	if r.FormValue("scene_id") != "" {
+		_ = s.saveSceneFromForm(r)
+	}
+	if s.ActiveBook != nil && !s.ActiveBook.IsPacked {
+		verName := strings.TrimSpace(r.FormValue("version_name"))
+		if verName == "" {
+			verName = strings.TrimSpace(r.FormValue("name"))
+		}
+		if ver, err := book.SaveNamedBookVersion(s.ActiveBook, verName, s.SelectedSceneID); err == nil && ver != nil {
+			s.invalidateHistoryCache()
+			s.EditorHistoryPanelOpen = true
+			return "Zapisano wersję: " + ver.Label
+		} else if err != nil {
+			return err.Error()
+		}
+	}
+	return ""
+}
+
+func (s *Server) restoreHistoryRevision(r *http.Request) string {
+	if s.ActiveBook != nil && !s.ActiveBook.IsPacked {
+		revID := strings.TrimSpace(r.FormValue("revision"))
+		if revID == "" {
+			revID = strings.TrimSpace(r.FormValue("rev"))
+		}
+		if selID, lbl, err := book.RestoreBookHistoryRevision(s.ActiveBook, revID); err == nil {
+			s.reloadActiveBookAfterHistoryRestore(selID)
+			return "Przywrócono: " + lbl
+		} else {
+			return err.Error()
+		}
+	}
+	return ""
 }

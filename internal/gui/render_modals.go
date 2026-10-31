@@ -122,7 +122,10 @@ func (s *Server) populateModalsContext(vars map[string]any) {
 					arr = "↺"
 				}
 				selectedVal, selectedLabel, targetOptions := s.buildChoiceTargetOptions(modalSc, ch)
-				isFilled := !ch.IsEnding && ch.TargetSceneID != "" && !strings.EqualFold(ch.TargetSceneID, "END") && !strings.EqualFold(selectedVal, "END")
+				isFilled := !ch.IsEnding &&
+				((ch.TargetSceneID != "" && !strings.EqualFold(ch.TargetSceneID, "END")) ||
+					(ch.IsChapterLink && ch.TargetChapterID != "")) &&
+				!strings.EqualFold(selectedVal, "END")
 				modalChoices = append(modalChoices, map[string]any{
 					"idx":             idx,
 					"label":           lbl,

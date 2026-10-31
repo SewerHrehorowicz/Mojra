@@ -3,6 +3,8 @@ package gui
 import (
 	"fmt"
 	"strings"
+
+	"storyteller/internal/book"
 )
 
 func extractFirstSentence(raw string) string {
@@ -61,7 +63,7 @@ func (s *Server) populatePlayerContext(vars map[string]any) {
 				"name":         pastScene.Name,
 				"rail_title":   pastScene.DisplayName(),
 				"has_title":    pastHasTitle,
-				"html":         pastScene.HTML,
+				"html":         pastScene.EnsureHTML(),
 				"has_image":    pastImgURL != "",
 				"image_url":    pastImgURL,
 				"bg_image_url": lastImageURL,
@@ -107,7 +109,7 @@ func (s *Server) populatePlayerContext(vars map[string]any) {
 		"rail_title":   curScene.DisplayName(),
 		"has_title":    curHasTitle,
 		"header_meta":  curHeaderMeta,
-		"html":         curScene.HTML,
+		"html":         curScene.EnsureHTML(),
 		"has_image":    curImgURL != "",
 		"image_url":    curImgURL,
 		"has_bg_image": !imageless && lastImageURL != "",
@@ -117,7 +119,69 @@ func (s *Server) populatePlayerContext(vars map[string]any) {
 		"choices":      curChoices,
 	}
 
-	vars["show_audio_deck"] = s.ActiveBook.Narrated
+	narrated := s.ActiveBook != nil && s.ActiveBook.Narrated
+	vars["show_audio_deck"] = narrated
+
+	seenURLs := make(map[string]bool, 16)
+	if curImgURL != "" {
+		seenURLs[curImgURL] = true
+	}
+	if lastImageURL != "" {
+		seenURLs[lastImageURL] = true
+	}
+	if curScene.AudioURL != "" {
+		seenURLs[curScene.AudioURL] = true
+	}
+
+	seenScenes := make(map[string]bool, 16)
+	seenScenes[curScene.ID] = true
+
+	var hop1Scenes []*book.Scene
+	for _, ch := range curScene.Choices {
+		if ch.IsEnding || ch.TargetSceneID == "" || ch.TargetSceneID == "END" || seenScenes[ch.TargetSceneID] {
+			continue
+		}
+		target := s.findScene(ch.TargetSceneID)
+		if target == nil {
+			continue
+		}
+		seenScenes[target.ID] = true
+		hop1Scenes = append(hop1Scenes, target)
+	}
+
+	var hop2Scenes []*book.Scene
+	for _, h1 := range hop1Scenes {
+		for _, ch := range h1.Choices {
+			if ch.IsEnding || ch.TargetSceneID == "" || ch.TargetSceneID == "END" || seenScenes[ch.TargetSceneID] {
+				continue
+			}
+			target := s.findScene(ch.TargetSceneID)
+			if target == nil {
+				continue
+			}
+			seenScenes[target.ID] = true
+			hop2Scenes = append(hop2Scenes, target)
+		}
+	}
+
+	var prefetchURLs []string
+	appendSceneMedia := func(sc *book.Scene) {
+		if !imageless && sc.ImageURL != "" && !seenURLs[sc.ImageURL] {
+			seenURLs[sc.ImageURL] = true
+			prefetchURLs = append(prefetchURLs, sc.ImageURL)
+		}
+		if narrated && sc.AudioURL != "" && !seenURLs[sc.AudioURL] {
+			seenURLs[sc.AudioURL] = true
+			prefetchURLs = append(prefetchURLs, sc.AudioURL)
+		}
+	}
+	for _, sc := range hop1Scenes {
+		appendSceneMedia(sc)
+	}
+	for _, sc := range hop2Scenes {
+		appendSceneMedia(sc)
+	}
+	vars["prefetch_media_urls"] = strings.Join(prefetchURLs, ";")
 
 	progressPct := 0
 	if len(s.ActiveBook.Scenes) > 0 {

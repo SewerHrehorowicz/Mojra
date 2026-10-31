@@ -91,8 +91,8 @@ func TestServerActionLifecycleAndSecurity(t *testing.T) {
 	if !strings.Contains(string(addChHTML), "editor-multi-panel") || !strings.Contains(string(addChHTML), "context-multi-scene-list") || !strings.Contains(string(addChHTML), "PromptDeleteScenes") {
 		t.Fatalf("expected multi-scene panel with scene list and PromptDeleteScenes button in editor HTML")
 	}
-	if !strings.Contains(string(addChHTML), "node | id:poczatek") || !strings.Contains(string(addChHTML), "port | scene:poczatek | idx:1") {
-		t.Fatalf("expected serialized node and port records in #studio-graph-data, got:\n%s", string(addChHTML))
+	if !strings.Contains(string(addChHTML), "node | id:poczatek") || !strings.Contains(string(addChHTML), "port | scene:poczatek | idx:1 | label:Wybór 2 | target_id:END |") {
+		t.Fatalf("expected serialized node and unlinked port record in #studio-graph-data, got:\n%s", string(addChHTML))
 	}
 
 	// 2b-extra. Create a standalone scene at explicit canvas coordinates via CreateSceneAt
@@ -2206,6 +2206,144 @@ func TestChapterPortsAndOneWayChapterConnectionsInStudio(t *testing.T) {
 		t.Fatalf("expected backward chapter transition to be rejected with toast, got X-Toast=%q", rBack.Header.Get("X-Toast"))
 	}
 }
+
+func TestPlayerSequentialTwoHopPrefetchAndFullAudioPreload(t *testing.T) {
+	rootDir := t.TempDir()
+
+	bookDir := filepath.Join(rootDir, "books", "prefetch-test")
+	_ = os.MkdirAll(filepath.Join(bookDir, "images"), 0755)
+	_ = os.MkdirAll(filepath.Join(bookDir, "voice"), 0755)
+
+	_ = os.WriteFile(filepath.Join(bookDir, "data.txt"), []byte("title: Prefetch\nauthor: Autor\nnarrated: true\nstart: s1\n"), 0644)
+	_ = os.WriteFile(filepath.Join(bookDir, "rozdzial_1.txt"), []byte(`chapter: Rozdział 1
+id: rozdzial_1
+
+scene: Scena 1
+id: s1
+image: images/s1.png
+voice: voice/s1.ogg
+next: s2
+Pierwsza scena.
+
+scene: Scena 2
+id: s2
+image: images/s2.png
+voice: voice/s2.ogg
+next: s3
+Druga scena (Hop 1).
+
+scene: Scena 3
+id: s3
+image: images/s3.png
+voice: voice/s3.ogg
+next: s4
+Trzecia scena (Hop 2).
+
+scene: Scena 4
+id: s4
+image: images/s4.png
+voice: voice/s4.ogg
+end: true
+Czwarta scena (Hop 3 - poza kolejką 2 kroków).
+`), 0644)
+
+	for _, id := range []string{"s1", "s2", "s3", "s4"} {
+		_ = os.WriteFile(filepath.Join(bookDir, "images", id+".png"), []byte("\x89PNG\r\n\x1a\n"), 0644)
+		_ = os.WriteFile(filepath.Join(bookDir, "voice", id+".ogg"), []byte("OggS\x00\x02"), 0644)
+	}
+
+	srv := NewServer(rootDir, storyteller.AppFS)
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	rOpen, err := http.PostForm(ts.URL+"/api/action", url.Values{
+		"action": {"OpenBook"},
+		"book":   {"prefetch-test"},
+	})
+	if err != nil {
+		t.Fatalf("OpenBook failed: %v", err)
+	}
+	openBytes, _ := io.ReadAll(rOpen.Body)
+	_ = rOpen.Body.Close()
+	openHTML := string(openBytes)
+
+	if !strings.Contains(openHTML, `preload="auto"`) {
+		t.Fatalf("expected audio#story-audio to use preload=\"auto\" for full current-scene buffering, got:\n%s", openHTML)
+	}
+	expectedPrefetch := `data-prefetch-urls="/api/books/prefetch-test/media/images/s2.png;/api/books/prefetch-test/media/voice/s2.ogg;/api/books/prefetch-test/media/images/s3.png;/api/books/prefetch-test/media/voice/s3.ogg"`
+	if !strings.Contains(openHTML, expectedPrefetch) {
+		t.Fatalf("expected 1-2 hop BFS media prefetch attribute %s in player HTML, got:\n%s", expectedPrefetch, openHTML)
+	}
+	if strings.Contains(openHTML, "/media/images/s4.png") || strings.Contains(openHTML, "/media/voice/s4.ogg") {
+		t.Fatalf("expected 3-hop scene s4 media NOT to be in 1-2 hop prefetch queue")
+	}
+
+	// Toggling imageless mode should omit image URLs from data-prefetch-urls while keeping 1-2 hop audio URLs
+	_, _ = http.PostForm(ts.URL+"/api/action", url.Values{"action": {"ToggleImageless"}})
+	rRefresh, err := http.PostForm(ts.URL+"/api/action", url.Values{
+		"action": {"SwitchView"},
+		"view":   {"player"},
+	})
+	if err != nil {
+		t.Fatalf("SwitchView player failed: %v", err)
+	}
+	refBytes, _ := io.ReadAll(rRefresh.Body)
+	_ = rRefresh.Body.Close()
+	refHTML := string(refBytes)
+
+	expectedAudioOnlyPrefetch := `data-prefetch-urls="/api/books/prefetch-test/media/voice/s2.ogg;/api/books/prefetch-test/media/voice/s3.ogg"`
+	if !strings.Contains(refHTML, expectedAudioOnlyPrefetch) {
+		t.Fatalf("expected audio-only 1-2 hop prefetch when imageless is enabled, got:\n%s", refHTML)
+	}
+}
+
+func TestUnifiedPortStylesInCSSAndWebGL(t *testing.T) {
+	rootDir := t.TempDir()
+	srv := NewServer(rootDir, storyteller.AppFS)
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	cssResp, err := http.Get(ts.URL + "/style.css")
+	if err != nil {
+		t.Fatalf("GET /style.css failed: %v", err)
+	}
+	cssBytes, _ := io.ReadAll(cssResp.Body)
+	_ = cssResp.Body.Close()
+	css := string(cssBytes)
+
+	if !strings.Contains(css, ".custom-select-trigger.choice-port-trigger {\n  width: 28px;\n  height: 28px;\n  padding: 0;\n  border: none;\n  background: transparent;\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  color: var(--border-strong);") {
+		t.Fatalf("expected .choice-port-trigger to use wire color var(--border-strong) when inactive")
+	}
+	if !strings.Contains(css, ".choice-port-icon.port-filled {\n  background: currentColor;\n}") {
+		t.Fatalf("expected connected .choice-port-icon.port-filled to be filled with currentColor")
+	}
+
+	jsResp, err := http.Get(ts.URL + "/app.js")
+	if err != nil {
+		t.Fatalf("GET /app.js failed: %v", err)
+	}
+	jsBytes, _ := io.ReadAll(jsResp.Body)
+	_ = jsResp.Body.Close()
+	js := string(jsBytes)
+
+	if !strings.Contains(js, "function pushPortQuads(x, y, isConnected, isHoveredOrActive, theme, isUnreachable)") ||
+		!strings.Contains(js, "const sp = isConnected ? studioGL.uv.portHover : studioGL.uv.portRing;") {
+		t.Fatalf("expected WebGL pushPortQuads to render connected ports filled and unconnected ports hollow with wire color when inactive")
+	}
+}
+
+func TestAllActionSpecsHaveHandlers(t *testing.T) {
+	if len(actionSpecs) == 0 {
+		t.Fatal("expected actionSpecs to be non-empty")
+	}
+	for name, spec := range actionSpecs {
+		if spec.Handler == nil {
+			t.Fatalf("action %q in actionSpecs has a nil Handler", name)
+		}
+	}
+}
+
+
 
 
 

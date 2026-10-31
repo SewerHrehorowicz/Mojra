@@ -1,3 +1,4 @@
+doctype html
 html lang: pl
     head
         meta charset: UTF-8
@@ -22,21 +23,21 @@ html lang: pl
         data-imageless: "{imageless_attr}"
         data-imageless-locked: "{imageless_locked_attr}"
         data-ui-scale: "{ui_scale}"
-        -> if dev_mode
+        {if dev_mode}
             .device-stage#device-stage data-preview: "{preview_mode}"
                 .device-preview-bar
                     span.preview-bar-label "Widok ekranu:"
-                    button.preview-mode-btn.active?=(preview_mode == "full")
+                    button.preview-mode-btn .active?: {preview_mode == "full"}
                         type: button
                         action: SetDeviceMode
                         data-mode: full
                         "Pełny ekran"
-                    button.preview-mode-btn.active?=(preview_mode == "portrait")
+                    button.preview-mode-btn .active?: {preview_mode == "portrait"}
                         type: button
                         action: SetDeviceMode
                         data-mode: portrait
                         "Telefon (Pionowo)"
-                    button.preview-mode-btn.active?=(preview_mode == "landscape")
+                    button.preview-mode-btn .active?: {preview_mode == "landscape"}
                         type: button
                         action: SetDeviceMode
                         data-mode: landscape
@@ -51,7 +52,7 @@ html lang: pl
                     #app.app-root
                         @app_shell
                     .device-home-bar
-        -> else
+        {else}
             #app.app-root
                 @app_shell
 

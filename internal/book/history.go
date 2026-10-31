@@ -305,10 +305,21 @@ func SaveBookHistory(b *Book, h *BookHistory) error {
 }
 
 func writeHistoryBlob(bookRoot string, data []byte) (string, error) {
+	return writeHistoryBlobWithSet(bookRoot, data, nil)
+}
+
+func writeHistoryBlobWithSet(bookRoot string, data []byte, existingBlobs map[string]bool) (string, error) {
 	sum := sha256.Sum256(data)
 	hashHex := hex.EncodeToString(sum[:])
+	blobFileName := hashHex + ".gz"
+	if existingBlobs != nil && existingBlobs[blobFileName] {
+		return hashHex, nil
+	}
 	blobPath := bookHistoryBlobPath(bookRoot, hashHex)
 	if _, err := os.Stat(blobPath); err == nil {
+		if existingBlobs != nil {
+			existingBlobs[blobFileName] = true
+		}
 		return hashHex, nil
 	}
 	if err := os.MkdirAll(bookHistoryBlobsDir(bookRoot), 0755); err != nil {
@@ -333,6 +344,9 @@ func writeHistoryBlob(bookRoot string, data []byte) (string, error) {
 	if err := os.Rename(tmpPath, blobPath); err != nil {
 		_ = os.Remove(tmpPath)
 		return "", err
+	}
+	if existingBlobs != nil {
+		existingBlobs[blobFileName] = true
 	}
 	return hashHex, nil
 }
@@ -362,6 +376,14 @@ func captureBookTextFiles(b *Book) (map[string]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	existingBlobs := make(map[string]bool)
+	if blobEntries, bErr := os.ReadDir(bookHistoryBlobsDir(b.RootPath)); bErr == nil {
+		for _, be := range blobEntries {
+			if !be.IsDir() {
+				existingBlobs[strings.ToLower(be.Name())] = true
+			}
+		}
+	}
 	filesMap := make(map[string]string)
 	for _, e := range entries {
 		if e.IsDir() || strings.HasPrefix(e.Name(), ".") {
@@ -376,20 +398,20 @@ func captureBookTextFiles(b *Book) (map[string]string, error) {
 		if rErr != nil {
 			continue
 		}
-		hashHex, wErr := writeHistoryBlob(b.RootPath, raw)
+		hashHex, wErr := writeHistoryBlobWithSet(b.RootPath, raw, existingBlobs)
 		if wErr != nil {
 			return nil, wErr
 		}
 		filesMap[name] = hashHex
 	}
 	if _, hasData := filesMap["data.txt"]; !hasData {
-		hashHex, wErr := writeHistoryBlob(b.RootPath, []byte(SerializeDataFile(b)))
+		hashHex, wErr := writeHistoryBlobWithSet(b.RootPath, []byte(SerializeDataFile(b)), existingBlobs)
 		if wErr == nil {
 			filesMap["data.txt"] = hashHex
 		}
 	}
 	if _, hasEditor := filesMap["editor.txt"]; !hasEditor {
-		hashHex, wErr := writeHistoryBlob(b.RootPath, []byte(SerializeEditorFile(b)))
+		hashHex, wErr := writeHistoryBlobWithSet(b.RootPath, []byte(SerializeEditorFile(b)), existingBlobs)
 		if wErr == nil {
 			filesMap["editor.txt"] = hashHex
 		}

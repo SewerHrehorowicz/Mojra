@@ -147,6 +147,52 @@ Przykłady (Examples):
   ./build.sh --help                             # Wyświetla pomoc`)
 }
 
+func isRepoDir(dir string) bool {
+	if dir == "" {
+		return false
+	}
+	info, err := os.Stat(filepath.Join(dir, "go.mod"))
+	return err == nil && !info.IsDir()
+}
+
+func resolveDistRuntimeDir(repoDir string) string {
+	distDir := filepath.Join(repoDir, "dist")
+	for _, candidate := range []string{
+		filepath.Join(distDir, "StoryTeller.app", "Contents", "Resources"),
+		filepath.Join(distDir, "StoryTeller-windows"),
+		filepath.Join(distDir, "StoryTeller-linux"),
+		distDir,
+	} {
+		if info, err := os.Stat(filepath.Join(candidate, "books")); err == nil && info.IsDir() {
+			return candidate
+		}
+	}
+	distBooks := filepath.Join(distDir, "books")
+	_ = packageBooksForDist(filepath.Join(repoDir, "books"), distBooks)
+	return distDir
+}
+
+func resolveRepoRootDir() string {
+	cwd, err := os.Getwd()
+	if err != nil {
+		cwd = "."
+	}
+	if isRepoDir(cwd) {
+		return cwd
+	}
+	if exe, err := os.Executable(); err == nil {
+		exeDir := filepath.Dir(exe)
+		if isRepoDir(exeDir) {
+			return exeDir
+		}
+		parentDir := filepath.Clean(filepath.Join(exeDir, ".."))
+		if isRepoDir(parentDir) {
+			return parentDir
+		}
+	}
+	return cwd
+}
+
 func resolveRootDir() string {
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -159,26 +205,22 @@ func resolveRootDir() string {
 			if info, err := os.Stat(filepath.Join(resDir, "books")); err == nil && info.IsDir() {
 				return resDir
 			}
-			if _, hasGoMod := os.Stat(filepath.Join(exeDir, "go.mod")); os.IsNotExist(hasGoMod) {
-				if info, err := os.Stat(filepath.Join(exeDir, "books")); err == nil && info.IsDir() {
-					return exeDir
-				}
-				parentDir := filepath.Clean(filepath.Join(exeDir, ".."))
-				if info, err := os.Stat(filepath.Join(parentDir, "books")); err == nil && info.IsDir() {
-					return parentDir
-				}
+			if isRepoDir(exeDir) {
+				return resolveDistRuntimeDir(exeDir)
+			}
+			parentDir := filepath.Clean(filepath.Join(exeDir, ".."))
+			if isRepoDir(parentDir) {
+				return resolveDistRuntimeDir(parentDir)
+			}
+			if info, err := os.Stat(filepath.Join(exeDir, "books")); err == nil && info.IsDir() {
+				return exeDir
+			}
+			if info, err := os.Stat(filepath.Join(parentDir, "books")); err == nil && info.IsDir() {
+				return parentDir
 			}
 		}
-		if productionBuild == "true" {
-			for _, candidate := range []string{
-				filepath.Join(cwd, "dist", "StoryTeller.app", "Contents", "Resources"),
-				filepath.Join(cwd, "dist", "StoryTeller-windows"),
-				filepath.Join(cwd, "dist", "StoryTeller-linux"),
-			} {
-				if info, err := os.Stat(filepath.Join(candidate, "books")); err == nil && info.IsDir() {
-					return candidate
-				}
-			}
+		if isRepoDir(cwd) {
+			return resolveDistRuntimeDir(cwd)
 		}
 	}
 	return cwd
@@ -260,9 +302,7 @@ func normalizeArchName(raw string) ([]string, error) {
 }
 
 func parseBuildArgs(args []string) (buildOptions, error) {
-	opts := buildOptions{
-		BinariesOnly: true,
-	}
+	opts := buildOptions{}
 	var rawPlatformSpecs []string
 	var rawArchSpecs []string
 
@@ -627,7 +667,7 @@ func buildCmd(args []string) {
 		return
 	}
 
-	rootDir := resolveRootDir()
+	rootDir := resolveRepoRootDir()
 	fmt.Println("==================================================================")
 	fmt.Println("  StoryTeller — Wieloplatformowy System Budowania")
 	fmt.Println("==================================================================")
@@ -665,12 +705,14 @@ func buildCmd(args []string) {
 			fmt.Fprintf(os.Stderr, "Błąd budowania pliku wykonywalnego: %v\n", err)
 			os.Exit(1)
 		}
+		_ = packageBooksForDist(filepath.Join(rootDir, "books"), filepath.Join(rootDir, "dist", "books"))
 		fmt.Printf("✓ Zbudowano samodzielną aplikację (%s/%s): %s\n", targetOS, targetArch, targetBin)
 		return
 	}
 
 	distDir := filepath.Join(rootDir, "dist")
 	_ = os.MkdirAll(distDir, 0755)
+	_ = packageBooksForDist(filepath.Join(rootDir, "books"), filepath.Join(distDir, "books"))
 	for _, stale := range []string{
 		"StoryTeller.app",
 		"StoryTeller-macos.zip",
@@ -1920,7 +1962,7 @@ func packCmd(args []string) {
 		os.Exit(1)
 	}
 	bookID := book.SanitizeBookID(args[0])
-	rootDir := resolveRootDir()
+	rootDir := resolveRepoRootDir()
 	srcDir := filepath.Join(rootDir, "books", bookID)
 	distDir := filepath.Join(rootDir, "dist")
 	_ = os.MkdirAll(distDir, 0755)

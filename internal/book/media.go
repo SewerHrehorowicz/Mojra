@@ -254,6 +254,7 @@ func ServeBookMedia(w http.ResponseWriter, r *http.Request, b *Book, rawRelPath 
 	}
 
 	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Cache-Control", "private, max-age=3600")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; media-src 'self'; img-src 'self'; sandbox")
 
@@ -287,6 +288,33 @@ func ServeBookMedia(w http.ResponseWriter, r *http.Request, b *Book, rawRelPath 
 		}
 		http.ServeContent(w, r, filepath.Base(cleanRel), info.ModTime(), f)
 		return
+	}
+
+	if b.PackedMedia != nil {
+		entry, ok := b.PackedMedia[strings.ToLower(cleanRel)]
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		if entry.Size > maxMediaEntryBytes {
+			http.Error(w, "media entry exceeds size limit", http.StatusRequestEntityTooLarge)
+			return
+		}
+		if !entry.ValidHeader {
+			http.Error(w, "invalid or disguised media header", http.StatusForbidden)
+			return
+		}
+		if entry.Method == zip.Store && entry.DataOffset >= 30 {
+			osFile, err := os.Open(b.RootPath)
+			if err != nil {
+				http.NotFound(w, r)
+				return
+			}
+			defer osFile.Close()
+			section := io.NewSectionReader(osFile, entry.DataOffset, entry.Size)
+			http.ServeContent(w, r, filepath.Base(cleanRel), entry.ModTime, section)
+			return
+		}
 	}
 
 	zr, err := zip.OpenReader(b.RootPath)

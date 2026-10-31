@@ -13,13 +13,20 @@ import (
 	"time"
 )
 
+func writeFileIfChanged(path string, data []byte, perm os.FileMode) error {
+	if existing, err := os.ReadFile(path); err == nil && bytes.Equal(existing, data) {
+		return nil
+	}
+	return os.WriteFile(path, data, perm)
+}
+
 // SaveBookMetadataToDisk writes data.txt for an unpacked book.
 func SaveBookMetadataToDisk(b *Book) error {
 	if b.IsPacked {
 		return fmt.Errorf("nie można edytować spakowanego archiwum .stbook bezpośrednio")
 	}
 	dataPath := filepath.Join(b.RootPath, "data.txt")
-	return os.WriteFile(dataPath, []byte(SerializeDataFile(b)), 0644)
+	return writeFileIfChanged(dataPath, []byte(SerializeDataFile(b)), 0644)
 }
 
 // SaveBookScenesToDisk writes all modified source .txt files, data.txt, and editor.txt back to the book directory.
@@ -80,7 +87,7 @@ func SaveBookScenesToDisk(b *Book) error {
 			}
 			continue
 		}
-		if err := os.WriteFile(outPath, []byte(serialized), 0644); err != nil {
+		if err := writeFileIfChanged(outPath, []byte(serialized), 0644); err != nil {
 			return err
 		}
 		updatedTextFiles = append(updatedTextFiles, cleanName)
@@ -98,7 +105,7 @@ func SaveBookEditorStateToDisk(b *Book) error {
 		return nil
 	}
 	editorPath := filepath.Join(b.RootPath, "editor.txt")
-	return os.WriteFile(editorPath, []byte(SerializeEditorFile(b)), 0644)
+	return writeFileIfChanged(editorPath, []byte(SerializeEditorFile(b)), 0644)
 }
 
 // InsertSceneBetween inserts a new scene into the book between parentSceneID and childSceneID
@@ -762,13 +769,23 @@ func ImportBookMediaFromDisk(b *Book, rawPaths []string, kind string) ([]string,
 }
 
 // PackBookToZip packages an unpacked book directory into a single .stbook archive (including subdirectories).
+// It streams directly to an atomic .tmp file on disk, using zip.Deflate for .txt files and zip.Store for media files.
 func PackBookToZip(bookDir, outZipPath string) error {
-	var buf bytes.Buffer
-	zw := zip.NewWriter(&buf)
+	if err := os.MkdirAll(filepath.Dir(outZipPath), 0755); err != nil {
+		return err
+	}
+	tmpZipPath := outZipPath + ".tmp"
+	_ = os.Remove(tmpZipPath)
 
-	err := filepath.WalkDir(bookDir, func(path string, d fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
+	outFile, err := os.OpenFile(tmpZipPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	if err != nil {
+		return err
+	}
+
+	zw := zip.NewWriter(outFile)
+	walkErr := filepath.WalkDir(bookDir, func(path string, d fs.DirEntry, wErr error) error {
+		if wErr != nil {
+			return wErr
 		}
 		if d.IsDir() {
 			if path != bookDir && strings.HasPrefix(d.Name(), ".") {
@@ -784,23 +801,57 @@ func PackBookToZip(bookDir, outZipPath string) error {
 			return err
 		}
 		relSlash := filepath.ToSlash(rel)
-		raw, err := os.ReadFile(path)
+
+		srcFile, err := os.Open(path)
 		if err != nil {
 			return err
 		}
-		w, err := zw.Create(relSlash)
+		info, err := srcFile.Stat()
 		if err != nil {
+			_ = srcFile.Close()
 			return err
 		}
-		_, err = w.Write(raw)
-		return err
+
+		hdr, err := zip.FileInfoHeader(info)
+		if err != nil {
+			_ = srcFile.Close()
+			return err
+		}
+		hdr.Name = relSlash
+		if isAudioFilename(relSlash) || isRasterImageFilename(relSlash) {
+			hdr.Method = zip.Store
+		} else {
+			hdr.Method = zip.Deflate
+		}
+
+		w, err := zw.CreateHeader(hdr)
+		if err != nil {
+			_ = srcFile.Close()
+			return err
+		}
+		_, copyErr := io.Copy(w, srcFile)
+		closeErr := srcFile.Close()
+		if copyErr != nil {
+			return copyErr
+		}
+		return closeErr
 	})
-	if err != nil {
-		_ = zw.Close()
+	zwCloseErr := zw.Close()
+	fileCloseErr := outFile.Close()
+	if walkErr != nil || zwCloseErr != nil || fileCloseErr != nil {
+		_ = os.Remove(tmpZipPath)
+		if walkErr != nil {
+			return walkErr
+		}
+		if zwCloseErr != nil {
+			return zwCloseErr
+		}
+		return fileCloseErr
+	}
+	_ = os.Remove(outZipPath)
+	if err := os.Rename(tmpZipPath, outZipPath); err != nil {
+		_ = os.Remove(tmpZipPath)
 		return err
 	}
-	if err := zw.Close(); err != nil {
-		return err
-	}
-	return os.WriteFile(outZipPath, buf.Bytes(), 0644)
+	return nil
 }

@@ -29,26 +29,24 @@ func stripDevNodesSlice(nodes []*Node) []*Node {
 	var out []*Node
 	for i := 0; i < len(nodes); i++ {
 		n := nodes[i]
-		mapping := strings.TrimSpace(n.Mapping)
-		if mapping == "if dev_mode" {
+		expr := strings.TrimSpace(n.Expr)
+		if n.Kind == NodeIf && expr == "dev_mode" {
 			if i+1 < len(nodes) {
-				nextMap := strings.TrimSpace(nodes[i+1].Mapping)
-				if nextMap == "else" {
+				next := nodes[i+1]
+				if next.Kind == NodeElse {
 					i++
-					elseNode := nodes[i]
-					elseNode.Children = stripDevNodesSlice(elseNode.Children)
-					out = append(out, elseNode.Children...)
-				} else if strings.HasPrefix(nextMap, "elif ") {
-					nodes[i+1].Mapping = "if " + strings.TrimSpace(nextMap[5:])
+					next.Children = stripDevNodesSlice(next.Children)
+					out = append(out, next.Children...)
+				} else if next.Kind == NodeElif {
+					next.Kind = NodeIf
 				}
 			}
 			continue
 		}
 		n.Children = stripDevNodesSlice(n.Children)
-		isInvisibleControlNode := n.Tag == "div" && len(n.Classes) == 0 && n.ID == "" && len(n.Attrs) == 0 && n.Text == "" && mapping != ""
-		if mapping == "if not dev_mode" && isInvisibleControlNode {
+		if n.Kind == NodeIf && (expr == "not dev_mode" || expr == "!dev_mode") {
 			out = append(out, n.Children...)
-			for i+1 < len(nodes) && isElseOrElifMapping(strings.TrimSpace(nodes[i+1].Mapping)) {
+			for i+1 < len(nodes) && (nodes[i+1].Kind == NodeElif || nodes[i+1].Kind == NodeElse) {
 				i++
 			}
 			continue

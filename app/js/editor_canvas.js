@@ -21,7 +21,7 @@ function recomputeNodeMetrics(node) {
   node.bottom = node.y + node.h;
   node.inOx = NODE_CARD_WIDTH * 0.5;
   node.inOy = 0;
-  node.hasInputPort = !node.isStart && !node.isEntry;
+  node.hasInputPort = !node.isStart;
 
   if (portCount > 0) {
     for (let i = 0; i < node.ports.length; i++) {
@@ -29,17 +29,32 @@ function recomputeNodeMetrics(node) {
       p.isBottom = false;
       p.ox = NODE_CARD_WIDTH;
       p.oy = NODE_HEADER_HEIGHT + i * NODE_CHOICE_ROW_HEIGHT + NODE_CHOICE_ROW_HEIGHT * 0.5;
+      p.connected = Boolean((p.targetId && p.targetId.toUpperCase() !== "END") || (p.targetChapter && p.targetChapter.trim()));
     }
+    node.implicitPort = null;
   } else {
-    node.implicitPort = {
-      idx: 0,
-      label: "Dalej",
-      targetId: node.impTarget || "",
-      targetChapter: node.impChapter || "",
-      isBottom: true,
-      ox: NODE_CARD_WIDTH * 0.5,
-      oy: node.h
-    };
+    const impTarget = node.impTarget || "";
+    const impChapter = node.impChapter || "";
+    const impConnected = Boolean((impTarget && impTarget.toUpperCase() !== "END") || (impChapter && impChapter.trim()));
+    if (!node.implicitPort) {
+      node.implicitPort = {
+        idx: 0,
+        label: "Dalej",
+        targetId: impTarget,
+        targetChapter: impChapter,
+        connected: impConnected,
+        isBottom: true,
+        ox: NODE_CARD_WIDTH * 0.5,
+        oy: node.h
+      };
+    } else {
+      node.implicitPort.targetId = impTarget;
+      node.implicitPort.targetChapter = impChapter;
+      node.implicitPort.connected = impConnected;
+      node.implicitPort.isBottom = true;
+      node.implicitPort.ox = NODE_CARD_WIDTH * 0.5;
+      node.implicitPort.oy = node.h;
+    }
   }
 }
 
@@ -51,13 +66,14 @@ function recomputeChapterPortPositions(ch) {
   ch.inX = ch.x + ch.w * 0.5;
   ch.inY = ch.y;
   if (!ch.outPorts || ch.outPorts.length === 0) {
-    ch.outPorts = [{ idx: 0, target: "", targetLower: "", x: ch.x + ch.w * 0.5, y: ch.y + ch.h }];
+    ch.outPorts = [{ idx: 0, target: "", targetLower: "", connected: false, x: ch.x + ch.w * 0.5, y: ch.y + ch.h }];
     return;
   }
   const m = ch.outPorts.length;
   for (let i = 0; i < m; i++) {
     const op = ch.outPorts[i];
     op.idx = i;
+    op.connected = Boolean(op.targetLower);
     op.x = ch.x + ch.w * 0.5 + (i - (m - 1) * 0.5) * CHAPTER_OUT_PORT_PITCH;
     op.y = ch.y + ch.h;
   }

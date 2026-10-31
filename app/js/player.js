@@ -466,18 +466,16 @@ function updateFocusedSceneByViewport() {
   const bgStage = qs("#player-bg-stage");
   if (bgStage && bestCard && document.body.getAttribute("data-imageless") !== "true") {
     const imgUrl = bestCard.getAttribute("data-scene-image") || "";
-    let bgImg = qs("#player-bg-img", bgStage);
-    if (imgUrl) {
-      if (!bgImg) {
-        bgImg = document.createElement("img");
-        bgImg.id = "player-bg-img";
-        bgImg.className = "player-bg-img";
-        bgStage.appendChild(bgImg);
+    const bgImg = qs("#player-bg-img", bgStage);
+    if (bgImg) {
+      if (imgUrl) {
+        if (bgImg.getAttribute("src") !== imgUrl) {
+          bgImg.setAttribute("src", imgUrl);
+        }
+        bgImg.classList.remove("hidden");
+      } else {
+        bgImg.classList.add("hidden");
       }
-      if (bgImg.getAttribute("src") !== imgUrl) {
-        bgImg.setAttribute("src", imgUrl);
-      }
-      bgImg.classList.remove("hidden");
     }
   }
 }

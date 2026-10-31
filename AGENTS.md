@@ -31,14 +31,14 @@
 - Edit source templates in `app/templates/*.tpl`, stylesheets in `app/styles/*.tss`, scripts in `app/js/*.js`, and icons in `app/icons/*.svg`.
 - Never manually edit generated files in `build/app/{index.html,style.css,app.js}` without updating source files in `app/` and running `tpl.BuildApp` (`./build.sh --macos` or `go test ./...`).
 - **`.tpl` Language & Compile-Time Security Gates (`internal/tpl/tpl.go`)**:
-  - Prefer conditional classes (`.active?=is_active`, `.hidden?=!is_open`, `.mode-full?=(mode == "full")`), conditional attributes (`disabled?=is_locked`, `data-hint?: hint_text`), `-> if` / `-> elif` / `-> else` chains, and `@component` props + `@slot` over redundant `*_class` string construction in Go.
+  - Prefer conditional classes (`.active?: {is_active}`, `.hidden?: {!is_open}`, `.mode-full?: {mode == "full"}`), conditional attributes (`disabled?: {is_locked}`, `data-hint?: {hint_text}`), `{if ...}` / `{elif ...}` / `{else}` chains, `{for item in list}` loops, and `@component` props + `@slot` over redundant `*_class` string construction in Go.
   - No inline `style="..."` attributes, `<style>` tags, `<script>` blocks (only `<script src="/app.js">`), `on*=` event attributes, `<iframe>`/`<object>`/`<embed>`/`<foreignObject>`, or `javascript:`/`data:` URLs.
   - No inline `<svg>` elements in `.tpl`; put all SVGs in `app/icons/*.svg` and include via `svg.class src: /icons/name.svg`.
-  - No HTML string literals (`<div`, `<span`, `<button`, `<input`, `<label`, `<svg`, `</`) in `app/js/*.js` (enforced by `TestNoHTMLStringLiteralsInClientJS`).
-  - Dynamic context strings (`-> var`, `"{var}"`) are HTML-escaped and never undergo secondary `{...}` interpolation. `-> html:var` is restricted to `book.RenderSafeProseHTML` output.
+  - **Minimal JavaScript Bridge & Zero Dynamic Markup**: Keep business/state logic on the Go side (`internal/gui/`, `internal/book/`) and render all markup in `.tpl` templates. Client JS (`app/js/*.js`) is a minimal declarative bridge for `POST /api/action`, audio/scroll bindings, and WebGL canvas rendering—never create DOM elements dynamically (`document.createElement`) or use HTML string literals (`<div`, `<span`, `<button`, `<input`, `<label`, `<svg`, `</`) in `app/js/*.js` (enforced by `TestNoHTMLStringLiteralsInClientJS`).
+  - Dynamic context strings (`{var}`, `"{var}"`) are HTML-escaped and never undergo secondary `{...}` interpolation. `{raw var}` is restricted to `book.RenderSafeProseHTML` output.
 - **`.tss` Stylesheet Rules (`internal/tpl/tss.go`)**:
   - Indentation-based rules without `{}` or `;`. Define theme/preview tokens in `app/styles/colors.tss` using `light-dark(lightVal, darkVal)` and `--var` references.
-  - Wrap device preview rules in `/* @dev-only-start */ ... /* @dev-only-end */` and template nodes in `-> if dev_mode` so production builds strip them completely.
+  - Wrap device preview rules in `/* @dev-only-start */ ... /* @dev-only-end */` and template nodes in `{if dev_mode}` so production builds strip them completely.
   - Register any new `.tss` or `.js` module in `CSSModuleFiles` / `JSModuleFiles` (and `CSSPlayerModuleFiles` / `JSPlayerModuleFiles` if needed in standalone player mode) in `internal/tpl/bundle.go`.
 - **UI & Control Rules**:
   - Keep `border-radius: 0 !important` globally (`base.tss`), except circular node ports, slider thumbs, and progress/notch pills.
@@ -70,10 +70,11 @@
   - Order chapters and multi-file scenes by BFS graph reachability from `StartSceneID` (`orderChaptersAndScenesByGraph`), never by numeric filename prefixes (`01_...`).
   - `DownloadBookFromURL` must block loopback (outside `go test`), private, link-local, multicast, and CGNAT IPs in `net.Dialer.DialContext` and cap downloads at 250 MB.
 
-## 6. Zero External Dependencies, Hygiene & Automated Test Gates
+## 6. Zero External Dependencies, Native Host, Hygiene & Automated Test Gates
 - `go.mod` must remain 100% dependency-free (Go standard library only).
+- Native OS windows (`internal/gui/window_*.go`) use Cocoa + `WKWebView` on macOS, Win32 + `EmbeddedBrowserWebView.dll` + COFF `.syso` resources on Windows, and Chromium/Edge `--app` mode with `zenity`/`kdialog` on Linux.
 - Never spawn a native window or OS file picker when `ST_NO_WINDOW=1` or running under `go test`.
 - `TestTopbarAlwaysVisibleIncludingSceneTextEditor` (`internal/gui/server_test.go`): Fails if `#topbar` is ever removed, hidden, or covered by `.modal-backdrop` / `.scene-text-fullscreen-backdrop`, or if switching views from `#topbar` fails to exit `#modal-scene-text`.
 - **Repository Hygiene & Post-Work Cleanup**:
   - Never hardcode absolute local paths, usernames, or secrets in code, templates, or tests.
-  - Never leave temporary files, scratch tests, or `.py` scripts in the repository; inspect working tree state and run `go test ./...` before finishing.
+  - Never leave temporary files, scratch tests, or `.py` scripts in the repository; inspect working tree state, run `go test ./...`, and always build the application for the current platform (`./build.sh --macos` on macOS, `./build.sh --linux` on Linux, `./build.sh --windows` on Windows) after changes.

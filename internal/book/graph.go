@@ -337,7 +337,12 @@ func FinalizeBook(b *Book) {
 				sc.ChapterID = meta.ExplicitID
 			}
 		}
-		sc.HTML = RenderSafeProseHTML(sc.Text)
+		if !b.deferProseHTML {
+			sc.EnsureHTML()
+		} else if sc.HTML != "" && sc.htmlSourceText != sc.Text {
+			sc.HTML = ""
+			sc.htmlSourceText = ""
+		}
 	}
 
 	sceneByID := make(map[string]*Scene, len(b.Scenes))

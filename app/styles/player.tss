@@ -498,6 +498,10 @@
 .deck-play-btn:hover
   color --text-primary
 
+.deck-play-btn.is-buffering
+  opacity 0.45
+  cursor progress
+
 .deck-play-icon
   width 29px
   height 29px

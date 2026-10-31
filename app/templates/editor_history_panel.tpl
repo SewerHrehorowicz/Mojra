@@ -1,4 +1,4 @@
-aside.editor-history-panel.hidden?=!show_editor_history_panel
+aside.editor-history-panel .hidden?: {!show_editor_history_panel}
     .history-panel-header
         span.history-panel-title "Historia i wersje"
         button.node-icon-btn
@@ -7,9 +7,9 @@ aside.editor-history-panel.hidden?=!show_editor_history_panel
             "✕"
 
     .history-unsaved-banner
-        -> if has_unnamed_edits
-            .history-unsaved-text -> "Niezapisane zmiany od ostatniej wersji: {unnamed_edits_count}"
-        -> else
+        {if has_unnamed_edits}
+            .history-unsaved-text "Niezapisane zmiany od ostatniej wersji: {unnamed_edits_count}"
+        {else}
             .history-unsaved-text.is-clean "Brak niezapisanych zmian"
 
     form.history-version-form
@@ -27,36 +27,38 @@ aside.editor-history-panel.hidden?=!show_editor_history_panel
     .history-panel-body
         .history-panel-section
             label.node-micro-label "Bieżące zmiany (od ostatniej wersji)"
-            -> if has_history_unnamed_items
-                .history-items-list -> history_unnamed_items.each() as item
-                    button.history-step-item.history-item-current?=item.is_current.history-item-undone?=item.is_undone
-                        type: button
-                        action: RestoreHistoryRevision
-                        data-revision: "{item.id}"
-                        .history-step-top
-                            span.history-step-label -> item.label
-                            -> if item.status_label
-                                span.history-step-badge -> item.status_label
-                        .history-step-meta
-                            span.history-step-time -> item.time_label
-            -> else
+            {if has_history_unnamed_items}
+                .history-items-list
+                    {for item in history_unnamed_items}
+                        button.history-step-item .history-item-current?: {item.is_current} .history-item-undone?: {item.is_undone}
+                            type: button
+                            action: RestoreHistoryRevision
+                            data-revision: "{item.id}"
+                            .history-step-top
+                                span.history-step-label {item.label}
+                                {if item.status_label}
+                                    span.history-step-badge {item.status_label}
+                            .history-step-meta
+                                span.history-step-time {item.time_label}
+            {else}
                 .history-empty-note "Brak pośrednich kroków od ostatniej zapisanej wersji."
 
         .history-panel-section
             label.node-micro-label "Zapisane wersje"
-            -> if has_history_named_versions
-                .history-items-list -> history_named_versions.each() as ver
-                    .history-version-card.history-item-current?=ver.is_current
-                        .history-version-info
-                            span.history-version-name -> ver.label
-                            span.history-version-time -> ver.time_label
-                        -> if ver.is_current
-                            span.history-step-badge "AKTYWNA"
-                        -> else
-                            button.btn.btn-sm.history-restore-btn
-                                type: button
-                                action: RestoreHistoryRevision
-                                data-revision: "{ver.id}"
-                                "Przywróć"
-            -> else
+            {if has_history_named_versions}
+                .history-items-list
+                    {for ver in history_named_versions}
+                        .history-version-card .history-item-current?: {ver.is_current}
+                            .history-version-info
+                                span.history-version-name {ver.label}
+                                span.history-version-time {ver.time_label}
+                            {if ver.is_current}
+                                span.history-step-badge "AKTYWNA"
+                            {else}
+                                button.btn.btn-sm.history-restore-btn
+                                    type: button
+                                    action: RestoreHistoryRevision
+                                    data-revision: "{ver.id}"
+                                    "Przywróć"
+            {else}
                 .history-empty-note "Brak zapisanych wersji."

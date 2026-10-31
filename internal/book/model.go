@@ -1,6 +1,9 @@
 package book
 
-import "strings"
+import (
+	"strings"
+	"time"
+)
 
 type Choice struct {
 	Label           string
@@ -35,8 +38,9 @@ type Scene struct {
 	Col           int
 	X             int
 	Y             int
-	Unreachable   bool
-	Warnings      []string
+	Unreachable    bool
+	Warnings       []string
+	htmlSourceText string
 }
 
 // DisplayName returns the scene's title if present, or falls back to its ExplicitID or ID.
@@ -60,6 +64,23 @@ func (s Scene) ReferenceKey() string {
 		return name
 	}
 	return strings.TrimSpace(s.ID)
+}
+
+// EnsureHTML lazily renders and caches safe HTML paragraphs from s.Text if not already rendered.
+func (s *Scene) EnsureHTML() string {
+	if s == nil {
+		return ""
+	}
+	if s.Text == "" {
+		s.HTML = ""
+		s.htmlSourceText = ""
+		return ""
+	}
+	if s.HTML == "" || s.htmlSourceText != s.Text {
+		s.HTML = RenderSafeProseHTML(s.Text)
+		s.htmlSourceText = s.Text
+	}
+	return s.HTML
 }
 
 type Chapter struct {
@@ -122,6 +143,16 @@ type NodePosition struct {
 	HasXY bool
 }
 
+type PackedMediaEntry struct {
+	DataOffset  int64
+	Size        int64
+	Method      uint16
+	ModTime     time.Time
+	Header512   [512]byte
+	HeaderLen   int
+	ValidHeader bool
+}
+
 type Book struct {
 	ID            string
 	Title         string
@@ -140,14 +171,16 @@ type Book struct {
 	TextFiles     []string
 	AudioFiles    []string
 	ImageFiles    []string
+	PackedMedia   map[string]PackedMediaEntry
 	Chapters      []Chapter
 	Scenes        []*Scene
 	Layout        map[string]NodePosition
 	EditorPanX    int
 	EditorPanY    int
 	EditorZoom    float64
-	HasEditorView bool
-	Warnings      []string
+	HasEditorView  bool
+	Warnings       []string
+	deferProseHTML bool
 }
 
 type HistoryEntry struct {

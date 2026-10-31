@@ -618,13 +618,14 @@ func LoadBookFromDir(bookDir string) (*Book, error) {
 	folderName := filepath.Base(bookDir)
 	bookID := SanitizeBookID(folderName)
 	b := &Book{
-		ID:          bookID,
-		Title:       folderName,
-		Author:      "Nieznany Autor",
-		Description: "Interaktywna opowieść.",
-		IsPacked:    false,
-		RootPath:    bookDir,
-		Layout:      make(map[string]NodePosition),
+		ID:             bookID,
+		Title:          folderName,
+		Author:         "Nieznany Autor",
+		Description:    "Interaktywna opowieść.",
+		IsPacked:       false,
+		RootPath:       bookDir,
+		Layout:         make(map[string]NodePosition),
+		deferProseHTML: true,
 	}
 
 	var storyFiles []string
@@ -733,13 +734,15 @@ func LoadBookFromZip(zipPath string) (*Book, error) {
 	bookID := SanitizeBookID(stem)
 
 	b := &Book{
-		ID:          bookID,
-		Title:       stem,
-		Author:      "Nieznany Autor",
-		Description: "Interaktywna opowieść (pakiet .stbook).",
-		IsPacked:    true,
-		RootPath:    zipPath,
-		Layout:      make(map[string]NodePosition),
+		ID:             bookID,
+		Title:          stem,
+		Author:         "Nieznany Autor",
+		Description:    "Interaktywna opowieść (pakiet .stbook).",
+		IsPacked:       true,
+		RootPath:       zipPath,
+		PackedMedia:    make(map[string]PackedMediaEntry),
+		Layout:         make(map[string]NodePosition),
+		deferProseHTML: true,
 	}
 
 	textMap := make(map[string]string)
@@ -783,8 +786,10 @@ func LoadBookFromZip(zipPath string) (*Book, error) {
 			}
 		case isAudioFilename(relSlash):
 			audioFiles = append(audioFiles, relSlash)
+			b.PackedMedia[strings.ToLower(relSlash)] = indexPackedMediaEntry(f, relSlash)
 		case isRasterImageFilename(relSlash):
 			imageFiles = append(imageFiles, relSlash)
+			b.PackedMedia[strings.ToLower(relSlash)] = indexPackedMediaEntry(f, relSlash)
 		}
 	}
 
@@ -860,6 +865,26 @@ func detectZipCommonPrefix(files []*zip.File) string {
 		}
 	}
 	return ""
+}
+
+func indexPackedMediaEntry(f *zip.File, relSlash string) PackedMediaEntry {
+	entry := PackedMediaEntry{
+		Size:    int64(f.UncompressedSize64),
+		Method:  f.Method,
+		ModTime: f.Modified,
+	}
+	if off, err := f.DataOffset(); err == nil {
+		entry.DataOffset = off
+	}
+	if f.UncompressedSize64 > 0 && f.UncompressedSize64 <= maxMediaEntryBytes {
+		if rc, err := f.Open(); err == nil {
+			n, _ := io.ReadFull(rc, entry.Header512[:])
+			_ = rc.Close()
+			entry.HeaderLen = n
+			entry.ValidHeader = validateMediaHeader(relSlash, entry.Header512[:n])
+		}
+	}
+	return entry
 }
 
 func readZipEntryText(f *zip.File) (string, error) {
