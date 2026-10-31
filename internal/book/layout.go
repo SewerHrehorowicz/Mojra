@@ -102,12 +102,36 @@ func orderChaptersAndScenesByGraph(b *Book, prevChapterMeta map[string]Chapter) 
 		if ch.ID == "" {
 			ch.ID = ch.ReferenceKey()
 		}
+		if ch.ExplicitStart == "" {
+			if meta, ok := prevChapterMeta[strings.ToLower(strings.TrimSpace(ch.Name))]; ok && meta.ExplicitStart != "" {
+				ch.ExplicitStart = meta.ExplicitStart
+			} else if meta, ok := prevChapterMeta[strings.ToLower(strings.TrimSpace(ch.ExplicitID))]; ok && meta.ExplicitStart != "" {
+				ch.ExplicitStart = meta.ExplicitStart
+			} else if meta, ok := prevChapterMeta[strings.ToLower(strings.TrimSpace(ch.ID))]; ok && meta.ExplicitStart != "" {
+				ch.ExplicitStart = meta.ExplicitStart
+			}
+		}
 		if len(ch.SceneIDs) > 0 {
 			ch.StartSceneID = ch.SceneIDs[0]
 			for _, sid := range ch.SceneIDs {
 				if strings.EqualFold(sid, b.StartSceneID) {
 					ch.StartSceneID = b.StartSceneID
 					break
+				}
+			}
+			if expStart := strings.TrimSpace(ch.ExplicitStart); expStart != "" {
+				normStart := NormalizeLookupKey(expStart)
+				for _, sid := range ch.SceneIDs {
+					sc := sceneMap[sid]
+					if sc == nil {
+						continue
+					}
+					if strings.EqualFold(sc.ID, expStart) ||
+						(sc.ExplicitID != "" && strings.EqualFold(sc.ExplicitID, expStart)) ||
+						(normStart != "" && NormalizeLookupKey(sc.Name) == normStart) {
+						ch.StartSceneID = sc.ID
+						break
+					}
 				}
 			}
 		}

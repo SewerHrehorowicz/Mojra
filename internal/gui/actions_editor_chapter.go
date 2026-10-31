@@ -61,8 +61,60 @@ func (s *Server) renameActiveBookChapter(r *http.Request) string {
 		if updated == 0 {
 			return "", "", "", false
 		}
+		if strings.EqualFold(s.SelectedChapter, oldCh) {
+			s.SelectedChapter = newCh
+		}
 		return fmt.Sprintf("Zmieniono rozdział na „%s” (%d scen)", newCh, updated), "chapter", "renamechapter", true
 	})
+}
+
+func (s *Server) setChapterStartScene(r *http.Request) string {
+	if s.ActiveBook == nil || s.ActiveBook.IsPacked {
+		return ""
+	}
+	chKey := strings.TrimSpace(r.FormValue("chapter"))
+	if chKey == "" {
+		chKey = strings.TrimSpace(r.FormValue("old_chapter"))
+	}
+	if chKey == "" {
+		chKey = s.SelectedChapter
+	}
+	scKey := strings.TrimSpace(r.FormValue("scene"))
+	if scKey == "" {
+		scKey = strings.TrimSpace(r.FormValue("start_scene"))
+	}
+	if chKey == "" || scKey == "" {
+		return ""
+	}
+	return s.withBookMutation(r, false, func(b *book.Book) (string, string, string, bool) {
+		ch := b.FindChapter(chKey)
+		target := s.findScene(scKey)
+		if ch == nil || target == nil {
+			return "", "", "", false
+		}
+		targetCh := strings.TrimSpace(target.Chapter)
+		if targetCh == "" {
+			targetCh = "Rozdział 1"
+		}
+		if !strings.EqualFold(targetCh, strings.TrimSpace(ch.Name)) {
+			return "", "", "", false
+		}
+		ch.ExplicitStart = target.ReferenceKey()
+		ch.StartSceneID = target.ID
+		s.SelectedChapter = ch.Name
+		s.BookSettingsOpen = false
+		return fmt.Sprintf("Ustawiono scenę początkową rozdziału „%s”: %s", ch.DisplayName(), target.DisplayName()), "chapter", "setchapterstart", true
+	})
+}
+
+func (s *Server) saveChapterSettings(r *http.Request) string {
+	toast := s.renameActiveBookChapter(r)
+	if startSc := strings.TrimSpace(r.FormValue("start_scene")); startSc != "" {
+		if t2 := s.setChapterStartScene(r); t2 != "" {
+			toast = t2
+		}
+	}
+	return toast
 }
 
 func (s *Server) assignChapterToScenes(r *http.Request) string {

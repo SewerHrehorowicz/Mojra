@@ -46,59 +46,29 @@ func (s *Server) populatePlayerContext(vars map[string]any) {
 			if !imageless && pastScene.ImageURL != "" {
 				lastImageURL = pastScene.ImageURL
 			}
-			var chList []map[string]any
-			if len(pastScene.Choices) > 1 {
-				chList = make([]map[string]any, 0, len(pastScene.Choices))
-				for _, ch := range pastScene.Choices {
-					wasTaken := ch.Label == entry.ChoiceLabel || ch.TargetSceneID == entry.TargetSceneID
-					takenClass := ""
-					displayLabel := ch.Label
-					if wasTaken {
-						takenClass = "choice-taken"
-						displayLabel = "✓ " + ch.Label
-					}
-					chList = append(chList, map[string]any{
-						"taken_class":   takenClass,
-						"display_label": displayLabel,
-					})
-				}
-			}
 			pastImgURL := ""
-			pastImgClass := ""
 			if !imageless && pastScene.ImageURL != "" {
 				pastImgURL = pastScene.ImageURL
-				pastImgClass = "has-illustration"
 			}
 			pastHeaderMeta := s.ActiveBook.Title
 			if pastScene.Chapter != "" {
 				pastHeaderMeta = s.ActiveBook.Title + " • " + pastScene.Chapter
 			}
 			pastHasTitle := strings.TrimSpace(pastScene.Name) != ""
-			pastUntitledClass := ""
-			if !pastHasTitle {
-				pastUntitledClass = "scene-untitled"
-			}
 			histList = append(histList, map[string]any{
-				"idx":             idx,
-				"step":            idx + 1,
-				"chapter":         pastScene.Chapter,
-				"header_meta":     pastHeaderMeta,
-				"name":            pastScene.Name,
-				"rail_title":      pastScene.DisplayName(),
-				"has_title":       pastHasTitle,
-				"untitled_class":  pastUntitledClass,
-				"html":            pastScene.HTML,
-				"has_image":       pastImgURL != "",
-				"image_url":       pastImgURL,
-				"bg_image_url":    lastImageURL,
-				"has_image_class": pastImgClass,
-				"choices":         chList,
+				"idx":          idx,
+				"header_meta":  pastHeaderMeta,
+				"name":         pastScene.Name,
+				"rail_title":   pastScene.DisplayName(),
+				"has_title":    pastHasTitle,
+				"html":         pastScene.HTML,
+				"has_image":    pastImgURL != "",
+				"image_url":    pastImgURL,
+				"bg_image_url": lastImageURL,
 			})
 		}
 		vars["history_items"] = histList
 	}
-
-	vars["present_step"] = histCount + 1
 
 	hasMultipleChoices := len(curScene.Choices) > 1
 	curChoices := make([]map[string]any, 0, len(curScene.Choices))
@@ -122,10 +92,8 @@ func (s *Server) populatePlayerContext(vars map[string]any) {
 	}
 
 	curImgURL := ""
-	curImgClass := ""
 	if !imageless && curScene.ImageURL != "" {
 		curImgURL = curScene.ImageURL
-		curImgClass = "has-illustration"
 		lastImageURL = curScene.ImageURL
 	}
 	curHeaderMeta := s.ActiveBook.Title
@@ -133,28 +101,20 @@ func (s *Server) populatePlayerContext(vars map[string]any) {
 		curHeaderMeta = s.ActiveBook.Title + " • " + curScene.Chapter
 	}
 	curHasTitle := strings.TrimSpace(curScene.Name) != ""
-	curUntitledClass := ""
-	if !curHasTitle {
-		curUntitledClass = "scene-untitled"
-	}
 
 	vars["current_scene"] = map[string]any{
-		"id":              curScene.ID,
-		"name":            curScene.Name,
-		"rail_title":      curScene.DisplayName(),
-		"has_title":       curHasTitle,
-		"untitled_class":  curUntitledClass,
-		"chapter":         curScene.Chapter,
-		"header_meta":     curHeaderMeta,
-		"html":            curScene.HTML,
-		"has_image":       curImgURL != "",
-		"image_url":       curImgURL,
-		"has_bg_image":    !imageless && lastImageURL != "",
-		"bg_image_url":    lastImageURL,
-		"has_image_class": curImgClass,
-		"audio_url":       curScene.AudioURL,
-		"is_terminal":     len(curScene.Choices) == 0 || curScene.ExplicitEnd,
-		"choices":         curChoices,
+		"name":         curScene.Name,
+		"rail_title":   curScene.DisplayName(),
+		"has_title":    curHasTitle,
+		"header_meta":  curHeaderMeta,
+		"html":         curScene.HTML,
+		"has_image":    curImgURL != "",
+		"image_url":    curImgURL,
+		"has_bg_image": !imageless && lastImageURL != "",
+		"bg_image_url": lastImageURL,
+		"audio_url":    curScene.AudioURL,
+		"is_terminal":  len(curScene.Choices) == 0 || curScene.ExplicitEnd,
+		"choices":      curChoices,
 	}
 
 	vars["show_audio_deck"] = s.ActiveBook.Narrated
@@ -182,27 +142,12 @@ func (s *Server) populatePlayerContext(vars map[string]any) {
 	}
 	vars["book_progress_pct"] = progressPct
 
-	audioLabelName := curScene.DisplayName()
-	if curScene.AudioFile != "" {
-		vars["audio_scene_label"] = audioLabelName + " • " + curScene.AudioFile
-	} else if s.ActiveBook.Narrated {
-		vars["audio_scene_label"] = audioLabelName + " • ⚠ BRAK WYMAGANEJ NARRACJI"
-	} else {
-		vars["audio_scene_label"] = audioLabelName + " (tryb tekstowy — brak audio)"
-	}
 	vars["audio_resume_time"] = fmt.Sprintf("%.1f", s.currentAudioTime())
 	vars["audio_speed"] = fmt.Sprintf("%.2g", s.Settings.PlaybackSpeed)
 	vars["auto_choice_enabled"] = s.Settings.AutoChoice
 	if s.Settings.AutoChoice {
-		vars["auto_choice_chip_class"] = "chip-active"
 		vars["auto_choice_label"] = "Auto-Wybór: WŁ"
 	} else {
-		vars["auto_choice_chip_class"] = ""
 		vars["auto_choice_label"] = "Auto-Wybór: WYŁ"
-	}
-	if s.Settings.AutoChoiceStrategy == "random" {
-		vars["auto_strategy_label"] = "Tryb: Losowy"
-	} else {
-		vars["auto_strategy_label"] = "Tryb: 1. opcja"
 	}
 }

@@ -145,11 +145,13 @@ function hitTestStudioCanvas(wx, wy) {
   }
 
   // 5. Scene node cards (+ Wybór button, grip ⋮⋮, or card body)
+  const addChoiceShaped = typeof shapeTextGlyphs === "function" ? shapeTextGlyphs(FONT_BTN, "+ WYBÓR", 80) : null;
+  const addChoiceBtnW = addChoiceShaped ? Math.ceil(addChoiceShaped.totalW) + 20 : 72;
   for (let i = nodes.length - 1; i >= 0; i--) {
     const nd = nodes[i];
     if (wx >= nd.x && wx <= nd.x + nd.w && wy >= nd.y && wy <= nd.y + nd.h) {
       const footerTop = nd.y + nd.h - NODE_FOOTER_HEIGHT;
-      if (wx >= nd.x + 8 && wx <= nd.x + nd.w - 8 && wy >= footerTop + 6 && wy <= footerTop + 34) {
+      if (wx >= nd.x + 8 && wx <= nd.x + 8 + addChoiceBtnW && wy >= footerTop + 8 && wy <= footerTop + 32) {
         return { type: "add-choice-btn", node: nd };
       }
       if (wx >= nd.x + 2 && wx <= nd.x + 26 && wy >= nd.y + 4 && wy <= nd.y + 30) {
@@ -445,7 +447,11 @@ function handleEditorCanvasClick(e) {
     if (hiddenInput) hiddenInput.value = val;
     if (labelSpan) labelSpan.textContent = lbl;
     if (triggerBtn && portIcon) {
-      triggerBtn.title = lbl;
+      if (typeof setElementHint === "function") {
+        setElementHint(triggerBtn, lbl);
+      } else {
+        triggerBtn.setAttribute("data-hint", lbl);
+      }
       const isFilled = Boolean(val && val.toUpperCase() !== "END");
       portIcon.classList.toggle("port-filled", isFilled);
     }
@@ -453,6 +459,32 @@ function handleEditorCanvasClick(e) {
       btn.classList.toggle("active", btn === selectOpt);
     });
     closeAllCustomSelects(null);
+
+    if (selectEl.classList.contains("book-start-chapter-select")) {
+      if (val) {
+        sendServerAction("SetBookStartChapter", { chapter: val });
+      }
+      return true;
+    }
+
+    if (selectEl.classList.contains("book-start-scene-select")) {
+      if (val) {
+        sendServerAction("SetStartScene", { scene: val });
+      }
+      return true;
+    }
+
+    if (selectEl.classList.contains("chapter-start-scene-select")) {
+      const chForm = selectEl.closest("form.editor-chapter-form");
+      const chName = chForm ? chForm.getAttribute("data-context-chapter") || "" : "";
+      if (chName && val) {
+        sendServerAction("SetChapterStartScene", {
+          chapter: chName,
+          scene: val
+        });
+      }
+      return true;
+    }
 
     if (selectEl.classList.contains("node-chapter-select")) {
       const parentForm = selectEl.closest("form.editor-context-form");
@@ -1169,8 +1201,8 @@ function bindEditorCanvasEvents() {
           y: it.node.y
         }));
         saveBatchNodePositionsOnServer(payload);
-      } else if (!g.moved && g.clickedTitleArea && g.chapter) {
-        openFloatingChapterInput(g.chapter);
+      } else if (!g.moved && g.chapter) {
+        selectChapterForContextPanel(g.chapter.name);
       }
       return;
     }
@@ -1538,9 +1570,9 @@ function bindEditorCanvasEvents() {
       return;
     }
 
-    if (hit.type === "chapter-grip" || hit.type === "chapter-title") {
+    if (hit.type === "chapter-grip" || hit.type === "chapter-title" || hit.type === "chapter-in-port") {
       e.preventDefault();
-      beginChapterDragGesture(hit.chapter, viewport, e.clientX, e.clientY, false, hit.type === "chapter-title");
+      beginChapterDragGesture(hit.chapter, viewport, e.clientX, e.clientY, false, hit.type === "chapter-title" || hit.type === "chapter-in-port");
       return;
     }
 
@@ -1680,7 +1712,7 @@ function bindEditorCanvasEvents() {
     const hit = hitTestStudioCanvas(ptWorld.wx, ptWorld.wy);
     if (hit.type === "chapter-title" || hit.type === "chapter-grip") {
       e.preventDefault();
-      openFloatingChapterInput(hit.chapter);
+      selectChapterForContextPanel(hit.chapter.name);
       return;
     }
     if (hit.type !== "empty") return;
@@ -1701,8 +1733,20 @@ function bindEditorCanvasEvents() {
       scheduleChapterLiveSave(e.target);
       return;
     }
-    if (e.target && e.target.classList && e.target.classList.contains("canvas-book-title-input")) {
+    if (
+      e.target &&
+      ((e.target.classList && e.target.classList.contains("canvas-book-title-input")) ||
+        e.target.id === "book-settings-title-input")
+    ) {
       scheduleBookTitleLiveSave(e.target);
+      return;
+    }
+    const bookForm = e.target.closest("form.editor-book-form");
+    if (bookForm) {
+      if (e.target && e.target.tagName && e.target.tagName.toLowerCase() === "textarea") {
+        autoResizeInspectorTextarea(e.target);
+      }
+      scheduleBookSettingsLiveSave(bookForm);
       return;
     }
     const form = e.target.closest("form.editor-context-form, form#form-scene-text");
@@ -1744,7 +1788,11 @@ function bindEditorCanvasEvents() {
   document.addEventListener("change", (e) => {
     if (e.target && e.target.classList && e.target.classList.contains("chapter-group-title-input")) {
       commitChapterTitleInput(e.target);
-    } else if (e.target && e.target.classList && e.target.classList.contains("canvas-book-title-input")) {
+    } else if (
+      e.target &&
+      ((e.target.classList && e.target.classList.contains("canvas-book-title-input")) ||
+        e.target.id === "book-settings-title-input")
+    ) {
       commitBookTitleInput(e.target);
     }
   });
@@ -1753,8 +1801,16 @@ function bindEditorCanvasEvents() {
     "blur",
     (e) => {
       if (e.target && e.target.classList && e.target.classList.contains("chapter-group-title-input")) {
-        hideFloatingChapterInput(true);
-      } else if (e.target && e.target.classList && e.target.classList.contains("canvas-book-title-input")) {
+        if (e.target.id === "canvas-chapter-input") {
+          hideFloatingChapterInput(true);
+        } else {
+          commitChapterTitleInput(e.target);
+        }
+      } else if (
+        e.target &&
+        ((e.target.classList && e.target.classList.contains("canvas-book-title-input")) ||
+          e.target.id === "book-settings-title-input")
+      ) {
         commitBookTitleInput(e.target);
       }
     },

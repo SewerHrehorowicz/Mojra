@@ -219,7 +219,7 @@ func TestBuildWorkspaceAppAssets(t *testing.T) {
 		t.Fatalf("read library_view.tpl: %v", err)
 	}
 	libTpl := string(libTplBytes)
-	if !strings.Contains(libTpl, "button.btn.btn-sm#btn-open-add-book") || !strings.Contains(libTpl, "button.book-cover-wrap") {
+	if !strings.Contains(libTpl, "action: OpenAddBookModal") || !strings.Contains(libTpl, "button.book-cover-wrap") {
 		t.Fatalf("regression in library_view.tpl: expected #btn-open-add-book and button.book-cover-wrap, got:\n%s", libTpl)
 	}
 	cardStart := strings.Index(libTpl, "article.book-card")

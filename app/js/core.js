@@ -1,6 +1,8 @@
 "use strict";
 
 let toastTimer = null;
+let uiTooltipTimer = null;
+let activeHintEl = null;
 let lastAudioSaveAt = 0;
 let autoPlayChainActive = false;
 let isWindowFullscreen = false;
@@ -13,6 +15,88 @@ function qsa(sel, root) {
   return Array.from((root || document).querySelectorAll(sel));
 }
 
+function getOrCreateUITooltip() {
+  let tip = qs("#ui-tooltip");
+  if (!tip) {
+    const appRoot = qs("#app") || document.body;
+    if (appRoot) {
+      tip = document.createElement("div");
+      tip.id = "ui-tooltip";
+      tip.className = "ui-tooltip hidden";
+      appRoot.appendChild(tip);
+    }
+  }
+  return tip;
+}
+
+function hideUITooltip() {
+  if (uiTooltipTimer) {
+    clearTimeout(uiTooltipTimer);
+    uiTooltipTimer = null;
+  }
+  activeHintEl = null;
+  const tip = qs("#ui-tooltip");
+  if (tip) {
+    tip.classList.add("hidden");
+  }
+}
+
+function positionAndShowUITooltip(anchorEl) {
+  if (!anchorEl || !anchorEl.isConnected) {
+    hideUITooltip();
+    return;
+  }
+  const parentSelect = anchorEl.closest(".custom-select");
+  if (parentSelect && parentSelect.classList.contains("open")) {
+    hideUITooltip();
+    return;
+  }
+  const text = (anchorEl.getAttribute("data-hint") || "").trim();
+  if (!text) {
+    hideUITooltip();
+    return;
+  }
+  const tip = getOrCreateUITooltip();
+  if (!tip) return;
+  tip.textContent = text;
+  tip.classList.remove("hidden");
+
+  const rect = anchorEl.getBoundingClientRect();
+  const tipW = tip.offsetWidth || 120;
+  const tipH = tip.offsetHeight || 26;
+  const vw = window.innerWidth || 800;
+  const vh = window.innerHeight || 600;
+
+  let left = rect.left + rect.width / 2 - tipW / 2;
+  left = Math.max(8, Math.min(vw - tipW - 8, left));
+
+  let top = rect.bottom + 6;
+  if (top + tipH > vh - 8 && rect.top - tipH - 6 >= 8) {
+    top = rect.top - tipH - 6;
+  } else {
+    top = Math.max(8, Math.min(vh - tipH - 8, top));
+  }
+
+  tip.style.left = Math.round(left) + "px";
+  tip.style.top = Math.round(top) + "px";
+}
+
+function setElementHint(el, text) {
+  if (!el) return;
+  el.removeAttribute("title");
+  if (text) {
+    el.setAttribute("data-hint", text);
+  } else {
+    el.removeAttribute("data-hint");
+  }
+  if (activeHintEl === el) {
+    const tip = qs("#ui-tooltip");
+    if (tip && !tip.classList.contains("hidden")) {
+      positionAndShowUITooltip(el);
+    }
+  }
+}
+
 function syncFullscreenButtonState() {
   const enterIcon = qs("#icon-fullscreen-enter");
   const exitIcon = qs("#icon-fullscreen-exit");
@@ -20,8 +104,8 @@ function syncFullscreenButtonState() {
   if (enterIcon) enterIcon.classList.toggle("hidden", isWindowFullscreen);
   if (exitIcon) exitIcon.classList.toggle("hidden", !isWindowFullscreen);
   if (btn) {
-    btn.setAttribute(
-      "title",
+    setElementHint(
+      btn,
       isWindowFullscreen ? "Wróć do trybu okienkowego" : "Przełącz pełny ekran"
     );
   }
@@ -59,8 +143,8 @@ function syncTopbarToggleIcons() {
   if (zoomInIcon) zoomInIcon.classList.toggle("hidden", isLarge);
   if (zoomOutIcon) zoomOutIcon.classList.toggle("hidden", !isLarge);
   if (zoomBtn) {
-    zoomBtn.setAttribute(
-      "title",
+    setElementHint(
+      zoomBtn,
       isLarge ? "Pomniejsz przyciski i kontrolki (- / Ctrl+-)" : "Powiększ przyciski i kontrolki (+ / Ctrl++)"
     );
   }
@@ -76,9 +160,8 @@ function syncTopbarToggleIcons() {
     imgBtn.disabled = isImagelessLocked;
     imgBtn.classList.toggle("is-disabled", isImagelessLocked);
     imgBtn.classList.toggle("active", isImageless);
-    imgBtn.setAttribute("data-imageless-locked", isImagelessLocked ? "true" : "false");
-    imgBtn.setAttribute(
-      "title",
+    setElementHint(
+      imgBtn,
       isImagelessLocked
         ? "Obrazy wyłączone w ustawieniach książki (imageless: true)"
         : isImageless
@@ -151,7 +234,7 @@ function syncEditorHistoryHeaders(resp) {
       undoBtn.disabled = !canUndo;
       undoBtn.classList.toggle("is-disabled", !canUndo);
       if (undoTitleHeader) {
-        undoBtn.setAttribute("title", undoTitleHeader);
+        setElementHint(undoBtn, undoTitleHeader);
       }
     }
   }
@@ -163,7 +246,7 @@ function syncEditorHistoryHeaders(resp) {
       redoBtn.disabled = !canRedo;
       redoBtn.classList.toggle("is-disabled", !canRedo);
       if (redoTitleHeader) {
-        redoBtn.setAttribute("title", redoTitleHeader);
+        setElementHint(redoBtn, redoTitleHeader);
       }
     }
   }
@@ -240,7 +323,7 @@ function applyServerResponseHeaders(resp, actionName) {
     const autoBtn = qs("#btn-auto-choice-toggle");
     if (autoBtn) {
       autoBtn.classList.toggle("chip-active", isAutoOn);
-      autoBtn.setAttribute("title", isAutoOn ? "Auto-Wybór: WŁ" : "Auto-Wybór: WYŁ");
+      setElementHint(autoBtn, isAutoOn ? "Auto-Wybór: WŁ" : "Auto-Wybór: WYŁ");
     }
     if (actionName === "ToggleAutoChoice") {
       if (isAutoOn) {
@@ -321,6 +404,7 @@ function applyServerResponseHeaders(resp, actionName) {
 }
 
 async function sendServerAction(actionName, params) {
+  hideUITooltip();
   params = params || {};
   if (
     actionName === "UndoEditor" ||
@@ -655,7 +739,70 @@ function postServerActionSilent(actionName, paramsOrFormData) {
 }
 
 function bindDeclarativeActionBridge() {
+  document.addEventListener("pointerover", (e) => {
+    if (e.pointerType && e.pointerType !== "mouse" && e.pointerType !== "pen") {
+      return;
+    }
+    const t = e.target;
+    if (!t || !t.closest) return;
+    const rawTitleEl = t.closest("[title]");
+    if (rawTitleEl) {
+      const rawVal = rawTitleEl.getAttribute("title") || "";
+      rawTitleEl.removeAttribute("title");
+      if (rawVal && !rawTitleEl.getAttribute("data-hint")) {
+        rawTitleEl.setAttribute("data-hint", rawVal);
+      }
+    }
+    const hintEl = t.closest("[data-hint]");
+    if (hintEl === activeHintEl) return;
+    if (uiTooltipTimer) {
+      clearTimeout(uiTooltipTimer);
+      uiTooltipTimer = null;
+    }
+    if (!hintEl || !(hintEl.getAttribute("data-hint") || "").trim()) {
+      hideUITooltip();
+      return;
+    }
+    activeHintEl = hintEl;
+    const tip = qs("#ui-tooltip");
+    if (tip && !tip.classList.contains("hidden")) {
+      positionAndShowUITooltip(hintEl);
+    } else {
+      uiTooltipTimer = setTimeout(() => {
+        uiTooltipTimer = null;
+        if (activeHintEl === hintEl) {
+          positionAndShowUITooltip(hintEl);
+        }
+      }, 120);
+    }
+  });
+
+  document.addEventListener("pointerout", (e) => {
+    if (!activeHintEl) return;
+    const rel = e.relatedTarget;
+    if (rel && activeHintEl.contains(rel)) {
+      return;
+    }
+    const nextHint = rel && rel.closest ? rel.closest("[data-hint]") : null;
+    if (!nextHint) {
+      hideUITooltip();
+    }
+  });
+
+  document.addEventListener("pointerdown", () => {
+    hideUITooltip();
+  });
+
+  document.addEventListener("wheel", () => {
+    hideUITooltip();
+  }, { passive: true });
+
+  document.addEventListener("scroll", () => {
+    hideUITooltip();
+  }, true);
+
   document.addEventListener("keydown", (e) => {
+    hideUITooltip();
     const inEditableField = Boolean(
       e.target &&
         e.target.closest &&

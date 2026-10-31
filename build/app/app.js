@@ -2,6 +2,8 @@ window.__STUDIO_MSDF_DATA = "0| |0.00000|0.00000|0.00000|0.00000|0.00|0.00|0.00|
 "use strict";
 
 let toastTimer = null;
+let uiTooltipTimer = null;
+let activeHintEl = null;
 let lastAudioSaveAt = 0;
 let autoPlayChainActive = false;
 let isWindowFullscreen = false;
@@ -14,6 +16,88 @@ function qsa(sel, root) {
   return Array.from((root || document).querySelectorAll(sel));
 }
 
+function getOrCreateUITooltip() {
+  let tip = qs("#ui-tooltip");
+  if (!tip) {
+    const appRoot = qs("#app") || document.body;
+    if (appRoot) {
+      tip = document.createElement("div");
+      tip.id = "ui-tooltip";
+      tip.className = "ui-tooltip hidden";
+      appRoot.appendChild(tip);
+    }
+  }
+  return tip;
+}
+
+function hideUITooltip() {
+  if (uiTooltipTimer) {
+    clearTimeout(uiTooltipTimer);
+    uiTooltipTimer = null;
+  }
+  activeHintEl = null;
+  const tip = qs("#ui-tooltip");
+  if (tip) {
+    tip.classList.add("hidden");
+  }
+}
+
+function positionAndShowUITooltip(anchorEl) {
+  if (!anchorEl || !anchorEl.isConnected) {
+    hideUITooltip();
+    return;
+  }
+  const parentSelect = anchorEl.closest(".custom-select");
+  if (parentSelect && parentSelect.classList.contains("open")) {
+    hideUITooltip();
+    return;
+  }
+  const text = (anchorEl.getAttribute("data-hint") || "").trim();
+  if (!text) {
+    hideUITooltip();
+    return;
+  }
+  const tip = getOrCreateUITooltip();
+  if (!tip) return;
+  tip.textContent = text;
+  tip.classList.remove("hidden");
+
+  const rect = anchorEl.getBoundingClientRect();
+  const tipW = tip.offsetWidth || 120;
+  const tipH = tip.offsetHeight || 26;
+  const vw = window.innerWidth || 800;
+  const vh = window.innerHeight || 600;
+
+  let left = rect.left + rect.width / 2 - tipW / 2;
+  left = Math.max(8, Math.min(vw - tipW - 8, left));
+
+  let top = rect.bottom + 6;
+  if (top + tipH > vh - 8 && rect.top - tipH - 6 >= 8) {
+    top = rect.top - tipH - 6;
+  } else {
+    top = Math.max(8, Math.min(vh - tipH - 8, top));
+  }
+
+  tip.style.left = Math.round(left) + "px";
+  tip.style.top = Math.round(top) + "px";
+}
+
+function setElementHint(el, text) {
+  if (!el) return;
+  el.removeAttribute("title");
+  if (text) {
+    el.setAttribute("data-hint", text);
+  } else {
+    el.removeAttribute("data-hint");
+  }
+  if (activeHintEl === el) {
+    const tip = qs("#ui-tooltip");
+    if (tip && !tip.classList.contains("hidden")) {
+      positionAndShowUITooltip(el);
+    }
+  }
+}
+
 function syncFullscreenButtonState() {
   const enterIcon = qs("#icon-fullscreen-enter");
   const exitIcon = qs("#icon-fullscreen-exit");
@@ -21,8 +105,8 @@ function syncFullscreenButtonState() {
   if (enterIcon) enterIcon.classList.toggle("hidden", isWindowFullscreen);
   if (exitIcon) exitIcon.classList.toggle("hidden", !isWindowFullscreen);
   if (btn) {
-    btn.setAttribute(
-      "title",
+    setElementHint(
+      btn,
       isWindowFullscreen ? "Wróć do trybu okienkowego" : "Przełącz pełny ekran"
     );
   }
@@ -60,8 +144,8 @@ function syncTopbarToggleIcons() {
   if (zoomInIcon) zoomInIcon.classList.toggle("hidden", isLarge);
   if (zoomOutIcon) zoomOutIcon.classList.toggle("hidden", !isLarge);
   if (zoomBtn) {
-    zoomBtn.setAttribute(
-      "title",
+    setElementHint(
+      zoomBtn,
       isLarge ? "Pomniejsz przyciski i kontrolki (- / Ctrl+-)" : "Powiększ przyciski i kontrolki (+ / Ctrl++)"
     );
   }
@@ -77,9 +161,8 @@ function syncTopbarToggleIcons() {
     imgBtn.disabled = isImagelessLocked;
     imgBtn.classList.toggle("is-disabled", isImagelessLocked);
     imgBtn.classList.toggle("active", isImageless);
-    imgBtn.setAttribute("data-imageless-locked", isImagelessLocked ? "true" : "false");
-    imgBtn.setAttribute(
-      "title",
+    setElementHint(
+      imgBtn,
       isImagelessLocked
         ? "Obrazy wyłączone w ustawieniach książki (imageless: true)"
         : isImageless
@@ -152,7 +235,7 @@ function syncEditorHistoryHeaders(resp) {
       undoBtn.disabled = !canUndo;
       undoBtn.classList.toggle("is-disabled", !canUndo);
       if (undoTitleHeader) {
-        undoBtn.setAttribute("title", undoTitleHeader);
+        setElementHint(undoBtn, undoTitleHeader);
       }
     }
   }
@@ -164,7 +247,7 @@ function syncEditorHistoryHeaders(resp) {
       redoBtn.disabled = !canRedo;
       redoBtn.classList.toggle("is-disabled", !canRedo);
       if (redoTitleHeader) {
-        redoBtn.setAttribute("title", redoTitleHeader);
+        setElementHint(redoBtn, redoTitleHeader);
       }
     }
   }
@@ -241,7 +324,7 @@ function applyServerResponseHeaders(resp, actionName) {
     const autoBtn = qs("#btn-auto-choice-toggle");
     if (autoBtn) {
       autoBtn.classList.toggle("chip-active", isAutoOn);
-      autoBtn.setAttribute("title", isAutoOn ? "Auto-Wybór: WŁ" : "Auto-Wybór: WYŁ");
+      setElementHint(autoBtn, isAutoOn ? "Auto-Wybór: WŁ" : "Auto-Wybór: WYŁ");
     }
     if (actionName === "ToggleAutoChoice") {
       if (isAutoOn) {
@@ -310,6 +393,7 @@ function applyServerResponseHeaders(resp, actionName) {
 }
 
 async function sendServerAction(actionName, params) {
+  hideUITooltip();
   params = params || {};
   if (
     actionName === "UndoEditor" ||
@@ -644,7 +728,70 @@ function postServerActionSilent(actionName, paramsOrFormData) {
 }
 
 function bindDeclarativeActionBridge() {
+  document.addEventListener("pointerover", (e) => {
+    if (e.pointerType && e.pointerType !== "mouse" && e.pointerType !== "pen") {
+      return;
+    }
+    const t = e.target;
+    if (!t || !t.closest) return;
+    const rawTitleEl = t.closest("[title]");
+    if (rawTitleEl) {
+      const rawVal = rawTitleEl.getAttribute("title") || "";
+      rawTitleEl.removeAttribute("title");
+      if (rawVal && !rawTitleEl.getAttribute("data-hint")) {
+        rawTitleEl.setAttribute("data-hint", rawVal);
+      }
+    }
+    const hintEl = t.closest("[data-hint]");
+    if (hintEl === activeHintEl) return;
+    if (uiTooltipTimer) {
+      clearTimeout(uiTooltipTimer);
+      uiTooltipTimer = null;
+    }
+    if (!hintEl || !(hintEl.getAttribute("data-hint") || "").trim()) {
+      hideUITooltip();
+      return;
+    }
+    activeHintEl = hintEl;
+    const tip = qs("#ui-tooltip");
+    if (tip && !tip.classList.contains("hidden")) {
+      positionAndShowUITooltip(hintEl);
+    } else {
+      uiTooltipTimer = setTimeout(() => {
+        uiTooltipTimer = null;
+        if (activeHintEl === hintEl) {
+          positionAndShowUITooltip(hintEl);
+        }
+      }, 120);
+    }
+  });
+
+  document.addEventListener("pointerout", (e) => {
+    if (!activeHintEl) return;
+    const rel = e.relatedTarget;
+    if (rel && activeHintEl.contains(rel)) {
+      return;
+    }
+    const nextHint = rel && rel.closest ? rel.closest("[data-hint]") : null;
+    if (!nextHint) {
+      hideUITooltip();
+    }
+  });
+
+  document.addEventListener("pointerdown", () => {
+    hideUITooltip();
+  });
+
+  document.addEventListener("wheel", () => {
+    hideUITooltip();
+  }, { passive: true });
+
+  document.addEventListener("scroll", () => {
+    hideUITooltip();
+  }, true);
+
   document.addEventListener("keydown", (e) => {
+    hideUITooltip();
     const inEditableField = Boolean(
       e.target &&
         e.target.closest &&
@@ -1804,12 +1951,14 @@ const FONT_TITLE = 0;   // Aleo-Regular 13px
 const FONT_CHOICE = 1;  // Lato-Regular 11px
 const FONT_CHAPTER = 2; // Lato-Bold 11px
 const FONT_BADGE = 3;   // Lato-Bold 9px
+const FONT_BTN = 4;     // Lato-Regular 10px
 
 const FONT_STYLES = [
   { ttfId: MSDF_FONT_ALEO_REG, size: 13, track: 0.0 },
   { ttfId: MSDF_FONT_LATO_REG, size: 11, track: 0.0 },
   { ttfId: MSDF_FONT_LATO_BOLD, size: 11, track: 0.65 },
-  { ttfId: MSDF_FONT_LATO_BOLD, size: 9, track: 0.45 }
+  { ttfId: MSDF_FONT_LATO_BOLD, size: 9, track: 0.45 },
+  { ttfId: MSDF_FONT_LATO_REG, size: 10, track: 0.6 }
 ];
 
 const editorCanvasState = {
@@ -1831,6 +1980,7 @@ const studioGraphState = {
   bundleOverlays: [],
   hoveredItem: null,
   editingChapter: null,
+  selectedChapterKey: "",
   themeColors: null,
   shapedTextCache: new Map(),
   viewW: 1200,
@@ -2643,7 +2793,9 @@ function compileStaticSceneQuads(theme) {
   }
 
   // 3. Scene Node Cards
-  const addChoiceShaped = shapeTextGlyphs(FONT_CHOICE, "+ Wybór", 80);
+  const addChoiceShaped = shapeTextGlyphs(FONT_BTN, "+ WYBÓR", 80);
+  const addChoiceBtnW = Math.ceil(addChoiceShaped.totalW) + 20;
+  const addChoiceBtnH = 24;
 
   for (let i = 0; i < nodes.length; i++) {
     const nd = nodes[i];
@@ -2700,13 +2852,11 @@ function compileStaticSceneQuads(theme) {
     }
 
     const footerTop = nd.y + nd.h - NODE_FOOTER_HEIGHT;
-    pushSolidQuad(nd.x + 1, footerTop + 1, nd.w - 2, NODE_FOOTER_HEIGHT - 2, theme.bgElevated);
+    pushSolidQuad(nd.x + 1, footerTop + 1, nd.w - 2, NODE_FOOTER_HEIGHT - 2, cardBg);
     const btnX = nd.x + 8;
-    const btnY = footerTop + 7;
-    const btnW = nd.w - 16;
-    const btnH = 26;
-    pushBorderedBoxQuads(btnX, btnY, btnW, btnH, 1, theme.borderStrong, theme.bgElevated);
-    pushShapedTextQuads(addChoiceShaped, nd.x + (nd.w - addChoiceShaped.totalW) * 0.5, btnY + btnH * 0.5, textPri);
+    const btnY = footerTop + 8;
+    pushBorderedBoxQuads(btnX, btnY, addChoiceBtnW, addChoiceBtnH, 1, theme.borderStrong, cardBg);
+    pushShapedTextQuads(addChoiceShaped, btnX + (addChoiceBtnW - addChoiceShaped.totalW) * 0.5, btnY + addChoiceBtnH * 0.5, textPri);
   }
 
   // 4. Default Circular Ports
@@ -2751,6 +2901,11 @@ function appendDynamicOverlayQuads(theme) {
   if (gesture && gesture.type === "chapter-drag" && gesture.chapter && gesture.dragConfirmed) {
     const ch = gesture.chapter;
     pushSolidBorderQuads(ch.x, ch.y, ch.w, ch.h, 1.5, theme.textPrimary);
+  } else if (studioGraphState.selectedChapterKey) {
+    const selCh = studioGraphState.chapterByKey.get(studioGraphState.selectedChapterKey);
+    if (selCh && !selCh.hidden) {
+      pushSolidBorderQuads(selCh.x, selCh.y, selCh.w, selCh.h, 1.5, theme.textPrimary);
+    }
   }
 
   if (hoveredWire) {
@@ -2870,13 +3025,13 @@ function appendDynamicOverlayQuads(theme) {
       );
     } else if (hovered.type === "add-choice-btn" && hovered.node) {
       const nd = hovered.node;
+      const addChoiceShaped = shapeTextGlyphs(FONT_BTN, "+ WYBÓR", 80);
       const btnX = nd.x + 8;
-      const btnY = nd.y + nd.h - NODE_FOOTER_HEIGHT + 7;
-      const btnW = nd.w - 16;
-      const btnH = 26;
-      pushBorderedBoxQuads(btnX, btnY, btnW, btnH, 1, theme.textPrimary, theme.bgObsidian);
-      const addChoiceShaped = shapeTextGlyphs(FONT_CHOICE, "+ Wybór", 80);
-      pushShapedTextQuads(addChoiceShaped, nd.x + (nd.w - addChoiceShaped.totalW) * 0.5, btnY + btnH * 0.5, theme.textPrimary);
+      const btnY = nd.y + nd.h - NODE_FOOTER_HEIGHT + 8;
+      const btnW = Math.ceil(addChoiceShaped.totalW) + 20;
+      const btnH = 24;
+      pushBorderedBoxQuads(btnX, btnY, btnW, btnH, 1, theme.textPrimary, theme.bgElevated);
+      pushShapedTextQuads(addChoiceShaped, btnX + (btnW - addChoiceShaped.totalW) * 0.5, btnY + btnH * 0.5, theme.textPrimary);
     }
   }
 
@@ -3540,15 +3695,10 @@ function initNodeEditorCanvas() {
   }
 
   if (!editorCanvasState.initialized) {
-    const hasView = vpInfo.hasView || viewport.getAttribute("data-has-view") === "true";
-    const attrPanX = parseFloat(viewport.getAttribute("data-pan-x") || String(vpInfo.panX));
-    const attrPanY = parseFloat(viewport.getAttribute("data-pan-y") || String(vpInfo.panY));
-    const attrZoom = parseFloat(viewport.getAttribute("data-zoom") || String(vpInfo.zoom));
-
-    if (hasView) {
-      editorCanvasState.panX = isNaN(attrPanX) ? 0 : attrPanX;
-      editorCanvasState.panY = isNaN(attrPanY) ? 0 : attrPanY;
-      editorCanvasState.zoom = isNaN(attrZoom) ? 1.0 : Math.max(0.25, Math.min(2.5, attrZoom));
+    if (vpInfo.hasView) {
+      editorCanvasState.panX = isNaN(vpInfo.panX) ? 0 : vpInfo.panX;
+      editorCanvasState.panY = isNaN(vpInfo.panY) ? 0 : vpInfo.panY;
+      editorCanvasState.zoom = isNaN(vpInfo.zoom) ? 1.0 : Math.max(0.25, Math.min(2.5, vpInfo.zoom));
       if (areAllNodesOutOfViewport(viewport)) {
         fitCanvasToAllNodes(viewport);
       }
@@ -3560,17 +3710,29 @@ function initNodeEditorCanvas() {
   }
 
   const contextForm = qs("#editor-context-form");
+  const chapterForm = qs("#editor-chapter-form");
+  const bookForm = qs("#editor-book-form");
   const contextPanel = qs("#editor-context-panel");
-  const serverSelectedId = contextForm ? contextForm.getAttribute("data-context-scene-id") || "" : "";
-  if (
-    !editorSelectionCleared &&
-    serverSelectedId &&
-    contextPanel &&
-    !contextPanel.classList.contains("hidden") &&
-    selectedNodeIds.size <= 1
-  ) {
+  const isChapterOpen = Boolean(chapterForm && !chapterForm.classList.contains("hidden"));
+  const isBookOpen = Boolean(bookForm && !bookForm.classList.contains("hidden"));
+  if (isChapterOpen || isBookOpen) {
     selectedNodeIds.clear();
-    selectedNodeIds.add(serverSelectedId);
+    studioGraphState.selectedChapterKey = isChapterOpen
+      ? (chapterForm.getAttribute("data-context-chapter") || "").trim().toLowerCase()
+      : "";
+  } else {
+    studioGraphState.selectedChapterKey = "";
+    const serverSelectedId = contextForm ? contextForm.getAttribute("data-context-scene-id") || "" : "";
+    if (
+      !editorSelectionCleared &&
+      serverSelectedId &&
+      contextPanel &&
+      !contextPanel.classList.contains("hidden") &&
+      selectedNodeIds.size <= 1
+    ) {
+      selectedNodeIds.clear();
+      selectedNodeIds.add(serverSelectedId);
+    }
   }
 
   updateChapterGroupFrames();
@@ -4348,12 +4510,18 @@ function syncBookTitleDOM(newTitle) {
   if (!clean) return;
   const playerTab = qs("#tab-player");
   if (playerTab) {
-    playerTab.setAttribute("title", clean);
     const lbl = qs(".tab-label", playerTab);
     if (lbl) {
       lbl.textContent = clean;
     }
   }
+  ["#editor-book-title-input", "#book-settings-title-input"].forEach((sel) => {
+    const inp = qs(sel);
+    if (inp && document.activeElement !== inp) {
+      inp.value = clean;
+      inp.setAttribute("data-old-title", clean);
+    }
+  });
 }
 
 function commitBookTitleInput(inputEl) {
@@ -4419,6 +4587,9 @@ function syncChapterGroupRenameDOM(inputEl, targetChapterName) {
         studioGraphState.chapterByKey.set(nextLower, ch);
       }
     }
+    if (studioGraphState.selectedChapterKey === prevLower) {
+      studioGraphState.selectedChapterKey = nextLower;
+    }
     for (let i = 0; i < studioGraphState.nodes.length; i++) {
       const nd = studioGraphState.nodes[i];
       if (nd.chapterLower === prevLower) {
@@ -4427,6 +4598,16 @@ function syncChapterGroupRenameDOM(inputEl, targetChapterName) {
       }
     }
     studioGraphState.staticBatchDirty = true;
+    renderStudioCanvas();
+  }
+
+  const chapterForm = qs("#editor-chapter-form");
+  if (chapterForm && (chapterForm.getAttribute("data-context-chapter") || "").trim().toLowerCase() === prevLower) {
+    chapterForm.setAttribute("data-context-chapter", nextGroup);
+    const oldInp = qs('input[name="old_chapter"]', chapterForm);
+    if (oldInp) oldInp.value = nextGroup;
+    const chInp = qs('input[name="chapter"]', chapterForm);
+    if (chInp) chInp.value = nextGroup;
   }
 
   const contextForm = qs("#editor-context-form");
@@ -4598,22 +4779,37 @@ if (typeof document !== "undefined" && typeof navigator !== "undefined" && /Andr
 function selectNodeForContextPanel(sceneId) {
   if (!sceneId) return;
   editorSelectionCleared = false;
+  if (typeof studioGraphState !== "undefined") {
+    studioGraphState.selectedChapterKey = "";
+    studioGraphState.overlayBatchDirty = true;
+  }
+  const bookSettingsBtn = qs("#btn-book-settings");
+  if (bookSettingsBtn) {
+    bookSettingsBtn.classList.remove("active");
+  }
   const panel = qs("#editor-context-panel");
   if (isAndroidStudioClient()) {
     if (panel) panel.classList.add("hidden");
     return;
   }
   const form = qs("#editor-context-form");
+  const chapterForm = qs("#editor-chapter-form");
+  const bookForm = qs("#editor-book-form");
   const multiPanel = qs("#editor-multi-panel");
   if (panel) {
     panel.classList.remove("hidden");
+  }
+  if (chapterForm) {
+    chapterForm.classList.add("hidden");
+  }
+  if (bookForm) {
+    bookForm.classList.add("hidden");
   }
   if (multiPanel) {
     multiPanel.classList.add("hidden");
   }
   const currentPanelSceneId = form ? form.getAttribute("data-context-scene-id") || "" : "";
-  if (panel && form && currentPanelSceneId === sceneId) {
-    form.classList.remove("hidden");
+  if (panel && form && !form.classList.contains("hidden") && currentPanelSceneId === sceneId) {
     return;
   }
   const params = { scene: sceneId };
@@ -4632,8 +4828,68 @@ function selectNodeForContextPanel(sceneId) {
   sendServerAction("SelectStudioScene", params);
 }
 
+function selectChapterForContextPanel(chapterName) {
+  const cleanName = (chapterName || "").trim();
+  if (!cleanName) return;
+  flushInspectorFormIfDirty();
+  editorSelectionCleared = true;
+  selectedNodeIds.clear();
+  if (typeof studioGraphState !== "undefined") {
+    studioGraphState.selectedChapterKey = cleanName.toLowerCase();
+    studioGraphState.overlayBatchDirty = true;
+  }
+  const bookSettingsBtn = qs("#btn-book-settings");
+  if (bookSettingsBtn) {
+    bookSettingsBtn.classList.remove("active");
+  }
+  syncNodeSelectionDOM();
+  renderStudioCanvas();
+  const panel = qs("#editor-context-panel");
+  if (isAndroidStudioClient()) {
+    if (panel) panel.classList.add("hidden");
+    return;
+  }
+  const form = qs("#editor-context-form");
+  const chapterForm = qs("#editor-chapter-form");
+  const bookForm = qs("#editor-book-form");
+  const multiPanel = qs("#editor-multi-panel");
+  if (panel) {
+    panel.classList.remove("hidden");
+  }
+  if (form) {
+    form.classList.add("hidden");
+  }
+  if (bookForm) {
+    bookForm.classList.add("hidden");
+  }
+  if (multiPanel) {
+    multiPanel.classList.add("hidden");
+  }
+  const currentChapter = chapterForm ? (chapterForm.getAttribute("data-context-chapter") || "").trim() : "";
+  if (
+    panel &&
+    chapterForm &&
+    !chapterForm.classList.contains("hidden") &&
+    currentChapter.toLowerCase() === cleanName.toLowerCase()
+  ) {
+    return;
+  }
+  if (chapterForm && currentChapter.toLowerCase() === cleanName.toLowerCase()) {
+    chapterForm.classList.remove("hidden");
+  }
+  sendServerAction("SelectStudioChapter", { chapter: cleanName });
+}
+
 function hideEditorContextPanel() {
   flushInspectorFormIfDirty();
+  if (typeof studioGraphState !== "undefined") {
+    studioGraphState.selectedChapterKey = "";
+    studioGraphState.overlayBatchDirty = true;
+  }
+  const bookSettingsBtn = qs("#btn-book-settings");
+  if (bookSettingsBtn) {
+    bookSettingsBtn.classList.remove("active");
+  }
   const panel = qs("#editor-context-panel");
   if (panel) {
     if (isAndroidStudioClient()) {
@@ -4645,6 +4901,14 @@ function hideEditorContextPanel() {
   const form = qs("#editor-context-form");
   if (form) {
     form.classList.add("hidden");
+  }
+  const chapterForm = qs("#editor-chapter-form");
+  if (chapterForm) {
+    chapterForm.classList.add("hidden");
+  }
+  const bookForm = qs("#editor-book-form");
+  if (bookForm) {
+    bookForm.classList.add("hidden");
   }
   const multiPanel = qs("#editor-multi-panel");
   if (multiPanel) {
@@ -4704,13 +4968,27 @@ function syncNodeSelectionDOM() {
     }
   }
   const form = qs("#editor-context-form");
+  const chapterForm = qs("#editor-chapter-form");
+  const bookForm = qs("#editor-book-form");
   const multiPanel = qs("#editor-multi-panel");
+  if (bookForm && !bookForm.classList.contains("hidden")) {
+    qsa("textarea.node-meta-textarea", bookForm).forEach((ta) => {
+      autoResizeInspectorTextarea(ta);
+    });
+  }
 
   if (selectedNodeIds.size === 0) {
     flushInspectorFormIfDirty();
     if (form) form.classList.add("hidden");
     if (multiPanel) multiPanel.classList.add("hidden");
   } else if (selectedNodeIds.size === 1) {
+    if (typeof studioGraphState !== "undefined") {
+      studioGraphState.selectedChapterKey = "";
+    }
+    if (chapterForm) chapterForm.classList.add("hidden");
+    if (bookForm) bookForm.classList.add("hidden");
+    const bookSettingsBtn = qs("#btn-book-settings");
+    if (bookSettingsBtn) bookSettingsBtn.classList.remove("active");
     if (multiPanel) multiPanel.classList.add("hidden");
     const onlyId = Array.from(selectedNodeIds)[0];
     const currentFormId = form ? form.getAttribute("data-context-scene-id") || "" : "";
@@ -4723,7 +5001,14 @@ function syncNodeSelectionDOM() {
     }
   } else {
     flushInspectorFormIfDirty();
+    if (typeof studioGraphState !== "undefined") {
+      studioGraphState.selectedChapterKey = "";
+    }
     if (form) form.classList.add("hidden");
+    if (chapterForm) chapterForm.classList.add("hidden");
+    if (bookForm) bookForm.classList.add("hidden");
+    const bookSettingsBtn = qs("#btn-book-settings");
+    if (bookSettingsBtn) bookSettingsBtn.classList.remove("active");
     if (multiPanel) {
       multiPanel.classList.remove("hidden");
       const countLabel = qs("#multi-select-count-label", multiPanel);
@@ -4742,7 +5027,6 @@ function syncNodeSelectionDOM() {
           infoBtn.type = "button";
           infoBtn.className = "context-multi-scene-select-btn";
           infoBtn.setAttribute("data-multi-select-scene", item.id);
-          infoBtn.title = "Edytuj scenę: " + item.title;
 
           const titleSpan = document.createElement("span");
           titleSpan.className = "context-multi-scene-title";
@@ -4760,7 +5044,6 @@ function syncNodeSelectionDOM() {
           deselectBtn.type = "button";
           deselectBtn.className = "node-icon-btn context-multi-scene-deselect-btn";
           deselectBtn.setAttribute("data-multi-deselect-scene", item.id);
-          deselectBtn.title = "Odznacz scenę";
           deselectBtn.textContent = "✕";
 
           row.appendChild(infoBtn);
@@ -4800,6 +5083,31 @@ function scheduleNodeLiveSave(form) {
     liveSaveTimers.delete(form);
     dirtyInspectorForms.delete(form);
     postServerActionSilent("AutoSaveScene", new FormData(form));
+  }, 250);
+  liveSaveTimers.set(form, timer);
+}
+
+function autoResizeInspectorTextarea(ta) {
+  if (!ta) return;
+  ta.style.minHeight = "0px";
+  ta.style.height = "0px";
+  const nextH = Math.max(44, (ta.scrollHeight || 0) + 4);
+  ta.style.height = nextH + "px";
+  ta.style.minHeight = nextH + "px";
+  ta.scrollTop = 0;
+}
+
+function scheduleBookSettingsLiveSave(form) {
+  if (!form) return;
+  const existing = liveSaveTimers.get(form);
+  if (existing) {
+    clearTimeout(existing);
+  }
+  const timer = setTimeout(() => {
+    liveSaveTimers.delete(form);
+    const fd = new FormData(form);
+    fd.set("silent", "true");
+    postServerActionSilent("SaveBookSettings", fd);
   }, 250);
   liveSaveTimers.set(form, timer);
 }
@@ -4951,11 +5259,13 @@ function hitTestStudioCanvas(wx, wy) {
   }
 
   // 5. Scene node cards (+ Wybór button, grip ⋮⋮, or card body)
+  const addChoiceShaped = typeof shapeTextGlyphs === "function" ? shapeTextGlyphs(FONT_BTN, "+ WYBÓR", 80) : null;
+  const addChoiceBtnW = addChoiceShaped ? Math.ceil(addChoiceShaped.totalW) + 20 : 72;
   for (let i = nodes.length - 1; i >= 0; i--) {
     const nd = nodes[i];
     if (wx >= nd.x && wx <= nd.x + nd.w && wy >= nd.y && wy <= nd.y + nd.h) {
       const footerTop = nd.y + nd.h - NODE_FOOTER_HEIGHT;
-      if (wx >= nd.x + 8 && wx <= nd.x + nd.w - 8 && wy >= footerTop + 6 && wy <= footerTop + 34) {
+      if (wx >= nd.x + 8 && wx <= nd.x + 8 + addChoiceBtnW && wy >= footerTop + 8 && wy <= footerTop + 32) {
         return { type: "add-choice-btn", node: nd };
       }
       if (wx >= nd.x + 2 && wx <= nd.x + 26 && wy >= nd.y + 4 && wy <= nd.y + 30) {
@@ -5251,7 +5561,11 @@ function handleEditorCanvasClick(e) {
     if (hiddenInput) hiddenInput.value = val;
     if (labelSpan) labelSpan.textContent = lbl;
     if (triggerBtn && portIcon) {
-      triggerBtn.title = lbl;
+      if (typeof setElementHint === "function") {
+        setElementHint(triggerBtn, lbl);
+      } else {
+        triggerBtn.setAttribute("data-hint", lbl);
+      }
       const isFilled = Boolean(val && val.toUpperCase() !== "END");
       portIcon.classList.toggle("port-filled", isFilled);
     }
@@ -5259,6 +5573,32 @@ function handleEditorCanvasClick(e) {
       btn.classList.toggle("active", btn === selectOpt);
     });
     closeAllCustomSelects(null);
+
+    if (selectEl.classList.contains("book-start-chapter-select")) {
+      if (val) {
+        sendServerAction("SetBookStartChapter", { chapter: val });
+      }
+      return true;
+    }
+
+    if (selectEl.classList.contains("book-start-scene-select")) {
+      if (val) {
+        sendServerAction("SetStartScene", { scene: val });
+      }
+      return true;
+    }
+
+    if (selectEl.classList.contains("chapter-start-scene-select")) {
+      const chForm = selectEl.closest("form.editor-chapter-form");
+      const chName = chForm ? chForm.getAttribute("data-context-chapter") || "" : "";
+      if (chName && val) {
+        sendServerAction("SetChapterStartScene", {
+          chapter: chName,
+          scene: val
+        });
+      }
+      return true;
+    }
 
     if (selectEl.classList.contains("node-chapter-select")) {
       const parentForm = selectEl.closest("form.editor-context-form");
@@ -5975,8 +6315,8 @@ function bindEditorCanvasEvents() {
           y: it.node.y
         }));
         saveBatchNodePositionsOnServer(payload);
-      } else if (!g.moved && g.clickedTitleArea && g.chapter) {
-        openFloatingChapterInput(g.chapter);
+      } else if (!g.moved && g.chapter) {
+        selectChapterForContextPanel(g.chapter.name);
       }
       return;
     }
@@ -6344,9 +6684,9 @@ function bindEditorCanvasEvents() {
       return;
     }
 
-    if (hit.type === "chapter-grip" || hit.type === "chapter-title") {
+    if (hit.type === "chapter-grip" || hit.type === "chapter-title" || hit.type === "chapter-in-port") {
       e.preventDefault();
-      beginChapterDragGesture(hit.chapter, viewport, e.clientX, e.clientY, false, hit.type === "chapter-title");
+      beginChapterDragGesture(hit.chapter, viewport, e.clientX, e.clientY, false, hit.type === "chapter-title" || hit.type === "chapter-in-port");
       return;
     }
 
@@ -6486,7 +6826,7 @@ function bindEditorCanvasEvents() {
     const hit = hitTestStudioCanvas(ptWorld.wx, ptWorld.wy);
     if (hit.type === "chapter-title" || hit.type === "chapter-grip") {
       e.preventDefault();
-      openFloatingChapterInput(hit.chapter);
+      selectChapterForContextPanel(hit.chapter.name);
       return;
     }
     if (hit.type !== "empty") return;
@@ -6507,8 +6847,20 @@ function bindEditorCanvasEvents() {
       scheduleChapterLiveSave(e.target);
       return;
     }
-    if (e.target && e.target.classList && e.target.classList.contains("canvas-book-title-input")) {
+    if (
+      e.target &&
+      ((e.target.classList && e.target.classList.contains("canvas-book-title-input")) ||
+        e.target.id === "book-settings-title-input")
+    ) {
       scheduleBookTitleLiveSave(e.target);
+      return;
+    }
+    const bookForm = e.target.closest("form.editor-book-form");
+    if (bookForm) {
+      if (e.target && e.target.tagName && e.target.tagName.toLowerCase() === "textarea") {
+        autoResizeInspectorTextarea(e.target);
+      }
+      scheduleBookSettingsLiveSave(bookForm);
       return;
     }
     const form = e.target.closest("form.editor-context-form, form#form-scene-text");
@@ -6550,7 +6902,11 @@ function bindEditorCanvasEvents() {
   document.addEventListener("change", (e) => {
     if (e.target && e.target.classList && e.target.classList.contains("chapter-group-title-input")) {
       commitChapterTitleInput(e.target);
-    } else if (e.target && e.target.classList && e.target.classList.contains("canvas-book-title-input")) {
+    } else if (
+      e.target &&
+      ((e.target.classList && e.target.classList.contains("canvas-book-title-input")) ||
+        e.target.id === "book-settings-title-input")
+    ) {
       commitBookTitleInput(e.target);
     }
   });
@@ -6559,8 +6915,16 @@ function bindEditorCanvasEvents() {
     "blur",
     (e) => {
       if (e.target && e.target.classList && e.target.classList.contains("chapter-group-title-input")) {
-        hideFloatingChapterInput(true);
-      } else if (e.target && e.target.classList && e.target.classList.contains("canvas-book-title-input")) {
+        if (e.target.id === "canvas-chapter-input") {
+          hideFloatingChapterInput(true);
+        } else {
+          commitChapterTitleInput(e.target);
+        }
+      } else if (
+        e.target &&
+        ((e.target.classList && e.target.classList.contains("canvas-book-title-input")) ||
+          e.target.id === "book-settings-title-input")
+      ) {
         commitBookTitleInput(e.target);
       }
     },

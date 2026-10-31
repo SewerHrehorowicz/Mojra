@@ -337,13 +337,18 @@
   min-width 0
   height 30px
   font-size 12px
-  padding 0 10px
-  background --bg-obsidian
-  border 1px solid --border-subtle
+  padding 0
+  background transparent
+  border none
+  border-bottom 1px solid transparent
   color --text-primary
+  transition border-color 0.15s ease
 
-.scene-settings-row .node-meta-input:hover, .scene-settings-row .node-meta-input:focus
-  border-color --text-primary
+.scene-settings-row .node-meta-input:hover
+  border-bottom-color --border-strong
+
+.scene-settings-row .node-meta-input:focus, .scene-settings-row .node-meta-input:active
+  border-bottom-color --text-primary
   outline none
 
 .scene-settings-row .custom-select.node-media-select
@@ -353,7 +358,7 @@
 .scene-settings-row .custom-select-trigger
   height 30px
   font-size 12px
-  padding 0 10px
+  padding 0
 
 .scene-settings-row .custom-select-option
   font-size 12px
@@ -372,14 +377,15 @@
   align-items center
   justify-content center
   background --bg-obsidian
-  border 1px solid --border-subtle
-  color --text-secondary
+  border 1px solid --border-strong
+  color --text-primary
   cursor pointer
   flex-shrink 0
   transition color 0.15s ease, border-color 0.15s ease, background 0.15s ease
 
 .scene-start-star-btn:hover
   border-color --text-primary
+  background --bg-elevated
   color --text-primary
 
 .scene-start-star-btn.active
@@ -493,7 +499,7 @@ body[data-ui-scale="large"]
   .modal-title
     font-size 23px
 
-  .modal-desc, .field-input, .btn, .help-list
+  .modal-desc, .field-input, .help-list
     font-size 16px
 
   .scene-text-back-btn

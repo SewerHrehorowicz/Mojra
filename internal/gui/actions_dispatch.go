@@ -101,6 +101,11 @@ var actionSpecs = map[string]ActionSpec{
 
 	// Node Studio & Editor
 	"SelectStudioScene":        {StandaloneForbidden: true, Target: targetSelectStudioScene},
+	"SelectStudioChapter":      {StandaloneForbidden: true, Target: targetSelectStudioScene},
+	"OpenBookSettings":         {StandaloneForbidden: true, Target: targetActiveWorkspace},
+	"CloseBookSettings":        {StandaloneForbidden: true, Target: targetActiveWorkspace},
+	"ToggleBookSettings":       {StandaloneForbidden: true, Target: targetActiveWorkspace},
+	"SaveBookSettings":         {StandaloneForbidden: true, Target: targetAppShell},
 	"SaveScene":                {StandaloneForbidden: true, Target: targetActiveWorkspace},
 	"AutoSaveScene":            {StandaloneForbidden: true, Target: targetNone},
 	"SaveEditorState":          {StandaloneForbidden: true, Target: targetNone},
@@ -108,6 +113,9 @@ var actionSpecs = map[string]ActionSpec{
 	"ToggleBookNarrated":       {StandaloneForbidden: true, Target: targetActiveWorkspace},
 	"ToggleBookImageless":      {StandaloneForbidden: true, Target: targetAppShell},
 	"SetStartScene":            {StandaloneForbidden: true, Target: targetActiveWorkspaceOrModalsWhenSceneTextOpen},
+	"SetBookStartChapter":      {StandaloneForbidden: true, Target: targetActiveWorkspace},
+	"SetChapterStartScene":     {StandaloneForbidden: true, Target: targetActiveWorkspace},
+	"SaveChapterSettings":      {StandaloneForbidden: true, Target: targetActiveWorkspace},
 	"BrowseAddBookMedia":       {StandaloneForbidden: true, Target: targetActiveWorkspaceOrModalsWhenSceneTextOpen},
 	"AddBookMediaFromDisk":     {StandaloneForbidden: true, Target: targetActiveWorkspaceOrModalsWhenSceneTextOpen},
 	"ConnectChoice":            {StandaloneForbidden: true, Target: targetActiveWorkspaceOrModalsWhenSceneTextOpen},

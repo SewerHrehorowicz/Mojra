@@ -186,13 +186,12 @@ func ParseStoryFile(content string, sourceFileName string, b *Book) {
 				candidateID := SanitizeSceneID(val)
 				if candidateID == "" {
 					b.Warnings = append(b.Warnings, fmt.Sprintf("%s:%d: pusty lub nieprawidłowy identyfikator id: „%s”", sourceFileName, lineIdx+1, val))
-				} else if inChapterHeaderBlock && currentScene == nil {
+				} else if inChapterHeaderBlock && currentScene == nil && currentChapterExplicitID == "" {
 					currentChapterExplicitID = candidateID
 					if currentChapter == "" {
 						currentChapter = candidateID
 					}
 					b.ensureChapterWithMeta(currentChapter, candidateID, candidateID, sourceFileName)
-					inChapterHeaderBlock = false
 				} else if currentScene != nil && currentScene.ExplicitID == "" && !headerBlockEnded && len(proseLines) == 0 && len(currentScene.Choices) == 0 {
 					currentScene.ExplicitID = candidateID
 					currentScene.ID = candidateID
@@ -201,6 +200,27 @@ func ParseStoryFile(content string, sourceFileName string, b *Book) {
 					startScene("", false)
 				}
 				continue
+
+			case "start", "first_scene", "pierwsza_scena", "wejscie", "wejście":
+				if inChapterHeaderBlock && currentScene == nil {
+					startRef := SanitizePlainText(val)
+					if currentChapter == "" {
+						if currentChapterExplicitID != "" {
+							currentChapter = currentChapterExplicitID
+						} else if fileChapterID != "" {
+							currentChapter = fileChapterID
+						} else {
+							currentChapter = "Rozdział 1"
+						}
+					}
+					b.ensureChapterWithMeta(currentChapter, fileChapterID, currentChapterExplicitID, sourceFileName)
+					if startRef != "" {
+						if ch := b.FindChapter(currentChapter); ch != nil {
+							ch.ExplicitStart = startRef
+						}
+					}
+					continue
+				}
 
 			case "image", "obraz", "img":
 				inChapterHeaderBlock = false
@@ -370,6 +390,7 @@ func parseStructuralHeader(trimmed string) (string, string, bool) {
 	case "chapter", "rozdzial", "rozdział",
 		"scene", "scena",
 		"id",
+		"start", "first_scene", "pierwsza_scena", "wejscie", "wejście",
 		"image", "obraz", "img",
 		"voice", "audio", "glos", "głos",
 		"next", "dalej",

@@ -63,12 +63,13 @@ func (s Scene) ReferenceKey() string {
 }
 
 type Chapter struct {
-	ID           string
-	ExplicitID   string
-	Name         string
-	StartSceneID string
-	SourceFile   string
-	SceneIDs     []string
+	ID            string
+	ExplicitID    string
+	Name          string
+	ExplicitStart string
+	StartSceneID  string
+	SourceFile    string
+	SceneIDs      []string
 }
 
 // DisplayName returns the chapter's title if present, or falls back to its ExplicitID or ID.

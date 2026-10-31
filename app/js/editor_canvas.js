@@ -581,15 +581,10 @@ function initNodeEditorCanvas() {
   }
 
   if (!editorCanvasState.initialized) {
-    const hasView = vpInfo.hasView || viewport.getAttribute("data-has-view") === "true";
-    const attrPanX = parseFloat(viewport.getAttribute("data-pan-x") || String(vpInfo.panX));
-    const attrPanY = parseFloat(viewport.getAttribute("data-pan-y") || String(vpInfo.panY));
-    const attrZoom = parseFloat(viewport.getAttribute("data-zoom") || String(vpInfo.zoom));
-
-    if (hasView) {
-      editorCanvasState.panX = isNaN(attrPanX) ? 0 : attrPanX;
-      editorCanvasState.panY = isNaN(attrPanY) ? 0 : attrPanY;
-      editorCanvasState.zoom = isNaN(attrZoom) ? 1.0 : Math.max(0.25, Math.min(2.5, attrZoom));
+    if (vpInfo.hasView) {
+      editorCanvasState.panX = isNaN(vpInfo.panX) ? 0 : vpInfo.panX;
+      editorCanvasState.panY = isNaN(vpInfo.panY) ? 0 : vpInfo.panY;
+      editorCanvasState.zoom = isNaN(vpInfo.zoom) ? 1.0 : Math.max(0.25, Math.min(2.5, vpInfo.zoom));
       if (areAllNodesOutOfViewport(viewport)) {
         fitCanvasToAllNodes(viewport);
       }
@@ -601,17 +596,29 @@ function initNodeEditorCanvas() {
   }
 
   const contextForm = qs("#editor-context-form");
+  const chapterForm = qs("#editor-chapter-form");
+  const bookForm = qs("#editor-book-form");
   const contextPanel = qs("#editor-context-panel");
-  const serverSelectedId = contextForm ? contextForm.getAttribute("data-context-scene-id") || "" : "";
-  if (
-    !editorSelectionCleared &&
-    serverSelectedId &&
-    contextPanel &&
-    !contextPanel.classList.contains("hidden") &&
-    selectedNodeIds.size <= 1
-  ) {
+  const isChapterOpen = Boolean(chapterForm && !chapterForm.classList.contains("hidden"));
+  const isBookOpen = Boolean(bookForm && !bookForm.classList.contains("hidden"));
+  if (isChapterOpen || isBookOpen) {
     selectedNodeIds.clear();
-    selectedNodeIds.add(serverSelectedId);
+    studioGraphState.selectedChapterKey = isChapterOpen
+      ? (chapterForm.getAttribute("data-context-chapter") || "").trim().toLowerCase()
+      : "";
+  } else {
+    studioGraphState.selectedChapterKey = "";
+    const serverSelectedId = contextForm ? contextForm.getAttribute("data-context-scene-id") || "" : "";
+    if (
+      !editorSelectionCleared &&
+      serverSelectedId &&
+      contextPanel &&
+      !contextPanel.classList.contains("hidden") &&
+      selectedNodeIds.size <= 1
+    ) {
+      selectedNodeIds.clear();
+      selectedNodeIds.add(serverSelectedId);
+    }
   }
 
   updateChapterGroupFrames();

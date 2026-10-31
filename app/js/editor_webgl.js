@@ -28,12 +28,14 @@ const FONT_TITLE = 0;   // Aleo-Regular 13px
 const FONT_CHOICE = 1;  // Lato-Regular 11px
 const FONT_CHAPTER = 2; // Lato-Bold 11px
 const FONT_BADGE = 3;   // Lato-Bold 9px
+const FONT_BTN = 4;     // Lato-Regular 10px
 
 const FONT_STYLES = [
   { ttfId: MSDF_FONT_ALEO_REG, size: 13, track: 0.0 },
   { ttfId: MSDF_FONT_LATO_REG, size: 11, track: 0.0 },
   { ttfId: MSDF_FONT_LATO_BOLD, size: 11, track: 0.65 },
-  { ttfId: MSDF_FONT_LATO_BOLD, size: 9, track: 0.45 }
+  { ttfId: MSDF_FONT_LATO_BOLD, size: 9, track: 0.45 },
+  { ttfId: MSDF_FONT_LATO_REG, size: 10, track: 0.6 }
 ];
 
 const editorCanvasState = {
@@ -55,6 +57,7 @@ const studioGraphState = {
   bundleOverlays: [],
   hoveredItem: null,
   editingChapter: null,
+  selectedChapterKey: "",
   themeColors: null,
   shapedTextCache: new Map(),
   viewW: 1200,
@@ -867,7 +870,9 @@ function compileStaticSceneQuads(theme) {
   }
 
   // 3. Scene Node Cards
-  const addChoiceShaped = shapeTextGlyphs(FONT_CHOICE, "+ Wybór", 80);
+  const addChoiceShaped = shapeTextGlyphs(FONT_BTN, "+ WYBÓR", 80);
+  const addChoiceBtnW = Math.ceil(addChoiceShaped.totalW) + 20;
+  const addChoiceBtnH = 24;
 
   for (let i = 0; i < nodes.length; i++) {
     const nd = nodes[i];
@@ -924,13 +929,11 @@ function compileStaticSceneQuads(theme) {
     }
 
     const footerTop = nd.y + nd.h - NODE_FOOTER_HEIGHT;
-    pushSolidQuad(nd.x + 1, footerTop + 1, nd.w - 2, NODE_FOOTER_HEIGHT - 2, theme.bgElevated);
+    pushSolidQuad(nd.x + 1, footerTop + 1, nd.w - 2, NODE_FOOTER_HEIGHT - 2, cardBg);
     const btnX = nd.x + 8;
-    const btnY = footerTop + 7;
-    const btnW = nd.w - 16;
-    const btnH = 26;
-    pushBorderedBoxQuads(btnX, btnY, btnW, btnH, 1, theme.borderStrong, theme.bgElevated);
-    pushShapedTextQuads(addChoiceShaped, nd.x + (nd.w - addChoiceShaped.totalW) * 0.5, btnY + btnH * 0.5, textPri);
+    const btnY = footerTop + 8;
+    pushBorderedBoxQuads(btnX, btnY, addChoiceBtnW, addChoiceBtnH, 1, theme.borderStrong, cardBg);
+    pushShapedTextQuads(addChoiceShaped, btnX + (addChoiceBtnW - addChoiceShaped.totalW) * 0.5, btnY + addChoiceBtnH * 0.5, textPri);
   }
 
   // 4. Default Circular Ports
@@ -975,6 +978,11 @@ function appendDynamicOverlayQuads(theme) {
   if (gesture && gesture.type === "chapter-drag" && gesture.chapter && gesture.dragConfirmed) {
     const ch = gesture.chapter;
     pushSolidBorderQuads(ch.x, ch.y, ch.w, ch.h, 1.5, theme.textPrimary);
+  } else if (studioGraphState.selectedChapterKey) {
+    const selCh = studioGraphState.chapterByKey.get(studioGraphState.selectedChapterKey);
+    if (selCh && !selCh.hidden) {
+      pushSolidBorderQuads(selCh.x, selCh.y, selCh.w, selCh.h, 1.5, theme.textPrimary);
+    }
   }
 
   if (hoveredWire) {
@@ -1094,13 +1102,13 @@ function appendDynamicOverlayQuads(theme) {
       );
     } else if (hovered.type === "add-choice-btn" && hovered.node) {
       const nd = hovered.node;
+      const addChoiceShaped = shapeTextGlyphs(FONT_BTN, "+ WYBÓR", 80);
       const btnX = nd.x + 8;
-      const btnY = nd.y + nd.h - NODE_FOOTER_HEIGHT + 7;
-      const btnW = nd.w - 16;
-      const btnH = 26;
-      pushBorderedBoxQuads(btnX, btnY, btnW, btnH, 1, theme.textPrimary, theme.bgObsidian);
-      const addChoiceShaped = shapeTextGlyphs(FONT_CHOICE, "+ Wybór", 80);
-      pushShapedTextQuads(addChoiceShaped, nd.x + (nd.w - addChoiceShaped.totalW) * 0.5, btnY + btnH * 0.5, theme.textPrimary);
+      const btnY = nd.y + nd.h - NODE_FOOTER_HEIGHT + 8;
+      const btnW = Math.ceil(addChoiceShaped.totalW) + 20;
+      const btnH = 24;
+      pushBorderedBoxQuads(btnX, btnY, btnW, btnH, 1, theme.textPrimary, theme.bgElevated);
+      pushShapedTextQuads(addChoiceShaped, btnX + (btnW - addChoiceShaped.totalW) * 0.5, btnY + btnH * 0.5, theme.textPrimary);
     }
   }
 

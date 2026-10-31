@@ -1,24 +1,23 @@
 section.view-panel#view-library
-    .bookshelf-header
-        button.btn.btn-sm#btn-open-add-book
+    .library-top-actions
+        button.btn.btn-sm
             type: button
             action: OpenAddBookModal
             "+ Dodaj książkę"
         -> if dev_mode
-            button.btn.btn-sm#btn-lib-extract-embedded-book
+            button.btn.btn-sm
                 type: button
                 action: ExtractEmbeddedBook
                 "Wypakuj wbudowaną książkę"
     -> if not books
-        p.bookshelf-empty#bookshelf-empty "No books in library page"
-    .bookshelf-grid#bookshelf-grid -> books.each() as b
+        p.bookshelf-empty "No books in library page"
+    .bookshelf-grid -> books.each() as b
         article.book-card
             button.book-cover-wrap
                 type: button
                 action: OpenBook
                 data-book: "{b.id}"
                 data-view: player
-                title: "{b.play_label}"
                 img.book-cover-img
                     alt: "{b.title}"
                     -> b.cover_url

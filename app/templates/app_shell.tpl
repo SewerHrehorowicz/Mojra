@@ -9,3 +9,4 @@ main.workspace#workspace
 .modals-root#modals-root
     @modals
 .toast.hidden#toast-banner
+.ui-tooltip.hidden#ui-tooltip

@@ -6,20 +6,27 @@ import (
 	"strings"
 )
 
+func sanitizeSingleLineMeta(s string) string {
+	s = SanitizePlainText(s)
+	s = strings.ReplaceAll(s, "\r\n", " ")
+	s = strings.ReplaceAll(s, "\n", " ")
+	return strings.TrimSpace(s)
+}
+
 // SerializeDataFile serializes book metadata back to data.txt content.
 func SerializeDataFile(b *Book) string {
 	var sb strings.Builder
-	title := SanitizePlainText(b.Title)
+	title := sanitizeSingleLineMeta(b.Title)
 	if title == "" {
 		title = "Nowa Opowieść"
 	}
-	author := SanitizePlainText(b.Author)
+	author := sanitizeSingleLineMeta(b.Author)
 	if author == "" {
 		author = "Autor Nieznany"
 	}
 	fmt.Fprintf(&sb, "title: %s\n", title)
 	fmt.Fprintf(&sb, "author: %s\n", author)
-	if desc := SanitizePlainText(b.Description); desc != "" {
+	if desc := sanitizeSingleLineMeta(b.Description); desc != "" {
 		fmt.Fprintf(&sb, "description: %s\n", desc)
 	}
 	if b.Narrated {
@@ -72,10 +79,9 @@ func SerializeScenesForFile(b *Book, sourceFile string) string {
 		}
 		ch := strings.TrimSpace(sc.Chapter)
 		chID := strings.TrimSpace(sc.ChapterID)
-		if chID == "" {
-			if chMeta := b.FindChapter(ch); chMeta != nil && chMeta.ExplicitID != "" {
-				chID = chMeta.ExplicitID
-			}
+		chMeta := b.FindChapter(ch)
+		if chID == "" && chMeta != nil && chMeta.ExplicitID != "" {
+			chID = chMeta.ExplicitID
 		}
 		if (ch != "" || chID != "") && !strings.EqualFold(ch, lastChapter) {
 			if ch != "" && !strings.EqualFold(ch, chID) {
@@ -87,6 +93,9 @@ func SerializeScenesForFile(b *Book, sourceFile string) string {
 			}
 			if chID != "" {
 				fmt.Fprintf(&out, "id: %s\n", chID)
+			}
+			if chMeta != nil && strings.TrimSpace(chMeta.ExplicitStart) != "" {
+				fmt.Fprintf(&out, "start: %s\n", strings.TrimSpace(chMeta.ExplicitStart))
 			}
 			out.WriteString("\n")
 			lastChapter = ch

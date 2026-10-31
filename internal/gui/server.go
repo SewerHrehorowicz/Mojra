@@ -24,6 +24,7 @@ type ModalState struct {
 	AddBookModalOpen           bool
 	EditorHelpModalOpen        bool
 	EditorHistoryPanelOpen     bool
+	BookSettingsOpen           bool
 	ConfirmTitle               string
 	ConfirmMessage             string
 	ConfirmPendingAction       string
@@ -69,6 +70,7 @@ type Server struct {
 	HistoryRevealed   bool
 	FocusedHistoryIdx int
 	SelectedSceneID   string
+	SelectedChapter   string
 	ModalState
 	historyCacheState
 	assetCacheState
@@ -141,12 +143,15 @@ func computeDirsStamp(dirs ...string) uint64 {
 }
 
 func (s *Server) ensureTemplatesLoaded() {
-	if s.DevMode && !s.StandaloneMode {
+	if !s.StandaloneMode {
 		tplDir := filepath.Join(s.AppDir, "templates")
 		iconsDir := filepath.Join(s.AppDir, "icons")
 		stamp := computeDirsStamp(tplDir, iconsDir)
-		if s.Templates == nil || stamp == 0 || stamp != s.templatesStamp {
+		if s.Templates == nil || (stamp != 0 && stamp != s.templatesStamp) {
 			if loaded, err := tpl.LoadTemplatesFromDir(tplDir, s.EmbeddedFS); err == nil && len(loaded) > 0 {
+				if !s.DevMode {
+					tpl.StripDevNodesFromTemplates(loaded)
+				}
 				s.Templates = loaded
 				s.templatesStamp = stamp
 			}
@@ -256,6 +261,8 @@ func (s *Server) setActiveBook(b *book.Book) {
 	s.HistoryRevealed = false
 	s.FocusedHistoryIdx = -1
 	s.EditorHistoryPanelOpen = false
+	s.BookSettingsOpen = false
+	s.SelectedChapter = ""
 	if len(b.Scenes) > 0 {
 		s.SelectedSceneID = s.Save.CurrentSceneID
 		if s.findScene(s.SelectedSceneID) == nil {
@@ -564,52 +571,59 @@ func (s *Server) serveUIAsset(w http.ResponseWriter, r *http.Request, relAppPath
 		w.Header().Set("Cache-Control", "no-cache")
 	}
 
-	if s.DevMode && !s.StandaloneMode {
+	if !s.StandaloneMode {
+		stripDev := !s.DevMode
 		switch relAppPath {
 		case "style.css":
 			cssFiles := tpl.CSSModuleFiles(s.AppDir)
 			stamp := computeFilesStamp(cssFiles)
-			s.assetMu.RLock()
-			cached := s.cachedCSS
-			cachedStamp := s.cssStamp
-			s.assetMu.RUnlock()
-			if len(cached) > 0 && stamp != 0 && stamp == cachedStamp {
-				_, _ = w.Write(cached)
-				return
-			}
-			if bundled, err := tpl.BundleFilesToString(cssFiles, false); err == nil {
-				raw := []byte(bundled)
-				s.assetMu.Lock()
-				s.cachedCSS = raw
-				s.cssStamp = stamp
-				s.assetMu.Unlock()
-				_, _ = w.Write(raw)
-				return
+			if stamp != 0 {
+				s.assetMu.RLock()
+				cached := s.cachedCSS
+				cachedStamp := s.cssStamp
+				s.assetMu.RUnlock()
+				if len(cached) > 0 && stamp == cachedStamp {
+					_, _ = w.Write(cached)
+					return
+				}
+				if bundled, err := tpl.BundleFilesToString(cssFiles, stripDev); err == nil {
+					raw := []byte(bundled)
+					s.assetMu.Lock()
+					s.cachedCSS = raw
+					s.cssStamp = stamp
+					s.assetMu.Unlock()
+					_, _ = w.Write(raw)
+					return
+				}
 			}
 		case "app.js":
 			jsFiles := tpl.JSModuleFiles(s.AppDir)
 			stamp := computeFilesStamp(jsFiles)
-			s.assetMu.RLock()
-			cached := s.cachedJS
-			cachedStamp := s.jsStamp
-			s.assetMu.RUnlock()
-			if len(cached) > 0 && stamp != 0 && stamp == cachedStamp {
-				_, _ = w.Write(cached)
-				return
-			}
-			if bundled, err := tpl.BundleFilesToString(jsFiles, false); err == nil {
-				raw := []byte(bundled)
-				s.assetMu.Lock()
-				s.cachedJS = raw
-				s.jsStamp = stamp
-				s.assetMu.Unlock()
-				_, _ = w.Write(raw)
-				return
+			if stamp != 0 {
+				s.assetMu.RLock()
+				cached := s.cachedJS
+				cachedStamp := s.jsStamp
+				s.assetMu.RUnlock()
+				if len(cached) > 0 && stamp == cachedStamp {
+					_, _ = w.Write(cached)
+					return
+				}
+				if bundled, err := tpl.BundleFilesToString(jsFiles, stripDev); err == nil {
+					raw := []byte(bundled)
+					s.assetMu.Lock()
+					s.cachedJS = raw
+					s.jsStamp = stamp
+					s.assetMu.Unlock()
+					_, _ = w.Write(raw)
+					return
+				}
 			}
 		case "studio-atlas.png":
-			if pngBytes, _, err := tpl.BuildStudioMSDFAtlas(s.AppDir); err == nil && len(pngBytes) > 0 {
-				_, _ = w.Write(pngBytes)
-				return
+			if s.DevMode {
+				if pngBytes, _, err := tpl.BuildStudioMSDFAtlas(s.AppDir); err == nil && len(pngBytes) > 0 {
+					_, _ = w.Write(pngBytes)
+					return
+				}
 			}
 		}
 	}

@@ -253,6 +253,17 @@ func (s *Server) applySceneFormFields(target *book.Scene, r *http.Request) {
 			s.ActiveBook.RawStart = newRef
 			s.ActiveBook.StartSceneID = target.ID
 		}
+		for i := range s.ActiveBook.Chapters {
+			ch := &s.ActiveBook.Chapters[i]
+			if strings.EqualFold(ch.StartSceneID, target.ID) ||
+				(oldName != "" && strings.EqualFold(ch.ExplicitStart, oldName)) ||
+				(oldExplicitID != "" && strings.EqualFold(ch.ExplicitStart, oldExplicitID)) {
+				if ch.ExplicitStart != "" {
+					ch.ExplicitStart = newRef
+				}
+				ch.StartSceneID = target.ID
+			}
+		}
 		for _, other := range s.ActiveBook.Scenes {
 			if oldName != "" && !strings.EqualFold(oldName, target.Name) && strings.EqualFold(other.ExplicitNext, oldName) {
 				other.ExplicitNext = newRef
@@ -659,6 +670,14 @@ func (s *Server) deleteSceneByID(sceneID string) string {
 	if strings.EqualFold(s.ActiveBook.StartSceneID, sceneID) || (delName != "" && strings.EqualFold(s.ActiveBook.RawStart, delName)) {
 		s.ActiveBook.RawStart = s.ActiveBook.Scenes[0].ReferenceKey()
 		s.ActiveBook.StartSceneID = s.ActiveBook.Scenes[0].ID
+	}
+	for i := range s.ActiveBook.Chapters {
+		ch := &s.ActiveBook.Chapters[i]
+		if strings.EqualFold(ch.StartSceneID, sceneID) ||
+			strings.EqualFold(ch.ExplicitStart, sceneID) ||
+			(delName != "" && strings.EqualFold(ch.ExplicitStart, delName)) {
+			ch.ExplicitStart = ""
+		}
 	}
 
 	for _, sc := range s.ActiveBook.Scenes {

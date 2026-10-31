@@ -31,7 +31,7 @@ section.view-panel#view-player
                                             type: button
                                             action: PromptRewindStep
                                             data-step: "{h.idx}"
-                                            title: "Wznów od tej sceny"
+                                            data-hint: "Wznów od tej sceny"
                                             svg.rewind-icon src: /icons/reset.svg
 
                         -> if h.has_image
@@ -49,12 +49,12 @@ section.view-panel#view-player
                                         type: button
                                         action: PromptRewindStep
                                         data-step: "{h.idx}"
-                                        title: "Wznów od tej sceny"
+                                        data-hint: "Wznów od tej sceny"
                                         svg.rewind-icon src: /icons/reset.svg
                             .scene-prose -> html:h.html
 
             .active-scene-stage#active-scene-stage
-                article.scene-card.scene-present.scene-focused.has-illustration?=current_scene.has_image.scene-untitled?=!current_scene.has_title
+                article.scene-card.scene-focused.has-illustration?=current_scene.has_image.scene-untitled?=!current_scene.has_title
                     data-present-scene: true
                     data-scene-image: "{current_scene.bg_image_url}"
                     data-scene-meta: "{current_scene.header_meta}"
@@ -63,7 +63,6 @@ section.view-panel#view-player
                             .scene-title-row
                                 .scene-title-with-badge
                                     span.present-scene-badge
-                                        title: "Bieżąca scena (teraźniejszość)"
                                         svg.present-scene-icon src: /icons/asterisk.svg
                                     h2.scene-title.scene-title-present -> current_scene.name
                     -> if current_scene.has_image
@@ -89,7 +88,7 @@ section.view-panel#view-player
                                         data-implicit-next: "{ch.is_implicit}"
                                         @scene_choice_arrow
 
-            .scroll-more-cue.hidden#scroll-more-cue
+            .scroll-more-cue.hidden
                 span.scroll-more-dots "..."
 
         -> if has_history
@@ -98,13 +97,11 @@ section.view-panel#view-player
                 -> history_items.each() as h
                     button.history-rail-tick
                         type: button
-                        data-rail-step: "{h.idx}"
-                        title: "{h.rail_title}"
+                        data-hint: "{h.rail_title}"
                         span.history-rail-bar
-                button.history-rail-tick.rail-tick-present.active
+                button.history-rail-tick.present-tick.active
                     type: button
-                    data-rail-present: true
-                    title: "{current_scene.rail_title}"
+                    data-hint: "{current_scene.rail_title}"
                     span.history-rail-bar
 
         -> if show_audio_deck
@@ -119,7 +116,6 @@ section.view-panel#view-player
                     .audio-transport
                         button.deck-play-btn#btn-audio-play
                             type: button
-                            title: "Odtwórz / Pauza"
                             svg.deck-play-icon#icon-audio-play src: /icons/play.svg
                             svg.deck-play-icon.hidden#icon-audio-pause src: /icons/pause.svg
 
@@ -138,16 +134,14 @@ section.view-panel#view-player
                         button.deck-chip#btn-audio-speed
                             type: button
                             action: CycleAudioSpeed
-                            title: "Prędkość narracji"
                             -> "{audio_speed}x"
-                        button.deck-chip.deck-icon-chip.chip-active?=auto_choice_enabled#btn-auto-choice-toggle
+                        button.deck-chip.chip-active?=auto_choice_enabled#btn-auto-choice-toggle
                             type: button
                             action: ToggleAutoChoice
-                            title: "{auto_choice_label}"
+                            data-hint: "{auto_choice_label}"
                             svg.deck-chip-icon src: /icons/branch.svg
-
         -> else
             footer.reader-progress-footer#reader-progress-footer
-                progress.reader-book-progress.book-progress-bar#reader-book-progress
+                progress.reader-book-progress
                     value: "{book_progress_pct}"
                     max: 100

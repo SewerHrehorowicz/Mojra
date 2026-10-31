@@ -170,3 +170,32 @@
   font-weight 600
   letter-spacing 0.4px
   z-index 300
+
+// Custom UI Tooltip
+.ui-tooltip
+  position fixed
+  left 0
+  top 0
+  max-width 260px
+  background --bg-elevated
+  border 1px solid --border-subtle
+  color --text-secondary
+  font-family --font-sans
+  font-size 10px
+  font-weight 400
+  letter-spacing 0.1px
+  line-height 1.3
+  padding 3px 7px
+  pointer-events none
+  z-index 500
+  white-space normal
+  word-break break-word
+  box-shadow 0 4px 12px rgba(0, 0, 0, 0.55)
+  box-shadow switch(theme)
+    light 0 2px 8px rgba(0, 0, 0, 0.08)
+
+body[data-ui-scale="large"]
+  .ui-tooltip
+    font-size 11px
+    padding 4px 8px
+    max-width 300px

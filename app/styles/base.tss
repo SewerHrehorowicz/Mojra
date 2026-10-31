@@ -41,12 +41,12 @@ input, textarea
   align-items center
   justify-content center
   gap 8px
-  padding 7px 14px
+  padding 6px 12px
   font-family --font-sans
-  font-size 11px
+  font-size 10px
   font-weight 500
   text-transform uppercase
-  letter-spacing 0.7px
+  letter-spacing 0.6px
   border 1px solid --border-strong
   background --bg-obsidian
   color --text-primary
@@ -74,17 +74,18 @@ input, textarea
   background --bg-obsidian
 
 .btn-danger:hover
-  color #ffffff
-  background --accent-danger
+  color --accent-danger
+  background --bg-elevated
   border-color --accent-danger
 
 .btn-sm
   padding 5px 10px
   font-size 10px
+  gap 6px
 
 .btn-icon
-  width 14px
-  height 14px
+  width 13px
+  height 13px
 
 .node-close-btn
   width 30px
@@ -113,17 +114,18 @@ input, textarea
 
 body[data-ui-scale="large"]
   .btn
-    padding 11px 20px
-    font-size 14px
-    gap 10px
+    padding 8px 14px
+    font-size 12px
+    gap 8px
 
   .btn-sm
-    padding 9px 16px
-    font-size 13px
+    padding 6px 10px
+    font-size 11px
+    gap 6px
 
   .btn-icon
-    width 18px
-    height 18px
+    width 14px
+    height 14px
 
   .node-close-btn
     width 38px

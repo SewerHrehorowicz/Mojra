@@ -24,30 +24,29 @@ html lang: pl
         data-ui-scale: "{ui_scale}"
         -> if dev_mode
             .device-stage#device-stage data-preview: "{preview_mode}"
-                .device-preview-bar#device-preview-bar
+                .device-preview-bar
                     span.preview-bar-label "Widok ekranu:"
-                    button.preview-mode-btn.{mode_full_active}
+                    button.preview-mode-btn.active?=(preview_mode == "full")
                         type: button
                         action: SetDeviceMode
                         data-mode: full
                         "Pełny ekran"
-                    button.preview-mode-btn.{mode_portrait_active}
+                    button.preview-mode-btn.active?=(preview_mode == "portrait")
                         type: button
                         action: SetDeviceMode
                         data-mode: portrait
                         "Telefon (Pionowo)"
-                    button.preview-mode-btn.{mode_landscape_active}
+                    button.preview-mode-btn.active?=(preview_mode == "landscape")
                         type: button
                         action: SetDeviceMode
                         data-mode: landscape
                         "Telefon (Poziomo)"
-                    button.preview-mode-btn#btn-extract-embedded-book
+                    button.preview-mode-btn
                         type: button
                         action: ExtractEmbeddedBook
-                        title: "Wypakuj wbudowaną książkę testową do katalogu books/"
                         "Wypakuj wbudowaną książkę"
 
-                .device-frame#device-frame
+                .device-frame
                     .device-notch
                     #app.app-root
                         @app_shell

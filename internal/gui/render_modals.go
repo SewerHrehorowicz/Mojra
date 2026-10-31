@@ -18,11 +18,7 @@ func (s *Server) populateModalsContext(vars map[string]any) {
 	vars["show_confirm_modal"] = s.ConfirmPendingAction != ""
 	vars["confirm_title"] = s.ConfirmTitle
 	vars["confirm_message"] = s.ConfirmMessage
-	confirmAcceptClass := "btn-primary"
-	if s.ConfirmPendingAction == "RemoveBook" || s.ConfirmPendingAction == "DeleteScene" || s.ConfirmPendingAction == "DeleteScenes" || s.ConfirmPendingAction == "RemoveChoice" {
-		confirmAcceptClass = "btn-danger"
-	}
-	vars["confirm_accept_class"] = confirmAcceptClass
+	vars["confirm_is_danger"] = s.ConfirmPendingAction == "RemoveBook" || s.ConfirmPendingAction == "DeleteScene" || s.ConfirmPendingAction == "DeleteScenes" || s.ConfirmPendingAction == "RemoveChoice"
 	vars["show_new_book_modal"] = s.NewBookModalOpen
 	vars["show_add_book_modal"] = s.AddBookModalOpen
 	vars["show_editor_help_modal"] = s.EditorHelpModalOpen
@@ -56,16 +52,11 @@ func (s *Server) populateModalsContext(vars map[string]any) {
 			vars["scene_text_modal_voice_options"] = voiceOptions
 
 			settingsOpenVal := "false"
-			settingsActiveClass := ""
-			settingsHiddenClass := "hidden"
 			if s.SceneTextModalSettingsOpen {
 				settingsOpenVal = "true"
-				settingsActiveClass = "active"
-				settingsHiddenClass = ""
 			}
+			vars["scene_text_modal_settings_open"] = s.SceneTextModalSettingsOpen
 			vars["scene_text_modal_settings_open_val"] = settingsOpenVal
-			vars["scene_text_modal_settings_active_class"] = settingsActiveClass
-			vars["scene_text_modal_settings_hidden_class"] = settingsHiddenClass
 
 			modalHeaderMeta := ""
 			if s.ActiveBook != nil {
@@ -81,20 +72,10 @@ func (s *Server) populateModalsContext(vars map[string]any) {
 			vars["scene_text_modal_header_meta"] = modalHeaderMeta
 
 			imageless := s.isEffectiveImageless()
-			modalImgURL := ""
-			modalImgClass := ""
-			modalImagelessClass := "is-imageless"
-			if modalSc.ImageURL != "" {
-				modalImgURL = modalSc.ImageURL
-				modalImgClass = "has-illustration"
-				if !imageless {
-					modalImagelessClass = ""
-				}
-			}
+			modalImgURL := modalSc.ImageURL
 			vars["scene_text_modal_has_image"] = modalImgURL != ""
 			vars["scene_text_modal_image_url"] = modalImgURL
-			vars["scene_text_modal_has_image_class"] = modalImgClass
-			vars["scene_text_modal_imageless_class"] = modalImagelessClass
+			vars["scene_text_modal_is_imageless"] = imageless || modalImgURL == ""
 
 			var incomingScenes []map[string]any
 			if s.ActiveBook != nil {
@@ -141,10 +122,7 @@ func (s *Server) populateModalsContext(vars map[string]any) {
 					arr = "↺"
 				}
 				selectedVal, selectedLabel, targetOptions := s.buildChoiceTargetOptions(modalSc, ch)
-				portClass := ""
-				if !ch.IsEnding && ch.TargetSceneID != "" && !strings.EqualFold(ch.TargetSceneID, "END") && !strings.EqualFold(selectedVal, "END") {
-					portClass = "port-filled"
-				}
+				isFilled := !ch.IsEnding && ch.TargetSceneID != "" && !strings.EqualFold(ch.TargetSceneID, "END") && !strings.EqualFold(selectedVal, "END")
 				modalChoices = append(modalChoices, map[string]any{
 					"idx":             idx,
 					"label":           lbl,
@@ -152,10 +130,9 @@ func (s *Server) populateModalsContext(vars map[string]any) {
 					"is_branch":       hasMulti && !ch.IsEnding,
 					"is_editable":     hasMulti,
 					"target_scene_id": ch.TargetSceneID,
-					"is_ending":       ch.IsEnding,
 					"selected_value":  selectedVal,
 					"selected_label":  selectedLabel,
-					"port_class":      portClass,
+					"is_filled":       isFilled,
 					"target_options":  targetOptions,
 				})
 			}
@@ -166,13 +143,9 @@ func (s *Server) populateModalsContext(vars map[string]any) {
 				modalSc,
 				s.terminalChoiceDescriptor(),
 			)
-			termPortClass := ""
-			if termVal != "" && !strings.EqualFold(termVal, "END") {
-				termPortClass = "port-filled"
-			}
 			vars["scene_text_modal_terminal_selected_value"] = termVal
 			vars["scene_text_modal_terminal_selected_label"] = termLabel
-			vars["scene_text_modal_terminal_port_class"] = termPortClass
+			vars["scene_text_modal_terminal_port_filled"] = termVal != "" && !strings.EqualFold(termVal, "END")
 			vars["scene_text_modal_terminal_target_options"] = termOpts
 			startID := ""
 			if s.ActiveBook != nil {

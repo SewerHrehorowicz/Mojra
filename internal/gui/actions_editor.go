@@ -27,6 +27,79 @@ func (s *Server) handleEditorAction(action string, w http.ResponseWriter, r *htt
 		w.WriteHeader(http.StatusNoContent)
 		return "", true, true
 
+	case "OpenBookSettings":
+		if r.FormValue("scene_id") != "" {
+			_ = s.saveSceneFromForm(r)
+		}
+		s.BookSettingsOpen = true
+		s.SelectedChapter = ""
+		return "", false, true
+
+	case "CloseBookSettings":
+		s.BookSettingsOpen = false
+		return "", false, true
+
+	case "ToggleBookSettings":
+		if r.FormValue("scene_id") != "" {
+			_ = s.saveSceneFromForm(r)
+		}
+		s.BookSettingsOpen = !s.BookSettingsOpen
+		if s.BookSettingsOpen {
+			s.SelectedChapter = ""
+		}
+		return "", false, true
+
+	case "SaveBookSettings":
+		if s.ActiveBook != nil && !s.ActiveBook.IsPacked {
+			changed := false
+			newTitle := book.SanitizePlainText(r.FormValue("title"))
+			if newTitle != "" && newTitle != s.ActiveBook.Title {
+				s.ActiveBook.Title = newTitle
+				changed = true
+			}
+			if _, hasAuthor := r.Form["author"]; hasAuthor {
+				newAuthor := book.SanitizePlainText(r.FormValue("author"))
+				if newAuthor != "" && newAuthor != s.ActiveBook.Author {
+					s.ActiveBook.Author = newAuthor
+					changed = true
+				}
+			}
+			if _, hasDesc := r.Form["description"]; hasDesc {
+				newDesc := book.SanitizePlainText(r.FormValue("description"))
+				if newDesc != s.ActiveBook.Description {
+					s.ActiveBook.Description = newDesc
+					changed = true
+				}
+			}
+			if startScID := strings.TrimSpace(r.FormValue("start_scene")); startScID != "" {
+				if target := s.findScene(startScID); target != nil && !strings.EqualFold(s.ActiveBook.StartSceneID, target.ID) {
+					s.ActiveBook.StartSceneID = target.ID
+					s.ActiveBook.RawStart = target.ReferenceKey()
+					if s.Save != nil && len(s.Save.History) == 0 && s.Save.AudioTime == 0 {
+						s.Save.CurrentSceneID = target.ID
+						_ = book.WriteSaveState(s.SavesDir, s.Save)
+					}
+					changed = true
+				}
+			}
+			if changed {
+				s.ensureHistoryBaselineBeforeMutation()
+				if err := book.SaveBookMetadataToDisk(s.ActiveBook); err != nil {
+					toast = err.Error()
+				} else {
+					s.reloadActiveBook()
+					toast = "Zapisano ustawienia książki: " + s.ActiveBook.Title
+					s.recordHistoryAfterMutation(toast, "meta", "savebooksettings")
+				}
+			}
+		}
+		if r.FormValue("silent") == "true" {
+			s.writeEditorHistoryHeaders(w)
+			w.WriteHeader(http.StatusNoContent)
+			return "", true, true
+		}
+		return toast, false, true
+
 	case "RenameBook":
 		if s.ActiveBook != nil && !s.ActiveBook.IsPacked {
 			newTitle := book.SanitizePlainText(r.FormValue("title"))
@@ -56,10 +129,13 @@ func (s *Server) handleEditorAction(action string, w http.ResponseWriter, r *htt
 		if _, hasSettingsOpen := r.Form["scene_settings_open"]; hasSettingsOpen {
 			s.SceneTextModalSettingsOpen = r.FormValue("scene_settings_open") == "true"
 		}
-		toast = s.withBookMutation(r, true, func(b *book.Book) (string, string, string, bool) {
+		toast = s.withBookMutation(r, false, func(b *book.Book) (string, string, string, bool) {
 			scID := strings.TrimSpace(r.FormValue("scene"))
 			if scID == "" {
 				scID = strings.TrimSpace(r.FormValue("scene_id"))
+			}
+			if scID == "" {
+				scID = strings.TrimSpace(r.FormValue("start_scene"))
 			}
 			if scID == "" {
 				scID = s.SelectedSceneID
@@ -68,9 +144,15 @@ func (s *Server) handleEditorAction(action string, w http.ResponseWriter, r *htt
 			if target == nil {
 				return "", "", "", false
 			}
+			if ch := b.FindChapter(target.Chapter); ch != nil {
+				ch.ExplicitStart = target.ReferenceKey()
+				ch.StartSceneID = target.ID
+			}
 			b.StartSceneID = target.ID
 			b.RawStart = target.ReferenceKey()
-			s.SelectedSceneID = target.ID
+			if !s.BookSettingsOpen {
+				s.SelectedSceneID = target.ID
+			}
 			if s.SceneTextModalID != "" {
 				s.SceneTextModalID = target.ID
 			}
@@ -79,6 +161,51 @@ func (s *Server) handleEditorAction(action string, w http.ResponseWriter, r *htt
 				_ = book.WriteSaveState(s.SavesDir, s.Save)
 			}
 			return "Ustawiono scenę początkową: " + target.DisplayName(), "meta", "", true
+		})
+		return toast, false, true
+
+	case "SetBookStartChapter":
+		toast = s.withBookMutation(r, false, func(b *book.Book) (string, string, string, bool) {
+			chKey := strings.TrimSpace(r.FormValue("chapter"))
+			if chKey == "" {
+				chKey = strings.TrimSpace(r.FormValue("start_chapter"))
+			}
+			targetCh := b.FindChapter(chKey)
+			if targetCh == nil {
+				return "", "", "", false
+			}
+			if oldStart := s.findScene(b.StartSceneID); oldStart != nil {
+				if oldCh := b.FindChapter(oldStart.Chapter); oldCh != nil && strings.TrimSpace(oldCh.ExplicitStart) == "" {
+					oldCh.ExplicitStart = oldStart.ReferenceKey()
+					oldCh.StartSceneID = oldStart.ID
+				}
+			}
+			var targetScene *book.Scene
+			if targetCh.StartSceneID != "" {
+				targetScene = s.findScene(targetCh.StartSceneID)
+			}
+			if targetScene == nil {
+				for _, sc := range b.Scenes {
+					scCh := strings.TrimSpace(sc.Chapter)
+					if scCh == "" {
+						scCh = "Rozdział 1"
+					}
+					if strings.EqualFold(scCh, strings.TrimSpace(targetCh.Name)) {
+						targetScene = sc
+						break
+					}
+				}
+			}
+			if targetScene == nil {
+				return "", "", "", false
+			}
+			b.StartSceneID = targetScene.ID
+			b.RawStart = targetScene.ReferenceKey()
+			if s.Save != nil && len(s.Save.History) == 0 && s.Save.AudioTime == 0 {
+				s.Save.CurrentSceneID = targetScene.ID
+				_ = book.WriteSaveState(s.SavesDir, s.Save)
+			}
+			return fmt.Sprintf("Ustawiono rozdział początkowy: %s (%s)", targetCh.DisplayName(), targetScene.DisplayName()), "meta", "setstartchapter", true
 		})
 		return toast, false, true
 
@@ -142,6 +269,21 @@ func (s *Server) handleEditorAction(action string, w http.ResponseWriter, r *htt
 		scID := strings.TrimSpace(r.FormValue("scene"))
 		if found := s.findScene(scID); found != nil {
 			s.SelectedSceneID = found.ID
+			s.SelectedChapter = ""
+			s.BookSettingsOpen = false
+		}
+		return "", false, true
+
+	case "SelectStudioChapter":
+		if r.FormValue("scene_id") != "" {
+			_ = s.saveSceneFromForm(r)
+		}
+		chKey := strings.TrimSpace(r.FormValue("chapter"))
+		if s.ActiveBook != nil && chKey != "" {
+			if foundCh := s.ActiveBook.FindChapter(chKey); foundCh != nil {
+				s.SelectedChapter = foundCh.Name
+				s.BookSettingsOpen = false
+			}
 		}
 		return "", false, true
 
@@ -239,6 +381,12 @@ func (s *Server) handleEditorAction(action string, w http.ResponseWriter, r *htt
 
 	case "RenameChapter":
 		return s.renameActiveBookChapter(r), false, true
+
+	case "SetChapterStartScene":
+		return s.setChapterStartScene(r), false, true
+
+	case "SaveChapterSettings":
+		return s.saveChapterSettings(r), false, true
 
 	case "AssignChapterToScenes":
 		return s.assignChapterToScenes(r), false, true

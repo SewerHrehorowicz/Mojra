@@ -46,19 +46,14 @@ func (s *Server) buildChoiceTargetOptions(sc *book.Scene, ch book.Choice) (strin
 		if sc != nil && cand.ID == sc.ID && (ch.IsEnding || ch.IsChapterLink || ch.TargetSceneID != cand.ID) {
 			continue
 		}
-		sel := "false"
-		actCls := ""
-		if !ch.IsEnding && !ch.IsChapterLink && ch.TargetSceneID == cand.ID {
-			sel = "true"
-			actCls = "active"
+		isSel := !ch.IsEnding && !ch.IsChapterLink && ch.TargetSceneID == cand.ID
+		if isSel {
 			matchedOption = true
 		}
 		optVal := cand.ReferenceKey()
 		optLabel := cand.DisplayName()
 		if cand.ExplicitID != "" {
-			if strings.EqualFold(ch.Target, cand.ExplicitID) {
-				optVal = cand.ExplicitID
-			} else if sel == "true" {
+			if strings.EqualFold(ch.Target, cand.ExplicitID) || isSel {
 				optVal = cand.ExplicitID
 			}
 			if cand.Name != "" {
@@ -67,16 +62,15 @@ func (s *Server) buildChoiceTargetOptions(sc *book.Scene, ch book.Choice) (strin
 				optLabel = fmt.Sprintf("[id: %s]", cand.ExplicitID)
 			}
 		}
-		if sel == "true" {
+		if isSel {
 			selectedVal = optVal
 			selectedLabel = cand.DisplayName()
 		}
 		targetOptions = append(targetOptions, map[string]any{
-			"value":        optVal,
-			"short_label":  cand.DisplayName(),
-			"label":        optLabel,
-			"selected":     sel,
-			"active_class": actCls,
+			"value":       optVal,
+			"short_label": cand.DisplayName(),
+			"label":       optLabel,
+			"is_active":   isSel,
 		})
 	}
 
@@ -92,11 +86,7 @@ func (s *Server) buildChoiceTargetOptions(sc *book.Scene, ch book.Choice) (strin
 		if !canLink && !isCurrentSel {
 			continue
 		}
-		sel := "false"
-		actCls := ""
 		if isCurrentSel {
-			sel = "true"
-			actCls = "active"
 			matchedOption = true
 		}
 		shortLbl := "↪ Rozdział: " + chItem.DisplayName()
@@ -104,45 +94,39 @@ func (s *Server) buildChoiceTargetOptions(sc *book.Scene, ch book.Choice) (strin
 		if chItem.ExplicitID != "" && !strings.EqualFold(chItem.DisplayName(), chItem.ExplicitID) {
 			optLabel = fmt.Sprintf("↪ Rozdział: %s [chapter:%s]", chItem.DisplayName(), chItem.ExplicitID)
 		}
-		if sel == "true" {
+		if isCurrentSel {
 			selectedVal = optVal
 			selectedLabel = shortLbl
 		}
 		targetOptions = append(targetOptions, map[string]any{
-			"value":        optVal,
-			"short_label":  shortLbl,
-			"label":        optLabel,
-			"selected":     sel,
-			"active_class": actCls,
+			"value":       optVal,
+			"short_label": shortLbl,
+			"label":       optLabel,
+			"is_active":   isCurrentSel,
 		})
 	}
 
 	// 3. END
-	endSel := "false"
-	endAct := ""
-	if ch.IsEnding || strings.EqualFold(ch.Target, "END") {
-		endSel = "true"
-		endAct = "active"
+	isEndSel := ch.IsEnding || strings.EqualFold(ch.Target, "END")
+	if isEndSel {
 		matchedOption = true
 		selectedVal = "END"
 		selectedLabel = "KONIEC (END)"
 	}
 	targetOptions = append(targetOptions, map[string]any{
-		"value":        "END",
-		"short_label":  "KONIEC (END)",
-		"label":        "KONIEC (END)",
-		"selected":     endSel,
-		"active_class": endAct,
+		"value":       "END",
+		"short_label": "KONIEC (END)",
+		"label":       "KONIEC (END)",
+		"is_active":   isEndSel,
 	})
 	if !matchedOption && ch.Target != "" {
 		selectedVal = ch.Target
 		selectedLabel = "⚠ " + ch.Target
 		targetOptions = append(targetOptions, map[string]any{
-			"value":        ch.Target,
-			"short_label":  "⚠ " + ch.Target,
-			"label":        "⚠ " + ch.Target,
-			"selected":     "true",
-			"active_class": "active",
+			"value":       ch.Target,
+			"short_label": "⚠ " + ch.Target,
+			"label":       "⚠ " + ch.Target,
+			"is_active":   true,
 		})
 	}
 	return selectedVal, selectedLabel, targetOptions
@@ -159,41 +143,36 @@ func (s *Server) buildSceneMediaOptions(sc *book.Scene, buildMenus bool) (curImg
 	}
 	if buildMenus && s.ActiveBook != nil {
 		imgOptions = make([]map[string]any, 0, len(s.ActiveBook.ImageFiles)+2)
-		noneImgAct := ""
-		if curImg == "" {
-			noneImgAct = "active"
-		}
 		imgOptions = append(imgOptions, map[string]any{
-			"value":        "",
-			"label":        "— brak —",
-			"active_class": noneImgAct,
+			"value":     "",
+			"label":     "— brak —",
+			"is_active": curImg == "",
 		})
 		matchedImg := curImg == ""
 		for _, imgFile := range s.ActiveBook.ImageFiles {
-			act := ""
-			if strings.EqualFold(curImg, imgFile) {
-				act = "active"
+			isAct := strings.EqualFold(curImg, imgFile)
+			if isAct {
 				matchedImg = true
 				curImgLabel = imgFile
 			}
 			imgOptions = append(imgOptions, map[string]any{
-				"value":        imgFile,
-				"label":        imgFile,
-				"active_class": act,
+				"value":     imgFile,
+				"label":     imgFile,
+				"is_active": isAct,
 			})
 		}
 		if !matchedImg && curImg != "" {
 			curImgLabel = "⚠ " + curImg
 			imgOptions = append(imgOptions, map[string]any{
-				"value":        curImg,
-				"label":        "⚠ " + curImg,
-				"active_class": "active",
+				"value":     curImg,
+				"label":     "⚠ " + curImg,
+				"is_active": true,
 			})
 		}
 		imgOptions = append(imgOptions, map[string]any{
-			"value":        "__browse_disk__",
-			"label":        "+ Dodaj obraz z dysku...",
-			"active_class": "",
+			"value":     "__browse_disk__",
+			"label":     "+ Dodaj obraz z dysku...",
+			"is_active": false,
 		})
 	}
 
@@ -209,41 +188,36 @@ func (s *Server) buildSceneMediaOptions(sc *book.Scene, buildMenus bool) (curImg
 		}
 		if buildMenus {
 			voiceOptions = make([]map[string]any, 0, len(s.ActiveBook.AudioFiles)+3)
-			noneVoiceAct := ""
-			if curVoice == "" {
-				noneVoiceAct = "active"
-			}
 			voiceOptions = append(voiceOptions, map[string]any{
-				"value":        "",
-				"label":        "— brak —",
-				"active_class": noneVoiceAct,
+				"value":     "",
+				"label":     "— brak —",
+				"is_active": curVoice == "",
 			})
 			matchedVoice := curVoice == ""
 			for _, audioFile := range s.ActiveBook.AudioFiles {
-				act := ""
-				if strings.EqualFold(curVoice, audioFile) {
-					act = "active"
+				isAct := strings.EqualFold(curVoice, audioFile)
+				if isAct {
 					matchedVoice = true
 					curVoiceLabel = audioFile
 				}
 				voiceOptions = append(voiceOptions, map[string]any{
-					"value":        audioFile,
-					"label":        audioFile,
-					"active_class": act,
+					"value":     audioFile,
+					"label":     audioFile,
+					"is_active": isAct,
 				})
 			}
 			if !matchedVoice && curVoice != "" {
 				curVoiceLabel = "⚠ " + curVoice
 				voiceOptions = append(voiceOptions, map[string]any{
-					"value":        curVoice,
-					"label":        "⚠ " + curVoice,
-					"active_class": "active",
+					"value":     curVoice,
+					"label":     "⚠ " + curVoice,
+					"is_active": true,
 				})
 			}
 			voiceOptions = append(voiceOptions, map[string]any{
-				"value":        "__browse_disk__",
-				"label":        "+ Dodaj nagranie z dysku...",
-				"active_class": "",
+				"value":     "__browse_disk__",
+				"label":     "+ Dodaj nagranie z dysku...",
+				"is_active": false,
 			})
 		}
 	}
@@ -251,11 +225,6 @@ func (s *Server) buildSceneMediaOptions(sc *book.Scene, buildMenus bool) (curImg
 }
 
 func (s *Server) buildEditorNodeMap(sc *book.Scene, isSelected bool) map[string]any {
-	selClass := ""
-	if isSelected {
-		selClass = "node-selected"
-	}
-
 	isStart := false
 	isChapterEntry := false
 	if s.ActiveBook != nil {
@@ -271,47 +240,11 @@ func (s *Server) buildEditorNodeMap(sc *book.Scene, isSelected bool) map[string]
 			}
 		}
 	}
-	startClass := ""
-	if isStart {
-		startClass = "node-is-start"
-	} else if isChapterEntry {
-		startClass = "node-is-chapter-entry"
-	}
-	unreachableClass := ""
-	if sc.Unreachable {
-		unreachableClass = "node-unreachable"
-	}
-
-	audioClass := ""
-	audioBadge := "voice: wyłączony"
-	if s.ActiveBook != nil && s.ActiveBook.Narrated {
-		if sc.AudioFile != "" {
-			audioClass = "badge-ok"
-			audioBadge = "voice: " + sc.AudioFile
-		} else {
-			audioClass = "badge-warn"
-			audioBadge = "⚠ BRAK VOICE!"
-		}
-	}
-
-	imgClass := ""
-	imgBadge := "image: opcjonalny"
-	if sc.ImageFile != "" {
-		imgClass = "badge-ok"
-		imgBadge = "image: " + sc.ImageFile
-	} else if sc.ExplicitImage != "" {
-		imgClass = "badge-warn"
-		imgBadge = "⚠ BRAK IMAGE!"
-	}
 
 	hasChoices := len(sc.Choices) >= 2
 	ports := make([]map[string]any, 0, len(sc.Choices))
-	var nodeChoiceLines []string
 	if hasChoices {
 		for chIdx, ch := range sc.Choices {
-			if !ch.IsImplicit && ch.Label != "" && ch.Target != "" {
-				nodeChoiceLines = append(nodeChoiceLines, ch.Label+" -> "+ch.Target)
-			}
 			lbl := ch.Label
 			tgt := ch.Target
 			targetChapterRef := ""
@@ -335,10 +268,7 @@ func (s *Server) buildEditorNodeMap(sc *book.Scene, isSelected bool) map[string]
 			if isSelected {
 				selectedVal, selectedLabel, targetOptions = s.buildChoiceTargetOptions(sc, ch)
 			}
-			portClass := ""
-			if !ch.IsEnding && ch.TargetSceneID != "" && !strings.EqualFold(ch.TargetSceneID, "END") && !strings.EqualFold(selectedVal, "END") {
-				portClass = "port-filled"
-			}
+			isFilled := !ch.IsEnding && ch.TargetSceneID != "" && !strings.EqualFold(ch.TargetSceneID, "END") && !strings.EqualFold(selectedVal, "END")
 
 			ports = append(ports, map[string]any{
 				"idx":            chIdx,
@@ -347,17 +277,12 @@ func (s *Server) buildEditorNodeMap(sc *book.Scene, isSelected bool) map[string]
 				"target":         tgt,
 				"target_id":      ch.TargetSceneID,
 				"target_chapter": targetChapterRef,
-				"is_implicit":    ch.IsImplicit,
 				"selected_value": selectedVal,
 				"selected_label": selectedLabel,
-				"port_class":     portClass,
+				"is_filled":      isFilled,
 				"target_options": targetOptions,
 			})
 		}
-	}
-	primaryChild := ""
-	if len(sc.Choices) > 0 && !sc.Choices[0].IsEnding {
-		primaryChild = sc.Choices[0].TargetSceneID
 	}
 	implicitTargetID := ""
 	implicitTargetChapter := ""
@@ -371,11 +296,6 @@ func (s *Server) buildEditorNodeMap(sc *book.Scene, isSelected bool) map[string]
 				}
 			}
 		}
-	}
-
-	expectedStem := sc.Name
-	if sc.ExplicitID != "" {
-		expectedStem = sc.ExplicitID
 	}
 
 	curImg, curImgLabel, imgOptions, curVoice, curVoiceLabel, voiceOptions := s.buildSceneMediaOptions(sc, isSelected)
@@ -394,73 +314,181 @@ func (s *Server) buildEditorNodeMap(sc *book.Scene, isSelected bool) map[string]
 		chapterOptions = make([]map[string]any, 0, len(s.ActiveBook.Chapters)+1)
 		matchedCh := false
 		for _, chItem := range s.ActiveBook.Chapters {
-			act := ""
-			if strings.EqualFold(curChName, strings.TrimSpace(chItem.Name)) {
-				act = "active"
+			isAct := strings.EqualFold(curChName, strings.TrimSpace(chItem.Name))
+			if isAct {
 				matchedCh = true
 			}
 			chapterOptions = append(chapterOptions, map[string]any{
-				"value":        chItem.Name,
-				"label":        chItem.Name,
-				"active_class": act,
+				"value":     chItem.Name,
+				"label":     chItem.Name,
+				"is_active": isAct,
 			})
 		}
 		if !matchedCh && curChName != "" {
 			chapterOptions = append(chapterOptions, map[string]any{
-				"value":        curChName,
-				"label":        curChName,
-				"active_class": "active",
+				"value":     curChName,
+				"label":     curChName,
+				"is_active": true,
 			})
 		}
 	}
 
 	return map[string]any{
-		"id":                  sc.ID,
-		"display_name":        sc.DisplayName(),
-		"explicit_id":         sc.ExplicitID,
-		"explicit_image":      sc.ExplicitImage,
-		"explicit_voice":      sc.ExplicitVoice,
-		"current_image":       curImg,
-		"current_image_label": curImgLabel,
-		"image_options":       imgOptions,
-		"current_voice":       curVoice,
-		"current_voice_label": curVoiceLabel,
-		"voice_options":       voiceOptions,
-		"book_narrated":       s.ActiveBook != nil && s.ActiveBook.Narrated,
-		"image_placeholder":   fmt.Sprintf("image: np. images/%s.png (opcjonalny)", expectedStem),
-		"voice_placeholder":   fmt.Sprintf("voice: np. voice/%s.ogg lub %s.mp3", expectedStem, expectedStem),
-		"name":                sc.Name,
-		"chapter":             curChName,
-		"chapter_options":     chapterOptions,
-		"row":                 sc.Row,
-		"col":                 sc.Col,
-		"x":                   sc.X,
-		"y":                   sc.Y,
-		"text":                sc.Text,
-		"first_sentence":      extractFirstSentence(sc.Text),
-		"choices_text":        strings.Join(nodeChoiceLines, "\n"),
-		"source_file":         sc.SourceFile,
-		"selected_class":          selClass,
+		"id":                      sc.ID,
+		"explicit_id":             sc.ExplicitID,
+		"current_image":           curImg,
+		"current_image_label":     curImgLabel,
+		"image_options":           imgOptions,
+		"current_voice":           curVoice,
+		"current_voice_label":     curVoiceLabel,
+		"voice_options":           voiceOptions,
+		"name":                    sc.Name,
+		"chapter":                 curChName,
+		"chapter_options":         chapterOptions,
+		"x":                       sc.X,
+		"y":                       sc.Y,
+		"first_sentence":          extractFirstSentence(sc.Text),
+		"source_file":             sc.SourceFile,
+		"is_selected":             isSelected,
 		"is_start_scene":          isStart,
 		"is_chapter_entry":        isChapterEntry,
-		"is_non_root_entry":       isChapterEntry && !isStart,
-		"start_node_class":        startClass,
 		"is_unreachable":          sc.Unreachable,
-		"unreachable_class":       unreachableClass,
-		"audio_badge_class":       audioClass,
-		"audio_badge_text":        audioBadge,
-		"img_badge_class":         imgClass,
-		"img_badge_text":          imgBadge,
 		"has_node_warnings":       len(sc.Warnings) > 0,
 		"node_warnings":           nodeWarns,
 		"ports":                   ports,
 		"has_choices":             hasChoices,
-		"has_ports":               len(ports) > 0,
 		"port_count":              len(ports),
-		"primary_child_id":        primaryChild,
 		"implicit_target_id":      implicitTargetID,
 		"implicit_target_chapter": implicitTargetChapter,
 	}
+}
+
+func (s *Server) populateEditorBookAndChapterSettings(vars map[string]any) {
+	if s.ActiveBook == nil {
+		vars["book_settings_open"] = false
+		vars["has_selected_chapter"] = false
+		vars["is_node_inspector_hidden"] = false
+		return
+	}
+
+	vars["book_settings_open"] = s.BookSettingsOpen
+	vars["active_book_author"] = s.ActiveBook.Author
+	vars["active_book_description"] = s.ActiveBook.Description
+
+	startSceneID := s.ActiveBook.StartSceneID
+	if startSceneID == "" && len(s.ActiveBook.Scenes) > 0 {
+		startSceneID = s.ActiveBook.Scenes[0].ID
+	}
+	startScene := s.findScene(startSceneID)
+	if startScene == nil && len(s.ActiveBook.Scenes) > 0 {
+		startScene = s.ActiveBook.Scenes[0]
+		startSceneID = startScene.ID
+	}
+	startChapterName := "Rozdział 1"
+	if startScene != nil && strings.TrimSpace(startScene.Chapter) != "" {
+		startChapterName = strings.TrimSpace(startScene.Chapter)
+	} else if len(s.ActiveBook.Chapters) > 0 && strings.TrimSpace(s.ActiveBook.Chapters[0].Name) != "" {
+		startChapterName = strings.TrimSpace(s.ActiveBook.Chapters[0].Name)
+	}
+
+	startChapterOptions := make([]map[string]any, 0, len(s.ActiveBook.Chapters))
+	for _, ch := range s.ActiveBook.Chapters {
+		chName := strings.TrimSpace(ch.Name)
+		if chName == "" {
+			continue
+		}
+		isActCh := strings.EqualFold(chName, startChapterName)
+		startChapterOptions = append(startChapterOptions, map[string]any{
+			"value":     chName,
+			"label":     ch.DisplayName(),
+			"is_active": isActCh,
+		})
+	}
+	vars["book_start_chapter_name"] = startChapterName
+	vars["book_start_chapter_options"] = startChapterOptions
+
+	startSceneLabel := ""
+	startSceneOptions := make([]map[string]any, 0, len(s.ActiveBook.Scenes))
+	for _, sc := range s.ActiveBook.Scenes {
+		scCh := strings.TrimSpace(sc.Chapter)
+		if scCh == "" {
+			scCh = "Rozdział 1"
+		}
+		if !strings.EqualFold(scCh, startChapterName) {
+			continue
+		}
+		isStart := strings.EqualFold(sc.ID, startSceneID)
+		optLabel := sc.DisplayName()
+		if isStart {
+			startSceneLabel = optLabel
+		}
+		startSceneOptions = append(startSceneOptions, map[string]any{
+			"value":     sc.ID,
+			"label":     optLabel,
+			"is_active": isStart,
+		})
+	}
+	if startSceneLabel == "" && len(startSceneOptions) > 0 {
+		startSceneLabel, _ = startSceneOptions[0]["label"].(string)
+	}
+	vars["book_start_scene_id"] = startSceneID
+	vars["book_start_scene_label"] = startSceneLabel
+	vars["book_start_scene_options"] = startSceneOptions
+
+	var selCh *book.Chapter
+	if s.SelectedChapter != "" {
+		selCh = s.ActiveBook.FindChapter(s.SelectedChapter)
+	}
+	hasSelectedChapter := selCh != nil && s.SelectedChapter != "" && !s.BookSettingsOpen
+	if selCh == nil && len(s.ActiveBook.Chapters) > 0 {
+		selCh = &s.ActiveBook.Chapters[0]
+	}
+
+	if selCh != nil {
+		chName := strings.TrimSpace(selCh.Name)
+		if chName == "" {
+			chName = "Rozdział 1"
+		}
+		var chScenes []*book.Scene
+		for _, sc := range s.ActiveBook.Scenes {
+			scCh := strings.TrimSpace(sc.Chapter)
+			if scCh == "" {
+				scCh = "Rozdział 1"
+			}
+			if strings.EqualFold(scCh, chName) {
+				chScenes = append(chScenes, sc)
+			}
+		}
+		chStartID := selCh.StartSceneID
+		if chStartID == "" && len(chScenes) > 0 {
+			chStartID = chScenes[0].ID
+		}
+		chStartLabel := ""
+		chStartOptions := make([]map[string]any, 0, len(chScenes))
+		for _, sc := range chScenes {
+			isChStart := strings.EqualFold(sc.ID, chStartID)
+			optLabel := sc.DisplayName()
+			if isChStart {
+				chStartLabel = optLabel
+			}
+			chStartOptions = append(chStartOptions, map[string]any{
+				"value":     sc.ID,
+				"label":     optLabel,
+				"is_active": isChStart,
+			})
+		}
+		if chStartLabel == "" && len(chStartOptions) > 0 {
+			chStartLabel, _ = chStartOptions[0]["label"].(string)
+		}
+		vars["selected_chapter"] = map[string]any{
+			"name":                chName,
+			"start_scene_id":      chStartID,
+			"start_scene_label":   chStartLabel,
+			"start_scene_options": chStartOptions,
+		}
+	}
+	vars["has_selected_chapter"] = hasSelectedChapter
+	vars["is_node_inspector_hidden"] = s.BookSettingsOpen || hasSelectedChapter
 }
 
 func (s *Server) populateEditorSelectedNodeOnly(vars map[string]any) {
@@ -472,9 +500,11 @@ func (s *Server) populateEditorSelectedNodeOnly(vars map[string]any) {
 	selectedNodeMap := s.buildEditorNodeMap(selected, true)
 	vars["selected_node"] = selectedNodeMap
 	vars["has_selected_node"] = selectedNodeMap != nil
+	s.populateEditorBookAndChapterSettings(vars)
 }
 
 func (s *Server) populateEditorContext(vars map[string]any) {
+	s.populateEditorBookAndChapterSettings(vars)
 	selected := s.findScene(s.SelectedSceneID)
 	if selected == nil {
 		selected = s.ActiveBook.Scenes[0]
@@ -630,10 +660,6 @@ func (s *Server) populateEditorContext(vars map[string]any) {
 	if edZoom < 0.2 || edZoom > 3.0 {
 		edZoom = 1.0
 	}
-	vars["editor_pan_x"] = s.ActiveBook.EditorPanX
-	vars["editor_pan_y"] = s.ActiveBook.EditorPanY
-	vars["editor_zoom"] = fmt.Sprintf("%.2f", edZoom)
-	vars["has_editor_view"] = s.ActiveBook.HasEditorView
 	vars["studio_graph_payload"] = buildStudioGraphPayload(s.ActiveBook, edZoom, chapterGroups, allNodes)
 
 	s.populateEditorHistoryContext(vars)
@@ -700,7 +726,7 @@ func buildStudioGraphPayload(b *book.Book, edZoom float64, chapterGroups, allNod
 		chapter, _ := nd["chapter"].(string)
 		x, _ := nd["x"].(int)
 		y, _ := nd["y"].(int)
-		selClass, _ := nd["selected_class"].(string)
+		isSelected, _ := nd["is_selected"].(bool)
 		isStart, _ := nd["is_start_scene"].(bool)
 		isEntry, _ := nd["is_chapter_entry"].(bool)
 		isUnreachable, _ := nd["is_unreachable"].(bool)
@@ -713,7 +739,7 @@ func buildStudioGraphPayload(b *book.Book, edZoom float64, chapterGroups, allNod
 			sanitizeGraphPayloadField(name),
 			sanitizeGraphPayloadField(chapter),
 			x, y,
-			boolToPayloadBit(selClass != ""),
+			boolToPayloadBit(isSelected),
 			boolToPayloadBit(isStart),
 			boolToPayloadBit(isEntry),
 			boolToPayloadBit(isUnreachable),
@@ -795,13 +821,10 @@ func (s *Server) populateEditorHistoryContext(vars map[string]any) {
 					rev := h.Revisions[i]
 					isCurrent := i == curIdx
 					isUndone := i > curIdx
-					actClass := ""
 					statusLabel := ""
 					if isCurrent {
-						actClass = "history-item-current"
 						statusLabel = "AKTYWNY"
 					} else if isUndone {
-						actClass = "history-item-undone"
 						statusLabel = "COFNIĘTO"
 					} else if rev.Named {
 						statusLabel = "WERSJA BAZOWA"
@@ -810,11 +833,8 @@ func (s *Server) populateEditorHistoryContext(vars map[string]any) {
 						"id":           rev.ID,
 						"label":        rev.Label,
 						"time_label":   formatHistoryTimestamp(rev.TimeUnix),
-						"kind":         rev.Kind,
 						"is_current":   isCurrent,
 						"is_undone":    isUndone,
-						"is_floor":     rev.Named,
-						"active_class": actClass,
 						"status_label": statusLabel,
 					})
 				}
@@ -825,74 +845,31 @@ func (s *Server) populateEditorHistoryContext(vars map[string]any) {
 				if !rev.Named {
 					continue
 				}
-				isCurrent := i == curIdx
-				isLatestNamed := i == lastNamedIdx
-				actClass := ""
-				if isCurrent {
-					actClass = "history-item-current"
-				}
 				namedVersions = append(namedVersions, map[string]any{
-					"id":              rev.ID,
-					"label":           rev.Label,
-					"time_label":      formatHistoryTimestamp(rev.TimeUnix),
-					"is_current":      isCurrent,
-					"is_latest_named": isLatestNamed,
-					"active_class":    actClass,
+					"id":         rev.ID,
+					"label":      rev.Label,
+					"time_label": formatHistoryTimestamp(rev.TimeUnix),
+					"is_current": i == curIdx,
 				})
 			}
 		}
 		if len(namedVersions) == 0 {
 			namedVersions = append(namedVersions, map[string]any{
-				"id":              "r1",
-				"label":           "Stan początkowy",
-				"time_label":      formatHistoryTimestamp(time.Now().Unix()),
-				"is_current":      true,
-				"is_latest_named": true,
-				"active_class":    "history-item-current",
+				"id":         "r1",
+				"label":      "Stan początkowy",
+				"time_label": formatHistoryTimestamp(time.Now().Unix()),
+				"is_current": true,
 			})
 		}
 	}
 
-	undoDisabledClass := "is-disabled"
-	undoDisabledAttr := "true"
-	if canUndo {
-		undoDisabledClass = ""
-		undoDisabledAttr = "false"
-	}
-	redoDisabledClass := "is-disabled"
-	redoDisabledAttr := "true"
-	if canRedo {
-		redoDisabledClass = ""
-		redoDisabledAttr = "false"
-	}
-	hasUnnamed := unnamedCount > 0
-	badgeHiddenClass := "hidden"
-	if hasUnnamed {
-		badgeHiddenClass = ""
-	}
-	panelActiveClass := ""
-	panelHiddenClass := "hidden"
-	if s.EditorHistoryPanelOpen {
-		panelActiveClass = "active"
-		panelHiddenClass = ""
-	}
-
 	vars["can_undo"] = canUndo
 	vars["can_redo"] = canRedo
-	vars["undo_disabled"] = undoDisabledAttr
-	vars["redo_disabled"] = redoDisabledAttr
-	vars["can_undo_disabled"] = undoDisabledAttr
-	vars["can_redo_disabled"] = redoDisabledAttr
-	vars["undo_disabled_class"] = undoDisabledClass
-	vars["redo_disabled_class"] = redoDisabledClass
 	vars["undo_title"] = undoTitle
 	vars["redo_title"] = redoTitle
-	vars["has_unnamed_edits"] = hasUnnamed
+	vars["has_unnamed_edits"] = unnamedCount > 0
 	vars["unnamed_edits_count"] = unnamedCount
-	vars["history_badge_hidden_class"] = badgeHiddenClass
 	vars["show_editor_history_panel"] = s.EditorHistoryPanelOpen
-	vars["history_panel_active_class"] = panelActiveClass
-	vars["history_panel_hidden_class"] = panelHiddenClass
 	vars["history_unnamed_items"] = unnamedItems
 	vars["has_history_unnamed_items"] = len(unnamedItems) > 0
 	vars["history_named_versions"] = namedVersions

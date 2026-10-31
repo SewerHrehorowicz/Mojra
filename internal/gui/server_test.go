@@ -79,7 +79,7 @@ func TestServerActionLifecycleAndSecurity(t *testing.T) {
 	if strings.Contains(string(addChHTML), "<select") {
 		t.Fatalf("expected no native system <select> dropdowns in editor HTML")
 	}
-	if !strings.Contains(string(addChHTML), `id="studio-canvas"`) || !strings.Contains(string(addChHTML), `id="studio-graph-data"`) || !strings.Contains(string(addChHTML), "btn-add-canvas-node") {
+	if !strings.Contains(string(addChHTML), `id="studio-canvas"`) || !strings.Contains(string(addChHTML), `id="studio-graph-data"`) || !strings.Contains(string(addChHTML), `data-canvas-add-node="true"`) {
 		t.Fatalf("expected studio-canvas, studio-graph-data, and add node button in editor HTML")
 	}
 	if strings.Contains(string(addChHTML), "PRZESUŃ") || strings.Contains(string(addChHTML), "node-grip-label") {
@@ -175,15 +175,16 @@ func TestServerActionLifecycleAndSecurity(t *testing.T) {
 	if !strings.Contains(string(openModalHTML), "NavigateSceneTextModal") || !strings.Contains(string(openModalHTML), "scene-text-back-btn") {
 		t.Fatalf("expected interactive story navigation choices and styled back button in modal-scene-text")
 	}
-	if !strings.Contains(string(openModalHTML), `id="modal-scene-title"`) || !strings.Contains(string(openModalHTML), `name="choice_label_0"`) || !strings.Contains(string(openModalHTML), "scroll-more-cue") {
+	if !strings.Contains(string(openModalHTML), `class="scene-title scene-title-present node-inline-title"`) || !strings.Contains(string(openModalHTML), `name="choice_label_0"`) || !strings.Contains(string(openModalHTML), "scroll-more-cue") {
 		t.Fatalf("expected editable title input, editable choice inputs, and scroll-more-cue in modal-scene-text, got:\n%s", string(openModalHTML))
 	}
-	if !strings.Contains(string(openModalHTML), `id="btn-toggle-scene-settings"`) ||
+	if !strings.Contains(string(openModalHTML), `data-scene-settings-toggle="true"`) ||
 		!strings.Contains(string(openModalHTML), `id="modal-scene-settings-block"`) ||
-		!strings.Contains(string(openModalHTML), `id="modal-scene-explicit-id"`) ||
-		!strings.Contains(string(openModalHTML), `id="modal-btn-set-start-scene"`) ||
+		!strings.Contains(string(openModalHTML), `name="explicit_id"`) ||
+		!strings.Contains(string(openModalHTML), `class="node-start-indicator"`) ||
+		strings.Contains(string(openModalHTML), `id="modal-btn-set-start-scene"`) ||
 		!strings.Contains(string(openModalHTML), `name="explicit_image"`) {
-		t.Fatalf("expected settings toggle button and settings block (id, start star, image) in modal-scene-text, got:\n%s", string(openModalHTML))
+		t.Fatalf("expected settings toggle button, start indicator next to title, and settings block (id, image) in modal-scene-text, got:\n%s", string(openModalHTML))
 	}
 	if srv.ActiveBook.Narrated && !strings.Contains(string(openModalHTML), `name="explicit_voice"`) {
 		t.Fatalf("expected explicit_voice selector in modal-scene-text when book is narrated")
@@ -227,7 +228,7 @@ func TestServerActionLifecycleAndSecurity(t *testing.T) {
 	if !strings.Contains(string(saveModalHTML), `value="Początek Przygody"`) || !strings.Contains(string(saveModalHTML), `value="Wejdź do zamku"`) {
 		t.Fatalf("expected SaveSceneTextModal to persist updated title and choice label in modal HTML, got:\n%s", string(saveModalHTML))
 	}
-	if !strings.Contains(string(saveModalHTML), `id="modal-add-choice-btn"`) || !strings.Contains(string(saveModalHTML), `name="choice_target_0"`) {
+	if !strings.Contains(string(saveModalHTML), `class="node-icon-btn node-media-add-btn modal-add-choice-btn"`) || !strings.Contains(string(saveModalHTML), `name="choice_target_0"`) {
 		t.Fatalf("expected modal-add-choice-btn and choice_target_0 selector in modal-scene-text, got:\n%s", string(saveModalHTML))
 	}
 
@@ -304,8 +305,8 @@ func TestServerActionLifecycleAndSecurity(t *testing.T) {
 	}
 	closeModalHTML, _ := io.ReadAll(closeModalResp.Body)
 	_ = closeModalResp.Body.Close()
-	if !strings.Contains(string(closeModalHTML), "Pierwsze zdanie nowej treści.") || strings.Contains(string(closeModalHTML), "Drugie zdanie") {
-		t.Fatalf("expected only first sentence preview on node card after closing modal, got:\n%s", string(closeModalHTML))
+	if !strings.Contains(string(closeModalHTML), `class="btn btn-sm node-edit-text-btn"`) || strings.Contains(string(closeModalHTML), "Drugie zdanie") {
+		t.Fatalf("expected .node-edit-text-btn in context panel after closing modal, got:\n%s", string(closeModalHTML))
 	}
 
 	// 2d. Insert a new scene before an existing scene via InsertSceneBefore
@@ -393,8 +394,8 @@ func TestServerActionLifecycleAndSecurity(t *testing.T) {
 	}
 	helpHTML, _ := io.ReadAll(helpResp.Body)
 	_ = helpResp.Body.Close()
-	if !strings.Contains(string(helpHTML), "modal-editor-help") {
-		t.Fatalf("expected modal-editor-help in rendered HTML")
+	if !strings.Contains(string(helpHTML), `data-backdrop-action="CloseEditorHelpModal"`) {
+		t.Fatalf("expected editor help modal in rendered HTML")
 	}
 
 	closeHelpForm := url.Values{}
@@ -680,7 +681,7 @@ end: true
 	r6, _ := http.PostForm(ts.URL+"/api/action", promptReset2)
 	r6Bytes, _ := io.ReadAll(r6.Body)
 	_ = r6.Body.Close()
-	if !strings.Contains(string(r6Bytes), `class="btn btn-primary" id="btn-confirm-accept"`) || strings.Contains(string(r6Bytes), `btn-danger`) {
+	if !strings.Contains(string(r6Bytes), `class="btn btn-primary" type="button" action="ConfirmModalAccept"`) || strings.Contains(string(r6Bytes), `btn-danger`) {
 		t.Fatalf("expected PromptResetProgress confirmation modal to use non-danger btn-primary, got:\n%s", string(r6Bytes))
 	}
 
@@ -774,8 +775,8 @@ func TestDevicePreviewStrippedInProductionAndEnabledInDev(t *testing.T) {
 	}
 	devHTML, _ := io.ReadAll(devResp.Body)
 	_ = devResp.Body.Close()
-	if !strings.Contains(string(devHTML), "device-preview-bar") || !strings.Contains(string(devHTML), "SetDeviceMode") || !strings.Contains(string(devHTML), `id="btn-open-qr"`) {
-		t.Fatalf("expected device-preview-bar and #btn-open-qr in dev mode GET /")
+	if !strings.Contains(string(devHTML), "device-preview-bar") || !strings.Contains(string(devHTML), "SetDeviceMode") || !strings.Contains(string(devHTML), `action="OpenQRModal"`) {
+		t.Fatalf("expected device-preview-bar and OpenQRModal in dev mode GET /")
 	}
 
 	devQRModalResp, err := http.PostForm(devTS.URL+"/api/action", qrModalForm)
@@ -847,14 +848,14 @@ Dopiero kapitan Arvo wszystko mu wytłumaczył.
 
 	if !strings.Contains(libHTML, `<span class="brand-logo">StoryTeller</span>`) ||
 		!strings.Contains(libHTML, `<span class="brand-logo brand-logo-short">ST</span>`) ||
-		!strings.Contains(libHTML, `id="tab-library"`) ||
+		!strings.Contains(libHTML, `data-view="library"`) ||
 		!strings.Contains(libHTML, `id="tab-player"`) ||
-		!strings.Contains(libHTML, `id="tab-editor"`) ||
+		!strings.Contains(libHTML, `data-view="editor"`) ||
 		!strings.Contains(libHTML, `class="tab-icon"`) ||
 		!strings.Contains(libHTML, `id="btn-topbar-menu"`) ||
 		!strings.Contains(libHTML, `id="icon-theme-sun"`) ||
 		!strings.Contains(libHTML, `id="icon-theme-moon"`) ||
-		strings.Contains(libHTML, `id="btn-open-qr"`) {
+		strings.Contains(libHTML, `action="OpenQRModal"`) {
 		t.Fatalf("expected responsive topbar with ST short logo, tab icons, hamburger menu, sun/moon theme icons, and no gear icon in prod, got:\n%s", libHTML)
 	}
 
@@ -865,8 +866,8 @@ Dopiero kapitan Arvo wszystko mu wytłumaczył.
 	}
 	libSection := libHTML[secStart:secEnd]
 
-	if !strings.Contains(libSection, `id="btn-open-add-book"`) {
-		t.Fatalf("expected #btn-open-add-book (+ Dodaj książkę) in #view-library, got:\n%s", libSection)
+	if !strings.Contains(libSection, `action="OpenAddBookModal"`) {
+		t.Fatalf("expected OpenAddBookModal (+ Dodaj książkę) in #view-library, got:\n%s", libSection)
 	}
 	cardStart := strings.Index(libSection, `<article class="book-card">`)
 	if cardStart < 0 || strings.Count(libSection[cardStart:], "<button") != 1 || !strings.Contains(libSection[cardStart:], `class="book-cover-wrap"`) {
@@ -1065,8 +1066,8 @@ Dopiero kapitan Arvo wszystko mu wytłumaczył.
 	if rHelp.Header.Get("X-Target") != "#modals-root" {
 		t.Fatalf("expected X-Target=#modals-root for OpenEditorHelpModal, got %q", rHelp.Header.Get("X-Target"))
 	}
-	if !strings.Contains(helpChunk, `id="modal-editor-help"`) {
-		t.Fatalf("expected #modal-editor-help in modal chunk, got:\n%s", helpChunk)
+	if !strings.Contains(helpChunk, `data-backdrop-action="CloseEditorHelpModal"`) {
+		t.Fatalf("expected editor help modal in modal chunk, got:\n%s", helpChunk)
 	}
 	if strings.Contains(helpChunk, `id="topbar"`) || strings.Contains(helpChunk, `id="workspace"`) {
 		t.Fatalf("modal chunk must not include #topbar or #workspace, got:\n%s", helpChunk)
@@ -1480,9 +1481,9 @@ func TestTopbarAlwaysVisibleIncludingSceneTextEditor(t *testing.T) {
 	_ = rOpenFull.Body.Close()
 	openFullHTML := string(openFullBytes)
 	if !strings.Contains(openFullHTML, `<header class="topbar" id="topbar">`) ||
-		!strings.Contains(openFullHTML, `id="tab-library"`) ||
+		!strings.Contains(openFullHTML, `data-view="library"`) ||
 		!strings.Contains(openFullHTML, `id="tab-player"`) ||
-		!strings.Contains(openFullHTML, `id="tab-editor"`) ||
+		!strings.Contains(openFullHTML, `data-view="editor"`) ||
 		!strings.Contains(openFullHTML, `id="modal-scene-text"`) {
 		t.Fatalf("expected #topbar with all navigation tabs to remain present when #modal-scene-text is open, got:\n%s", openFullHTML)
 	}
@@ -1534,8 +1535,8 @@ func TestBookImagelessSettingAndTopbarLock(t *testing.T) {
 	if strings.Contains(normHTML, `id="btn-toggle-imageless" type="button" action="ToggleImageless" disabled="disabled"`) {
 		t.Fatalf("expected #btn-toggle-imageless to be active (not disabled) when non-imageless book is loaded")
 	}
-	if !strings.Contains(normHTML, `id="btn-toggle-book-imageless"`) {
-		t.Fatalf("expected #btn-toggle-book-imageless in Node Studio toolbar")
+	if !strings.Contains(normHTML, `action="ToggleBookImageless"`) {
+		t.Fatalf("expected ToggleBookImageless in Node Studio toolbar")
 	}
 
 	// 2. Toggle book imageless mode ON in Node Studio via ToggleBookImageless
@@ -1556,7 +1557,7 @@ func TestBookImagelessSettingAndTopbarLock(t *testing.T) {
 	if rTogOn.Header.Get("X-Imageless") != "true" || rTogOn.Header.Get("X-Imageless-Locked") != "true" {
 		t.Fatalf("expected X-Imageless=true and X-Imageless-Locked=true when imageless book is loaded, got %q / %q", rTogOn.Header.Get("X-Imageless"), rTogOn.Header.Get("X-Imageless-Locked"))
 	}
-	if !strings.Contains(togOnHTML, `class="top-action-btn active is-disabled" id="btn-toggle-imageless" type="button" action="ToggleImageless" disabled="disabled" data-imageless-locked="true"`) {
+	if !strings.Contains(togOnHTML, `class="top-action-btn active is-disabled" id="btn-toggle-imageless" type="button" action="ToggleImageless" disabled="disabled"`) {
 		t.Fatalf("expected #btn-toggle-imageless to be disabled/inactive when imageless book is open, got:\n%s", togOnHTML)
 	}
 	if !strings.Contains(togOnHTML, `class="action-icon hidden" id="icon-imageless-off"`) ||
@@ -1633,8 +1634,8 @@ func TestNodeEditorEmptyLibraryRenameFitAndRootScene(t *testing.T) {
 	swBytes, _ := io.ReadAll(rSw.Body)
 	_ = rSw.Body.Close()
 	swHTML := string(swBytes)
-	if !strings.Contains(swHTML, `id="view-editor"`) || !strings.Contains(swHTML, `id="editor-empty-state"`) || !strings.Contains(swHTML, `id="btn-new-book"`) {
-		t.Fatalf("expected #view-editor with #editor-empty-state and #btn-new-book when library is empty, got:\n%s", swHTML)
+	if !strings.Contains(swHTML, `id="view-editor"`) || !strings.Contains(swHTML, `id="editor-empty-state"`) || !strings.Contains(swHTML, `action="OpenNewBookModal"`) {
+		t.Fatalf("expected #view-editor with #editor-empty-state and OpenNewBookModal when library is empty, got:\n%s", swHTML)
 	}
 
 	// 2. Open new book modal and create a new book from Node Editor
@@ -1647,8 +1648,8 @@ func TestNodeEditorEmptyLibraryRenameFitAndRootScene(t *testing.T) {
 	}
 	modalBytes, _ := io.ReadAll(rModal.Body)
 	_ = rModal.Body.Close()
-	if !strings.Contains(string(modalBytes), `id="modal-new-book"`) || !strings.Contains(string(modalBytes), `id="btn-submit-new-book"`) {
-		t.Fatalf("expected #modal-new-book and #btn-submit-new-book, got:\n%s", string(modalBytes))
+	if !strings.Contains(string(modalBytes), `data-backdrop-action="CloseNewBookModal"`) || !strings.Contains(string(modalBytes), `action="CreateNewBook"`) {
+		t.Fatalf("expected new book modal and CreateNewBook form, got:\n%s", string(modalBytes))
 	}
 
 	createForm := url.Values{
@@ -1667,11 +1668,15 @@ func TestNodeEditorEmptyLibraryRenameFitAndRootScene(t *testing.T) {
 	if !strings.Contains(createHTML, `id="editor-book-title-input"`) || !strings.Contains(createHTML, `value="Stara Kronika"`) {
 		t.Fatalf("expected editable #editor-book-title-input with 'Stara Kronika', got:\n%s", createHTML)
 	}
-	if !strings.Contains(createHTML, `id="btn-zoom-fit"`) || !strings.Contains(createHTML, `data-canvas-zoom="fit"`) {
-		t.Fatalf("expected #btn-zoom-fit in editor toolbar, got:\n%s", createHTML)
+	if !strings.Contains(createHTML, `data-canvas-zoom="fit"`) {
+		t.Fatalf("expected data-canvas-zoom=fit in editor toolbar, got:\n%s", createHTML)
 	}
-	if !strings.Contains(createHTML, "start:1") || !strings.Contains(createHTML, "★ Scena początkowa (START)") {
-		t.Fatalf("expected start:1 on root scene in studio graph payload, got:\n%s", createHTML)
+	if !strings.Contains(createHTML, "start:1") ||
+		!strings.Contains(createHTML, `class="node-start-indicator"`) ||
+		!strings.Contains(createHTML, `id="btn-book-settings"`) ||
+		!strings.Contains(createHTML, `book-start-scene-select`) ||
+		strings.Contains(createHTML, `id="btn-set-start-scene"`) {
+		t.Fatalf("expected start:1, read-only start indicator, and book settings start selector without scene SetStartScene button, got:\n%s", createHTML)
 	}
 
 	// 3. Alter book title via RenameBook
@@ -1712,12 +1717,53 @@ func TestNodeEditorEmptyLibraryRenameFitAndRootScene(t *testing.T) {
 	if srv.ActiveBook.StartSceneID != "rozdroze" {
 		t.Fatalf("expected StartSceneID='rozdroze', got %q", srv.ActiveBook.StartSceneID)
 	}
-	if !strings.Contains(startHTML, `★ Scena początkowa (START)`) {
-		t.Fatalf("expected active start scene badge in inspector after SetStartScene, got:\n%s", startHTML)
+	if !strings.Contains(startHTML, `class="node-start-indicator"`) {
+		t.Fatalf("expected active start scene indicator in inspector after SetStartScene, got:\n%s", startHTML)
 	}
 	dataTxtAfterStart, err := os.ReadFile(filepath.Join(srv.ActiveBook.RootPath, "data.txt"))
 	if err != nil || !strings.Contains(string(dataTxtAfterStart), "start: rozdroze") {
 		t.Fatalf("expected data.txt to persist 'start: rozdroze', got:\n%s", string(dataTxtAfterStart))
+	}
+
+	// 5. Open Book Settings via ToggleBookSettings and Chapter Settings via SelectStudioChapter / SetChapterStartScene
+	rBookSettings, err := http.PostForm(ts.URL+"/api/action", url.Values{"action": {"ToggleBookSettings"}})
+	if err != nil {
+		t.Fatalf("ToggleBookSettings failed: %v", err)
+	}
+	bookSettingsBytes, _ := io.ReadAll(rBookSettings.Body)
+	_ = rBookSettings.Body.Close()
+	if !srv.BookSettingsOpen || !strings.Contains(string(bookSettingsBytes), `id="editor-book-form"`) {
+		t.Fatalf("expected BookSettingsOpen=true and #editor-book-form, got:\n%s", string(bookSettingsBytes))
+	}
+
+	rSelCh, err := http.PostForm(ts.URL+"/api/action", url.Values{
+		"action":  {"SelectStudioChapter"},
+		"chapter": {"Rozdział 1"},
+	})
+	if err != nil {
+		t.Fatalf("SelectStudioChapter failed: %v", err)
+	}
+	selChBytes, _ := io.ReadAll(rSelCh.Body)
+	_ = rSelCh.Body.Close()
+	if srv.BookSettingsOpen || srv.SelectedChapter != "Rozdział 1" || !strings.Contains(string(selChBytes), `id="editor-chapter-form"`) {
+		t.Fatalf("expected SelectedChapter='Rozdział 1' and #editor-chapter-form, got:\n%s", string(selChBytes))
+	}
+
+	rChStart, err := http.PostForm(ts.URL+"/api/action", url.Values{
+		"action":  {"SetChapterStartScene"},
+		"chapter": {"Rozdział 1"},
+		"scene":   {"poczatek"},
+	})
+	if err != nil {
+		t.Fatalf("SetChapterStartScene failed: %v", err)
+	}
+	_ = rChStart.Body.Close()
+	if len(srv.ActiveBook.Chapters) == 0 || srv.ActiveBook.Chapters[0].StartSceneID != "poczatek" {
+		t.Fatalf("expected Chapter[0].StartSceneID='poczatek', got %+v", srv.ActiveBook.Chapters)
+	}
+	chFileBytes, err := os.ReadFile(filepath.Join(srv.ActiveBook.RootPath, "rozdzial_1.txt"))
+	if err != nil || !strings.Contains(string(chFileBytes), "start: poczatek") {
+		t.Fatalf("expected rozdzial_1.txt to persist chapter 'start: poczatek', got:\n%s", string(chFileBytes))
 	}
 }
 
@@ -1760,8 +1806,8 @@ func TestNarrationlessAllOrNothingAndMinimalProgressBar(t *testing.T) {
 		}
 	}
 
-	// Verify Node Studio inspector does NOT render voice: field or #btn-add-scene-voice when narrated: false
-	if strings.Contains(edHTML, `name="explicit_voice"`) || strings.Contains(edHTML, `id="btn-add-scene-voice"`) {
+	// Verify Node Studio inspector does NOT render voice: field or audio import button when narrated: false
+	if strings.Contains(edHTML, `name="explicit_voice"`) || strings.Contains(edHTML, `data-kind="audio"`) {
 		t.Fatalf("expected Node Studio inspector to hide voice controls when book is narrationless, got:\n%s", edHTML)
 	}
 
@@ -1835,7 +1881,7 @@ func TestNarrationlessAllOrNothingAndMinimalProgressBar(t *testing.T) {
 		t.Fatalf("expected closing </footer> for #reader-progress-footer")
 	}
 	footerChunk := playHTML[footerStart : footerStart+footerEnd+len("</footer>")]
-	if !strings.Contains(footerChunk, `<progress class="reader-book-progress book-progress-bar" id="reader-book-progress" value="50" max="100"></progress>`) {
+	if !strings.Contains(footerChunk, `<progress class="reader-book-progress" value="50" max="100"></progress>`) {
 		t.Fatalf("expected minimalistic <progress> bar at 50 (1 of 2 scenes) in #reader-progress-footer, got:\n%s", footerChunk)
 	}
 	if strings.Contains(footerChunk, "%") {
@@ -1854,8 +1900,8 @@ func TestNarrationlessAllOrNothingAndMinimalProgressBar(t *testing.T) {
 	advBytes, _ := io.ReadAll(rAdv.Body)
 	_ = rAdv.Body.Close()
 	advHTML := string(advBytes)
-	if !strings.Contains(advHTML, `id="reader-book-progress" value="100" max="100"`) {
-		t.Fatalf("expected #reader-book-progress value=100 on scene 2 of 2, got:\n%s", advHTML)
+	if !strings.Contains(advHTML, `<progress class="reader-book-progress" value="100" max="100"></progress>`) {
+		t.Fatalf("expected .reader-book-progress value=100 on scene 2 of 2, got:\n%s", advHTML)
 	}
 
 	// 3. Toggle narration ON in Node Studio -> voice selector appears in editor and audio deck appears in player
@@ -1879,7 +1925,7 @@ func TestNarrationlessAllOrNothingAndMinimalProgressBar(t *testing.T) {
 	if !srv.ActiveBook.Narrated {
 		t.Fatalf("expected ActiveBook.Narrated=true after ToggleBookNarrated")
 	}
-	if !strings.Contains(togOnHTML, `name="explicit_voice"`) || !strings.Contains(togOnHTML, `id="btn-add-scene-voice"`) {
+	if !strings.Contains(togOnHTML, `name="explicit_voice"`) || !strings.Contains(togOnHTML, `data-kind="audio"`) {
 		t.Fatalf("expected voice controls to appear in Node Studio when book narration is enabled, got:\n%s", togOnHTML)
 	}
 }
@@ -1971,7 +2017,7 @@ func TestEditorUndoRedoAndVersionHistory(t *testing.T) {
 		t.Fatalf("unexpected history headers after CreateSceneAt: undo=%q redo=%q count=%q",
 			respAdd.Header.Get("X-Can-Undo"), respAdd.Header.Get("X-Can-Redo"), respAdd.Header.Get("X-History-Count"))
 	}
-	if !strings.Contains(string(addBytes), `id="btn-editor-undo"`) || !strings.Contains(string(addBytes), `id="btn-editor-redo"`) || !strings.Contains(string(addBytes), `id="btn-editor-history"`) {
+	if !strings.Contains(string(addBytes), `id="btn-editor-undo"`) || !strings.Contains(string(addBytes), `id="btn-editor-redo"`) || !strings.Contains(string(addBytes), `action="ToggleEditorHistoryPanel"`) {
 		t.Fatalf("expected undo, redo, and history buttons in editor toolbar HTML")
 	}
 
@@ -2046,7 +2092,7 @@ func TestEditorUndoRedoAndVersionHistory(t *testing.T) {
 	}
 	panelBytes, _ := io.ReadAll(respPanel.Body)
 	_ = respPanel.Body.Close()
-	if !strings.Contains(string(panelBytes), `id="editor-history-panel"`) || !strings.Contains(string(panelBytes), "Stan początkowy") {
+	if !strings.Contains(string(panelBytes), `class="editor-history-panel"`) || !strings.Contains(string(panelBytes), "Stan początkowy") {
 		t.Fatalf("expected open history panel with baseline version in HTML")
 	}
 

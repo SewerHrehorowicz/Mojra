@@ -1,7 +1,7 @@
 # StoryTeller — Stan edytora węzłów (editor.txt)
-pan_x: -47
-pan_y: -25
-zoom: 0.48
+pan_x: -416
+pan_y: -943
+zoom: 0.74
 
 node: warsztat -> 864, 96
 node: samotnosc_nad_woda -> 744, 288
