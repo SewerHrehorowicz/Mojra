@@ -3,7 +3,55 @@ package gui
 import (
 	"fmt"
 	"strings"
+
+	"storyteller/internal/book"
 )
+
+func buildScreenplayFormatInsertPills(standard string, b *book.Book) ([]map[string]any, []map[string]any) {
+	normStd := book.NormalizeScriptStandard(standard)
+	var insertPills []map[string]any
+	if normStd == "pl" {
+		insertPills = []map[string]any{
+			{"kind": "dialogue", "label": "+ Dialog", "hint": "Wstaw blok postaci i kwestii dialogowej"},
+			{"kind": "parenthetical", "label": "+ Didaskalia (wtrącenie)", "hint": "Wstaw wskazówkę aktorską w nawiasie, np. (cicho)"},
+			{"kind": "action", "label": "+ Opis akcji", "hint": "Wstaw nowy akapit opisu akcji (didaskalia sceniczne)"},
+			{"kind": "dialogue_off", "label": "+ Dialog (OFF)", "hint": "Wstaw kwestię postaci spoza kadru (OFF)"},
+			{"kind": "dialogue_vo", "label": "+ Narracja (V.O.)", "hint": "Wstaw głos spoza obrazu / narratora (V.O.)"},
+			{"kind": "transition_cut", "label": "+ CIĘCIE DO:", "hint": "Wstaw przejście montażowe CIĘCIE DO:"},
+			{"kind": "transition_fade", "label": "+ ŚCIEMNIENIE.", "hint": "Wstaw przejście ŚCIEMNIENIE."},
+			{"kind": "subslug", "label": "+ Podscena (WN./PL.)", "hint": "Wstaw śródtytuł podsceny w tej samej scenie"},
+		}
+	} else {
+		insertPills = []map[string]any{
+			{"kind": "dialogue", "label": "+ Dialog", "hint": "Wstaw blok postaci i kwestii dialogowej"},
+			{"kind": "parenthetical", "label": "+ Didaskalia (...)", "hint": "Wstaw wskazówkę aktorską w nawiasie"},
+			{"kind": "action", "label": "+ Opis akcji", "hint": "Wstaw nowy akapit opisu akcji"},
+			{"kind": "dialogue_off", "label": "+ Dialog (O.S.)", "hint": "Wstaw kwestię postaci spoza kadru (O.S.)"},
+			{"kind": "dialogue_vo", "label": "+ Narracja (V.O.)", "hint": "Wstaw głos narratora (V.O.)"},
+			{"kind": "transition_cut", "label": "+ CUT TO:", "hint": "Wstaw przejście montażowe CUT TO:"},
+			{"kind": "transition_fade", "label": "+ FADE OUT.", "hint": "Wstaw przejście FADE OUT."},
+			{"kind": "subslug", "label": "+ Podscena (INT./EXT.)", "hint": "Wstaw śródtytuł podsceny"},
+		}
+	}
+
+	var charPills []map[string]any
+	if b != nil {
+		bd := book.AnalyzeScreenplay(b)
+		limit := len(bd.Characters)
+		if limit > 8 {
+			limit = 8
+		}
+		for i := 0; i < limit; i++ {
+			chName := bd.Characters[i].Name
+			charPills = append(charPills, map[string]any{
+				"name":  chName,
+				"label": "@ " + chName,
+				"hint":  "Wstaw kwestię dialogową postaci " + chName,
+			})
+		}
+	}
+	return insertPills, charPills
+}
 
 func (s *Server) populateModalsContext(vars map[string]any) {
 	if s.QRModalOpen && s.DevMode && !s.StandaloneMode {
@@ -23,6 +71,28 @@ func (s *Server) populateModalsContext(vars map[string]any) {
 	vars["show_add_book_modal"] = s.AddBookModalOpen
 	vars["show_editor_help_modal"] = s.EditorHelpModalOpen
 
+	draftMode := book.NormalizeBookMode(s.NewBookDraftMode)
+	draftStd := book.NormalizeScriptStandard(s.NewBookDraftStandard)
+	newModeLabel, newModeOpts := buildBookModeOptions(draftMode)
+	newStdLabel, newStdOpts := buildScriptStandardOptions(draftStd)
+	vars["new_book_mode"] = draftMode
+	vars["new_book_is_screenplay"] = draftMode == "screenplay"
+	vars["new_book_mode_label"] = newModeLabel
+	vars["new_book_mode_options"] = newModeOpts
+	vars["new_book_standard"] = draftStd
+	vars["new_book_standard_label"] = newStdLabel
+	vars["new_book_standard_options"] = newStdOpts
+	vars["new_book_title"] = s.NewBookDraftTitle
+	vars["new_book_author"] = s.NewBookDraftAuthor
+	vars["new_book_narrated"] = s.NewBookDraftNarrated
+	vars["new_book_imageless"] = s.NewBookDraftImageless
+	vars["new_book_default_dir"] = s.defaultNewBookDir()
+	if draftMode == "screenplay" {
+		vars["new_book_title_placeholder"] = "np. Ostatni Rejs"
+	} else {
+		vars["new_book_title_placeholder"] = "np. Tajemnica Starego Młyna"
+	}
+
 	if s.SceneTextModalID != "" {
 		if modalSc := s.findScene(s.SceneTextModalID); modalSc != nil {
 			vars["show_scene_text_modal"] = true
@@ -30,7 +100,25 @@ func (s *Server) populateModalsContext(vars map[string]any) {
 			vars["scene_text_modal_name"] = modalSc.DisplayName()
 			vars["scene_text_modal_raw_name"] = modalSc.Name
 			vars["scene_text_modal_explicit_id"] = modalSc.ExplicitID
+			vars["scene_text_modal_slugline"] = modalSc.Slugline
+			vars["scene_text_modal_synopsis"] = modalSc.Synopsis
 			vars["scene_text_modal_text"] = modalSc.Text
+
+			if s.ActiveBook != nil && s.ActiveBook.IsScreenplay() {
+				normStd := s.ActiveBook.NormalizedStandard()
+				metrics := book.ComputeSceneScriptMetrics(modalSc, modalSc.OrderIndex+1, normStd)
+				vars["scene_text_modal_length_label"] = metrics.FormattedLength
+				prefixPills, timePills := buildSluglineHelperPills(normStd)
+				vars["slugline_prefix_pills"] = prefixPills
+				vars["slugline_time_pills"] = timePills
+				insertPills, charPills := buildScreenplayFormatInsertPills(normStd, s.ActiveBook)
+				vars["screenplay_insert_pills"] = insertPills
+				vars["screenplay_character_pills"] = charPills
+				vars["has_screenplay_character_pills"] = len(charPills) > 0
+			} else {
+				vars["scene_text_modal_length_label"] = ""
+				vars["has_screenplay_character_pills"] = false
+			}
 
 			isStart := false
 			if s.ActiveBook != nil {
@@ -46,7 +134,7 @@ func (s *Server) populateModalsContext(vars map[string]any) {
 			vars["scene_text_modal_current_image"] = curImg
 			vars["scene_text_modal_current_image_label"] = curImgLabel
 			vars["scene_text_modal_image_options"] = imgOptions
-			vars["scene_text_modal_book_narrated"] = s.ActiveBook != nil && s.ActiveBook.Narrated
+			vars["scene_text_modal_book_narrated"] = s.ActiveBook != nil && !s.ActiveBook.IsScreenplay() && s.ActiveBook.Narrated
 			vars["scene_text_modal_current_voice"] = curVoice
 			vars["scene_text_modal_current_voice_label"] = curVoiceLabel
 			vars["scene_text_modal_voice_options"] = voiceOptions

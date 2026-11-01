@@ -22,8 +22,15 @@
 .canvas-toolbar-left
   display flex
   align-items center
-  gap 12px
+  gap 10px
+  flex 1
   min-width 0
+
+.canvas-toolbar-center
+  display flex
+  align-items center
+  justify-content center
+  flex-shrink 0
 
 .canvas-legend
   font-size 11px
@@ -73,7 +80,10 @@
 .canvas-toolbar-right
   display flex
   align-items center
-  gap 14px
+  justify-content flex-end
+  gap 12px
+  flex 1
+  min-width 0
   flex-wrap nowrap
   flex-shrink 0
 
@@ -102,6 +112,34 @@
   font-size 11px
   min-width 38px
   text-align center
+
+.studio-preview-banner
+  display flex
+  align-items center
+  justify-content space-between
+  gap 12px
+  padding 8px 18px
+  background --bg-elevated
+  border-bottom 1px solid --text-primary
+  font-family --font-sans
+  font-size 11px
+  flex-shrink 0
+
+.player-preview-banner
+  max-width 680px
+  width 100%
+  margin 0 auto 12px
+  border 1px solid --text-primary
+
+.studio-preview-banner-text
+  color --text-primary
+  font-weight 600
+
+.studio-preview-banner-actions
+  display flex
+  align-items center
+  gap 6px
+  flex-shrink 0
 
 .studio-warnings-banner
   padding 10px 24px

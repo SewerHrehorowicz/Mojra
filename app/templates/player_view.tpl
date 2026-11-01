@@ -7,12 +7,29 @@ section.view-panel#view-player
                     src?: {current_scene.bg_image_url}
 
         .story-scroll-feed#story-scroll-feed
+            {if is_history_preview}
+                .studio-preview-banner.player-preview-banner#player-preview-banner
+                    span.studio-preview-banner-text "Podgląd wersji historycznej: {history_preview_label}"
+                    .studio-preview-banner-actions
+                        button.btn.btn-sm
+                            type: button
+                            action: SwitchView
+                            data-view: editor
+                            "Wróć do edytora"
+                        button.btn.btn-primary.btn-sm
+                            type: button
+                            action: ExitHistoryPreview
+                            "Wróć do aktualnej wersji"
+
             .reader-global-meta#reader-global-meta
                 span.scene-chapter-pill#reader-global-meta-text {current_scene.header_meta}
 
             {if has_book_warnings}
                 .book-warnings-box
-                    .book-warnings-title "⚠ Ostrzeżenia książki ({book_warning_count}):"
+                    {if is_screenplay_mode}
+                        .book-warnings-title "⚠ Ostrzeżenia scenariusza ({book_warning_count}):"
+                    {else}
+                        .book-warnings-title "⚠ Ostrzeżenia książki ({book_warning_count}):"
                     ul.book-warnings-list
                         {for w in book_warnings}
                             li {w.text}
@@ -53,8 +70,28 @@ section.view-panel#view-player
                                             data-step: "{h.idx}"
                                             data-hint: "Wznów od tej sceny"
                                             svg.rewind-icon src: /icons/reset.svg
-                                .scene-prose
-                                    {raw h.html}
+                                .scene-prose .is-screenplay?: {is_screenplay_mode}
+                                    {if is_screenplay_mode}
+                                        {for blk in h.screenplay_blocks}
+                                            {if blk.is_slugline}
+                                                .sp-slugline
+                                                    {if blk.show_scene_num}
+                                                        span.sp-scene-num "{blk.scene_num}."
+                                                    span.sp-slugline-text {blk.text}
+                                                    {if blk.show_scene_num}
+                                                        span.sp-scene-num-right "{blk.scene_num}."
+                                            {elif blk.is_character}
+                                                .sp-character {blk.text}
+                                            {elif blk.is_parenthetical}
+                                                .sp-parenthetical {blk.text}
+                                            {elif blk.is_dialogue}
+                                                .sp-dialogue {blk.text}
+                                            {elif blk.is_transition}
+                                                .sp-transition {blk.text}
+                                            {else}
+                                                p.sp-action {blk.text}
+                                    {else}
+                                        {raw h.html}
 
             .active-scene-stage#active-scene-stage
                 data-prefetch-urls: "{prefetch_media_urls}"
@@ -75,14 +112,37 @@ section.view-panel#view-player
                                 alt: "{current_scene.rail_title}"
                                 src: {current_scene.image_url}
                     .scene-body-block
-                        .scene-prose
-                            {raw current_scene.html}
+                        .scene-prose .is-screenplay?: {is_screenplay_mode}
+                            {if is_screenplay_mode}
+                                {for blk in current_scene.screenplay_blocks}
+                                    {if blk.is_slugline}
+                                        .sp-slugline
+                                            {if blk.show_scene_num}
+                                                span.sp-scene-num "{blk.scene_num}."
+                                            span.sp-slugline-text {blk.text}
+                                            {if blk.show_scene_num}
+                                                span.sp-scene-num-right "{blk.scene_num}."
+                                    {elif blk.is_character}
+                                        .sp-character {blk.text}
+                                    {elif blk.is_parenthetical}
+                                        .sp-parenthetical {blk.text}
+                                    {elif blk.is_dialogue}
+                                        .sp-dialogue {blk.text}
+                                    {elif blk.is_transition}
+                                        .sp-transition {blk.text}
+                                    {else}
+                                        p.sp-action {blk.text}
+                            {else}
+                                {raw current_scene.html}
                         .scene-choices-list
                             {if current_scene.is_terminal}
                                 button.choice-btn
                                     type: button
                                     action: PromptResetProgress
-                                    span "Koniec opowieści — Zagraj od początku"
+                                    {if is_screenplay_mode}
+                                        span "Koniec scenariusza — Zacznij od początku"
+                                    {else}
+                                        span "Koniec opowieści — Zagraj od początku"
                                     span.choice-arrow "↺"
                             {else}
                                 {for ch in current_scene.choices}

@@ -155,20 +155,80 @@ func isRepoDir(dir string) bool {
 	return err == nil && !info.IsDir()
 }
 
-func resolveDistRuntimeDir(repoDir string) string {
-	distDir := filepath.Join(repoDir, "dist")
+func copyDirRecursivePreserve(srcDir, dstDir string) {
+	info, err := os.Stat(srcDir)
+	if err != nil || !info.IsDir() {
+		return
+	}
+	_ = filepath.WalkDir(srcDir, func(path string, d os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return nil
+		}
+		rel, err := filepath.Rel(srcDir, path)
+		if err != nil || rel == "." {
+			return nil
+		}
+		target := filepath.Join(dstDir, rel)
+		if d.IsDir() {
+			_ = os.MkdirAll(target, 0755)
+			return nil
+		}
+		srcInfo, err := d.Info()
+		if err != nil {
+			return nil
+		}
+		if dstInfo, err := os.Stat(target); err == nil && !dstInfo.IsDir() {
+			if !srcInfo.ModTime().After(dstInfo.ModTime()) {
+				return nil
+			}
+		}
+		_ = copyFileWithMode(path, target, srcInfo.Mode().Perm())
+		return nil
+	})
+}
+
+func preserveDistRuntimeState(distDir string) {
+	distBooks := filepath.Join(distDir, "books")
+	distSaves := filepath.Join(distDir, "saves")
+	_ = os.MkdirAll(distBooks, 0755)
+	_ = os.MkdirAll(distSaves, 0755)
 	for _, candidate := range []string{
 		filepath.Join(distDir, "StoryTeller.app", "Contents", "Resources"),
 		filepath.Join(distDir, "StoryTeller-windows"),
 		filepath.Join(distDir, "StoryTeller-linux"),
-		distDir,
 	} {
-		if info, err := os.Stat(filepath.Join(candidate, "books")); err == nil && info.IsDir() {
-			return candidate
+		copyDirRecursivePreserve(filepath.Join(candidate, "books"), distBooks)
+		copyDirRecursivePreserve(filepath.Join(candidate, "saves"), distSaves)
+	}
+	repoDir := filepath.Clean(filepath.Join(distDir, ".."))
+	if isRepoDir(repoDir) {
+		repoBooks := filepath.Join(repoDir, "books")
+		repoSaves := filepath.Join(repoDir, "saves")
+		copyDirRecursivePreserve(repoSaves, distSaves)
+		copyDirRecursivePreserve(distSaves, repoSaves)
+		if entries, err := os.ReadDir(distBooks); err == nil {
+			for _, e := range entries {
+				if !e.IsDir() || strings.HasPrefix(e.Name(), ".") {
+					continue
+				}
+				srcBookDir := filepath.Join(distBooks, e.Name())
+				if book.HasBookFilesInDir(srcBookDir) {
+					copyDirRecursivePreserve(srcBookDir, filepath.Join(repoBooks, e.Name()))
+				}
+			}
 		}
 	}
+}
+
+func resolveDistRuntimeDir(repoDir string) string {
+	distDir := filepath.Join(repoDir, "dist")
+	preserveDistRuntimeState(distDir)
 	distBooks := filepath.Join(distDir, "books")
-	_ = packageBooksForDist(filepath.Join(repoDir, "books"), distBooks)
+	if info, err := os.Stat(distBooks); err != nil || !info.IsDir() {
+		_ = packageBooksForDist(filepath.Join(repoDir, "books"), distBooks)
+	} else if entries, err := os.ReadDir(distBooks); err == nil && len(entries) == 0 {
+		_ = packageBooksForDist(filepath.Join(repoDir, "books"), distBooks)
+	}
 	return distDir
 }
 
@@ -201,6 +261,10 @@ func resolveRootDir() string {
 	if !isGoRunBinary() {
 		if exe, err := os.Executable(); err == nil {
 			exeDir := filepath.Dir(exe)
+			bundleRepoCandidate := filepath.Clean(filepath.Join(exeDir, "..", "..", "..", ".."))
+			if isRepoDir(bundleRepoCandidate) {
+				return resolveDistRuntimeDir(bundleRepoCandidate)
+			}
 			resDir := filepath.Clean(filepath.Join(exeDir, "..", "Resources"))
 			if info, err := os.Stat(filepath.Join(resDir, "books")); err == nil && info.IsDir() {
 				return resDir
@@ -712,6 +776,7 @@ func buildCmd(args []string) {
 
 	distDir := filepath.Join(rootDir, "dist")
 	_ = os.MkdirAll(distDir, 0755)
+	preserveDistRuntimeState(distDir)
 	_ = packageBooksForDist(filepath.Join(rootDir, "books"), filepath.Join(distDir, "books"))
 	for _, stale := range []string{
 		"StoryTeller.app",

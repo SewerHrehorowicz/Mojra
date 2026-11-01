@@ -84,13 +84,43 @@ func (s *Server) BuildTargetedRenderContext(targetTpl string, books []*book.Book
 	vars["is_view_player"] = view == "player"
 	vars["is_view_editor"] = view == "editor"
 
+	isScreenplay := false
 	if s.ActiveBook != nil {
 		vars["active_book_title"] = s.ActiveBook.Title
+		isScreenplay = s.ActiveBook.IsScreenplay()
+		vars["is_screenplay_mode"] = isScreenplay
+		vars["script_standard"] = s.ActiveBook.NormalizedStandard()
 	} else {
 		vars["active_book_title"] = "Biblioteka"
+		vars["is_screenplay_mode"] = false
+		vars["script_standard"] = "pl"
+	}
+	if isScreenplay {
+		vars["editor_title_placeholder"] = "Tytuł scenariusza..."
+		vars["editor_author_placeholder"] = "Autor scenariusza..."
+		vars["editor_description_placeholder"] = "Krótki opis scenariusza / logline..."
+		vars["editor_chapter_title_placeholder"] = "Tytuł aktu..."
+		vars["editor_pack_hint"] = "Eksportuj pakiet scenariusza (.stbook)"
+		vars["editor_settings_hint"] = "Ustawienia scenariusza"
+	} else {
+		vars["editor_title_placeholder"] = "Tytuł książki..."
+		vars["editor_author_placeholder"] = "Autor książki..."
+		vars["editor_description_placeholder"] = "Krótki opis książki..."
+		vars["editor_chapter_title_placeholder"] = "Tytuł rozdziału..."
+		vars["editor_pack_hint"] = "Eksportuj książkę (.stbook)"
+		vars["editor_settings_hint"] = "Ustawienia książki"
 	}
 
 	vars["show_reset_progress"] = view == "player" && s.ActiveBook != nil
+	isHistPreview := s.isHistoryPreview()
+	vars["is_history_preview"] = isHistPreview
+	if isHistPreview {
+		vars["history_preview_attr"] = "true"
+	} else {
+		vars["history_preview_attr"] = "false"
+	}
+	vars["history_preview_id"] = s.PreviewRevisionID
+	vars["history_preview_label"] = s.PreviewRevisionLabel
 
 	needsLibrary := targetTpl == "library_view" || ((targetTpl == "index" || targetTpl == "app_shell") && view == "library")
 	needsPlayer := targetTpl == "player_view" || ((targetTpl == "index" || targetTpl == "app_shell") && view == "player")
@@ -110,17 +140,22 @@ func (s *Server) BuildTargetedRenderContext(targetTpl string, books []*book.Book
 		vars["has_book_warnings"] = len(s.ActiveBook.Warnings) > 0
 		vars["book_warning_count"] = len(s.ActiveBook.Warnings)
 		vars["book_warnings"] = warnItems
-		vars["book_narrated"] = s.ActiveBook.Narrated
-		if s.ActiveBook.Narrated {
+		isNarrated := !s.ActiveBook.IsScreenplay() && s.ActiveBook.Narrated
+		vars["book_narrated"] = isNarrated
+		if isNarrated {
 			vars["book_narrated_label"] = "Narracja książki: WYMAGANA (narrated: true)"
+			vars["book_narrated_short_label"] = "Wymagana"
 		} else {
 			vars["book_narrated_label"] = "Narracja książki: WYŁĄCZONA (narrated: false)"
+			vars["book_narrated_short_label"] = "Wyłączona"
 		}
 		vars["book_imageless"] = s.ActiveBook.Imageless
 		if s.ActiveBook.Imageless {
 			vars["book_imageless_label"] = "Tryb obrazów książki: BEZ OBRAZÓW (imageless: true)"
+			vars["book_imageless_short_label"] = "Bez obrazów"
 		} else {
 			vars["book_imageless_label"] = "Tryb obrazów książki: Z OBRAZAMI (imageless: false)"
+			vars["book_imageless_short_label"] = "Z obrazami"
 		}
 
 		if needsPlayer {
@@ -136,6 +171,10 @@ func (s *Server) BuildTargetedRenderContext(targetTpl string, books []*book.Book
 		vars["book_warning_count"] = 0
 		vars["book_narrated"] = false
 		vars["book_narrated_label"] = "Narracja książki: WYŁĄCZONA (narrated: false)"
+		vars["book_narrated_short_label"] = "Wyłączona"
+		vars["book_imageless"] = false
+		vars["book_imageless_label"] = "Tryb obrazów książki: Z OBRAZAMI (imageless: false)"
+		vars["book_imageless_short_label"] = "Z obrazami"
 		vars["has_selected_node"] = false
 		vars["book_settings_open"] = false
 		vars["has_selected_chapter"] = false
@@ -154,7 +193,7 @@ func (s *Server) populateLibraryContext(vars map[string]any, books []*book.Book)
 	bookItems := make([]map[string]any, 0, len(books))
 	for _, b := range books {
 		save := book.LoadSaveState(s.SavesDir, b.ID, b.StartSceneID)
-		if s.ActiveBook != nil && s.ActiveBook.ID == b.ID && s.Save != nil && s.Save.UpdatedAtUnix >= save.UpdatedAtUnix {
+		if !s.isHistoryPreview() && s.ActiveBook != nil && s.ActiveBook.ID == b.ID && s.Save != nil && s.Save.UpdatedAtUnix >= save.UpdatedAtUnix {
 			save = s.Save
 		}
 		hasProgress := len(save.History) > 0 || (save.CurrentSceneID != "" && save.CurrentSceneID != b.StartSceneID) || save.AudioTime > 0.5
@@ -186,6 +225,7 @@ func (s *Server) populateLibraryContext(vars map[string]any, books []*book.Book)
 			"title":         b.Title,
 			"author":        b.Author,
 			"description":   b.Description,
+			"is_screenplay": b.IsScreenplay(),
 			"cover_url":     b.CoverURL,
 			"progress_pct":  progressPct,
 			"has_warnings":  len(b.Warnings) > 0,

@@ -170,7 +170,8 @@ func matchBookMedia(b *Book, audioFiles []string, imageFiles []string) {
 	}
 }
 
-const maxMediaEntryBytes = 100 * 1024 * 1024
+const MaxSingleMediaBytes = 100 * 1024 * 1024
+const maxMediaEntryBytes = MaxSingleMediaBytes
 
 func mediaContentType(relPath string) string {
 	switch strings.ToLower(filepath.Ext(relPath)) {

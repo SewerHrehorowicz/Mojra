@@ -959,10 +959,12 @@ function compileStaticSceneQuads(theme) {
 
     const footerTop = nd.y + nd.h - NODE_FOOTER_HEIGHT;
     pushSolidQuad(nd.x + 1, footerTop + 1, nd.w - 2, NODE_FOOTER_HEIGHT - 2, cardBg);
-    const btnX = nd.x + 8;
-    const btnY = footerTop + 8;
-    pushBorderedBoxQuads(btnX, btnY, addChoiceBtnW, addChoiceBtnH, 1, theme.borderStrong, cardBg);
-    pushShapedTextQuads(addChoiceShaped, btnX + (addChoiceBtnW - addChoiceShaped.totalW) * 0.5, btnY + addChoiceBtnH * 0.5, textPri);
+    if (!(typeof isEditorHistoryPreview === "function" && isEditorHistoryPreview())) {
+      const btnX = nd.x + 8;
+      const btnY = footerTop + 8;
+      pushBorderedBoxQuads(btnX, btnY, addChoiceBtnW, addChoiceBtnH, 1, theme.borderStrong, cardBg);
+      pushShapedTextQuads(addChoiceShaped, btnX + (addChoiceBtnW - addChoiceShaped.totalW) * 0.5, btnY + addChoiceBtnH * 0.5, textPri);
+    }
   }
 
   // 4. Default Circular Ports

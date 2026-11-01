@@ -30,6 +30,16 @@ func (s *Server) hasSceneTextModalChanges(curSc *book.Scene, r *http.Request) bo
 			return true
 		}
 	}
+	if _, hasSlug := r.Form["slugline"]; hasSlug {
+		if strings.ToUpper(strings.TrimSpace(book.SanitizePlainText(r.FormValue("slugline")))) != curSc.Slugline {
+			return true
+		}
+	}
+	if _, hasSyn := r.Form["synopsis"]; hasSyn {
+		if strings.TrimSpace(book.SanitizePlainText(r.FormValue("synopsis"))) != curSc.Synopsis {
+			return true
+		}
+	}
 	if _, hasImg := r.Form["explicit_image"]; hasImg {
 		curImg := curSc.ExplicitImage
 		if curImg == "" && curSc.ImageFile != "" {
@@ -97,6 +107,12 @@ func (s *Server) applySceneFormFields(target *book.Scene, r *http.Request) {
 		if newName != "" || target.ExplicitID != "" {
 			target.Name = newName
 		}
+	}
+	if _, hasSlug := r.Form["slugline"]; hasSlug {
+		target.Slugline = strings.ToUpper(strings.TrimSpace(book.SanitizePlainText(r.FormValue("slugline"))))
+	}
+	if _, hasSyn := r.Form["synopsis"]; hasSyn {
+		target.Synopsis = strings.TrimSpace(book.SanitizePlainText(r.FormValue("synopsis")))
 	}
 	if _, hasImg := r.Form["explicit_image"]; hasImg {
 		target.ExplicitImage = book.SanitizeRelativeMediaPath(r.FormValue("explicit_image"))
@@ -315,6 +331,9 @@ func (s *Server) materializeChoicesForEdit(sc *book.Scene) []book.Choice {
 }
 
 func (s *Server) addChoiceToScene(r *http.Request) string {
+	if s.isHistoryPreview() {
+		return historyPreviewLockedToast
+	}
 	if _, hasSettingsOpen := r.Form["scene_settings_open"]; hasSettingsOpen {
 		s.SceneTextModalSettingsOpen = r.FormValue("scene_settings_open") == "true"
 	}
@@ -375,6 +394,9 @@ func (s *Server) addChoiceToScene(r *http.Request) string {
 }
 
 func (s *Server) promptRemoveChoiceFromScene(r *http.Request) string {
+	if s.isHistoryPreview() {
+		return historyPreviewLockedToast
+	}
 	if _, hasSettingsOpen := r.Form["scene_settings_open"]; hasSettingsOpen {
 		s.SceneTextModalSettingsOpen = r.FormValue("scene_settings_open") == "true"
 	}
@@ -437,6 +459,9 @@ func (s *Server) promptRemoveChoiceFromScene(r *http.Request) string {
 }
 
 func (s *Server) removeChoiceFromScene(r *http.Request) string {
+	if s.isHistoryPreview() {
+		return historyPreviewLockedToast
+	}
 	if s.ActiveBook == nil {
 		return ""
 	}
@@ -459,6 +484,9 @@ func (s *Server) removeChoiceFromScene(r *http.Request) string {
 }
 
 func (s *Server) removeChoiceBySceneAndIndex(scID string, choiceIdx int) string {
+	if s.isHistoryPreview() {
+		return historyPreviewLockedToast
+	}
 	if s.ActiveBook == nil {
 		return ""
 	}
@@ -512,6 +540,9 @@ func (s *Server) removeChoiceOnTarget(target *book.Scene, choiceIdx int) string 
 }
 
 func (s *Server) branchSceneFromChoice(r *http.Request) string {
+	if s.isHistoryPreview() {
+		return historyPreviewLockedToast
+	}
 	if s.ActiveBook == nil {
 		return ""
 	}
@@ -589,6 +620,12 @@ func (s *Server) saveSceneFromForm(r *http.Request) string {
 }
 
 func (s *Server) saveSceneFromFormWithMode(r *http.Request, isAutoSave bool) string {
+	if s.isHistoryPreview() {
+		if isAutoSave {
+			return ""
+		}
+		return historyPreviewLockedToast
+	}
 	if s.ActiveBook == nil {
 		return ""
 	}
@@ -626,6 +663,9 @@ func (s *Server) saveSceneFromFormWithMode(r *http.Request, isAutoSave bool) str
 }
 
 func (s *Server) deleteSceneByID(sceneID string) string {
+	if s.isHistoryPreview() {
+		return historyPreviewLockedToast
+	}
 	if s.ActiveBook == nil || len(s.ActiveBook.Scenes) <= 1 {
 		return "Książka musi zawierać przynajmniej jedną scenę"
 	}
@@ -683,6 +723,9 @@ func (s *Server) deleteSceneByID(sceneID string) string {
 }
 
 func (s *Server) deleteScenesByIDs(rawIDs string) string {
+	if s.isHistoryPreview() {
+		return historyPreviewLockedToast
+	}
 	if s.ActiveBook == nil || len(s.ActiveBook.Scenes) == 0 {
 		return ""
 	}

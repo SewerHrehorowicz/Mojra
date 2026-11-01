@@ -16,28 +16,30 @@ type Choice struct {
 }
 
 type Scene struct {
-	ID            string
-	ExplicitID    string
-	Name          string
-	Chapter       string
-	ChapterID     string
-	Text          string
-	HTML          string
-	Choices       []Choice
-	ExplicitNext  string
-	ExplicitEnd   bool
-	ExplicitImage string
-	ExplicitVoice string
-	AudioFile     string
-	ImageFile     string
-	AudioURL      string
-	ImageURL      string
-	SourceFile    string
-	OrderIndex    int
-	Row           int
-	Col           int
-	X             int
-	Y             int
+	ID             string
+	ExplicitID     string
+	Name           string
+	Slugline       string
+	Synopsis       string
+	Chapter        string
+	ChapterID      string
+	Text           string
+	HTML           string
+	Choices        []Choice
+	ExplicitNext   string
+	ExplicitEnd    bool
+	ExplicitImage  string
+	ExplicitVoice  string
+	AudioFile      string
+	ImageFile      string
+	AudioURL       string
+	ImageURL       string
+	SourceFile     string
+	OrderIndex     int
+	Row            int
+	Col            int
+	X              int
+	Y              int
 	Unreachable    bool
 	Warnings       []string
 	htmlSourceText string
@@ -154,33 +156,78 @@ type PackedMediaEntry struct {
 }
 
 type Book struct {
-	ID            string
-	Title         string
-	Author        string
-	Description   string
-	StartSceneID  string
-	RawStart      string
-	Narrated      bool
-	Imageless     bool
-	CoverFile     string
-	CoverURL      string
-	IsPacked      bool
-	IsExternal    bool
-	SourceURL     string
-	RootPath      string
-	TextFiles     []string
-	AudioFiles    []string
-	ImageFiles    []string
-	PackedMedia   map[string]PackedMediaEntry
-	Chapters      []Chapter
-	Scenes        []*Scene
-	Layout        map[string]NodePosition
-	EditorPanX    int
-	EditorPanY    int
-	EditorZoom    float64
+	ID             string
+	Title          string
+	Author         string
+	Description    string
+	Mode           string
+	ScriptStandard string
+	StartSceneID   string
+	RawStart       string
+	Narrated       bool
+	Imageless      bool
+	CoverFile      string
+	CoverURL       string
+	IsPacked       bool
+	IsExternal     bool
+	SourceURL      string
+	RootPath       string
+	TextFiles      []string
+	AudioFiles     []string
+	ImageFiles     []string
+	PackedMedia    map[string]PackedMediaEntry
+	Chapters       []Chapter
+	Scenes         []*Scene
+	Layout         map[string]NodePosition
+	EditorPanX     int
+	EditorPanY     int
+	EditorZoom     float64
 	HasEditorView  bool
 	Warnings       []string
 	deferProseHTML bool
+}
+
+// NormalizeBookMode normalizes a project mode string to "screenplay" or "book".
+func NormalizeBookMode(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "screenplay", "scenariusz", "script", "film":
+		return "screenplay"
+	default:
+		return "book"
+	}
+}
+
+// NormalizeScriptStandard normalizes a regional screenplay standard string to "pl", "eu", or "us".
+func NormalizeScriptStandard(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "eu", "europe", "europa":
+		return "eu"
+	case "us", "usa", "hollywood", "letter":
+		return "us"
+	default:
+		return "pl"
+	}
+}
+
+// IsScreenplay reports whether the book project is in Screenplay Mode.
+func (b *Book) IsScreenplay() bool {
+	return b != nil && NormalizeBookMode(b.Mode) == "screenplay"
+}
+
+// NormalizedMode returns "screenplay" or "book".
+func (b *Book) NormalizedMode() string {
+	if b.IsScreenplay() {
+		return "screenplay"
+	}
+	return "book"
+}
+
+// NormalizedStandard returns "pl", "eu", or "us".
+func (b *Book) NormalizedStandard() string {
+	if b == nil {
+		return "pl"
+	}
+	return NormalizeScriptStandard(b.ScriptStandard)
 }
 
 type HistoryEntry struct {
@@ -213,5 +260,6 @@ type AppSettings struct {
 	PlaybackSpeed      float64
 	AutoChoice         bool
 	AutoChoiceStrategy string
+	NewBookDir         string
 	ExternalBooks      []string
 }

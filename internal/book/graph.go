@@ -109,7 +109,7 @@ func ParseChapterTarget(raw string) (string, bool) {
 	}
 	prefix := strings.ToLower(strings.TrimSpace(trimmed[:colonIdx]))
 	switch prefix {
-	case "chapter", "rozdzial", "rozdział":
+	case "chapter", "rozdzial", "rozdział", "act", "akt":
 		val := strings.TrimSpace(trimmed[colonIdx+1:])
 		return val, val != ""
 	default:
@@ -287,6 +287,15 @@ func FinalizeBook(b *Book) {
 			sc.AudioURL = ""
 		}
 	}
+	if b.IsScreenplay() {
+		b.Imageless = true
+		b.ImageFiles = nil
+		for _, sc := range b.Scenes {
+			sc.ExplicitImage = ""
+			sc.ImageFile = ""
+			sc.ImageURL = ""
+		}
+	}
 
 	usedIDs := make(map[string]bool, len(b.Scenes))
 	for _, sc := range b.Scenes {
@@ -303,6 +312,11 @@ func FinalizeBook(b *Book) {
 				sc.ID = cleanID
 			}
 		}
+	}
+
+	defaultChName := "Rozdział 1"
+	if b.IsScreenplay() {
+		defaultChName = "Akt I"
 	}
 
 	nextAuto := 1
@@ -329,12 +343,18 @@ func FinalizeBook(b *Book) {
 				stem := strings.TrimSuffix(filepath.Base(sc.SourceFile), filepath.Ext(sc.SourceFile))
 				sc.Chapter = SanitizeSceneID(stem)
 			} else {
-				sc.Chapter = "Rozdział 1"
+				sc.Chapter = defaultChName
 			}
 		}
 		if sc.ChapterID == "" {
 			if meta, ok := prevChapterMeta[strings.ToLower(strings.TrimSpace(sc.Chapter))]; ok && meta.ExplicitID != "" {
 				sc.ChapterID = meta.ExplicitID
+			}
+		}
+		if b.IsScreenplay() && strings.TrimSpace(sc.Slugline) == "" && strings.TrimSpace(sc.Text) != "" {
+			if extracted, rest, ok := ExtractLeadingSlugline(sc.Text); ok {
+				sc.Slugline = extracted
+				sc.Text = rest
 			}
 		}
 		if !b.deferProseHTML {
@@ -584,6 +604,16 @@ func FinalizeBook(b *Book) {
 	// Order chapters (and multi-file scene groups) by graph reachability starting from StartSceneID
 	// so disk filename order is completely irrelevant.
 	orderChaptersAndScenesByGraph(b, prevChapterMeta)
+
+	for i, sc := range b.Scenes {
+		sc.OrderIndex = i
+		if !b.deferProseHTML {
+			sc.EnsureHTML()
+		}
+	}
+	if b.IsScreenplay() {
+		ValidateScreenplayGuards(b)
+	}
 
 	ComputeTimelineLayout(b)
 }

@@ -7,6 +7,17 @@ let dirtyChapterInputs = new Set();
 let bookTitleSaveTimer = null;
 let dirtyBookTitleInput = null;
 
+function isEditorHistoryPreview() {
+  const ed = typeof qs === "function" ? qs("#view-editor") : null;
+  if (ed) {
+    return ed.getAttribute("data-history-preview") === "true" || ed.classList.contains("is-history-preview");
+  }
+  if (typeof document !== "undefined" && document.body) {
+    return document.body.getAttribute("data-history-preview") === "true";
+  }
+  return false;
+}
+
 function syncBookTitleDOM(newTitle) {
   const clean = (newTitle || "").trim();
   if (!clean) return;
@@ -27,7 +38,7 @@ function syncBookTitleDOM(newTitle) {
 }
 
 function commitBookTitleInput(inputEl) {
-  if (!inputEl) return;
+  if (!inputEl || isEditorHistoryPreview()) return;
   if (bookTitleSaveTimer) {
     clearTimeout(bookTitleSaveTimer);
     bookTitleSaveTimer = null;
@@ -53,7 +64,7 @@ function commitBookTitleInput(inputEl) {
 }
 
 function scheduleBookTitleLiveSave(inputEl) {
-  if (!inputEl) return;
+  if (!inputEl || isEditorHistoryPreview()) return;
   const newTitle = (inputEl.value || "").trim();
   if (newTitle) {
     syncBookTitleDOM(newTitle);
@@ -139,7 +150,7 @@ function syncChapterGroupRenameDOM(inputEl, targetChapterName) {
 }
 
 function commitChapterTitleInput(inputEl) {
-  if (!inputEl) return;
+  if (!inputEl || isEditorHistoryPreview()) return;
   const existingTimer = chapterLiveSaveTimers.get(inputEl);
   if (existingTimer) {
     clearTimeout(existingTimer);
@@ -166,7 +177,7 @@ function commitChapterTitleInput(inputEl) {
 }
 
 function scheduleChapterLiveSave(inputEl) {
-  if (!inputEl) return;
+  if (!inputEl || isEditorHistoryPreview()) return;
   const newCh = (inputEl.value || "").trim();
   if (newCh) {
     syncChapterGroupRenameDOM(inputEl, newCh);
@@ -208,6 +219,10 @@ function cancelPendingInspectorTimers() {
 }
 
 function consumeDirtyInspectorFormIntoParams(params) {
+  if (isEditorHistoryPreview()) {
+    cancelPendingInspectorTimers();
+    return;
+  }
   if (dirtyBookTitleInput) {
     commitBookTitleInput(dirtyBookTitleInput);
   }
@@ -237,6 +252,10 @@ function consumeDirtyInspectorFormIntoParams(params) {
 }
 
 function flushInspectorFormIfDirty() {
+  if (isEditorHistoryPreview()) {
+    cancelPendingInspectorTimers();
+    return;
+  }
   if (dirtyBookTitleInput) {
     commitBookTitleInput(dirtyBookTitleInput);
   }
@@ -568,7 +587,7 @@ function closeAllCustomSelects(exceptSelect) {
 }
 
 function scheduleNodeLiveSave(form) {
-  if (!form) return;
+  if (!form || isEditorHistoryPreview()) return;
   dirtyInspectorForms.add(form);
   const existing = liveSaveTimers.get(form);
   if (existing) {
@@ -593,7 +612,7 @@ function autoResizeInspectorTextarea(ta) {
 }
 
 function scheduleBookSettingsLiveSave(form) {
-  if (!form) return;
+  if (!form || isEditorHistoryPreview()) return;
   const existing = liveSaveTimers.get(form);
   if (existing) {
     clearTimeout(existing);
@@ -606,3 +625,170 @@ function scheduleBookSettingsLiveSave(form) {
   }, 250);
   liveSaveTimers.set(form, timer);
 }
+
+let historyDragState = null;
+let suppressNextHistoryClickUntil = 0;
+
+function updateHistoryScrollCue() {
+  const scrollEl = typeof qs === "function" ? qs("#history-graph-scroll") : null;
+  const cueEl = typeof qs === "function" ? qs("#history-scroll-more-cue") : null;
+  if (!scrollEl || !cueEl) return;
+  const canScrollMore = scrollEl.scrollHeight - scrollEl.scrollTop - scrollEl.clientHeight > 6;
+  cueEl.classList.toggle("hidden", !canScrollMore);
+}
+
+function clearHistoryDragHighlights() {
+  qsa(".history-lane-cell.is-drop-target-rail").forEach((cell) => {
+    cell.classList.remove("is-drop-target-rail");
+  });
+  qsa(".history-graph-row.is-dragging-source").forEach((row) => {
+    row.classList.remove("is-dragging-source");
+  });
+  const previewRow = qs("#history-drop-preview-row");
+  if (previewRow) {
+    previewRow.classList.add("hidden");
+  }
+}
+
+function bindHistoryGraphInteractions() {
+  if (typeof document === "undefined") return;
+
+  document.addEventListener(
+    "scroll",
+    (e) => {
+      if (e.target && e.target.id === "history-graph-scroll") {
+        updateHistoryScrollCue();
+      }
+    },
+    true
+  );
+
+  if (typeof window !== "undefined") {
+    window.addEventListener("resize", () => {
+      updateHistoryScrollCue();
+    });
+  }
+
+  document.addEventListener(
+    "click",
+    (e) => {
+      if (Date.now() < suppressNextHistoryClickUntil) {
+        e.preventDefault();
+        e.stopPropagation();
+        suppressNextHistoryClickUntil = 0;
+      }
+    },
+    true
+  );
+
+  document.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0 || !e.target || !e.target.closest) return;
+    const handle = e.target.closest(".history-row-grip, .history-rail-node");
+    if (!handle) return;
+    const rowEl = handle.closest(".history-graph-row");
+    if (!rowEl) return;
+    const revID = (rowEl.getAttribute("data-revision") || "").trim();
+    const sourceBranch = (rowEl.getAttribute("data-branch") || "").trim();
+    const label = (rowEl.getAttribute("data-label") || "").trim();
+    if (!revID) return;
+
+    historyDragState = {
+      revID: revID,
+      sourceBranch: sourceBranch,
+      label: label || revID,
+      isCurrentNode: Boolean(handle.classList.contains("is-current-node")),
+      startX: e.clientX,
+      startY: e.clientY,
+      moved: false,
+      targetBranch: "",
+      targetRevID: "",
+      sourceRowEl: rowEl
+    };
+  });
+
+  document.addEventListener("pointermove", (e) => {
+    if (!historyDragState) return;
+    if (!historyDragState.moved) {
+      const dist = Math.hypot(e.clientX - historyDragState.startX, e.clientY - historyDragState.startY);
+      if (dist < 5) return;
+      historyDragState.moved = true;
+      if (historyDragState.sourceRowEl) {
+        historyDragState.sourceRowEl.classList.add("is-dragging-source");
+      }
+      if (typeof hideUITooltip === "function") {
+        hideUITooltip();
+      }
+    }
+
+    const hitEl = document.elementFromPoint(e.clientX, e.clientY);
+    let hoverBranch = "";
+    let hoverRevID = "";
+    if (hitEl && hitEl.closest) {
+      const laneCell = hitEl.closest(".history-lane-cell[data-branch]");
+      const rowHit = hitEl.closest(".history-graph-row[data-branch]");
+      if (laneCell) {
+        hoverBranch = (laneCell.getAttribute("data-branch") || "").trim();
+      } else if (rowHit) {
+        hoverBranch = (rowHit.getAttribute("data-branch") || "").trim();
+      }
+      if (rowHit) {
+        hoverRevID = (rowHit.getAttribute("data-revision") || "").trim();
+      }
+    }
+
+    historyDragState.targetBranch = hoverBranch;
+    historyDragState.targetRevID = hoverRevID;
+
+    qsa(".history-lane-cell.is-drop-target-rail").forEach((cell) => {
+      cell.classList.remove("is-drop-target-rail");
+    });
+    if (hoverBranch) {
+      qsa(".history-lane-cell[data-branch]").forEach((cell) => {
+        if ((cell.getAttribute("data-branch") || "").trim() === hoverBranch) {
+          cell.classList.add("is-drop-target-rail");
+        }
+      });
+    }
+
+    const previewRow = qs("#history-drop-preview-row");
+    const previewTitle = qs("#history-drop-preview-title");
+    const previewMeta = qs("#history-drop-preview-meta");
+    if (previewRow) {
+      const showPreview = Boolean(hoverBranch && (hoverBranch !== historyDragState.sourceBranch || hoverRevID !== historyDragState.revID));
+      previewRow.classList.toggle("hidden", !showPreview);
+      if (showPreview) {
+        if (previewTitle) previewTitle.textContent = historyDragState.label;
+        if (previewMeta) previewMeta.textContent = hoverBranch;
+      }
+    }
+  });
+
+  const finishHistoryDrag = () => {
+    if (!historyDragState) return;
+    const state = historyDragState;
+    historyDragState = null;
+    clearHistoryDragHighlights();
+    if (!state.moved) return;
+
+    suppressNextHistoryClickUntil = Date.now() + 260;
+    if (state.isCurrentNode) {
+      if (state.targetBranch && state.targetBranch !== state.sourceBranch) {
+        sendServerAction("SwitchHistoryBranch", { branch: state.targetBranch });
+      } else if (state.targetRevID && state.targetRevID !== state.revID) {
+        sendServerAction("RestoreHistoryRevision", { revision: state.targetRevID });
+      }
+      return;
+    }
+    if (state.targetBranch) {
+      sendServerAction("CopyHistoryRevisionToBranch", {
+        revision: state.revID,
+        target_branch: state.targetBranch
+      });
+    }
+  };
+
+  document.addEventListener("pointerup", finishHistoryDrag);
+  document.addEventListener("pointercancel", finishHistoryDrag);
+}
+
+bindHistoryGraphInteractions();

@@ -24,10 +24,50 @@ func extractFirstSentence(raw string) string {
 	return flat
 }
 
+func buildPlayerScreenplayBlocks(sc *book.Scene, sceneNum int, standard string) []map[string]any {
+	if sc == nil {
+		return nil
+	}
+	normStd := book.NormalizeScriptStandard(standard)
+	blocks := book.ParseScreenplaySceneBlocks(sc, normStd)
+	if len(blocks) == 0 {
+		return nil
+	}
+	numbered := normStd == "pl" || normStd == "eu"
+	renderedPrimarySlug := false
+	out := make([]map[string]any, 0, len(blocks))
+	for _, blk := range blocks {
+		showNum := false
+		if blk.Kind == book.BlockSlugline && !renderedPrimarySlug {
+			renderedPrimarySlug = true
+			showNum = numbered && sceneNum > 0
+		}
+		out = append(out, map[string]any{
+			"kind":             string(blk.Kind),
+			"text":             blk.Text,
+			"scene_num":        sceneNum,
+			"show_scene_num":   showNum,
+			"is_slugline":      blk.Kind == book.BlockSlugline,
+			"is_action":        blk.Kind == book.BlockAction,
+			"is_character":     blk.Kind == book.BlockCharacter,
+			"is_parenthetical": blk.Kind == book.BlockParenthetical,
+			"is_dialogue":      blk.Kind == book.BlockDialogue,
+			"is_transition":    blk.Kind == book.BlockTransition,
+		})
+	}
+	return out
+}
+
 func (s *Server) populatePlayerContext(vars map[string]any) {
 	curScene := s.currentScene()
 	if curScene == nil {
 		curScene = s.ActiveBook.Scenes[0]
+	}
+
+	isScreenplay := s.ActiveBook != nil && s.ActiveBook.IsScreenplay()
+	normStd := "pl"
+	if s.ActiveBook != nil {
+		normStd = s.ActiveBook.NormalizedStandard()
 	}
 
 	histCount := 0
@@ -57,16 +97,22 @@ func (s *Server) populatePlayerContext(vars map[string]any) {
 				pastHeaderMeta = s.ActiveBook.Title + " • " + pastScene.Chapter
 			}
 			pastHasTitle := strings.TrimSpace(pastScene.Name) != ""
+			var pastBlocks []map[string]any
+			if isScreenplay {
+				pastBlocks = buildPlayerScreenplayBlocks(pastScene, pastScene.OrderIndex+1, normStd)
+			}
 			histList = append(histList, map[string]any{
-				"idx":          idx,
-				"header_meta":  pastHeaderMeta,
-				"name":         pastScene.Name,
-				"rail_title":   pastScene.DisplayName(),
-				"has_title":    pastHasTitle,
-				"html":         pastScene.EnsureHTML(),
-				"has_image":    pastImgURL != "",
-				"image_url":    pastImgURL,
-				"bg_image_url": lastImageURL,
+				"idx":               idx,
+				"header_meta":       pastHeaderMeta,
+				"name":              pastScene.Name,
+				"slugline":          pastScene.Slugline,
+				"rail_title":        pastScene.DisplayName(),
+				"has_title":         pastHasTitle,
+				"html":              pastScene.EnsureHTML(),
+				"screenplay_blocks": pastBlocks,
+				"has_image":         pastImgURL != "",
+				"image_url":         pastImgURL,
+				"bg_image_url":      lastImageURL,
 			})
 		}
 		vars["history_items"] = histList
@@ -103,20 +149,26 @@ func (s *Server) populatePlayerContext(vars map[string]any) {
 		curHeaderMeta = s.ActiveBook.Title + " • " + curScene.Chapter
 	}
 	curHasTitle := strings.TrimSpace(curScene.Name) != ""
+	var curBlocks []map[string]any
+	if isScreenplay {
+		curBlocks = buildPlayerScreenplayBlocks(curScene, curScene.OrderIndex+1, normStd)
+	}
 
 	vars["current_scene"] = map[string]any{
-		"name":         curScene.Name,
-		"rail_title":   curScene.DisplayName(),
-		"has_title":    curHasTitle,
-		"header_meta":  curHeaderMeta,
-		"html":         curScene.EnsureHTML(),
-		"has_image":    curImgURL != "",
-		"image_url":    curImgURL,
-		"has_bg_image": !imageless && lastImageURL != "",
-		"bg_image_url": lastImageURL,
-		"audio_url":    curScene.AudioURL,
-		"is_terminal":  len(curScene.Choices) == 0 || curScene.ExplicitEnd,
-		"choices":      curChoices,
+		"name":              curScene.Name,
+		"slugline":          curScene.Slugline,
+		"rail_title":        curScene.DisplayName(),
+		"has_title":         curHasTitle,
+		"header_meta":       curHeaderMeta,
+		"html":              curScene.EnsureHTML(),
+		"screenplay_blocks": curBlocks,
+		"has_image":         curImgURL != "",
+		"image_url":         curImgURL,
+		"has_bg_image":      !imageless && lastImageURL != "",
+		"bg_image_url":      lastImageURL,
+		"audio_url":         curScene.AudioURL,
+		"is_terminal":       len(curScene.Choices) == 0 || curScene.ExplicitEnd,
+		"choices":           curChoices,
 	}
 
 	narrated := s.ActiveBook != nil && s.ActiveBook.Narrated

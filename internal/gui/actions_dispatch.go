@@ -63,6 +63,7 @@ var actionSpecs = map[string]ActionSpec{
 	"CloseEditorHelpModal":    {StandaloneForbidden: true, KeepScroll: true, Target: targetModals, Handler: (*Server).closeEditorHelpModal},
 	"OpenNewBookModal":        {StandaloneForbidden: true, KeepScroll: true, Target: targetModals, Handler: (*Server).openNewBookModal},
 	"CloseNewBookModal":       {StandaloneForbidden: true, KeepScroll: true, Target: targetModals, Handler: (*Server).closeNewBookModal},
+	"BrowseNewBookFolder":     {StandaloneForbidden: true, KeepScroll: true, Target: targetModals, Handler: (*Server).browseNewBookFolder},
 	"OpenAddBookModal":        {StandaloneForbidden: true, KeepScroll: true, Target: targetModals, Handler: (*Server).openAddBookModal},
 	"CloseAddBookModal":       {StandaloneForbidden: true, KeepScroll: true, Target: targetModals, Handler: (*Server).closeAddBookModal},
 	"PromptRewindStep":        {KeepScroll: true, Target: targetModals, Handler: (*Server).promptRewindStep},
@@ -137,11 +138,27 @@ var actionSpecs = map[string]ActionSpec{
 	"CreateChapterGroup":       {StandaloneForbidden: true, Target: targetActiveWorkspace, Handler: (*Server).createChapterGroup},
 	"UndoEditor":               {StandaloneForbidden: true, Target: targetUndoRedoWorkspaceOrAppShell, Handler: (*Server).undoEditor},
 	"RedoEditor":               {StandaloneForbidden: true, Target: targetUndoRedoWorkspaceOrAppShell, Handler: (*Server).redoEditor},
-	"RestoreHistoryRevision":   {StandaloneForbidden: true, Target: targetUndoRedoWorkspaceOrAppShell, Handler: (*Server).restoreHistoryRevision},
-	"ToggleEditorHistoryPanel": {StandaloneForbidden: true, Target: targetActiveWorkspace, Handler: (*Server).toggleEditorHistoryPanel},
-	"OpenEditorHistoryPanel":   {StandaloneForbidden: true, Target: targetActiveWorkspace, Handler: (*Server).openEditorHistoryPanel},
-	"CloseEditorHistoryPanel":  {StandaloneForbidden: true, Target: targetActiveWorkspace, Handler: (*Server).closeEditorHistoryPanel},
-	"SaveHistoryVersion":       {StandaloneForbidden: true, Target: targetActiveWorkspace, Handler: (*Server).saveHistoryVersion},
+	"PreviewHistoryRevision":   {StandaloneForbidden: true, Target: targetUndoRedoWorkspaceOrAppShell, Handler: (*Server).previewHistoryRevision},
+	"ExitHistoryPreview":       {StandaloneForbidden: true, Target: targetUndoRedoWorkspaceOrAppShell, Handler: (*Server).exitHistoryPreviewAction},
+	"PlayHistoryRevision":         {StandaloneForbidden: true, Target: targetAppShell, Handler: (*Server).playHistoryRevision},
+	"RestoreHistoryRevision":      {StandaloneForbidden: true, Target: targetUndoRedoWorkspaceOrAppShell, Handler: (*Server).restoreHistoryRevision},
+	"CopyHistoryRevisionToBranch": {StandaloneForbidden: true, Target: targetUndoRedoWorkspaceOrAppShell, Handler: (*Server).copyHistoryRevisionToBranchAction},
+	"ToggleEditorHistoryPanel":    {StandaloneForbidden: true, Target: targetActiveWorkspace, Handler: (*Server).toggleEditorHistoryPanel},
+	"OpenEditorHistoryPanel":     {StandaloneForbidden: true, Target: targetActiveWorkspace, Handler: (*Server).openEditorHistoryPanel},
+	"CloseEditorHistoryPanel":    {StandaloneForbidden: true, Target: targetActiveWorkspace, Handler: (*Server).closeEditorHistoryPanel},
+	"SaveHistoryVersion":         {StandaloneForbidden: true, Target: targetActiveWorkspace, Handler: (*Server).saveHistoryVersion},
+	"CreateHistoryBranch":        {StandaloneForbidden: true, Target: targetActiveWorkspace, Handler: (*Server).createHistoryBranchAction},
+	"SwitchHistoryBranch":        {StandaloneForbidden: true, ResetCanvas: true, Target: targetAppShell, Handler: (*Server).switchHistoryBranchAction},
+	"DeleteHistoryBranch":        {StandaloneForbidden: true, Target: targetActiveWorkspace, Handler: (*Server).deleteHistoryBranchAction},
+	"ToggleEditorBreakdownPanel": {StandaloneForbidden: true, Target: targetActiveWorkspace, Handler: (*Server).toggleEditorBreakdownPanel},
+	"OpenEditorBreakdownPanel":   {StandaloneForbidden: true, Target: targetActiveWorkspace, Handler: (*Server).openEditorBreakdownPanel},
+	"CloseEditorBreakdownPanel":  {StandaloneForbidden: true, Target: targetActiveWorkspace, Handler: (*Server).closeEditorBreakdownPanel},
+	"RenameCharacter":            {StandaloneForbidden: true, Target: targetActiveWorkspace, Handler: (*Server).renameCharacterAction},
+	"RenameLocation":             {StandaloneForbidden: true, Target: targetActiveWorkspace, Handler: (*Server).renameLocationAction},
+	"ExportScreenplayPDF":        {StandaloneForbidden: true, Target: targetNone, Handler: (*Server).exportScreenplayPDFAction},
+	"ExportScreenplayFountain":   {StandaloneForbidden: true, Target: targetNone, Handler: (*Server).exportScreenplayFountainAction},
+	"ApplySluglineToken":         {StandaloneForbidden: true, Target: targetActiveWorkspaceOrModalsWhenSceneTextOpen, Handler: (*Server).applySluglineTokenAction},
+	"InsertScreenplayBlock":      {StandaloneForbidden: true, Target: targetActiveWorkspaceOrModalsWhenSceneTextOpen, Handler: (*Server).insertScreenplayBlockAction},
 }
 
 func isStandaloneForbiddenAction(action string) bool {
@@ -253,6 +270,9 @@ func validateSameOriginAction(r *http.Request) bool {
 
 func (s *Server) switchView(r *http.Request) string {
 	view := strings.TrimSpace(r.FormValue("view"))
+	if view == "library" && s.isHistoryPreview() {
+		s.exitHistoryPreview()
+	}
 	if (view == "player" || view == "editor") && s.ActiveBook == nil {
 		if books, err := s.loadBooks(); err == nil && len(books) > 0 {
 			s.setActiveBook(books[0])
@@ -353,11 +373,25 @@ func (s *Server) openNewBookModal(_ *http.Request) string {
 	s.QRModalOpen = false
 	s.AddBookModalOpen = false
 	s.NewBookModalOpen = true
+	s.NewBookDraftTitle = ""
+	s.NewBookDraftAuthor = ""
+	s.NewBookDraftMode = "book"
+	s.NewBookDraftStandard = "pl"
+	s.NewBookDraftNarrated = false
+	s.NewBookDraftImageless = false
+	s.NewBookDraftDir = s.defaultNewBookDir()
 	return ""
 }
 
 func (s *Server) closeNewBookModal(_ *http.Request) string {
 	s.NewBookModalOpen = false
+	s.NewBookDraftTitle = ""
+	s.NewBookDraftAuthor = ""
+	s.NewBookDraftMode = ""
+	s.NewBookDraftStandard = ""
+	s.NewBookDraftNarrated = false
+	s.NewBookDraftImageless = false
+	s.NewBookDraftDir = ""
 	return ""
 }
 
@@ -409,7 +443,9 @@ func (s *Server) acceptConfirmModal() (toast, nativeCmd string) {
 			s.Save.AudioTime = 0
 			s.HistoryRevealed = false
 			s.FocusedHistoryIdx = -1
-			_ = book.WriteSaveState(s.SavesDir, s.Save)
+			if !s.isHistoryPreview() {
+				_ = book.WriteSaveState(s.SavesDir, s.Save)
+			}
 			toast = "Cofnięto opowieść do wybranej sceny."
 		}
 	case "ResetProgress":
@@ -418,11 +454,27 @@ func (s *Server) acceptConfirmModal() (toast, nativeCmd string) {
 			targetID = s.ActiveBook.ID
 		}
 		if targetID != "" {
-			_ = book.DeleteSaveState(s.SavesDir, targetID)
-			if s.ActiveBook != nil && s.ActiveBook.ID == targetID {
-				s.Save = book.LoadSaveState(s.SavesDir, s.ActiveBook.ID, s.ActiveBook.StartSceneID)
+			if s.isHistoryPreview() && s.ActiveBook != nil && s.ActiveBook.ID == targetID {
+				startSceneID := s.ActiveBook.StartSceneID
+				if s.findScene(startSceneID) == nil && len(s.ActiveBook.Scenes) > 0 {
+					startSceneID = s.ActiveBook.Scenes[0].ID
+				}
+				s.Save = &book.SaveState{
+					BookID:             s.ActiveBook.ID,
+					CurrentSceneID:     startSceneID,
+					PlaybackSpeed:      s.Settings.PlaybackSpeed,
+					AutoChoice:         s.Settings.AutoChoice,
+					AutoChoiceStrategy: s.Settings.AutoChoiceStrategy,
+				}
 				s.HistoryRevealed = false
 				s.FocusedHistoryIdx = -1
+			} else {
+				_ = book.DeleteSaveState(s.SavesDir, targetID)
+				if s.ActiveBook != nil && s.ActiveBook.ID == targetID {
+					s.Save = book.LoadSaveState(s.SavesDir, s.ActiveBook.ID, s.ActiveBook.StartSceneID)
+					s.HistoryRevealed = false
+					s.FocusedHistoryIdx = -1
+				}
 			}
 			toast = "Postęp został zresetowany do początku."
 		}
@@ -483,7 +535,9 @@ func (s *Server) handleAction(w http.ResponseWriter, r *http.Request) {
 			if t, err := strconv.ParseFloat(rawAudioTime, 64); err == nil && t >= 0 {
 				if t > 0.2 || s.Save.UpdatedAtUnix > 0 || len(s.Save.History) > 0 {
 					s.Save.AudioTime = t
-					_ = book.UpdateSaveAudioTimeInPlace(s.SavesDir, s.ActiveBook.ID, t, s.ActiveBook.StartSceneID)
+					if !s.isHistoryPreview() {
+						_ = book.UpdateSaveAudioTimeInPlace(s.SavesDir, s.ActiveBook.ID, t, s.ActiveBook.StartSceneID)
+					}
 				}
 			}
 		}

@@ -14,7 +14,9 @@ func (s *Server) saveAudioTime(r *http.Request) string {
 	if s.ActiveBook != nil && s.Save != nil {
 		if t, err := strconv.ParseFloat(r.FormValue("time"), 64); err == nil && t >= 0 {
 			s.Save.AudioTime = t
-			_ = book.UpdateSaveAudioTimeInPlace(s.SavesDir, s.ActiveBook.ID, t, s.ActiveBook.StartSceneID)
+			if !s.isHistoryPreview() {
+				_ = book.UpdateSaveAudioTimeInPlace(s.SavesDir, s.ActiveBook.ID, t, s.ActiveBook.StartSceneID)
+			}
 		}
 	}
 	return ""
@@ -131,7 +133,9 @@ func (s *Server) cycleAudioSpeed(_ *http.Request) string {
 	_ = book.SaveAppSettings(s.SavesDir, s.Settings)
 	if s.Save != nil {
 		s.Save.PlaybackSpeed = next
-		_ = book.WriteSaveState(s.SavesDir, s.Save)
+		if !s.isHistoryPreview() {
+			_ = book.WriteSaveState(s.SavesDir, s.Save)
+		}
 	}
 	return ""
 }
@@ -141,7 +145,9 @@ func (s *Server) toggleAutoChoice(_ *http.Request) string {
 	_ = book.SaveAppSettings(s.SavesDir, s.Settings)
 	if s.Save != nil {
 		s.Save.AutoChoice = s.Settings.AutoChoice
-		_ = book.WriteSaveState(s.SavesDir, s.Save)
+		if !s.isHistoryPreview() {
+			_ = book.WriteSaveState(s.SavesDir, s.Save)
+		}
 	}
 	return ""
 }
@@ -155,13 +161,15 @@ func (s *Server) toggleAutoStrategy(_ *http.Request) string {
 	_ = book.SaveAppSettings(s.SavesDir, s.Settings)
 	if s.Save != nil {
 		s.Save.AutoChoiceStrategy = s.Settings.AutoChoiceStrategy
-		_ = book.WriteSaveState(s.SavesDir, s.Save)
+		if !s.isHistoryPreview() {
+			_ = book.WriteSaveState(s.SavesDir, s.Save)
+		}
 	}
 	return ""
 }
 
 func (s *Server) playFromScene(r *http.Request) string {
-	if r.FormValue("scene_id") != "" {
+	if !s.isHistoryPreview() && r.FormValue("scene_id") != "" {
 		_ = s.saveSceneFromForm(r)
 	}
 	if scID := strings.TrimSpace(r.FormValue("scene")); scID != "" {
@@ -170,7 +178,9 @@ func (s *Server) playFromScene(r *http.Request) string {
 	if s.ActiveBook != nil && s.Save != nil && s.SelectedSceneID != "" {
 		s.Save.CurrentSceneID = s.SelectedSceneID
 		s.Save.AudioTime = 0
-		_ = book.WriteSaveState(s.SavesDir, s.Save)
+		if !s.isHistoryPreview() {
+			_ = book.WriteSaveState(s.SavesDir, s.Save)
+		}
 		s.Settings.ActiveView = "player"
 		s.SceneTextModalID = ""
 		_ = book.SaveAppSettings(s.SavesDir, s.Settings)
@@ -204,6 +214,8 @@ func (s *Server) executeChoiceTransition(fromScene *book.Scene, choice book.Choi
 	s.SelectedSceneID = nextScene.ID
 	s.HistoryRevealed = false
 	s.FocusedHistoryIdx = -1
-	_ = book.WriteSaveState(s.SavesDir, s.Save)
+	if !s.isHistoryPreview() {
+		_ = book.WriteSaveState(s.SavesDir, s.Save)
+	}
 	return ""
 }

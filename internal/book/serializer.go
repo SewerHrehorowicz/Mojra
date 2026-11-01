@@ -29,15 +29,26 @@ func SerializeDataFile(b *Book) string {
 	if desc := sanitizeSingleLineMeta(b.Description); desc != "" {
 		fmt.Fprintf(&sb, "description: %s\n", desc)
 	}
-	if b.Narrated {
-		sb.WriteString("narrated: true\n")
-	} else {
-		sb.WriteString("narrated: false\n")
+	if b.IsScreenplay() {
+		sb.WriteString("mode: screenplay\n")
+		fmt.Fprintf(&sb, "standard: %s\n", b.NormalizedStandard())
+	} else if strings.TrimSpace(b.Mode) != "" {
+		sb.WriteString("mode: book\n")
+		if strings.TrimSpace(b.ScriptStandard) != "" {
+			fmt.Fprintf(&sb, "standard: %s\n", b.NormalizedStandard())
+		}
 	}
-	if b.Imageless {
-		sb.WriteString("imageless: true\n")
-	} else {
-		sb.WriteString("imageless: false\n")
+	if !b.IsScreenplay() {
+		if b.Narrated {
+			sb.WriteString("narrated: true\n")
+		} else {
+			sb.WriteString("narrated: false\n")
+		}
+		if b.Imageless {
+			sb.WriteString("imageless: true\n")
+		} else {
+			sb.WriteString("imageless: false\n")
+		}
 	}
 	startVal := strings.TrimSpace(b.RawStart)
 	if startVal == "" && len(b.Scenes) > 0 {
@@ -109,7 +120,13 @@ func SerializeScenesForFile(b *Book, sourceFile string) string {
 		if sc.ExplicitID != "" {
 			fmt.Fprintf(&out, "id: %s\n", strings.TrimSpace(sc.ExplicitID))
 		}
-		if sc.ExplicitImage != "" {
+		if slug := sanitizeSingleLineMeta(sc.Slugline); slug != "" {
+			fmt.Fprintf(&out, "slugline: %s\n", slug)
+		}
+		if syn := sanitizeSingleLineMeta(sc.Synopsis); syn != "" {
+			fmt.Fprintf(&out, "synopsis: %s\n", syn)
+		}
+		if !b.IsScreenplay() && sc.ExplicitImage != "" {
 			fmt.Fprintf(&out, "image: %s\n", strings.TrimSpace(sc.ExplicitImage))
 		}
 		if b.Narrated && sc.ExplicitVoice != "" {

@@ -21,9 +21,17 @@ type ModalState struct {
 	SceneTextModalSettingsOpen bool
 	QRModalOpen                bool
 	NewBookModalOpen           bool
+	NewBookDraftTitle          string
+	NewBookDraftAuthor         string
+	NewBookDraftMode           string
+	NewBookDraftStandard       string
+	NewBookDraftNarrated       bool
+	NewBookDraftImageless      bool
+	NewBookDraftDir            string
 	AddBookModalOpen           bool
 	EditorHelpModalOpen        bool
 	EditorHistoryPanelOpen     bool
+	EditorBreakdownPanelOpen   bool
 	BookSettingsOpen           bool
 	ConfirmTitle               string
 	ConfirmMessage             string
@@ -36,6 +44,11 @@ type historyCacheState struct {
 	cachedHistoryBookID  string
 	cachedHistoryModNano int64
 	cachedHistorySize    int64
+	PreviewRevisionID    string
+	PreviewRevisionLabel string
+	LiveBook             *book.Book
+	LiveSave             *book.SaveState
+	LiveSelectedSceneID  string
 }
 
 type assetCacheState struct {
@@ -82,6 +95,13 @@ func (s *Server) closeAllModals() {
 	s.SceneTextModalSettingsOpen = false
 	s.EditorHelpModalOpen = false
 	s.NewBookModalOpen = false
+	s.NewBookDraftTitle = ""
+	s.NewBookDraftAuthor = ""
+	s.NewBookDraftMode = ""
+	s.NewBookDraftStandard = ""
+	s.NewBookDraftNarrated = false
+	s.NewBookDraftImageless = false
+	s.NewBookDraftDir = ""
 	s.AddBookModalOpen = false
 	s.ConfirmPendingAction = ""
 	s.ConfirmPendingParam = ""
@@ -168,6 +188,7 @@ func (s *Server) ensureTemplatesLoaded() {
 			delete(s.Templates, "editor_view")
 			delete(s.Templates, "editor_context_panel")
 			delete(s.Templates, "editor_history_panel")
+			delete(s.Templates, "editor_breakdown_panel")
 		}
 		if (!s.DevMode || s.StandaloneMode) && s.Templates != nil {
 			tpl.StripDevNodesFromTemplates(s.Templates)
@@ -211,6 +232,11 @@ func NewStandaloneServer(rootDir string, embeddedFS fs.FS, standaloneBook *book.
 func NewServerWithOptions(rootDir string, embeddedFS fs.FS, devMode bool) *Server {
 	booksDir := filepath.Join(rootDir, "books")
 	savesDir := filepath.Join(rootDir, "saves")
+	if strings.Contains(filepath.ToSlash(rootDir), ".app/Contents/Resources") {
+		if cfgDir, err := os.UserConfigDir(); err == nil && strings.TrimSpace(cfgDir) != "" {
+			savesDir = filepath.Join(cfgDir, "StoryTeller", "saves")
+		}
+	}
 	appDir := filepath.Join(rootDir, "app")
 	_ = os.MkdirAll(booksDir, 0755)
 	_ = os.MkdirAll(savesDir, 0755)
@@ -247,7 +273,51 @@ func NewServerWithOptions(rootDir string, embeddedFS fs.FS, devMode bool) *Serve
 	return s
 }
 
+func (s *Server) defaultNewBookDir() string {
+	if s.NewBookDraftDir != "" {
+		return s.NewBookDraftDir
+	}
+	if s.Settings != nil && strings.TrimSpace(s.Settings.NewBookDir) != "" {
+		if expanded, err := book.ExpandLocalPath(s.Settings.NewBookDir); err == nil && expanded != "" {
+			return expanded
+		}
+	}
+	cleanRoot := filepath.Clean(s.RootDir)
+	if filepath.Base(cleanRoot) == "dist" {
+		parent := filepath.Dir(cleanRoot)
+		if info, err := os.Stat(filepath.Join(parent, "go.mod")); err == nil && !info.IsDir() {
+			return filepath.Join(parent, "books")
+		}
+	}
+	if strings.Contains(filepath.ToSlash(s.BooksDir), ".app/Contents/Resources") {
+		if home, err := os.UserHomeDir(); err == nil && strings.TrimSpace(home) != "" {
+			return filepath.Join(home, "Documents", "StoryTeller")
+		}
+	}
+	return s.BooksDir
+}
+
+func (s *Server) saveAppSettings() error {
+	if s.Settings == nil {
+		return nil
+	}
+	err := book.SaveAppSettings(s.SavesDir, s.Settings)
+	cleanRoot := filepath.Clean(s.RootDir)
+	if filepath.Base(cleanRoot) == "dist" {
+		parent := filepath.Dir(cleanRoot)
+		if info, statErr := os.Stat(filepath.Join(parent, "go.mod")); statErr == nil && !info.IsDir() {
+			_ = book.SaveAppSettings(filepath.Join(parent, "saves"), s.Settings)
+		}
+	}
+	return err
+}
+
 func (s *Server) setActiveBook(b *book.Book) {
+	s.PreviewRevisionID = ""
+	s.PreviewRevisionLabel = ""
+	s.LiveBook = nil
+	s.LiveSave = nil
+	s.LiveSelectedSceneID = ""
 	s.ActiveBook = b
 	s.invalidateHistoryCache()
 	s.Settings.ActiveBookID = b.ID
@@ -261,6 +331,7 @@ func (s *Server) setActiveBook(b *book.Book) {
 	s.HistoryRevealed = false
 	s.FocusedHistoryIdx = -1
 	s.EditorHistoryPanelOpen = false
+	s.EditorBreakdownPanelOpen = false
 	s.BookSettingsOpen = false
 	s.SelectedChapter = ""
 	if len(b.Scenes) > 0 {
@@ -280,6 +351,11 @@ func (s *Server) currentScene() *book.Scene {
 			return sc
 		}
 	}
+	if s.ActiveBook.StartSceneID != "" {
+		if sc := s.findScene(s.ActiveBook.StartSceneID); sc != nil {
+			return sc
+		}
+	}
 	return s.ActiveBook.Scenes[0]
 }
 
@@ -291,7 +367,7 @@ func (s *Server) currentAudioTime() float64 {
 }
 
 func (s *Server) isBookImageless() bool {
-	return s.ActiveBook != nil && s.ActiveBook.Imageless
+	return s.ActiveBook != nil && (s.ActiveBook.Imageless || s.ActiveBook.IsScreenplay())
 }
 
 func (s *Server) isEffectiveImageless() bool {
@@ -334,6 +410,8 @@ func (s *Server) Handler() http.Handler {
 
 	mux.HandleFunc("/api/action", s.handleAction)
 	mux.HandleFunc("/api/lan-qr.png", s.handleLANQR)
+	mux.HandleFunc("/api/export/screenplay.pdf", s.handleExportScreenplayPDF)
+	mux.HandleFunc("/api/export/screenplay.fountain", s.handleExportScreenplayFountain)
 	mux.HandleFunc("/api/books/", s.handleBookMediaRoute)
 	mux.HandleFunc("/", s.handleRootAndAssets)
 
@@ -378,6 +456,50 @@ func (s *Server) activeWorkspaceTemplateName() string {
 	default:
 		return "library_view"
 	}
+}
+
+func (s *Server) handleExportScreenplayPDF(w http.ResponseWriter, r *http.Request) {
+	if s.StandaloneMode {
+		http.Error(w, "forbidden in standalone mode", http.StatusForbidden)
+		return
+	}
+	s.mu.RLock()
+	active := s.ActiveBook
+	s.mu.RUnlock()
+	if active == nil {
+		http.Error(w, "brak aktywnego projektu", http.StatusNotFound)
+		return
+	}
+	pdfBytes, err := book.ExportScreenplayPDF(active)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	fileName := active.ID + ".pdf"
+	w.Header().Set("Content-Type", "application/pdf")
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, fileName))
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(pdfBytes)
+}
+
+func (s *Server) handleExportScreenplayFountain(w http.ResponseWriter, r *http.Request) {
+	if s.StandaloneMode {
+		http.Error(w, "forbidden in standalone mode", http.StatusForbidden)
+		return
+	}
+	s.mu.RLock()
+	active := s.ActiveBook
+	s.mu.RUnlock()
+	if active == nil {
+		http.Error(w, "brak aktywnego projektu", http.StatusNotFound)
+		return
+	}
+	fountainText := book.ExportScreenplayFountain(active)
+	fileName := active.ID + ".fountain"
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, fileName))
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write([]byte(fountainText))
 }
 
 func (s *Server) handleLANQR(w http.ResponseWriter, r *http.Request) {

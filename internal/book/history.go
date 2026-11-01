@@ -23,9 +23,45 @@ const (
 
 var validHexHashRegexp = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
+// HistoryBranch represents a named Git-style draft branch in books/<id>/.history/history.txt.
+type HistoryBranch struct {
+	Name          string
+	HeadRevID     string
+	BaseRevID     string
+	CreatedAtUnix int64
+}
+
+// BranchComparison summarizes structural, page/runtime, cast, and location deltas between two branches.
+type BranchComparison struct {
+	BranchA             string
+	BranchB             string
+	ScenesA             int
+	ScenesB             int
+	SceneDelta          int
+	AddedScenes         []string
+	RemovedScenes       []string
+	ModifiedScenes      []string
+	EighthsA            int
+	EighthsB            int
+	EighthsDelta        int
+	PagesDeltaFormatted string
+	MinutesA            int
+	MinutesB            int
+	MinutesDelta        int
+	LocationsA          int
+	LocationsB          int
+	LocationDelta       int
+	CharactersA         int
+	CharactersB         int
+	CharacterDelta      int
+	SummaryLabel        string
+}
+
 // HistoryRevision represents a single snapshot in books/<id>/.history/history.txt.
 type HistoryRevision struct {
 	ID              string
+	Branch          string
+	ParentID        string
 	TimeUnix        int64
 	Kind            string
 	Named           bool
@@ -37,9 +73,11 @@ type HistoryRevision struct {
 
 // BookHistory holds the parsed state of books/<id>/.history/history.txt.
 type BookHistory struct {
-	Cursor    string
-	NextSeq   int
-	Revisions []HistoryRevision
+	ActiveBranch string
+	Cursor       string
+	NextSeq      int
+	Branches     []HistoryBranch
+	Revisions    []HistoryRevision
 }
 
 func bookHistoryDir(bookRoot string) string {
@@ -58,7 +96,91 @@ func bookHistoryBlobPath(bookRoot, hash string) string {
 	return filepath.Join(bookHistoryBlobsDir(bookRoot), strings.ToLower(strings.TrimSpace(hash))+".gz")
 }
 
-// CursorIndex returns the index of the current cursor revision, or -1 if empty.
+// NormalizedActiveBranch returns the sanitized active branch name, defaulting to "main".
+func (h *BookHistory) NormalizedActiveBranch() string {
+	if h == nil {
+		return "main"
+	}
+	br := SanitizeBookID(strings.TrimSpace(h.ActiveBranch))
+	if br == "" || br == "book" {
+		return "main"
+	}
+	return br
+}
+
+func normalizeRevisionBranch(raw string) string {
+	br := SanitizeBookID(strings.TrimSpace(raw))
+	if br == "" || br == "book" {
+		return "main"
+	}
+	return br
+}
+
+// ActiveBranchRevisions returns the slice indices in h.Revisions belonging to the active branch.
+func (h *BookHistory) ActiveBranchRevisions() []int {
+	if h == nil || len(h.Revisions) == 0 {
+		return nil
+	}
+	activeBr := h.NormalizedActiveBranch()
+	var idxs []int
+	for i := range h.Revisions {
+		if normalizeRevisionBranch(h.Revisions[i].Branch) == activeBr {
+			idxs = append(idxs, i)
+		}
+	}
+	return idxs
+}
+
+func (h *BookHistory) syncBranchesMetadata() {
+	if h == nil {
+		return
+	}
+	activeBr := h.NormalizedActiveBranch()
+	h.ActiveBranch = activeBr
+
+	hasMain := false
+	for i := range h.Branches {
+		h.Branches[i].Name = normalizeRevisionBranch(h.Branches[i].Name)
+		if h.Branches[i].Name == "main" {
+			hasMain = true
+		}
+	}
+	if !hasMain && len(h.Revisions) > 0 {
+		firstID := h.Revisions[0].ID
+		headID := firstID
+		for _, rev := range h.Revisions {
+			if normalizeRevisionBranch(rev.Branch) == "main" {
+				headID = rev.ID
+			}
+		}
+		h.Branches = append([]HistoryBranch{{
+			Name:          "main",
+			HeadRevID:     headID,
+			BaseRevID:     firstID,
+			CreatedAtUnix: h.Revisions[0].TimeUnix,
+		}}, h.Branches...)
+	}
+	if h.Cursor != "" {
+		foundBranch := false
+		for i := range h.Branches {
+			if h.Branches[i].Name == activeBr {
+				h.Branches[i].HeadRevID = h.Cursor
+				foundBranch = true
+				break
+			}
+		}
+		if !foundBranch && len(h.Revisions) > 0 {
+			h.Branches = append(h.Branches, HistoryBranch{
+				Name:          activeBr,
+				HeadRevID:     h.Cursor,
+				BaseRevID:     h.Cursor,
+				CreatedAtUnix: time.Now().Unix(),
+			})
+		}
+	}
+}
+
+// CursorIndex returns the index of the current cursor revision in h.Revisions, or -1 if empty.
 func (h *BookHistory) CursorIndex() int {
 	if h == nil || len(h.Revisions) == 0 {
 		return -1
@@ -68,70 +190,139 @@ func (h *BookHistory) CursorIndex() int {
 			return i
 		}
 	}
+	branchIdxs := h.ActiveBranchRevisions()
+	if len(branchIdxs) > 0 {
+		return branchIdxs[len(branchIdxs)-1]
+	}
 	return len(h.Revisions) - 1
 }
 
-// LastNamedIndex returns the index of the latest Named Version (named: true), or -1 if none.
+// LastNamedIndex returns the index of the latest Named Version on the active branch, or -1 if none.
 func (h *BookHistory) LastNamedIndex() int {
 	if h == nil {
 		return -1
 	}
-	for i := len(h.Revisions) - 1; i >= 0; i-- {
-		if h.Revisions[i].Named {
-			return i
+	branchIdxs := h.ActiveBranchRevisions()
+	for j := len(branchIdxs) - 1; j >= 0; j-- {
+		idx := branchIdxs[j]
+		if h.Revisions[idx].Named {
+			return idx
 		}
 	}
 	return -1
 }
 
-// CanUndo returns true if the cursor can step back without crossing the latest Named Version floor.
+// CanUndo returns true if the cursor can step back on the active branch without crossing the latest Named Version floor.
 func (h *BookHistory) CanUndo() bool {
 	if h == nil || len(h.Revisions) == 0 {
 		return false
 	}
-	curIdx := h.CursorIndex()
-	floorIdx := h.LastNamedIndex()
-	if floorIdx < 0 {
-		floorIdx = 0
+	branchIdxs := h.ActiveBranchRevisions()
+	if len(branchIdxs) <= 1 {
+		return false
 	}
-	return curIdx > floorIdx
+	curPos := len(branchIdxs) - 1
+	floorPos := 0
+	for j, idx := range branchIdxs {
+		if h.Revisions[idx].ID == h.Cursor {
+			curPos = j
+		}
+		if h.Revisions[idx].Named {
+			floorPos = j
+		}
+	}
+	return curPos > floorPos
 }
 
-// CanRedo returns true if there is a newer revision after the current cursor.
+// CanRedo returns true if there is a newer revision after the current cursor on the active branch.
 func (h *BookHistory) CanRedo() bool {
 	if h == nil || len(h.Revisions) == 0 {
 		return false
 	}
-	curIdx := h.CursorIndex()
-	return curIdx >= 0 && curIdx < len(h.Revisions)-1
+	branchIdxs := h.ActiveBranchRevisions()
+	if len(branchIdxs) <= 1 {
+		return false
+	}
+	curPos := -1
+	for j, idx := range branchIdxs {
+		if h.Revisions[idx].ID == h.Cursor {
+			curPos = j
+			break
+		}
+	}
+	return curPos >= 0 && curPos < len(branchIdxs)-1
 }
 
-// UnnamedEditsCount returns the number of active unnamed edits applied after the latest Named Version up to the cursor.
+// UnnamedEditsCount returns the number of active unnamed edits applied after the latest Named Version up to the cursor on the active branch.
 func (h *BookHistory) UnnamedEditsCount() int {
 	if h == nil || len(h.Revisions) == 0 {
 		return 0
 	}
-	curIdx := h.CursorIndex()
-	floorIdx := h.LastNamedIndex()
-	if floorIdx < 0 {
-		floorIdx = 0
+	branchIdxs := h.ActiveBranchRevisions()
+	if len(branchIdxs) == 0 {
+		return 0
 	}
-	if curIdx <= floorIdx {
+	curPos := len(branchIdxs) - 1
+	floorPos := 0
+	for j, idx := range branchIdxs {
+		if h.Revisions[idx].ID == h.Cursor {
+			curPos = j
+		}
+		if h.Revisions[idx].Named {
+			floorPos = j
+		}
+	}
+	if curPos <= floorPos {
 		return 0
 	}
 	count := 0
-	for i := floorIdx + 1; i <= curIdx && i < len(h.Revisions); i++ {
-		if !h.Revisions[i].Named {
+	for j := floorPos + 1; j <= curPos && j < len(branchIdxs); j++ {
+		if !h.Revisions[branchIdxs[j]].Named {
 			count++
 		}
 	}
 	return count
 }
 
+func parseHistoryBranchLine(val string) (HistoryBranch, bool) {
+	arrowIdx := strings.Index(val, "->")
+	if arrowIdx <= 0 {
+		name := normalizeRevisionBranch(val)
+		if name == "" {
+			return HistoryBranch{}, false
+		}
+		return HistoryBranch{Name: name}, true
+	}
+	name := normalizeRevisionBranch(val[:arrowIdx])
+	rest := strings.TrimSpace(val[arrowIdx+2:])
+	br := HistoryBranch{Name: name}
+	for _, seg := range strings.Split(rest, "|") {
+		seg = strings.TrimSpace(seg)
+		cIdx := strings.IndexByte(seg, ':')
+		if cIdx <= 0 {
+			continue
+		}
+		k := strings.ToLower(strings.TrimSpace(seg[:cIdx]))
+		v := strings.TrimSpace(seg[cIdx+1:])
+		switch k {
+		case "head":
+			br.HeadRevID = SanitizeSceneID(v)
+		case "base":
+			br.BaseRevID = SanitizeSceneID(v)
+		case "time":
+			if ts, err := strconv.ParseInt(v, 10, 64); err == nil {
+				br.CreatedAtUnix = ts
+			}
+		}
+	}
+	return br, br.Name != ""
+}
+
 // ParseHistoryFile parses a human-readable key: value history.txt file.
 func ParseHistoryFile(content string) *BookHistory {
 	h := &BookHistory{
-		NextSeq: 1,
+		ActiveBranch: "main",
+		NextSeq:      1,
 	}
 	normalized := strings.ReplaceAll(content, "\r\n", "\n")
 	normalized = strings.ReplaceAll(normalized, "\r", "\n")
@@ -140,6 +331,9 @@ func ParseHistoryFile(content string) *BookHistory {
 	var current *HistoryRevision
 	flushCurrent := func() {
 		if current != nil && current.ID != "" {
+			if current.Branch == "" {
+				current.Branch = "main"
+			}
 			if current.Files == nil {
 				current.Files = make(map[string]string)
 			}
@@ -172,25 +366,36 @@ func ParseHistoryFile(content string) *BookHistory {
 				continue
 			}
 			current = &HistoryRevision{
-				ID:    revID,
-				Files: make(map[string]string),
+				ID:     revID,
+				Branch: "main",
+				Files:  make(map[string]string),
 			}
 			continue
 		}
 
 		if current == nil {
 			switch key {
+			case "active_branch":
+				h.ActiveBranch = normalizeRevisionBranch(val)
 			case "cursor":
 				h.Cursor = SanitizeSceneID(val)
 			case "next_seq":
 				if seq, err := strconv.Atoi(val); err == nil && seq > h.NextSeq {
 					h.NextSeq = seq
 				}
+			case "branch":
+				if br, ok := parseHistoryBranchLine(val); ok {
+					h.Branches = append(h.Branches, br)
+				}
 			}
 			continue
 		}
 
 		switch key {
+		case "branch":
+			current.Branch = normalizeRevisionBranch(val)
+		case "parent":
+			current.ParentID = SanitizeSceneID(val)
 		case "time":
 			if ts, err := strconv.ParseInt(val, 10, 64); err == nil {
 				current.TimeUnix = ts
@@ -223,26 +428,41 @@ func ParseHistoryFile(content string) *BookHistory {
 	if h.Cursor == "" && len(h.Revisions) > 0 {
 		h.Cursor = h.Revisions[len(h.Revisions)-1].ID
 	}
+	h.syncBranchesMetadata()
 	return h
 }
 
 // SerializeHistoryFile serializes BookHistory into the human-readable key: value format.
 func SerializeHistoryFile(h *BookHistory) string {
 	if h == nil {
-		h = &BookHistory{NextSeq: 1}
+		h = &BookHistory{ActiveBranch: "main", NextSeq: 1}
 	}
+	h.syncBranchesMetadata()
 	var sb strings.Builder
 	sb.WriteString("# StoryTeller — Historia edycji książki (history.txt)\n")
+	sb.WriteString(fmt.Sprintf("active_branch: %s\n", h.NormalizedActiveBranch()))
 	sb.WriteString(fmt.Sprintf("cursor: %s\n", SanitizeSceneID(h.Cursor)))
 	nextSeq := h.NextSeq
 	if nextSeq < len(h.Revisions)+1 {
 		nextSeq = len(h.Revisions) + 1
 	}
 	sb.WriteString(fmt.Sprintf("next_seq: %d\n", nextSeq))
+	for _, br := range h.Branches {
+		sb.WriteString(fmt.Sprintf("branch: %s -> head:%s | base:%s | time:%d\n",
+			normalizeRevisionBranch(br.Name),
+			SanitizeSceneID(br.HeadRevID),
+			SanitizeSceneID(br.BaseRevID),
+			br.CreatedAtUnix,
+		))
+	}
 
 	for _, rev := range h.Revisions {
 		sb.WriteString("\n")
 		sb.WriteString(fmt.Sprintf("revision: %s\n", SanitizeSceneID(rev.ID)))
+		sb.WriteString(fmt.Sprintf("branch: %s\n", normalizeRevisionBranch(rev.Branch)))
+		if rev.ParentID != "" {
+			sb.WriteString(fmt.Sprintf("parent: %s\n", SanitizeSceneID(rev.ParentID)))
+		}
 		sb.WriteString(fmt.Sprintf("time: %d\n", rev.TimeUnix))
 		kind := SanitizePlainText(rev.Kind)
 		if kind == "" {
@@ -532,17 +752,26 @@ func EnsureBookHistoryBaseline(b *Book, selectedSceneID string) error {
 			selectedSceneID = b.Scenes[0].ID
 		}
 	}
+	now := time.Now().Unix()
 	rev := HistoryRevision{
 		ID:              "r1",
-		TimeUnix:        time.Now().Unix(),
+		Branch:          "main",
+		TimeUnix:        now,
 		Kind:            "baseline",
 		Named:           true,
 		Label:           "Stan początkowy",
 		SelectedSceneID: selectedSceneID,
 		Files:           filesMap,
 	}
+	h.ActiveBranch = "main"
 	h.Cursor = "r1"
 	h.NextSeq = 2
+	h.Branches = []HistoryBranch{{
+		Name:          "main",
+		HeadRevID:     "r1",
+		BaseRevID:     "r1",
+		CreatedAtUnix: now,
+	}}
 	h.Revisions = []HistoryRevision{rev}
 	return SaveBookHistory(b, h)
 }
@@ -552,9 +781,22 @@ func truncateAfterCursorPreservingNamed(h *BookHistory) {
 	if curIdx < 0 || curIdx >= len(h.Revisions)-1 {
 		return
 	}
+	activeBr := h.NormalizedActiveBranch()
+	referencedByBranches := make(map[string]bool)
+	for _, br := range h.Branches {
+		if br.Name != activeBr {
+			if br.HeadRevID != "" {
+				referencedByBranches[br.HeadRevID] = true
+			}
+			if br.BaseRevID != "" {
+				referencedByBranches[br.BaseRevID] = true
+			}
+		}
+	}
 	kept := make([]HistoryRevision, 0, len(h.Revisions))
 	for i, rev := range h.Revisions {
-		if i <= curIdx || rev.Named {
+		revBr := normalizeRevisionBranch(rev.Branch)
+		if revBr != activeBr || i <= curIdx || rev.Named || referencedByBranches[rev.ID] {
 			kept = append(kept, rev)
 		}
 	}
@@ -588,6 +830,7 @@ func RecordBookHistoryStep(b *Book, label, kind, coalesceKey, selectedSceneID st
 
 	truncateAfterCursorPreservingNamed(h)
 	curIdx = h.CursorIndex()
+	activeBr := h.NormalizedActiveBranch()
 
 	now := time.Now().Unix()
 	cleanLabel := SanitizePlainText(label)
@@ -606,7 +849,8 @@ func RecordBookHistoryStep(b *Book, label, kind, coalesceKey, selectedSceneID st
 		}
 	}
 
-	if curIdx >= 0 && curIdx == len(h.Revisions)-1 {
+	branchIdxs := h.ActiveBranchRevisions()
+	if curIdx >= 0 && len(branchIdxs) > 0 && curIdx == branchIdxs[len(branchIdxs)-1] {
 		curRev := &h.Revisions[curIdx]
 		if !curRev.Named && cleanCoalesce != "" && curRev.CoalesceKey == cleanCoalesce && (now-curRev.TimeUnix) <= HistoryCoalesceWindowSec {
 			curRev.TimeUnix = now
@@ -614,6 +858,7 @@ func RecordBookHistoryStep(b *Book, label, kind, coalesceKey, selectedSceneID st
 			curRev.Kind = cleanKind
 			curRev.SelectedSceneID = selectedSceneID
 			curRev.Files = filesMap
+			h.syncBranchesMetadata()
 			if err := SaveBookHistory(b, h); err != nil {
 				return err
 			}
@@ -628,8 +873,15 @@ func RecordBookHistoryStep(b *Book, label, kind, coalesceKey, selectedSceneID st
 	revID := fmt.Sprintf("r%d", h.NextSeq)
 	h.NextSeq++
 
+	parentID := ""
+	if curIdx >= 0 && curIdx < len(h.Revisions) {
+		parentID = h.Revisions[curIdx].ID
+	}
+
 	newRev := HistoryRevision{
 		ID:              revID,
+		Branch:          activeBr,
+		ParentID:        parentID,
 		TimeUnix:        now,
 		Kind:            cleanKind,
 		Named:           false,
@@ -640,14 +892,15 @@ func RecordBookHistoryStep(b *Book, label, kind, coalesceKey, selectedSceneID st
 	}
 	h.Revisions = append(h.Revisions, newRev)
 	h.Cursor = revID
+	h.syncBranchesMetadata()
 
-	// Enforce rolling cap of MaxUnnamedHistoryRevisions after the latest Named Version.
+	// Enforce rolling cap of MaxUnnamedHistoryRevisions after the latest Named Version on the active branch.
 	for {
 		lastNamedIdx := h.LastNamedIndex()
 		unnamedCount := 0
 		oldestUnnamedIdx := -1
 		for i := lastNamedIdx + 1; i < len(h.Revisions); i++ {
-			if !h.Revisions[i].Named {
+			if normalizeRevisionBranch(h.Revisions[i].Branch) == activeBr && !h.Revisions[i].Named {
 				unnamedCount++
 				if oldestUnnamedIdx == -1 {
 					oldestUnnamedIdx = i
@@ -667,7 +920,7 @@ func RecordBookHistoryStep(b *Book, label, kind, coalesceKey, selectedSceneID st
 	return nil
 }
 
-// SaveNamedBookVersion collapses all unnamed edits into a permanent Named Version and prunes unreferenced blobs.
+// SaveNamedBookVersion collapses all unnamed edits on the active branch into a permanent Named Version and prunes unreferenced blobs.
 func SaveNamedBookVersion(b *Book, versionName, selectedSceneID string) (*HistoryRevision, error) {
 	if b == nil || b.IsPacked || strings.TrimSpace(b.RootPath) == "" {
 		return nil, fmt.Errorf("brak rozpakowanej książki na dysku")
@@ -684,34 +937,52 @@ func SaveNamedBookVersion(b *Book, versionName, selectedSceneID string) (*Histor
 		return nil, err
 	}
 
+	activeBr := h.NormalizedActiveBranch()
 	cleanName := SanitizePlainText(versionName)
 	if cleanName == "" {
 		cleanName = fmt.Sprintf("Wersja %d", len(h.Revisions)+1)
 	}
-	if selectedSceneID == "" {
-		if curIdx := h.CursorIndex(); curIdx >= 0 {
+	parentID := ""
+	if curIdx := h.CursorIndex(); curIdx >= 0 {
+		parentID = h.Revisions[curIdx].ID
+		if selectedSceneID == "" {
 			selectedSceneID = h.Revisions[curIdx].SelectedSceneID
 		}
-		if selectedSceneID == "" {
-			selectedSceneID = b.StartSceneID
+	}
+	if selectedSceneID == "" {
+		selectedSceneID = b.StartSceneID
+	}
+
+	referencedByOtherBranches := make(map[string]bool)
+	for _, br := range h.Branches {
+		if br.Name != activeBr {
+			if br.HeadRevID != "" {
+				referencedByOtherBranches[br.HeadRevID] = true
+			}
+			if br.BaseRevID != "" {
+				referencedByOtherBranches[br.BaseRevID] = true
+			}
 		}
 	}
 
-	var keptNamed []HistoryRevision
+	var keptRevs []HistoryRevision
 	for _, rev := range h.Revisions {
-		if rev.Named {
-			keptNamed = append(keptNamed, rev)
+		revBr := normalizeRevisionBranch(rev.Branch)
+		if revBr != activeBr || rev.Named || referencedByOtherBranches[rev.ID] {
+			keptRevs = append(keptRevs, rev)
 		}
 	}
 
 	if h.NextSeq < 1 {
-		h.NextSeq = len(keptNamed) + 1
+		h.NextSeq = len(keptRevs) + 1
 	}
 	revID := fmt.Sprintf("r%d", h.NextSeq)
 	h.NextSeq++
 
 	newVer := HistoryRevision{
 		ID:              revID,
+		Branch:          activeBr,
+		ParentID:        parentID,
 		TimeUnix:        time.Now().Unix(),
 		Kind:            "version",
 		Named:           true,
@@ -719,9 +990,10 @@ func SaveNamedBookVersion(b *Book, versionName, selectedSceneID string) (*Histor
 		SelectedSceneID: selectedSceneID,
 		Files:           filesMap,
 	}
-	keptNamed = append(keptNamed, newVer)
-	h.Revisions = keptNamed
+	keptRevs = append(keptRevs, newVer)
+	h.Revisions = keptRevs
 	h.Cursor = newVer.ID
+	h.syncBranchesMetadata()
 
 	if err := SaveBookHistory(b, h); err != nil {
 		return nil, err
@@ -730,7 +1002,7 @@ func SaveNamedBookVersion(b *Book, versionName, selectedSceneID string) (*Histor
 	return &newVer, nil
 }
 
-// UndoBookHistory steps backward by one unnamed edit (stopping at the latest Named Version floor) and restores files to disk.
+// UndoBookHistory steps backward by one unnamed edit on the active branch (stopping at the latest Named Version floor) and restores files to disk.
 func UndoBookHistory(b *Book) (selectedSceneID string, label string, err error) {
 	if b == nil || b.IsPacked || strings.TrimSpace(b.RootPath) == "" {
 		return "", "", fmt.Errorf("brak aktywnej książki")
@@ -742,21 +1014,29 @@ func UndoBookHistory(b *Book) (selectedSceneID string, label string, err error) 
 	if !h.CanUndo() {
 		return "", "", fmt.Errorf("brak zmian do cofnięcia od ostatniej zapisanej wersji")
 	}
-	curIdx := h.CursorIndex()
-	undoneRev := h.Revisions[curIdx]
-	targetRev := h.Revisions[curIdx-1]
+	branchIdxs := h.ActiveBranchRevisions()
+	curPos := len(branchIdxs) - 1
+	for j, idx := range branchIdxs {
+		if h.Revisions[idx].ID == h.Cursor {
+			curPos = j
+			break
+		}
+	}
+	undoneRev := h.Revisions[branchIdxs[curPos]]
+	targetRev := h.Revisions[branchIdxs[curPos-1]]
 
 	if err := restoreBookTextFiles(b, targetRev); err != nil {
 		return "", "", err
 	}
 	h.Cursor = targetRev.ID
+	h.syncBranchesMetadata()
 	if err := SaveBookHistory(b, h); err != nil {
 		return "", "", err
 	}
 	return targetRev.SelectedSceneID, undoneRev.Label, nil
 }
 
-// RedoBookHistory steps forward by one unnamed edit and restores files to disk.
+// RedoBookHistory steps forward by one unnamed edit on the active branch and restores files to disk.
 func RedoBookHistory(b *Book) (selectedSceneID string, label string, err error) {
 	if b == nil || b.IsPacked || strings.TrimSpace(b.RootPath) == "" {
 		return "", "", fmt.Errorf("brak aktywnej książki")
@@ -768,13 +1048,21 @@ func RedoBookHistory(b *Book) (selectedSceneID string, label string, err error) 
 	if !h.CanRedo() {
 		return "", "", fmt.Errorf("brak zmian do ponowienia")
 	}
-	curIdx := h.CursorIndex()
-	targetRev := h.Revisions[curIdx+1]
+	branchIdxs := h.ActiveBranchRevisions()
+	curPos := 0
+	for j, idx := range branchIdxs {
+		if h.Revisions[idx].ID == h.Cursor {
+			curPos = j
+			break
+		}
+	}
+	targetRev := h.Revisions[branchIdxs[curPos+1]]
 
 	if err := restoreBookTextFiles(b, targetRev); err != nil {
 		return "", "", err
 	}
 	h.Cursor = targetRev.ID
+	h.syncBranchesMetadata()
 	if err := SaveBookHistory(b, h); err != nil {
 		return "", "", err
 	}
@@ -809,12 +1097,13 @@ func RestoreBookHistoryRevision(b *Book, revID string) (selectedSceneID string, 
 
 	targetRev := h.Revisions[targetIdx]
 	lastNamedIdx := h.LastNamedIndex()
+	activeBr := h.NormalizedActiveBranch()
 
 	if err := restoreBookTextFiles(b, targetRev); err != nil {
 		return "", "", err
 	}
 
-	if targetRev.Named && targetIdx < lastNamedIdx {
+	if (targetRev.Named && targetIdx < lastNamedIdx) || normalizeRevisionBranch(targetRev.Branch) != activeBr {
 		truncateAfterCursorPreservingNamed(h)
 		if h.NextSeq < 1 {
 			h.NextSeq = len(h.Revisions) + 1
@@ -823,6 +1112,8 @@ func RestoreBookHistoryRevision(b *Book, revID string) (selectedSceneID string, 
 		h.NextSeq++
 		restoredStep := HistoryRevision{
 			ID:              newID,
+			Branch:          activeBr,
+			ParentID:        h.Cursor,
 			TimeUnix:        time.Now().Unix(),
 			Kind:            "restore",
 			Named:           false,
@@ -832,6 +1123,7 @@ func RestoreBookHistoryRevision(b *Book, revID string) (selectedSceneID string, 
 		}
 		h.Revisions = append(h.Revisions, restoredStep)
 		h.Cursor = newID
+		h.syncBranchesMetadata()
 		if err := SaveBookHistory(b, h); err != nil {
 			return "", "", err
 		}
@@ -840,8 +1132,675 @@ func RestoreBookHistoryRevision(b *Book, revID string) (selectedSceneID string, 
 	}
 
 	h.Cursor = targetRev.ID
+	h.syncBranchesMetadata()
 	if err := SaveBookHistory(b, h); err != nil {
 		return "", "", err
 	}
 	return targetRev.SelectedSceneID, targetRev.Label, nil
+}
+
+// CopyHistoryRevisionToBranch applies the snapshot of revID onto the top of targetBranch
+// as a new Named Version and switches ActiveBranch to targetBranch.
+// If targetBranch is empty or already the active branch and revID belongs to it, it delegates to RestoreBookHistoryRevision.
+func CopyHistoryRevisionToBranch(b *Book, revID, targetBranch string) (selectedSceneID string, label string, err error) {
+	if b == nil || b.IsPacked || strings.TrimSpace(b.RootPath) == "" {
+		return "", "", fmt.Errorf("brak aktywnej książki")
+	}
+	cleanID := SanitizeSceneID(revID)
+	if cleanID == "" {
+		return "", "", fmt.Errorf("nieprawidłowy identyfikator rewizji")
+	}
+	h, err := LoadBookHistory(b)
+	if err != nil {
+		return "", "", err
+	}
+	activeBr := h.NormalizedActiveBranch()
+	cleanTarget := activeBr
+	if strings.TrimSpace(targetBranch) != "" {
+		cleanTarget = normalizeRevisionBranch(targetBranch)
+	}
+
+	targetIdx := -1
+	for i := range h.Revisions {
+		if h.Revisions[i].ID == cleanID {
+			targetIdx = i
+			break
+		}
+	}
+	if targetIdx < 0 {
+		return "", "", fmt.Errorf("nie znaleziono rewizji %s", cleanID)
+	}
+	srcRev := h.Revisions[targetIdx]
+
+	if cleanTarget == activeBr && normalizeRevisionBranch(srcRev.Branch) == activeBr {
+		return RestoreBookHistoryRevision(b, cleanID)
+	}
+
+	if cleanTarget != activeBr {
+		_ = RecordBookHistoryStep(b, "Auto-zapis przed nałożeniem wersji", "autosave", "", b.StartSceneID)
+		h, err = LoadBookHistory(b)
+		if err != nil {
+			return "", "", err
+		}
+	}
+
+	branchIdx := -1
+	for i := range h.Branches {
+		if strings.EqualFold(h.Branches[i].Name, cleanTarget) {
+			branchIdx = i
+			break
+		}
+	}
+	if branchIdx < 0 {
+		return "", "", fmt.Errorf("nie znaleziono gałęzi „%s”", cleanTarget)
+	}
+
+	parentID := h.Branches[branchIdx].HeadRevID
+	if parentID == "" {
+		for i := len(h.Revisions) - 1; i >= 0; i-- {
+			if normalizeRevisionBranch(h.Revisions[i].Branch) == cleanTarget {
+				parentID = h.Revisions[i].ID
+				break
+			}
+		}
+	}
+
+	if err := restoreBookTextFiles(b, srcRev); err != nil {
+		return "", "", err
+	}
+
+	if h.NextSeq < 1 {
+		h.NextSeq = len(h.Revisions) + 1
+	}
+	newID := fmt.Sprintf("r%d", h.NextSeq)
+	h.NextSeq++
+
+	cleanLabel := SanitizePlainText(srcRev.Label)
+	if cleanLabel == "" {
+		cleanLabel = srcRev.ID
+	}
+
+	copiedRev := HistoryRevision{
+		ID:              newID,
+		Branch:          cleanTarget,
+		ParentID:        parentID,
+		TimeUnix:        time.Now().Unix(),
+		Kind:            "copy",
+		Named:           true,
+		Label:           cleanLabel,
+		SelectedSceneID: srcRev.SelectedSceneID,
+		Files:           cloneFileHashMap(srcRev.Files),
+	}
+	h.Revisions = append(h.Revisions, copiedRev)
+	h.ActiveBranch = cleanTarget
+	h.Cursor = newID
+	h.Branches[branchIdx].HeadRevID = newID
+	h.syncBranchesMetadata()
+
+	if err := SaveBookHistory(b, h); err != nil {
+		return "", "", err
+	}
+	PruneUnreferencedBlobs(b, h)
+	_ = reloadBookInPlace(b)
+	return copiedRev.SelectedSceneID, copiedRev.Label, nil
+}
+
+// BuildHistoryHoverSummaries computes concise hover hints ("<branch> • <N> scen • <pages/delta>")
+// for all revisions and branches in h, deduplicating snapshot parsing by file-hash signature.
+func BuildHistoryHoverSummaries(b *Book, h *BookHistory) (revHints map[string]string, branchHints map[string]string) {
+	revHints = make(map[string]string)
+	branchHints = make(map[string]string)
+	if b == nil || b.IsPacked || strings.TrimSpace(b.RootPath) == "" || h == nil || len(h.Revisions) == 0 {
+		return revHints, branchHints
+	}
+
+	type snapMetrics struct {
+		scenes  int
+		eighths int
+	}
+	metricsBySig := make(map[string]snapMetrics)
+	computeMetrics := func(rev HistoryRevision) snapMetrics {
+		if len(rev.Files) == 0 {
+			return snapMetrics{scenes: len(b.Scenes), eighths: len(b.Scenes)}
+		}
+		keys := make([]string, 0, len(rev.Files))
+		for k := range rev.Files {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		var sig strings.Builder
+		for _, k := range keys {
+			sig.WriteString(k)
+			sig.WriteByte('=')
+			sig.WriteString(rev.Files[k])
+			sig.WriteByte(';')
+		}
+		sigStr := sig.String()
+		if m, ok := metricsBySig[sigStr]; ok {
+			return m
+		}
+		snapBook, err := loadBookFromHistoryRevision(b.RootPath, rev)
+		if err != nil || snapBook == nil {
+			m := snapMetrics{scenes: len(b.Scenes), eighths: len(b.Scenes)}
+			metricsBySig[sigStr] = m
+			return m
+		}
+		bd := AnalyzeScreenplay(snapBook)
+		m := snapMetrics{
+			scenes:  len(snapBook.Scenes),
+			eighths: bd.TotalEighths,
+		}
+		metricsBySig[sigStr] = m
+		return m
+	}
+
+	baseMetrics := computeMetrics(h.Revisions[0])
+	if curIdx := h.CursorIndex(); curIdx >= 0 && curIdx < len(h.Revisions) {
+		baseMetrics = computeMetrics(h.Revisions[curIdx])
+	}
+
+	for _, rev := range h.Revisions {
+		brName := normalizeRevisionBranch(rev.Branch)
+		m := computeMetrics(rev)
+		deltaEighths := m.eighths - baseMetrics.eighths
+		var pagesPart string
+		if deltaEighths > 0 {
+			pagesPart = "+" + FormatEighths(deltaEighths)
+		} else if deltaEighths < 0 {
+			pagesPart = "-" + FormatEighths(-deltaEighths)
+		} else {
+			pagesPart = FormatEighths(m.eighths)
+		}
+		hint := fmt.Sprintf("%s • %d scen • %s", brName, m.scenes, pagesPart)
+		revHints[rev.ID] = hint
+		branchHints[brName] = hint
+	}
+	for _, br := range h.Branches {
+		brName := normalizeRevisionBranch(br.Name)
+		if br.HeadRevID != "" {
+			if hint, ok := revHints[br.HeadRevID]; ok {
+				branchHints[brName] = hint
+				continue
+			}
+		}
+		if _, ok := branchHints[brName]; !ok {
+			branchHints[brName] = fmt.Sprintf("%s • %d scen", brName, len(b.Scenes))
+		}
+	}
+	return revHints, branchHints
+}
+
+func reloadBookInPlace(b *Book) error {
+	if b == nil || b.IsPacked || strings.TrimSpace(b.RootPath) == "" {
+		return nil
+	}
+	reloaded, err := LoadBookFromDir(b.RootPath)
+	if err != nil {
+		return err
+	}
+	reloaded.ID = b.ID
+	reloaded.IsExternal = b.IsExternal
+	reloaded.SourceURL = b.SourceURL
+	*b = *reloaded
+	return nil
+}
+
+// CreateBookBranch forks a new Git-style draft branch from the current state (or specified revision ID) and switches ActiveBranch to it.
+func CreateBookBranch(b *Book, branchName, fromRevID string) (*HistoryBranch, error) {
+	if b == nil || b.IsPacked || strings.TrimSpace(b.RootPath) == "" {
+		return nil, fmt.Errorf("brak rozpakowanej książki na dysku")
+	}
+	if err := EnsureBookHistoryBaseline(b, b.StartSceneID); err != nil {
+		return nil, err
+	}
+	rawTrimmed := strings.TrimSpace(branchName)
+	cleanBranch := ""
+	if rawTrimmed != "" {
+		cleanBranch = SanitizeBookID(rawTrimmed)
+	}
+	// Auto-save any pending disk modifications on the current branch before forking
+	_ = RecordBookHistoryStep(b, "Auto-zapis przed utworzeniem gałęzi", "autosave", "", b.StartSceneID)
+
+	h, err := LoadBookHistory(b)
+	if err != nil {
+		return nil, err
+	}
+	if cleanBranch == "" || cleanBranch == "book" {
+		for seq := len(h.Branches) + 1; ; seq++ {
+			cand := fmt.Sprintf("wariant-%d", seq)
+			exists := false
+			for _, br := range h.Branches {
+				if strings.EqualFold(br.Name, cand) {
+					exists = true
+					break
+				}
+			}
+			if !exists {
+				cleanBranch = cand
+				break
+			}
+		}
+	}
+	for _, br := range h.Branches {
+		if strings.EqualFold(br.Name, cleanBranch) {
+			return nil, fmt.Errorf("gałąź „%s” już istnieje", cleanBranch)
+		}
+	}
+
+	baseIdx := h.CursorIndex()
+	if trimmedFrom := SanitizeSceneID(fromRevID); trimmedFrom != "" {
+		for i := range h.Revisions {
+			if h.Revisions[i].ID == trimmedFrom {
+				baseIdx = i
+				break
+			}
+		}
+	}
+	if baseIdx < 0 || baseIdx >= len(h.Revisions) {
+		return nil, fmt.Errorf("nie znaleziono rewizji bazowej do rozgałęzienia")
+	}
+	baseRev := h.Revisions[baseIdx]
+
+	if h.NextSeq < 1 {
+		h.NextSeq = len(h.Revisions) + 1
+	}
+	newRevID := fmt.Sprintf("r%d", h.NextSeq)
+	h.NextSeq++
+	now := time.Now().Unix()
+
+	branchRev := HistoryRevision{
+		ID:              newRevID,
+		Branch:          cleanBranch,
+		ParentID:        baseRev.ID,
+		TimeUnix:        now,
+		Kind:            "branch",
+		Named:           true,
+		Label:           fmt.Sprintf("Utworzono gałąź „%s” (z %s)", cleanBranch, baseRev.ID),
+		SelectedSceneID: baseRev.SelectedSceneID,
+		Files:           cloneFileHashMap(baseRev.Files),
+	}
+	newBr := HistoryBranch{
+		Name:          cleanBranch,
+		HeadRevID:     newRevID,
+		BaseRevID:     baseRev.ID,
+		CreatedAtUnix: now,
+	}
+
+	if err := restoreBookTextFiles(b, branchRev); err != nil {
+		return nil, err
+	}
+
+	h.Revisions = append(h.Revisions, branchRev)
+	h.Branches = append(h.Branches, newBr)
+	h.ActiveBranch = cleanBranch
+	h.Cursor = newRevID
+	h.syncBranchesMetadata()
+
+	if err := SaveBookHistory(b, h); err != nil {
+		return nil, err
+	}
+	_ = reloadBookInPlace(b)
+	return &newBr, nil
+}
+
+// SwitchBookBranch auto-saves current unnamed edits on the current branch, restores the target branch head's .txt blobs, and reloads the book.
+func SwitchBookBranch(b *Book, branchName string) (selectedSceneID string, err error) {
+	if b == nil || b.IsPacked || strings.TrimSpace(b.RootPath) == "" {
+		return "", fmt.Errorf("brak rozpakowanej książki na dysku")
+	}
+	cleanBranch := normalizeRevisionBranch(branchName)
+	if err := EnsureBookHistoryBaseline(b, b.StartSceneID); err != nil {
+		return "", err
+	}
+	// Auto-save any unrecorded disk changes on the current branch before switching
+	_ = RecordBookHistoryStep(b, "Auto-zapis przed zmianą gałęzi", "autosave", "", b.StartSceneID)
+
+	h, err := LoadBookHistory(b)
+	if err != nil {
+		return "", err
+	}
+	if h.NormalizedActiveBranch() == cleanBranch {
+		curIdx := h.CursorIndex()
+		if curIdx >= 0 {
+			return h.Revisions[curIdx].SelectedSceneID, nil
+		}
+		return b.StartSceneID, nil
+	}
+
+	var targetBranch *HistoryBranch
+	for i := range h.Branches {
+		if strings.EqualFold(h.Branches[i].Name, cleanBranch) {
+			targetBranch = &h.Branches[i]
+			break
+		}
+	}
+	if targetBranch == nil {
+		return "", fmt.Errorf("nie znaleziono gałęzi „%s”", cleanBranch)
+	}
+
+	targetIdx := -1
+	if targetBranch.HeadRevID != "" {
+		for i := range h.Revisions {
+			if h.Revisions[i].ID == targetBranch.HeadRevID {
+				targetIdx = i
+				break
+			}
+		}
+	}
+	if targetIdx < 0 {
+		for i := len(h.Revisions) - 1; i >= 0; i-- {
+			if normalizeRevisionBranch(h.Revisions[i].Branch) == cleanBranch {
+				targetIdx = i
+				break
+			}
+		}
+	}
+	if targetIdx < 0 {
+		return "", fmt.Errorf("gałąź „%s” nie posiada żadnej migawki", cleanBranch)
+	}
+
+	targetRev := h.Revisions[targetIdx]
+	if err := restoreBookTextFiles(b, targetRev); err != nil {
+		return "", err
+	}
+
+	h.ActiveBranch = cleanBranch
+	h.Cursor = targetRev.ID
+	targetBranch.HeadRevID = targetRev.ID
+	h.syncBranchesMetadata()
+
+	if err := SaveBookHistory(b, h); err != nil {
+		return "", err
+	}
+	_ = reloadBookInPlace(b)
+	return targetRev.SelectedSceneID, nil
+}
+
+// DeleteBookBranch deletes a non-active branch ("main" is protected) and prunes unreferenced .gz blobs.
+func DeleteBookBranch(b *Book, branchName string) error {
+	if b == nil || b.IsPacked || strings.TrimSpace(b.RootPath) == "" {
+		return fmt.Errorf("brak rozpakowanej książki na dysku")
+	}
+	cleanBranch := normalizeRevisionBranch(branchName)
+	if cleanBranch == "main" {
+		return fmt.Errorf("nie można usunąć głównej gałęzi „main”")
+	}
+	h, err := LoadBookHistory(b)
+	if err != nil {
+		return err
+	}
+	if h.NormalizedActiveBranch() == cleanBranch {
+		return fmt.Errorf("nie można usunąć aktualnie aktywnej gałęzi „%s” — najpierw przełącz na inną gałąź", cleanBranch)
+	}
+
+	found := false
+	var keptBranches []HistoryBranch
+	referencedBases := make(map[string]bool)
+	for _, br := range h.Branches {
+		if strings.EqualFold(br.Name, cleanBranch) {
+			found = true
+			continue
+		}
+		keptBranches = append(keptBranches, br)
+		if br.BaseRevID != "" {
+			referencedBases[br.BaseRevID] = true
+		}
+		if br.HeadRevID != "" {
+			referencedBases[br.HeadRevID] = true
+		}
+	}
+	if !found {
+		return fmt.Errorf("nie znaleziono gałęzi „%s”", cleanBranch)
+	}
+
+	var keptRevs []HistoryRevision
+	for _, rev := range h.Revisions {
+		if normalizeRevisionBranch(rev.Branch) == cleanBranch && !referencedBases[rev.ID] {
+			continue
+		}
+		keptRevs = append(keptRevs, rev)
+	}
+
+	h.Branches = keptBranches
+	h.Revisions = keptRevs
+	h.syncBranchesMetadata()
+	if err := SaveBookHistory(b, h); err != nil {
+		return err
+	}
+	PruneUnreferencedBlobs(b, h)
+	return nil
+}
+
+func loadBookFromHistoryRevision(bookRoot string, rev HistoryRevision) (*Book, error) {
+	b := &Book{
+		ID:             SanitizeBookID(filepath.Base(bookRoot)),
+		Title:          filepath.Base(bookRoot),
+		Author:         "Autor",
+		RootPath:       bookRoot,
+		Layout:         make(map[string]NodePosition),
+		deferProseHTML: true,
+	}
+	var storyFiles []string
+	textMap := make(map[string]string)
+
+	for fileName, hashHex := range rev.Files {
+		cleanName := filepath.Base(strings.TrimSpace(fileName))
+		lower := strings.ToLower(cleanName)
+		if !strings.HasSuffix(lower, ".txt") {
+			continue
+		}
+		rawBytes, err := readHistoryBlob(bookRoot, hashHex)
+		if err != nil {
+			return nil, err
+		}
+		content := string(rawBytes)
+		switch {
+		case lower == "data.txt":
+			ParseDataFile(content, b)
+		case lower == "editor.txt" || lower == "nodes.txt":
+			ParseEditorFile(content, b)
+		default:
+			textMap[cleanName] = content
+			storyFiles = append(storyFiles, cleanName)
+		}
+	}
+	sortStoryFiles(storyFiles)
+	b.TextFiles = storyFiles
+	for _, sf := range storyFiles {
+		ParseStoryFile(textMap[sf], sf, b)
+	}
+	FinalizeBook(b)
+	return b, nil
+}
+
+// LoadBookAtHistoryRevision reconstructs an in-memory *Book snapshot for a specific history revision without modifying disk files.
+func LoadBookAtHistoryRevision(baseBook *Book, revID string) (*Book, *HistoryRevision, error) {
+	if baseBook == nil || baseBook.IsPacked || strings.TrimSpace(baseBook.RootPath) == "" {
+		return nil, nil, fmt.Errorf("brak aktywnej książki")
+	}
+	cleanID := SanitizeSceneID(revID)
+	if cleanID == "" {
+		return nil, nil, fmt.Errorf("nieprawidłowy identyfikator rewizji")
+	}
+	h, err := LoadBookHistory(baseBook)
+	if err != nil {
+		return nil, nil, err
+	}
+	targetIdx := -1
+	for i := range h.Revisions {
+		if h.Revisions[i].ID == cleanID {
+			targetIdx = i
+			break
+		}
+	}
+	if targetIdx < 0 {
+		return nil, nil, fmt.Errorf("nie znaleziono rewizji %s", cleanID)
+	}
+	rev := h.Revisions[targetIdx]
+	b, err := loadBookFromHistoryRevision(baseBook.RootPath, rev)
+	if err != nil {
+		return nil, nil, err
+	}
+	b.IsExternal = baseBook.IsExternal
+	b.SourceURL = baseBook.SourceURL
+	if baseBook.ID != "" {
+		b.ID = baseBook.ID
+	}
+
+	var audioFiles []string
+	var imageFiles []string
+	_ = filepath.WalkDir(baseBook.RootPath, func(path string, d os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return nil
+		}
+		if d.IsDir() {
+			if path != baseBook.RootPath && strings.HasPrefix(d.Name(), ".") {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if strings.HasPrefix(d.Name(), ".") {
+			return nil
+		}
+		rel, relErr := filepath.Rel(baseBook.RootPath, path)
+		if relErr != nil {
+			return nil
+		}
+		relSlash := filepath.ToSlash(rel)
+		switch {
+		case isAudioFilename(relSlash):
+			audioFiles = append(audioFiles, relSlash)
+		case isRasterImageFilename(relSlash):
+			imageFiles = append(imageFiles, relSlash)
+		}
+		return nil
+	})
+	matchBookMedia(b, audioFiles, imageFiles)
+	if baseBook.ID != "" {
+		RebindBookID(b, baseBook.ID)
+	}
+	return b, &rev, nil
+}
+
+func formatSignedInt(delta int) string {
+	if delta > 0 {
+		return fmt.Sprintf("+%d", delta)
+	}
+	return fmt.Sprintf("%d", delta)
+}
+
+// CompareBookBranches loads both branch trees in memory and computes scene delta, page/runtime delta, and location/cast delta.
+func CompareBookBranches(b *Book, branchA, branchB string) (*BranchComparison, error) {
+	if b == nil || b.IsPacked || strings.TrimSpace(b.RootPath) == "" {
+		return nil, fmt.Errorf("brak rozpakowanej książki na dysku")
+	}
+	h, err := LoadBookHistory(b)
+	if err != nil {
+		return nil, err
+	}
+	normA := normalizeRevisionBranch(branchA)
+	normB := normalizeRevisionBranch(branchB)
+
+	findHeadRev := func(brName string) (HistoryRevision, bool) {
+		for _, br := range h.Branches {
+			if strings.EqualFold(br.Name, brName) && br.HeadRevID != "" {
+				for _, rev := range h.Revisions {
+					if rev.ID == br.HeadRevID {
+						return rev, true
+					}
+				}
+			}
+		}
+		for i := len(h.Revisions) - 1; i >= 0; i-- {
+			if normalizeRevisionBranch(h.Revisions[i].Branch) == brName {
+				return h.Revisions[i], true
+			}
+		}
+		return HistoryRevision{}, false
+	}
+
+	revA, okA := findHeadRev(normA)
+	revB, okB := findHeadRev(normB)
+	if !okA {
+		return nil, fmt.Errorf("nie znaleziono gałęzi „%s”", normA)
+	}
+	if !okB {
+		return nil, fmt.Errorf("nie znaleziono gałęzi „%s”", normB)
+	}
+
+	bookA, err := loadBookFromHistoryRevision(b.RootPath, revA)
+	if err != nil {
+		return nil, err
+	}
+	bookB, err := loadBookFromHistoryRevision(b.RootPath, revB)
+	if err != nil {
+		return nil, err
+	}
+
+	bdA := AnalyzeScreenplay(bookA)
+	bdB := AnalyzeScreenplay(bookB)
+
+	scenesMapA := make(map[string]*Scene, len(bookA.Scenes))
+	for _, sc := range bookA.Scenes {
+		scenesMapA[sc.ID] = sc
+	}
+	scenesMapB := make(map[string]*Scene, len(bookB.Scenes))
+	for _, sc := range bookB.Scenes {
+		scenesMapB[sc.ID] = sc
+	}
+
+	var added, removed, modified []string
+	for _, scB := range bookB.Scenes {
+		scA, exists := scenesMapA[scB.ID]
+		if !exists {
+			added = append(added, scB.DisplayName())
+		} else if scA.Text != scB.Text || scA.Slugline != scB.Slugline || scA.Name != scB.Name {
+			modified = append(modified, scB.DisplayName())
+		}
+	}
+	for _, scA := range bookA.Scenes {
+		if _, exists := scenesMapB[scA.ID]; !exists {
+			removed = append(removed, scA.DisplayName())
+		}
+	}
+
+	eighthsDelta := bdB.TotalEighths - bdA.TotalEighths
+	pagesDeltaStr := "0 str."
+	if eighthsDelta > 0 {
+		pagesDeltaStr = "+" + FormatEighths(eighthsDelta)
+	} else if eighthsDelta < 0 {
+		pagesDeltaStr = "-" + FormatEighths(-eighthsDelta)
+	}
+
+	cmp := &BranchComparison{
+		BranchA:             normA,
+		BranchB:             normB,
+		ScenesA:             len(bookA.Scenes),
+		ScenesB:             len(bookB.Scenes),
+		SceneDelta:          len(bookB.Scenes) - len(bookA.Scenes),
+		AddedScenes:         added,
+		RemovedScenes:       removed,
+		ModifiedScenes:      modified,
+		EighthsA:            bdA.TotalEighths,
+		EighthsB:            bdB.TotalEighths,
+		EighthsDelta:        eighthsDelta,
+		PagesDeltaFormatted: pagesDeltaStr,
+		MinutesA:            bdA.EstimatedMinutes,
+		MinutesB:            bdB.EstimatedMinutes,
+		MinutesDelta:        bdB.EstimatedMinutes - bdA.EstimatedMinutes,
+		LocationsA:          len(bdA.Locations),
+		LocationsB:          len(bdB.Locations),
+		LocationDelta:       len(bdB.Locations) - len(bdA.Locations),
+		CharactersA:         len(bdA.Characters),
+		CharactersB:         len(bdB.Characters),
+		CharacterDelta:      len(bdB.Characters) - len(bdA.Characters),
+	}
+
+	if cmp.SceneDelta == 0 && cmp.EighthsDelta == 0 && len(cmp.ModifiedScenes) == 0 {
+		cmp.SummaryLabel = fmt.Sprintf("Zgodna z %s (brak różnic)", normA)
+	} else {
+		cmp.SummaryLabel = fmt.Sprintf("vs %s: sceny %s, objętość %s, zmodyfikowane: %d",
+			normA, formatSignedInt(cmp.SceneDelta), cmp.PagesDeltaFormatted, len(cmp.ModifiedScenes))
+	}
+	return cmp, nil
 }

@@ -47,9 +47,15 @@ func SaveBookScenesToDisk(b *Book) error {
 		filesSet[tf] = true
 		trackedFiles[strings.ToLower(filepath.Base(tf))] = true
 	}
+	defaultCh := "Rozdział 1"
+	defaultFile := "rozdzial_1.txt"
+	if b.IsScreenplay() {
+		defaultCh = "Akt I"
+		defaultFile = "akt_1.txt"
+	}
 	for _, sc := range b.Scenes {
 		if strings.TrimSpace(sc.Chapter) == "" {
-			sc.Chapter = "Rozdział 1"
+			sc.Chapter = defaultCh
 		}
 		sf := b.ChapterFileNameFor(sc.Chapter, sc.ChapterID)
 		sc.SourceFile = sf
@@ -61,8 +67,8 @@ func SaveBookScenesToDisk(b *Book) error {
 		ch.SourceFile = ch.FileName()
 	}
 	if len(filesSet) == 0 {
-		filesSet["rozdzial_1.txt"] = true
-		activeFiles["rozdzial_1.txt"] = true
+		filesSet[defaultFile] = true
+		activeFiles[defaultFile] = true
 	}
 
 	var updatedTextFiles []string
@@ -157,6 +163,9 @@ func InsertSceneBetween(b *Book, parentSceneID, childSceneID, newSceneName strin
 		ChapterID:  chapterID,
 		Text:       "Nowy fragment opowieści...",
 		SourceFile: sourceFile,
+	}
+	if b.IsScreenplay() {
+		newScene.Slugline = DefaultSluglineForStandard(b.NormalizedStandard())
 	}
 
 	if parent != nil {
@@ -287,6 +296,9 @@ func InsertSceneBefore(b *Book, targetSceneID, newSceneName string) (*Scene, err
 		ChapterID:  chapterID,
 		Text:       "Nowy fragment opowieści...",
 		SourceFile: sourceFile,
+	}
+	if b.IsScreenplay() {
+		newScene.Slugline = DefaultSluglineForStandard(b.NormalizedStandard())
 	}
 	if targetRef != "" {
 		newScene.Choices = []Choice{
@@ -460,9 +472,15 @@ func CreateStandaloneSceneInChapter(b *Book, newSceneName, targetChapter string,
 		}
 	}
 	if chapterName == "" {
-		chapterName = "Rozdział 1"
-		chapterID = "rozdzial_1"
-		sourceFile = "rozdzial_1.txt"
+		if b.IsScreenplay() {
+			chapterName = "Akt I"
+			chapterID = "akt_1"
+			sourceFile = "akt_1.txt"
+		} else {
+			chapterName = "Rozdział 1"
+			chapterID = "rozdzial_1"
+			sourceFile = "rozdzial_1.txt"
+		}
 	}
 
 	newScene := &Scene{
@@ -472,6 +490,9 @@ func CreateStandaloneSceneInChapter(b *Book, newSceneName, targetChapter string,
 		Text:        "Nowy fragment opowieści...",
 		SourceFile:  sourceFile,
 		ExplicitEnd: true,
+	}
+	if b.IsScreenplay() {
+		newScene.Slugline = DefaultSluglineForStandard(b.NormalizedStandard())
 	}
 
 	if insertIdx > 0 && insertIdx <= len(b.Scenes) {
@@ -524,26 +545,55 @@ func CreateStandaloneSceneInChapter(b *Book, newSceneName, targetChapter string,
 
 // CreateNewBook scaffolds a brand new book directory with data.txt, story.txt, cover.png, and optional narration/imageless mode.
 func CreateNewBook(booksDir, title, author string, narrated bool, imageless ...bool) (*Book, error) {
+	isImageless := len(imageless) > 0 && imageless[0]
+	return CreateNewBookWithMode(booksDir, title, author, "book", "pl", narrated, isImageless)
+}
+
+// CreateNewBookWithMode scaffolds a brand new book or screenplay project directory.
+func CreateNewBookWithMode(booksDir, title, author, mode, standard string, narrated, imageless bool) (*Book, error) {
+	normMode := NormalizeBookMode(mode)
+	normStd := NormalizeScriptStandard(standard)
+
 	cleanTitle := SanitizePlainText(title)
 	if cleanTitle == "" {
-		cleanTitle = "Nowa Opowieść"
+		if normMode == "screenplay" {
+			cleanTitle = "Nowy Scenariusz"
+		} else {
+			cleanTitle = "Nowa Opowieść"
+		}
 	}
 	cleanAuthor := SanitizePlainText(author)
 	if cleanAuthor == "" {
 		cleanAuthor = "Autor"
 	}
 	id := SanitizeBookID(cleanTitle)
-	bookDir := filepath.Join(booksDir, id)
-	if _, err := os.Stat(bookDir); err == nil {
-		id = fmt.Sprintf("%s-%d", id, time.Now().Unix()%1000)
-		bookDir = filepath.Join(booksDir, id)
+	cleanBaseDir := filepath.Clean(strings.TrimSpace(booksDir))
+	bookDir := filepath.Join(cleanBaseDir, id)
+	if SanitizeBookID(filepath.Base(cleanBaseDir)) == id && !HasBookFilesInDir(cleanBaseDir) {
+		if entries, err := os.ReadDir(cleanBaseDir); err == nil && len(entries) == 0 {
+			bookDir = cleanBaseDir
+		}
 	}
-	if err := os.MkdirAll(filepath.Join(bookDir, "images"), 0755); err != nil {
+	if bookDir != cleanBaseDir {
+		if _, err := os.Stat(bookDir); err == nil {
+			id = fmt.Sprintf("%s-%d", id, time.Now().Unix()%1000)
+			bookDir = filepath.Join(cleanBaseDir, id)
+		}
+	}
+	if err := os.MkdirAll(bookDir, 0755); err != nil {
 		return nil, err
 	}
-	if narrated {
-		if err := os.MkdirAll(filepath.Join(bookDir, "voice"), 0755); err != nil {
+	if normMode == "screenplay" {
+		narrated = false
+		imageless = true
+	} else {
+		if err := os.MkdirAll(filepath.Join(bookDir, "images"), 0755); err != nil {
 			return nil, err
+		}
+		if narrated {
+			if err := os.MkdirAll(filepath.Join(bookDir, "voice"), 0755); err != nil {
+				return nil, err
+			}
 		}
 	}
 
@@ -552,8 +602,75 @@ func CreateNewBook(booksDir, title, author string, narrated bool, imageless ...b
 		narratedStr = "true"
 	}
 	imagelessStr := "false"
-	if len(imageless) > 0 && imageless[0] {
+	if imageless {
 		imagelessStr = "true"
+	}
+
+	if normMode == "screenplay" {
+		defaultSlug := DefaultSluglineForStandard(normStd)
+		b := &Book{
+			ID:             id,
+			Title:          cleanTitle,
+			Author:         cleanAuthor,
+			Description:    "Scenariusz filmowy utworzony w StoryTeller Studio.",
+			Mode:           "screenplay",
+			ScriptStandard: normStd,
+			StartSceneID:   "poczatek",
+			RawStart:       "poczatek",
+			Narrated:       narrated,
+			Imageless:      true,
+			RootPath:       bookDir,
+			Chapters: []Chapter{
+				{ID: "akt_1", ExplicitID: "akt_1", Name: "Akt I", SourceFile: "akt_1.txt"},
+				{ID: "akt_2", ExplicitID: "akt_2", Name: "Akt II", SourceFile: "akt_2.txt"},
+				{ID: "akt_3", ExplicitID: "akt_3", Name: "Akt III", SourceFile: "akt_3.txt"},
+			},
+			Scenes: []*Scene{
+				{
+					ID:           "poczatek",
+					ExplicitID:   "poczatek",
+					Name:         "Scena 1",
+					Slugline:     defaultSlug,
+					Chapter:      "Akt I",
+					ChapterID:    "akt_1",
+					ExplicitNext: "chapter:akt_2",
+					Text:         "Opis akcji w pierwszym akcie.",
+					SourceFile:   "akt_1.txt",
+					Choices:      []Choice{{Label: "Dalej", Target: "chapter:akt_2", IsImplicit: true}},
+				},
+				{
+					ID:           "rozdroze",
+					ExplicitID:   "rozdroze",
+					Name:         "Scena 2",
+					Slugline:     defaultSlug,
+					Chapter:      "Akt II",
+					ChapterID:    "akt_2",
+					ExplicitNext: "chapter:akt_3",
+					Text:         "Opis akcji w drugim akcie.",
+					SourceFile:   "akt_2.txt",
+					Choices:      []Choice{{Label: "Dalej", Target: "chapter:akt_3", IsImplicit: true}},
+				},
+				{
+					ID:          "final",
+					ExplicitID:  "final",
+					Name:        "Scena 3",
+					Slugline:    defaultSlug,
+					Chapter:     "Akt III",
+					ChapterID:   "akt_3",
+					ExplicitEnd: true,
+					Text:        "Opis akcji w trzecim akcie.",
+					SourceFile:  "akt_3.txt",
+				},
+			},
+		}
+		FinalizeBook(b)
+		AutoLayoutBook(b)
+		if err := SaveBookScenesToDisk(b); err != nil {
+			return nil, err
+		}
+		_ = os.Remove(filepath.Join(bookDir, "editor.txt"))
+		_ = GenerateAtmosphericPNG(filepath.Join(bookDir, "cover.png"), 400, 560, color.RGBA{24, 30, 44, 255}, color.RGBA{214, 158, 76, 255}, 1)
+		return LoadBookFromDir(bookDir)
 	}
 
 	dataContent := fmt.Sprintf("title: %s\nauthor: %s\ndescription: Interaktywna opowieść utworzona w StoryTeller Studio.\nnarrated: %s\nimageless: %s\nstart: poczatek\n", cleanTitle, cleanAuthor, narratedStr, imagelessStr)
@@ -854,4 +971,231 @@ func PackBookToZip(bookDir, outZipPath string) error {
 		return err
 	}
 	return nil
+}
+
+// RenameScreenplayCharacter updates all matching character dialogue cues across all scenes in the book.
+func RenameScreenplayCharacter(b *Book, oldName, newName string) (int, error) {
+	if b == nil {
+		return 0, fmt.Errorf("brak aktywnej książki")
+	}
+	if b.IsPacked {
+		return 0, fmt.Errorf("nie można edytować spakowanego archiwum .stbook bezpośrednio")
+	}
+	oldBase, _ := SplitCharacterCue(SanitizePlainText(oldName))
+	newBase, _ := SplitCharacterCue(SanitizePlainText(newName))
+	if oldBase == "" || newBase == "" {
+		return 0, fmt.Errorf("podaj prawidłową obecną i nową nazwę postaci")
+	}
+	if strings.EqualFold(oldBase, newBase) {
+		return 0, nil
+	}
+
+	updatedCount := 0
+	for _, sc := range b.Scenes {
+		lines := strings.Split(strings.ReplaceAll(sc.Text, "\r\n", "\n"), "\n")
+		changed := false
+		prevBlank := true
+		for i := 0; i < len(lines); i++ {
+			trimmed := strings.TrimSpace(lines[i])
+			if trimmed == "" {
+				prevBlank = true
+				continue
+			}
+			hasNext := i+1 < len(lines) && strings.TrimSpace(lines[i+1]) != ""
+			if _, baseName, ext, ok := isCharacterCueLine(trimmed, prevBlank, hasNext); ok && strings.EqualFold(baseName, oldBase) {
+				prefix := ""
+				if strings.HasPrefix(trimmed, "@") {
+					prefix = "@"
+				}
+				if ext != "" {
+					lines[i] = prefix + newBase + " " + ext
+				} else {
+					lines[i] = prefix + newBase
+				}
+				changed = true
+				updatedCount++
+			}
+			prevBlank = false
+		}
+		if changed {
+			sc.Text = strings.Join(lines, "\n")
+			sc.HTML = ""
+			sc.htmlSourceText = ""
+		}
+	}
+
+	if updatedCount > 0 {
+		FinalizeBook(b)
+		if err := SaveBookScenesToDisk(b); err != nil {
+			return updatedCount, err
+		}
+		_ = RecordBookHistoryStep(b, fmt.Sprintf("Zmiana postaci: %s → %s", oldBase, newBase), "rename_character", "", b.StartSceneID)
+	}
+	return updatedCount, nil
+}
+
+// RenameScreenplayLocation updates all matching slugline location segments across all scenes in the book.
+func RenameScreenplayLocation(b *Book, oldLoc, newLoc string) (int, error) {
+	if b == nil {
+		return 0, fmt.Errorf("brak aktywnej książki")
+	}
+	if b.IsPacked {
+		return 0, fmt.Errorf("nie można edytować spakowanego archiwum .stbook bezpośrednio")
+	}
+	targetLoc := strings.ToUpper(strings.TrimSpace(SanitizePlainText(oldLoc)))
+	replacementLoc := strings.ToUpper(strings.TrimSpace(SanitizePlainText(newLoc)))
+	if targetLoc == "" || replacementLoc == "" {
+		return 0, fmt.Errorf("podaj prawidłową obecną i nową nazwę lokacji")
+	}
+	if strings.EqualFold(targetLoc, replacementLoc) {
+		return 0, nil
+	}
+
+	rebuildSlugline := func(raw string) (string, bool) {
+		info := ParseSlugline(raw)
+		if !strings.EqualFold(info.Location, targetLoc) {
+			return raw, false
+		}
+		prefix := info.IntExt
+		if prefix == "" {
+			prefix = DefaultSluglineForStandard(b.NormalizedStandard())
+			if pInfo := ParseSlugline(prefix); pInfo.IntExt != "" {
+				prefix = pInfo.IntExt
+			}
+		}
+		if info.TimeOfDay != "" {
+			return fmt.Sprintf("%s %s - %s", prefix, replacementLoc, info.TimeOfDay), true
+		}
+		return fmt.Sprintf("%s %s", prefix, replacementLoc), true
+	}
+
+	updatedCount := 0
+	for _, sc := range b.Scenes {
+		sceneChanged := false
+		if strings.TrimSpace(sc.Slugline) != "" {
+			if rebuilt, ok := rebuildSlugline(sc.Slugline); ok {
+				sc.Slugline = rebuilt
+				sceneChanged = true
+			}
+		}
+		lines := strings.Split(strings.ReplaceAll(sc.Text, "\r\n", "\n"), "\n")
+		textChanged := false
+		prevBlank := true
+		for i := 0; i < len(lines); i++ {
+			trimmed := strings.TrimSpace(lines[i])
+			if trimmed == "" {
+				prevBlank = true
+				continue
+			}
+			if prevBlank && IsSluglineLine(trimmed) {
+				if rebuilt, ok := rebuildSlugline(trimmed); ok {
+					lines[i] = rebuilt
+					textChanged = true
+					sceneChanged = true
+				}
+			}
+			prevBlank = false
+		}
+		if textChanged {
+			sc.Text = strings.Join(lines, "\n")
+			sc.HTML = ""
+			sc.htmlSourceText = ""
+		}
+		if sceneChanged {
+			updatedCount++
+		}
+	}
+
+	if updatedCount > 0 {
+		FinalizeBook(b)
+		if err := SaveBookScenesToDisk(b); err != nil {
+			return updatedCount, err
+		}
+		_ = RecordBookHistoryStep(b, fmt.Sprintf("Zmiana lokacji: %s → %s", targetLoc, replacementLoc), "rename_location", "", b.StartSceneID)
+	}
+	return updatedCount, nil
+}
+
+// MoveBookToDirectory moves an unpacked book folder to targetParentDir/<bookDirName> and reloads it.
+func MoveBookToDirectory(b *Book, targetParentDir string) (*Book, error) {
+	if b == nil {
+		return nil, fmt.Errorf("brak aktywnej książki")
+	}
+	if b.IsPacked {
+		return nil, fmt.Errorf("nie można przenieść spakowanego archiwum .stbook")
+	}
+	oldRoot := filepath.Clean(strings.TrimSpace(b.RootPath))
+	if oldRoot == "" || oldRoot == "." {
+		return nil, fmt.Errorf("brak ścieżki źródłowej projektu")
+	}
+	cleanParent := filepath.Clean(strings.TrimSpace(targetParentDir))
+	if cleanParent == "" || cleanParent == "." {
+		return nil, fmt.Errorf("wskaż prawidłowy folder docelowy na dysku")
+	}
+	if abs, err := filepath.Abs(cleanParent); err == nil {
+		cleanParent = abs
+	}
+	if err := os.MkdirAll(cleanParent, 0755); err != nil {
+		return nil, err
+	}
+	folderName := filepath.Base(oldRoot)
+	if folderName == "" || folderName == "." || folderName == string(filepath.Separator) {
+		folderName = SanitizeBookID(b.ID)
+	}
+	newRoot := filepath.Join(cleanParent, folderName)
+	if filepath.Clean(newRoot) == filepath.Clean(oldRoot) {
+		return b, nil
+	}
+	if _, err := os.Stat(newRoot); err == nil {
+		for suffix := 2; ; suffix++ {
+			cand := filepath.Join(cleanParent, fmt.Sprintf("%s-%d", folderName, suffix))
+			if _, stErr := os.Stat(cand); os.IsNotExist(stErr) {
+				newRoot = cand
+				break
+			}
+		}
+	}
+	if err := os.Rename(oldRoot, newRoot); err != nil {
+		if copyErr := copyBookDirectoryAll(oldRoot, newRoot); copyErr != nil {
+			return nil, copyErr
+		}
+		_ = os.RemoveAll(oldRoot)
+	}
+	reloaded, err := LoadBookFromPath(newRoot)
+	if err != nil {
+		return nil, err
+	}
+	if b.ID != "" && reloaded.ID != b.ID {
+		RebindBookID(reloaded, b.ID)
+	}
+	return reloaded, nil
+}
+
+func copyBookDirectoryAll(srcDir, dstDir string) error {
+	return filepath.WalkDir(srcDir, func(path string, d os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		rel, err := filepath.Rel(srcDir, path)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(dstDir, rel)
+		if d.IsDir() {
+			return os.MkdirAll(target, 0755)
+		}
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		info, err := d.Info()
+		mode := os.FileMode(0644)
+		if err == nil {
+			mode = info.Mode().Perm()
+		}
+		if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
+			return err
+		}
+		return os.WriteFile(target, raw, mode)
+	})
 }

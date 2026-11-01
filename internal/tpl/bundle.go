@@ -267,6 +267,7 @@ func BuildPlayerOnlyApp(appDir, outDir string) error {
 	delete(templates, "editor_view")
 	delete(templates, "editor_context_panel")
 	delete(templates, "editor_history_panel")
+	delete(templates, "editor_breakdown_panel")
 	StripDevNodesFromTemplates(templates)
 	idxTpl, ok := templates["index"]
 	if !ok {

@@ -320,6 +320,67 @@
   font-style italic
   color --text-secondary
 
+.scene-prose.is-screenplay
+  font-family --font-screenplay
+  font-weight 400
+  font-size 15px
+  line-height 1.45
+  letter-spacing 0
+
+.sp-slugline
+  display flex
+  align-items baseline
+  justify-content space-between
+  gap 10px
+  font-family --font-screenplay
+  font-weight 700
+  text-transform uppercase
+  margin 16px 0 14px
+  padding-bottom 4px
+  border-bottom 1px solid --border-subtle
+  color --text-primary
+
+.sp-scene-num, .sp-scene-num-right
+  font-weight 700
+  color --text-secondary
+  flex-shrink 0
+
+.sp-slugline-text
+  flex 1
+  min-width 0
+
+.sp-action
+  font-family --font-screenplay
+  margin 0 0 14px
+  white-space pre-wrap
+
+.sp-character
+  font-family --font-screenplay
+  font-weight 700
+  text-transform uppercase
+  margin 14px 0 2px 34%
+  max-width 58%
+  color --text-primary
+
+.sp-parenthetical
+  font-family --font-screenplay
+  margin 0 0 2px 26%
+  max-width 52%
+  color --text-secondary
+
+.sp-dialogue
+  font-family --font-screenplay
+  margin 0 0 14px 18%
+  max-width 64%
+  white-space pre-wrap
+
+.sp-transition
+  font-family --font-screenplay
+  text-transform uppercase
+  text-align right
+  margin 14px 0
+  color --text-secondary
+
 .scene-divider
   border none
   border-top 1px solid --border-subtle

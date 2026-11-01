@@ -9,7 +9,9 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -79,8 +81,17 @@ func TestServerActionLifecycleAndSecurity(t *testing.T) {
 	if strings.Contains(string(addChHTML), "<select") {
 		t.Fatalf("expected no native system <select> dropdowns in editor HTML")
 	}
-	if !strings.Contains(string(addChHTML), `id="studio-canvas"`) || !strings.Contains(string(addChHTML), `id="studio-graph-data"`) || !strings.Contains(string(addChHTML), `data-canvas-add-node="true"`) {
-		t.Fatalf("expected studio-canvas, studio-graph-data, and add node button in editor HTML")
+	if !strings.Contains(string(addChHTML), `id="studio-canvas"`) || !strings.Contains(string(addChHTML), `id="studio-graph-data"`) || !strings.Contains(string(addChHTML), `id="btn-context-add-node"`) {
+		t.Fatalf("expected studio-canvas, studio-graph-data, and context add node button in editor HTML")
+	}
+	if !strings.Contains(string(addChHTML), `class="canvas-toolbar-left"`) ||
+		!strings.Contains(string(addChHTML), `class="canvas-toolbar-center"`) ||
+		!strings.Contains(string(addChHTML), `class="canvas-toolbar-right"`) {
+		t.Fatalf("expected left, center, and right sections in .canvas-toolbar")
+	}
+	if strings.Contains(string(addChHTML), `data-canvas-add-node`) ||
+		strings.Contains(string(addChHTML), `action="CreateChapterGroup"`) {
+		t.Fatalf("expected scene and chapter creation buttons to be removed from .canvas-toolbar")
 	}
 	if strings.Contains(string(addChHTML), "PRZESUŃ") || strings.Contains(string(addChHTML), "node-grip-label") {
 		t.Fatalf("expected no PRZESUŃ label text on node cards")
@@ -1535,8 +1546,8 @@ func TestBookImagelessSettingAndTopbarLock(t *testing.T) {
 	if strings.Contains(normHTML, `id="btn-toggle-imageless" type="button" action="ToggleImageless" disabled="disabled"`) {
 		t.Fatalf("expected #btn-toggle-imageless to be active (not disabled) when non-imageless book is loaded")
 	}
-	if !strings.Contains(normHTML, `action="ToggleBookImageless"`) {
-		t.Fatalf("expected ToggleBookImageless in Node Studio toolbar")
+	if !strings.Contains(normHTML, `action="ToggleBookImageless"`) || !strings.Contains(normHTML, `action="ToggleBookNarrated"`) {
+		t.Fatalf("expected ToggleBookImageless and ToggleBookNarrated in book settings form")
 	}
 
 	// 2. Toggle book imageless mode ON in Node Studio via ToggleBookImageless
@@ -2017,8 +2028,10 @@ func TestEditorUndoRedoAndVersionHistory(t *testing.T) {
 		t.Fatalf("unexpected history headers after CreateSceneAt: undo=%q redo=%q count=%q",
 			respAdd.Header.Get("X-Can-Undo"), respAdd.Header.Get("X-Can-Redo"), respAdd.Header.Get("X-History-Count"))
 	}
-	if !strings.Contains(string(addBytes), `id="btn-editor-undo"`) || !strings.Contains(string(addBytes), `id="btn-editor-redo"`) || !strings.Contains(string(addBytes), `action="ToggleEditorHistoryPanel"`) {
-		t.Fatalf("expected undo, redo, and history buttons in editor toolbar HTML")
+	if !strings.Contains(string(addBytes), `action="ToggleEditorHistoryPanel"`) ||
+		strings.Contains(string(addBytes), `id="btn-editor-undo"`) ||
+		strings.Contains(string(addBytes), `id="btn-editor-redo"`) {
+		t.Fatalf("expected only history panel button (and no undo/redo buttons) in editor toolbar HTML")
 	}
 
 	// 3. Viewport-only SaveEditorState (pan/zoom) must NOT add an undo step
@@ -2132,6 +2145,171 @@ func TestEditorUndoRedoAndVersionHistory(t *testing.T) {
 	}
 	if !strings.Contains(string(restoreBytes), "Wersja 1.0") {
 		t.Fatalf("expected 'Wersja 1.0' to remain in named versions list after restoring older version r1")
+	}
+}
+
+func TestHistoryPreviewClickPlayAndEditLock(t *testing.T) {
+	rootDir := t.TempDir()
+	srv := NewServer(rootDir, storyteller.AppFS)
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	// 1. Create a book (2 scenes in "Stan początkowy" r1)
+	resp, err := http.PostForm(ts.URL+"/api/action", url.Values{
+		"action": {"CreateNewBook"},
+		"title":  {"Podróż w Czasie"},
+		"author": {"Autor"},
+	})
+	if err != nil {
+		t.Fatalf("CreateNewBook failed: %v", err)
+	}
+	_ = resp.Body.Close()
+
+	// 2. Add a 3rd scene and save version "Pierwsze wydanie" (r2)
+	resp, err = http.PostForm(ts.URL+"/api/action", url.Values{
+		"action": {"CreateSceneAt"},
+		"x":      {"480"},
+		"y":      {"120"},
+	})
+	if err != nil {
+		t.Fatalf("CreateSceneAt failed: %v", err)
+	}
+	_ = resp.Body.Close()
+	if len(srv.ActiveBook.Scenes) != 3 {
+		t.Fatalf("expected 3 scenes before saving version, got %d", len(srv.ActiveBook.Scenes))
+	}
+
+	resp, err = http.PostForm(ts.URL+"/api/action", url.Values{
+		"action":       {"SaveHistoryVersion"},
+		"version_name": {"Pierwsze wydanie"},
+	})
+	if err != nil {
+		t.Fatalf("SaveHistoryVersion failed: %v", err)
+	}
+	_ = resp.Body.Close()
+
+	// 3. Click on past version "Stan początkowy" (r1) via PreviewHistoryRevision — must NOT revert on disk
+	respPrev, err := http.PostForm(ts.URL+"/api/action", url.Values{
+		"action":   {"PreviewHistoryRevision"},
+		"revision": {"r1"},
+	})
+	if err != nil {
+		t.Fatalf("PreviewHistoryRevision failed: %v", err)
+	}
+	prevHTMLBytes, _ := io.ReadAll(respPrev.Body)
+	_ = respPrev.Body.Close()
+	prevHTML := string(prevHTMLBytes)
+
+	if respPrev.Header.Get("X-History-Preview") != "true" {
+		t.Fatalf("expected X-History-Preview=true when previewing past revision, got %q", respPrev.Header.Get("X-History-Preview"))
+	}
+	if respPrev.Header.Get("X-History-Count") != "0" {
+		t.Fatalf("expected previewing past revision NOT to create a revert commit (X-History-Count=0), got %q", respPrev.Header.Get("X-History-Count"))
+	}
+	if len(srv.ActiveBook.Scenes) != 2 {
+		t.Fatalf("expected 2 scenes in previewed r1 book, got %d", len(srv.ActiveBook.Scenes))
+	}
+	if !strings.Contains(prevHTML, "PODGLĄD") || !strings.Contains(prevHTML, "studio-preview-banner") {
+		t.Fatalf("expected preview badge and banner in rendered editor HTML")
+	}
+
+	// Verify disk still has 3 scenes (no revert on disk)
+	diskBook, err := book.LoadBookFromDir(srv.ActiveBook.RootPath)
+	if err != nil {
+		t.Fatalf("LoadBookFromDir failed: %v", err)
+	}
+	if len(diskBook.Scenes) != 3 {
+		t.Fatalf("expected disk book to remain at 3 scenes during preview, got %d", len(diskBook.Scenes))
+	}
+
+	// 4. Verify editing is locked while in preview mode
+	respMut, err := http.PostForm(ts.URL+"/api/action", url.Values{
+		"action": {"CreateSceneAt"},
+		"x":      {"720"},
+		"y":      {"120"},
+	})
+	if err != nil {
+		t.Fatalf("CreateSceneAt during preview failed: %v", err)
+	}
+	_ = respMut.Body.Close()
+	if len(srv.ActiveBook.Scenes) != 2 {
+		t.Fatalf("expected CreateSceneAt to be blocked during preview, got %d scenes", len(srv.ActiveBook.Scenes))
+	}
+
+	respRename, err := http.PostForm(ts.URL+"/api/action", url.Values{
+		"action": {"RenameBook"},
+		"title":  {"Zmieniony Tytuł"},
+	})
+	if err != nil {
+		t.Fatalf("RenameBook during preview failed: %v", err)
+	}
+	_ = respRename.Body.Close()
+	if srv.ActiveBook.Title != "Podróż w Czasie" {
+		t.Fatalf("expected RenameBook to be blocked during preview, got title %q", srv.ActiveBook.Title)
+	}
+
+	// 5. Play the previewed history state in the player
+	respPlay, err := http.PostForm(ts.URL+"/api/action", url.Values{
+		"action":   {"PlayHistoryRevision"},
+		"revision": {"r1"},
+	})
+	if err != nil {
+		t.Fatalf("PlayHistoryRevision failed: %v", err)
+	}
+	playHTMLBytes, _ := io.ReadAll(respPlay.Body)
+	_ = respPlay.Body.Close()
+	if srv.Settings.ActiveView != "player" {
+		t.Fatalf("expected ActiveView=player after PlayHistoryRevision, got %q", srv.Settings.ActiveView)
+	}
+	if !strings.Contains(string(playHTMLBytes), "player-preview-banner") {
+		t.Fatalf("expected player-preview-banner while playing previewed history state")
+	}
+
+	// Advance a choice in player while previewing
+	respChoose, err := http.PostForm(ts.URL+"/api/action", url.Values{
+		"action":     {"ChooseBranch"},
+		"choice_idx": {"0"},
+	})
+	if err != nil {
+		t.Fatalf("ChooseBranch during preview play failed: %v", err)
+	}
+	_ = respChoose.Body.Close()
+	if srv.Save.CurrentSceneID != srv.ActiveBook.Scenes[1].ID {
+		t.Fatalf("expected player to advance to %q in preview, got %q", srv.ActiveBook.Scenes[1].ID, srv.Save.CurrentSceneID)
+	}
+
+	// Switch back to editor and click active head version ("r3") to exit preview and unlock editing
+	_, _ = http.PostForm(ts.URL+"/api/action", url.Values{
+		"action": {"SwitchView"},
+		"view":   {"editor"},
+	})
+	respExit, err := http.PostForm(ts.URL+"/api/action", url.Values{
+		"action":   {"PreviewHistoryRevision"},
+		"revision": {"r3"},
+	})
+	if err != nil {
+		t.Fatalf("PreviewHistoryRevision(r2) failed: %v", err)
+	}
+	_ = respExit.Body.Close()
+	if respExit.Header.Get("X-History-Preview") != "false" {
+		t.Fatalf("expected X-History-Preview=false after clicking active head revision, got %q", respExit.Header.Get("X-History-Preview"))
+	}
+	if len(srv.ActiveBook.Scenes) != 3 {
+		t.Fatalf("expected 3 scenes restored after exiting preview, got %d", len(srv.ActiveBook.Scenes))
+	}
+
+	// Verify editing works again after exiting preview
+	respAddAfter, err := http.PostForm(ts.URL+"/api/action", url.Values{
+		"action": {"CreateSceneAt"},
+		"x":      {"720"},
+		"y":      {"120"},
+	})
+	if err != nil {
+		t.Fatalf("CreateSceneAt after exiting preview failed: %v", err)
+	}
+	_ = respAddAfter.Body.Close()
+	if len(srv.ActiveBook.Scenes) != 4 {
+		t.Fatalf("expected 4 scenes after editing unlocked, got %d", len(srv.ActiveBook.Scenes))
 	}
 }
 
@@ -2342,6 +2520,1423 @@ func TestAllActionSpecsHaveHandlers(t *testing.T) {
 		}
 	}
 }
+
+func TestScreenplayModeEndToEndFlow(t *testing.T) {
+	rootDir := t.TempDir()
+	srv := NewServer(rootDir, storyteller.AppFS)
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	// 1. Create a screenplay project in Polish PISF standard
+	customScriptDir := filepath.Join(t.TempDir(), "MojeScenariusze")
+	resp, err := http.PostForm(ts.URL+"/api/action", url.Values{
+		"action":    {"CreateNewBook"},
+		"title":     {"Ostatni Seans"},
+		"author":    {"Krzysztof"},
+		"mode":      {"screenplay"},
+		"standard":  {"pl"},
+		"save_path": {customScriptDir},
+	})
+	if err != nil {
+		t.Fatalf("CreateNewBook screenplay failed: %v", err)
+	}
+	bodyBytes, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	html := string(bodyBytes)
+
+	if srv.ActiveBook == nil || !srv.ActiveBook.IsScreenplay() {
+		t.Fatalf("expected ActiveBook in screenplay mode")
+	}
+	expectedDiskRoot := filepath.Join(customScriptDir, "ostatni-seans")
+	if filepath.Clean(srv.ActiveBook.RootPath) != filepath.Clean(expectedDiskRoot) {
+		t.Fatalf("expected screenplay saved at %s, got %s", expectedDiskRoot, srv.ActiveBook.RootPath)
+	}
+	if _, statErr := os.Stat(filepath.Join(expectedDiskRoot, "data.txt")); statErr != nil {
+		t.Fatalf("expected data.txt on disk at %s: %v", expectedDiskRoot, statErr)
+	}
+	if !srv.ActiveBook.Imageless {
+		t.Fatalf("expected screenplay to always have Imageless=true")
+	}
+	if len(srv.ActiveBook.Scenes) != 3 ||
+		!(srv.ActiveBook.Scenes[0].Y < srv.ActiveBook.Scenes[1].Y && srv.ActiveBook.Scenes[1].Y < srv.ActiveBook.Scenes[2].Y) {
+		t.Fatalf("expected new screenplay scenes to have spread-out vertical layout, got Y=(%d, %d, %d)",
+			srv.ActiveBook.Scenes[0].Y, srv.ActiveBook.Scenes[1].Y, srv.ActiveBook.Scenes[2].Y)
+	}
+	if !strings.Contains(html, `id="canvas-script-summary"`) || !strings.Contains(html, `id="btn-editor-breakdown"`) {
+		t.Fatalf("expected screenplay summary and breakdown button in Node Studio toolbar")
+	}
+	if !strings.Contains(html, `placeholder="Tytuł scenariusza..."`) || !strings.Contains(html, `data-hint="Ustawienia scenariusza"`) {
+		t.Fatalf("expected screenplay terminology in editor UI")
+	}
+	if strings.Contains(html, `action="ToggleBookImageless"`) || strings.Contains(html, `action="ToggleBookNarrated"`) || strings.Contains(html, `name="explicit_image"`) || strings.Contains(html, `book-mode-select`) {
+		t.Fatalf("expected screenplay editor to have no narration or image mode controls and no book-to-screenplay mode switcher")
+	}
+
+	// 2. Open Scene Text Modal and update slugline, synopsis, and dialogue
+	_, _ = http.PostForm(ts.URL+"/api/action", url.Values{
+		"action": {"OpenSceneTextModal"},
+		"scene":  {"poczatek"},
+	})
+	saveResp, err := http.PostForm(ts.URL+"/api/action", url.Values{
+		"action":   {"SaveSceneTextModal"},
+		"scene_id": {"poczatek"},
+		"name":     {"Scena otwarcia"},
+		"slugline": {"WN. KINO STUDYJNE - NOC"},
+		"synopsis": {"Spotkanie w pustej sali kinowej."},
+		"text":     {"Projektor rzuca snop światła.\n\nOPERATOR (OFF)\n(spokojnie)\nZaczynamy projekcję."},
+	})
+	if err != nil {
+		t.Fatalf("SaveSceneTextModal failed: %v", err)
+	}
+	saveBytes, _ := io.ReadAll(saveResp.Body)
+	_ = saveResp.Body.Close()
+	saveHTML := string(saveBytes)
+	if !strings.Contains(saveHTML, `id="modal-slugline-input"`) || !strings.Contains(saveHTML, "WN. KINO STUDYJNE - NOC") {
+		t.Fatalf("expected modal slugline input in #modal-scene-text")
+	}
+	if !strings.Contains(saveHTML, `id="modal-screenplay-format-bar"`) || !strings.Contains(saveHTML, `data-insert-script-block="dialogue"`) || !strings.Contains(saveHTML, `data-insert-script-char="OPERATOR"`) {
+		t.Fatalf("expected screenplay format insertion bar and character pills in #modal-scene-text")
+	}
+
+	// 3. Switch to Player view from topbar and verify Courier screenplay blocks
+	playResp, err := http.PostForm(ts.URL+"/api/action", url.Values{
+		"action": {"SwitchView"},
+		"view":   {"player"},
+	})
+	if err != nil {
+		t.Fatalf("SwitchView player failed: %v", err)
+	}
+	playBytes, _ := io.ReadAll(playResp.Body)
+	_ = playResp.Body.Close()
+	playHTML := string(playBytes)
+	if !strings.Contains(playHTML, `class="sp-slugline"`) ||
+		!strings.Contains(playHTML, `class="sp-character"`) ||
+		!strings.Contains(playHTML, `class="sp-parenthetical"`) ||
+		!strings.Contains(playHTML, `class="sp-dialogue"`) {
+		t.Fatalf("expected Courier screenplay blocks in player view, got:\n%s", playHTML)
+	}
+
+	// 4. Switch back to Editor, open Breakdown panel, and rename character & location
+	_, _ = http.PostForm(ts.URL+"/api/action", url.Values{
+		"action": {"SwitchView"},
+		"view":   {"editor"},
+	})
+	bdResp, _ := http.PostForm(ts.URL+"/api/action", url.Values{
+		"action": {"ToggleEditorBreakdownPanel"},
+	})
+	bdBytes, _ := io.ReadAll(bdResp.Body)
+	_ = bdResp.Body.Close()
+	if !strings.Contains(string(bdBytes), "OPERATOR") || !strings.Contains(string(bdBytes), "KINO STUDYJNE") {
+		t.Fatalf("expected OPERATOR and KINO STUDYJNE in breakdown panel")
+	}
+
+	_, _ = http.PostForm(ts.URL+"/api/action", url.Values{
+		"action":   {"RenameCharacter"},
+		"old_name": {"OPERATOR"},
+		"new_name": {"PROJEKCJONISTA"},
+	})
+	_, _ = http.PostForm(ts.URL+"/api/action", url.Values{
+		"action":       {"RenameLocation"},
+		"old_location": {"KINO STUDYJNE"},
+		"new_location": {"KINO ILUZJON"},
+	})
+	if !strings.Contains(srv.ActiveBook.Scenes[0].Text, "PROJEKCJONISTA") || !strings.Contains(srv.ActiveBook.Scenes[0].Slugline, "KINO ILUZJON") {
+		t.Fatalf("expected global rename of character and location to update scene")
+	}
+
+	// 5. Create and switch Git-style draft branches
+	brResp, _ := http.PostForm(ts.URL+"/api/action", url.Values{
+		"action":      {"CreateHistoryBranch"},
+		"branch_name": {"wersja-rezysera"},
+	})
+	brBytes, _ := io.ReadAll(brResp.Body)
+	_ = brResp.Body.Close()
+	if !strings.Contains(string(brBytes), "wersja-rezysera") {
+		t.Fatalf("expected wersja-rezysera in history panel")
+	}
+	if !strings.Contains(string(brBytes), `id="history-graph-scroll"`) || !strings.Contains(string(brBytes), `id="history-scroll-more-cue"`) {
+		t.Fatalf("expected unified history-graph-scroll and history-scroll-more-cue in history panel HTML")
+	}
+	_, _ = http.PostForm(ts.URL+"/api/action", url.Values{
+		"action": {"SwitchHistoryBranch"},
+		"branch": {"main"},
+	})
+	copyResp, copyErr := http.PostForm(ts.URL+"/api/action", url.Values{
+		"action":        {"CopyHistoryRevisionToBranch"},
+		"revision":      {"r1"},
+		"target_branch": {"wersja-rezysera"},
+	})
+	if copyErr != nil || copyResp.StatusCode != http.StatusOK {
+		t.Fatalf("CopyHistoryRevisionToBranch failed: status=%v err=%v", copyResp.StatusCode, copyErr)
+	}
+	_ = copyResp.Body.Close()
+	_, _ = http.PostForm(ts.URL+"/api/action", url.Values{
+		"action": {"SwitchHistoryBranch"},
+		"branch": {"main"},
+	})
+	_, _ = http.PostForm(ts.URL+"/api/action", url.Values{
+		"action": {"DeleteHistoryBranch"},
+		"branch": {"wersja-rezysera"},
+	})
+
+	// 5b. CreateHistoryBranch with empty branch_name auto-names "wariant-2"
+	autoBrResp, _ := http.PostForm(ts.URL+"/api/action", url.Values{
+		"action":      {"CreateHistoryBranch"},
+		"branch_name": {""},
+	})
+	autoBrBytes, _ := io.ReadAll(autoBrResp.Body)
+	_ = autoBrResp.Body.Close()
+	if !strings.Contains(string(autoBrBytes), "wariant-2") {
+		t.Fatalf("expected auto-named branch wariant-2 in history graph HTML")
+	}
+	_, _ = http.PostForm(ts.URL+"/api/action", url.Values{
+		"action": {"SwitchHistoryBranch"},
+		"branch": {"main"},
+	})
+	_, _ = http.PostForm(ts.URL+"/api/action", url.Values{
+		"action": {"DeleteHistoryBranch"},
+		"branch": {"wariant-2"},
+	})
+
+	// 6. Verify HTTP download endpoints for PDF and Fountain
+	pdfResp, err := http.Get(ts.URL + "/api/export/screenplay.pdf")
+	if err != nil || pdfResp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /api/export/screenplay.pdf failed: status=%v err=%v", pdfResp.StatusCode, err)
+	}
+	pdfData, _ := io.ReadAll(pdfResp.Body)
+	_ = pdfResp.Body.Close()
+	if !strings.HasPrefix(string(pdfData), "%PDF-1.4") {
+		t.Fatalf("expected valid PDF from /api/export/screenplay.pdf")
+	}
+
+	fountainResp, err := http.Get(ts.URL + "/api/export/screenplay.fountain")
+	if err != nil || fountainResp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /api/export/screenplay.fountain failed: status=%v err=%v", fountainResp.StatusCode, err)
+	}
+	fountainData, _ := io.ReadAll(fountainResp.Body)
+	_ = fountainResp.Body.Close()
+	if !strings.Contains(string(fountainData), "WN. KINO ILUZJON - NOC #1#") {
+		t.Fatalf("expected numbered slugline in .fountain export, got:\n%s", string(fountainData))
+	}
+}
+
+func TestClientServerActionAndOverlayContracts(t *testing.T) {
+	appDir := filepath.Clean(filepath.Join("..", "..", "app"))
+
+	// 1. Verify every action referenced in .tpl templates exists in actionSpecs
+	tplFiles, err := filepath.Glob(filepath.Join(appDir, "templates", "*.tpl"))
+	if err != nil || len(tplFiles) == 0 {
+		t.Fatalf("failed to glob .tpl files: %v", err)
+	}
+	tplActionRe := regexp.MustCompile(`(?m)^\s*(?:action|data-backdrop-action):\s*([A-Za-z0-9_]+)\s*$`)
+	forLoopRe := regexp.MustCompile(`^\s*\{for\s+([A-Za-z0-9_]+)\s+in\s+[A-Za-z0-9_.]+\}\s*$`)
+	propRefRe := regexp.MustCompile(`\{([a-z][A-Za-z0-9_]*)\.[A-Za-z0-9_]+\}`)
+
+	knownGlobalObjects := map[string]bool{
+		"current_scene": true,
+		"selected_node": true,
+		"selected_chapter": true,
+	}
+
+	for _, path := range tplFiles {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+		src := string(raw)
+		base := filepath.Base(path)
+		for _, m := range tplActionRe.FindAllStringSubmatch(src, -1) {
+			act := m[1]
+			if _, ok := actionSpecs[act]; !ok {
+				t.Fatalf("template %s references unknown server action %q", base, act)
+			}
+		}
+
+		// Verify {for item in list} blocks never reference sibling loop variables out of scope
+		lines := strings.Split(src, "\n")
+		type loopScope struct {
+			indent  int
+			varName string
+		}
+		var stack []loopScope
+		for lineNo, line := range lines {
+			trimmed := strings.TrimSpace(line)
+			if trimmed == "" || strings.HasPrefix(trimmed, "//") {
+				continue
+			}
+			indent := len(line) - len(strings.TrimLeft(line, " \t"))
+			for len(stack) > 0 && indent <= stack[len(stack)-1].indent {
+				stack = stack[:len(stack)-1]
+			}
+			if fm := forLoopRe.FindStringSubmatch(line); fm != nil {
+				stack = append(stack, loopScope{indent: indent, varName: fm[1]})
+				continue
+			}
+			if len(stack) > 0 {
+				for _, pm := range propRefRe.FindAllStringSubmatch(line, -1) {
+					objName := pm[1]
+					if knownGlobalObjects[objName] {
+						continue
+					}
+					inScope := false
+					for _, sc := range stack {
+						if sc.varName == objName {
+							inScope = true
+							break
+						}
+					}
+					if !inScope {
+						t.Fatalf("template %s:%d references %q outside its {for} loop scope (active scopes: %+v)", base, lineNo+1, pm[0], stack)
+					}
+				}
+			}
+		}
+	}
+
+	// 2. Verify every literal action dispatched from app/js/*.js exists in actionSpecs
+	jsFiles := tpl.JSModuleFiles(appDir)
+	jsActionRe := regexp.MustCompile(`(?:sendServerAction|postServerActionSilent)\(\s*"([A-Za-z0-9_]+)"`)
+	for _, path := range jsFiles {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+		src := string(raw)
+		base := filepath.Base(path)
+		for _, m := range jsActionRe.FindAllStringSubmatch(src, -1) {
+			act := m[1]
+			if _, ok := actionSpecs[act]; !ok {
+				t.Fatalf("JS module %s dispatches unknown server action %q", base, act)
+			}
+		}
+	}
+
+	// 3. Verify CSS overlay pointer-events and stacking contexts never block UI interaction
+	cssProd, err := tpl.BundleFilesToString(tpl.CSSModuleFiles(appDir), true)
+	if err != nil {
+		t.Fatalf("BundleFilesToString(CSS) failed: %v", err)
+	}
+	for _, check := range []struct {
+		block string
+		prop  string
+	}{
+		{block: ".modals-root {", prop: "pointer-events: none;"},
+		{block: ".modals-root {", prop: "grid-row: 2;"},
+		{block: ".modal-backdrop {", prop: "pointer-events: auto;"},
+		{block: ".modal-backdrop {", prop: "position: absolute;"},
+		{block: ".toast {", prop: "pointer-events: none;"},
+		{block: ".ui-tooltip {", prop: "pointer-events: none;"},
+		{block: ".editor-perf-overlay {", prop: "pointer-events: none;"},
+		{block: ".player-bg-stage {", prop: "pointer-events: none;"},
+		{block: ".scroll-more-cue {", prop: "pointer-events: none;"},
+	} {
+		idx := strings.Index(cssProd, check.block)
+		if idx < 0 {
+			t.Fatalf("expected CSS selector block %s in compiled stylesheet", check.block)
+		}
+		endIdx := strings.Index(cssProd[idx:], "}")
+		if endIdx < 0 || !strings.Contains(cssProd[idx:idx+endIdx], check.prop) {
+			t.Fatalf("expected %s to contain %q, got:\n%s", check.block, check.prop, cssProd[idx:idx+endIdx])
+		}
+	}
+}
+
+func TestClientJSRuntimeAndInteractiveResponsiveness(t *testing.T) {
+	nodeBin, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node not found in PATH; skipping live JS DOM responsiveness test")
+	}
+
+	appDir := filepath.Clean(filepath.Join("..", "..", "app"))
+
+	// Verify syntax & clean compilation of all 3 JS bundles (prod, dev, standalone player)
+	prodJS, err := tpl.BundleFilesToString(tpl.JSModuleFiles(appDir), true)
+	if err != nil {
+		t.Fatalf("BundleFilesToString(prod) failed: %v", err)
+	}
+	devJS, err := tpl.BundleFilesToString(tpl.JSModuleFiles(appDir), false)
+	if err != nil {
+		t.Fatalf("BundleFilesToString(dev) failed: %v", err)
+	}
+	playerJS, err := tpl.BundleFilesToString(tpl.JSPlayerModuleFiles(appDir), true)
+	if err != nil {
+		t.Fatalf("BundleFilesToString(player) failed: %v", err)
+	}
+
+	// Run live end-to-end DOM + event-delegation + WebGL canvas + form submission harness in Node
+	harnessScript := `
+"use strict";
+const vm = require("vm");
+
+function parseSimpleStyle(raw) {
+  const s = {
+    left: "",
+    top: "",
+    width: "",
+    height: "",
+    cursor: "",
+    transform: "",
+    minHeight: "",
+    setProperty(k, v) { this[k] = String(v); },
+    getPropertyValue(k) { return this[k] || ""; }
+  };
+  if (raw) {
+    raw.split(";").forEach((pair) => {
+      const idx = pair.indexOf(":");
+      if (idx > 0) {
+        const k = pair.slice(0, idx).trim();
+        const v = pair.slice(idx + 1).trim();
+        s[k] = v;
+      }
+    });
+  }
+  return s;
+}
+
+function splitTopLevelCommas(sel) {
+  const out = [];
+  let depth = 0;
+  let cur = "";
+  for (let i = 0; i < sel.length; i++) {
+    const ch = sel[i];
+    if (ch === "[") depth++;
+    else if (ch === "]") depth = Math.max(0, depth - 1);
+    if (ch === "," && depth === 0) {
+      if (cur.trim()) out.push(cur.trim());
+      cur = "";
+    } else {
+      cur += ch;
+    }
+  }
+  if (cur.trim()) out.push(cur.trim());
+  return out;
+}
+
+function splitDescendantTokens(sel) {
+  const out = [];
+  let depth = 0;
+  let cur = "";
+  for (let i = 0; i < sel.length; i++) {
+    const ch = sel[i];
+    if (ch === "[") depth++;
+    else if (ch === "]") depth = Math.max(0, depth - 1);
+    if (/\s/.test(ch) && depth === 0) {
+      if (cur.trim()) out.push(cur.trim());
+      cur = "";
+    } else {
+      cur += ch;
+    }
+  }
+  if (cur.trim()) out.push(cur.trim());
+  return out;
+}
+
+function matchesCompoundSelector(el, compound) {
+  if (!el || el.nodeType !== 1) return false;
+  let rem = compound.trim();
+  if (!rem) return false;
+
+  const attrMatches = [];
+  rem = rem.replace(/\[([^\]]+)\]/g, (_, inner) => {
+    attrMatches.push(inner.trim());
+    return "";
+  });
+
+  const classMatches = [];
+  rem = rem.replace(/\.([A-Za-z0-9_-]+)/g, (_, cls) => {
+    classMatches.push(cls);
+    return "";
+  });
+
+  let idMatch = "";
+  rem = rem.replace(/#([A-Za-z0-9_-]+)/g, (_, id) => {
+    idMatch = id;
+    return "";
+  });
+
+  const tagMatch = rem.trim().toLowerCase();
+  if (tagMatch && tagMatch !== "*" && el.tagName.toLowerCase() !== tagMatch) {
+    return false;
+  }
+  if (idMatch && el.id !== idMatch) {
+    return false;
+  }
+  for (let i = 0; i < classMatches.length; i++) {
+    if (!el.classList.contains(classMatches[i])) return false;
+  }
+  for (let i = 0; i < attrMatches.length; i++) {
+    const expr = attrMatches[i];
+    const caretEq = expr.indexOf("^=");
+    const plainEq = expr.indexOf("=");
+    if (caretEq > 0) {
+      const k = expr.slice(0, caretEq).trim();
+      const v = expr.slice(caretEq + 2).trim().replace(/^["']|["']$/g, "");
+      const actual = el.getAttribute(k);
+      if (actual === null || !String(actual).startsWith(v)) return false;
+    } else if (plainEq > 0) {
+      const k = expr.slice(0, plainEq).trim();
+      const v = expr.slice(plainEq + 1).trim().replace(/^["']|["']$/g, "");
+      const actual = el.getAttribute(k);
+      if (actual === null || String(actual) !== v) return false;
+    } else {
+      if (!el.hasAttribute(expr)) return false;
+    }
+  }
+  return true;
+}
+
+function matchesSelector(el, selector) {
+  if (!el || el.nodeType !== 1 || !selector) return false;
+  const groups = splitTopLevelCommas(selector);
+  for (let g = 0; g < groups.length; g++) {
+    const chain = splitDescendantTokens(groups[g]);
+    if (chain.length === 0) continue;
+    if (!matchesCompoundSelector(el, chain[chain.length - 1])) continue;
+    let cur = el.parentElement;
+    let idx = chain.length - 2;
+    while (idx >= 0 && cur) {
+      if (matchesCompoundSelector(cur, chain[idx])) {
+        idx--;
+      }
+      cur = cur.parentElement;
+    }
+    if (idx < 0) return true;
+  }
+  return false;
+}
+
+function decodeEntities(str) {
+  if (!str) return "";
+  return String(str)
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&");
+}
+
+class DOMElement {
+  constructor(tagName, ownerDocument) {
+    this.nodeType = 1;
+    this.tagName = String(tagName || "DIV").toUpperCase();
+    this.ownerDocument = ownerDocument;
+    this.parentElement = null;
+    this.children = [];
+    this.childNodes = [];
+    this._attrs = new Map();
+    this._classes = new Set();
+    this._listeners = new Map();
+    this.style = parseSimpleStyle("");
+    this.scrollTop = 0;
+    this.scrollLeft = 0;
+    this.scrollHeight = 600;
+    this.clientWidth = 1200;
+    this.clientHeight = 700;
+    this.offsetWidth = 180;
+    this.offsetHeight = 36;
+    this.offsetTop = 0;
+    this.selectionStart = 0;
+    this.selectionEnd = 0;
+    this.complete = true;
+    this.readyState = 4;
+    this.paused = true;
+    this.ended = false;
+    this.currentTime = 0;
+    this.duration = 30;
+    this.playbackRate = 1.0;
+    this.width = 1200;
+    this.height = 700;
+    this._text = "";
+    this._value = undefined;
+
+    const self = this;
+    this.classList = {
+      add(...names) {
+        names.forEach((n) => { if (n) self._classes.add(n); });
+        self._syncClassAttr();
+      },
+      remove(...names) {
+        names.forEach((n) => self._classes.delete(n));
+        self._syncClassAttr();
+      },
+      toggle(name, force) {
+        const shouldHave = force !== undefined ? Boolean(force) : !self._classes.has(name);
+        if (shouldHave) self._classes.add(name);
+        else self._classes.delete(name);
+        self._syncClassAttr();
+        return shouldHave;
+      },
+      contains(name) {
+        return self._classes.has(name);
+      }
+    };
+
+    this.dataset = new Proxy({}, {
+      get(_, prop) {
+        if (typeof prop !== "string") return undefined;
+        const attrName = "data-" + prop.replace(/[A-Z]/g, (m) => "-" + m.toLowerCase());
+        const val = self.getAttribute(attrName);
+        return val === null ? undefined : val;
+      },
+      set(_, prop, val) {
+        const attrName = "data-" + prop.replace(/[A-Z]/g, (m) => "-" + m.toLowerCase());
+        self.setAttribute(attrName, String(val));
+        return true;
+      },
+      ownKeys() {
+        const keys = [];
+        self._attrs.forEach((_, k) => {
+          if (k.startsWith("data-")) {
+            const camel = k.slice(5).replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+            keys.push(camel);
+          }
+        });
+        return keys;
+      },
+      getOwnPropertyDescriptor(_, prop) {
+        const attrName = "data-" + String(prop).replace(/[A-Z]/g, (m) => "-" + m.toLowerCase());
+        if (self._attrs.has(attrName)) {
+          return { enumerable: true, configurable: true, value: self._attrs.get(attrName) };
+        }
+        return undefined;
+      }
+    });
+  }
+
+  _syncClassAttr() {
+    if (this._classes.size > 0) {
+      this._attrs.set("class", Array.from(this._classes).join(" "));
+    } else {
+      this._attrs.delete("class");
+    }
+  }
+
+  get isConnected() {
+    let cur = this;
+    while (cur) {
+      if (cur === this.ownerDocument.documentElement || cur === this.ownerDocument.body) return true;
+      cur = cur.parentElement;
+    }
+    return false;
+  }
+
+  get offsetParent() {
+    return this.parentElement;
+  }
+
+  get id() {
+    return this._attrs.get("id") || "";
+  }
+  set id(v) {
+    this.setAttribute("id", v);
+  }
+
+  get name() {
+    return this._attrs.get("name") || "";
+  }
+  set name(v) {
+    this.setAttribute("name", v);
+  }
+
+  get type() {
+    return this._attrs.get("type") || (this.tagName === "BUTTON" ? "submit" : "");
+  }
+  set type(v) {
+    this.setAttribute("type", v);
+  }
+
+  get disabled() {
+    return this._attrs.has("disabled");
+  }
+  set disabled(v) {
+    if (v) this._attrs.set("disabled", "disabled");
+    else this._attrs.delete("disabled");
+  }
+
+  get value() {
+    if (this._value !== undefined) return this._value;
+    if (this.tagName === "TEXTAREA") return this.textContent;
+    return this._attrs.get("value") || "";
+  }
+  set value(v) {
+    this._value = String(v);
+    this._attrs.set("value", String(v));
+  }
+
+  hasAttribute(k) {
+    return this._attrs.has(String(k).toLowerCase());
+  }
+
+  getAttribute(k) {
+    const key = String(k).toLowerCase();
+    return this._attrs.has(key) ? this._attrs.get(key) : null;
+  }
+
+  setAttribute(k, v) {
+    const key = String(k).toLowerCase();
+    const val = String(v);
+    this._attrs.set(key, val);
+    if (key === "class") {
+      this._classes.clear();
+      val.split(/\s+/).forEach((c) => { if (c) this._classes.add(c); });
+    } else if (key === "value" && this._value === undefined) {
+      this._value = val;
+    }
+  }
+
+  removeAttribute(k) {
+    const key = String(k).toLowerCase();
+    this._attrs.delete(key);
+    if (key === "class") this._classes.clear();
+  }
+
+  appendChild(child) {
+    if (!child) return null;
+    if (child.parentElement) {
+      const idx = child.parentElement.children.indexOf(child);
+      if (idx >= 0) child.parentElement.children.splice(idx, 1);
+    }
+    child.parentElement = this;
+    this.children.push(child);
+    this.childNodes = this.children;
+    return child;
+  }
+
+  get textContent() {
+    let out = this._text || "";
+    for (let i = 0; i < this.children.length; i++) {
+      out += this.children[i].textContent;
+    }
+    return out;
+  }
+  set textContent(v) {
+    this.children = [];
+    this.childNodes = [];
+    this._text = String(v || "");
+    if (this.tagName === "TEXTAREA") {
+      this._value = this._text;
+    }
+  }
+
+  get innerHTML() {
+    if (this.children.length === 0 && !this._text) return "";
+    return this._text + this.children.map((c) => c.outerHTML).join("");
+  }
+  set innerHTML(html) {
+    this.children = [];
+    this.childNodes = [];
+    this._text = "";
+    if (!html) return;
+    const nodes = parseHTMLFragment(String(html), this.ownerDocument);
+    nodes.forEach((n) => this.appendChild(n));
+  }
+
+  get outerHTML() {
+    const tag = this.tagName.toLowerCase();
+    let attrs = "";
+    this._attrs.forEach((v, k) => {
+      attrs += " " + k + '="' + String(v).replace(/"/g, "&quot;") + '"';
+    });
+    return "<" + tag + attrs + ">" + this.innerHTML + "</" + tag + ">";
+  }
+  set outerHTML(html) {
+    const parent = this.parentElement;
+    if (!parent) return;
+    const idx = parent.children.indexOf(this);
+    if (idx < 0) return;
+    const nodes = parseHTMLFragment(String(html), this.ownerDocument);
+    this.parentElement = null;
+    parent.children.splice(idx, 1, ...nodes);
+    nodes.forEach((n) => { n.parentElement = parent; });
+    parent.childNodes = parent.children;
+  }
+
+  insertAdjacentHTML(pos, html) {
+    const nodes = parseHTMLFragment(String(html), this.ownerDocument);
+    if (pos === "afterbegin") {
+      nodes.forEach((n) => { n.parentElement = this; });
+      this.children.unshift(...nodes);
+      this.childNodes = this.children;
+    } else {
+      nodes.forEach((n) => this.appendChild(n));
+    }
+  }
+
+  matches(sel) {
+    return matchesSelector(this, sel);
+  }
+
+  closest(sel) {
+    let cur = this;
+    while (cur && cur.nodeType === 1) {
+      if (matchesSelector(cur, sel)) return cur;
+      cur = cur.parentElement;
+    }
+    return null;
+  }
+
+  contains(other) {
+    let cur = other;
+    while (cur) {
+      if (cur === this) return true;
+      cur = cur.parentElement;
+    }
+    return false;
+  }
+
+  querySelector(sel) {
+    const all = this.querySelectorAll(sel);
+    return all.length > 0 ? all[0] : null;
+  }
+
+  querySelectorAll(sel) {
+    const res = [];
+    const walk = (node) => {
+      for (let i = 0; i < node.children.length; i++) {
+        const ch = node.children[i];
+        if (matchesSelector(ch, sel)) res.push(ch);
+        walk(ch);
+      }
+    };
+    walk(this);
+    return res;
+  }
+
+  getBoundingClientRect() {
+    return { left: 0, top: 0, width: this.clientWidth || 1200, height: this.clientHeight || 700, right: this.clientWidth || 1200, bottom: this.clientHeight || 700 };
+  }
+
+  focus() {
+    this.ownerDocument.activeElement = this;
+  }
+  blur() {
+    if (this.ownerDocument.activeElement === this) {
+      this.ownerDocument.activeElement = this.ownerDocument.body;
+    }
+  }
+  select() {}
+  setSelectionRange(s, e) {
+    this.selectionStart = s;
+    this.selectionEnd = e;
+  }
+  load() {}
+  play() {
+    this.paused = false;
+    return Promise.resolve();
+  }
+  pause() {
+    this.paused = true;
+  }
+
+  getContext(kind) {
+    if (kind !== "webgl" && kind !== "experimental-webgl") return null;
+    if (!this._gl) {
+      const self = this;
+      this._glDrawCalls = 0;
+      this._glLastInstCount = 0;
+      const instExt = {
+        vertexAttribDivisorANGLE() {},
+        drawArraysInstancedANGLE(_mode, _first, _count, primcount) {
+          self._glDrawCalls++;
+          self._glLastInstCount = primcount;
+        }
+      };
+      this._gl = {
+        VERTEX_SHADER: 35633,
+        FRAGMENT_SHADER: 35632,
+        COMPILE_STATUS: 35713,
+        LINK_STATUS: 35714,
+        ARRAY_BUFFER: 34962,
+        STATIC_DRAW: 35044,
+        DYNAMIC_DRAW: 35048,
+        FLOAT: 5126,
+        UNSIGNED_BYTE: 5121,
+        TEXTURE_2D: 3553,
+        TEXTURE0: 33984,
+        TEXTURE1: 33985,
+        RGBA: 6408,
+        LINEAR: 9729,
+        CLAMP_TO_EDGE: 33071,
+        TEXTURE_MIN_FILTER: 10241,
+        TEXTURE_MAG_FILTER: 10240,
+        TEXTURE_WRAP_S: 10242,
+        TEXTURE_WRAP_T: 10243,
+        BLEND: 3042,
+        SRC_ALPHA: 770,
+        ONE_MINUS_SRC_ALPHA: 771,
+        TRIANGLES: 4,
+        getExtension(name) { return name === "ANGLE_instanced_arrays" ? instExt : null; },
+        createShader() { return {}; },
+        shaderSource() {},
+        compileShader() {},
+        getShaderParameter() { return true; },
+        createProgram() { return {}; },
+        attachShader() {},
+        linkProgram() {},
+        getProgramParameter() { return true; },
+        useProgram() {},
+        createBuffer() { return {}; },
+        bindBuffer() {},
+        bufferData() {},
+        bufferSubData() {},
+        getAttribLocation() { return 0; },
+        enableVertexAttribArray() {},
+        vertexAttribPointer() {},
+        getUniformLocation() { return {}; },
+        uniform1i() {},
+        uniform1f() {},
+        uniform2f() {},
+        uniform3f() {},
+        createTexture() { return {}; },
+        activeTexture() {},
+        bindTexture() {},
+        texParameteri() {},
+        texImage2D() {},
+        enable() {},
+        blendFunc() {},
+        viewport() {}
+      };
+    }
+    return this._gl;
+  }
+
+  addEventListener(type, fn) {
+    if (!this._listeners.has(type)) this._listeners.set(type, []);
+    this._listeners.get(type).push(fn);
+  }
+  removeEventListener(type, fn) {
+    const arr = this._listeners.get(type);
+    if (!arr) return;
+    const idx = arr.indexOf(fn);
+    if (idx >= 0) arr.splice(idx, 1);
+  }
+  dispatchEvent(ev) {
+    ev.target = ev.target || this;
+    const path = [];
+    let cur = this;
+    while (cur) {
+      path.push(cur);
+      cur = cur.parentElement;
+    }
+    path.push(this.ownerDocument);
+    for (let i = 0; i < path.length; i++) {
+      if (ev._stopped) break;
+      const node = path[i];
+      ev.currentTarget = node;
+      const list = node._listeners ? node._listeners.get(ev.type) : null;
+      if (list) {
+        const copy = list.slice();
+        for (let j = 0; j < copy.length; j++) {
+          copy[j].call(node, ev);
+          if (ev._ImmediateStopped) break;
+        }
+      }
+    }
+    return !ev.defaultPrevented;
+  }
+}
+
+const VOID_TAGS = new Set(["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr", "path", "rect", "circle", "line", "polyline", "polygon"]);
+
+function parseHTMLFragment(html, doc) {
+  const root = new DOMElement("fragment", doc);
+  const stack = [root];
+  const tagRe = /<!--[\s\S]*?-->|<!DOCTYPE[^>]*>|<\/([A-Za-z0-9_-]+)\s*>|<([A-Za-z0-9_-]+)\b([^>]*?)>|([^<]+)/gi;
+  const attrRe = /([^\s/>=]+)(?:=(?:"([^"]*)"|'([^']*)'|([^\s"'>]+)))?/g;
+
+  let m;
+  while ((m = tagRe.exec(html)) !== null) {
+    const closeTag = m[1];
+    const openTag = m[2];
+    const rawAttr = m[3] || "";
+    const selfClose = rawAttr.trim().endsWith("/");
+    const attrStr = selfClose ? rawAttr.replace(/\/\s*$/, "") : rawAttr;
+    const textChunk = m[4];
+
+    if (closeTag) {
+      const upper = closeTag.toUpperCase();
+      for (let i = stack.length - 1; i >= 1; i--) {
+        if (stack[i].tagName === upper) {
+          stack.length = i;
+          break;
+        }
+      }
+    } else if (openTag) {
+      const lower = openTag.toLowerCase();
+      if (lower === "doctype") continue;
+      const el = new DOMElement(openTag, doc);
+      let am;
+      attrRe.lastIndex = 0;
+      while ((am = attrRe.exec(attrStr)) !== null) {
+        const ak = am[1];
+        const av = am[2] !== undefined ? am[2] : am[3] !== undefined ? am[3] : am[4] !== undefined ? am[4] : "";
+        el.setAttribute(ak, decodeEntities(av));
+      }
+      stack[stack.length - 1].appendChild(el);
+      if (!selfClose && !VOID_TAGS.has(lower)) {
+        stack.push(el);
+      }
+    } else if (textChunk !== undefined) {
+      const decoded = decodeEntities(textChunk);
+      const top = stack[stack.length - 1];
+      if (top.children.length === 0) {
+        top._text += decoded;
+        if (top.tagName === "TEXTAREA") {
+          top._value = top._text;
+        }
+      } else {
+        const span = new DOMElement("#text", doc);
+        span._text = decoded;
+        top._text += decoded;
+      }
+    }
+  }
+  return root.children.slice().map((c) => {
+    c.parentElement = null;
+    return c;
+  });
+}
+
+class CustomFormData {
+  constructor(formEl) {
+    this._pairs = [];
+    if (formEl && formEl.querySelectorAll) {
+      const fields = formEl.querySelectorAll("input, textarea, select");
+      for (let i = 0; i < fields.length; i++) {
+        const f = fields[i];
+        if (f.disabled) continue;
+        const name = f.getAttribute("name");
+        if (!name) continue;
+        const type = (f.getAttribute("type") || "").toLowerCase();
+        if (type === "checkbox" || type === "radio") {
+          if (!f.checked && !f.hasAttribute("checked")) continue;
+        }
+        this._pairs.push([name, f.value || ""]);
+      }
+    }
+  }
+  set(k, v) {
+    const key = String(k);
+    const val = String(v);
+    for (let i = 0; i < this._pairs.length; i++) {
+      if (this._pairs[i][0] === key) {
+        this._pairs[i][1] = val;
+        return;
+      }
+    }
+    this._pairs.push([key, val]);
+  }
+  forEach(cb) {
+    for (let i = 0; i < this._pairs.length; i++) {
+      cb(this._pairs[i][1], this._pairs[i][0]);
+    }
+  }
+}
+
+function makeEvent(type, props) {
+  return Object.assign({
+    type: type,
+    button: 0,
+    clientX: 0,
+    clientY: 0,
+    key: "",
+    code: "",
+    ctrlKey: false,
+    metaKey: false,
+    shiftKey: false,
+    altKey: false,
+    cancelable: true,
+    defaultPrevented: false,
+    _stopped: false,
+    _ImmediateStopped: false,
+    preventDefault() { this.defaultPrevented = true; },
+    stopPropagation() { this._stopped = true; },
+    stopImmediatePropagation() { this._stopped = true; this._ImmediateStopped = true; }
+  }, props || {});
+}
+
+(async () => {
+  const baseURL = process.env.ST_TEST_BASE_URL;
+  const appJSSrc = process.env.ST_TEST_APP_JS;
+  const actionLog = [];
+  const inFlight = new Set();
+  process.on("unhandledRejection", (reason) => {
+    console.error("UNHANDLED_REJECTION=" + (reason && reason.stack ? reason.stack : String(reason)));
+    process.exit(1);
+  });
+
+  const initResp = await fetch(baseURL + "/");
+  if (!initResp.ok) {
+    throw new Error("GET / failed: " + initResp.status);
+  }
+  const initHTML = await initResp.text();
+
+  const doc = {
+    nodeType: 9,
+    _listeners: new Map(),
+    documentElement: null,
+    body: null,
+    activeElement: null,
+    fullscreenElement: null,
+    addEventListener(type, fn) {
+      if (!this._listeners.has(type)) this._listeners.set(type, []);
+      this._listeners.get(type).push(fn);
+    },
+    removeEventListener() {},
+    dispatchEvent(ev) {
+      ev.target = ev.target || this.body || this;
+      const list = this._listeners.get(ev.type) || [];
+      list.slice().forEach((fn) => fn.call(this, ev));
+      return !ev.defaultPrevented;
+    },
+    querySelector(sel) {
+      return this.documentElement ? this.documentElement.querySelector(sel) : null;
+    },
+    querySelectorAll(sel) {
+      return this.documentElement ? this.documentElement.querySelectorAll(sel) : [];
+    },
+    getElementById(id) {
+      return this.querySelector("#" + id);
+    },
+    elementFromPoint() {
+      return this.body;
+    }
+  };
+  doc.ownerDocument = doc;
+
+  const parsedRoot = parseHTMLFragment(initHTML, doc);
+  const htmlEl = parsedRoot.find((el) => el.tagName === "HTML") || parsedRoot[0];
+  doc.documentElement = htmlEl;
+  doc.body = htmlEl.querySelector("body") || htmlEl;
+  doc.activeElement = doc.body;
+
+  const win = {
+    document: doc,
+    navigator: { userAgent: "Mozilla/5.0 StoryTellerTest/1.0" },
+    innerWidth: 1280,
+    innerHeight: 800,
+    devicePixelRatio: 2,
+    __STUDIO_MSDF_DATA: "",
+    CSS: { escape: (s) => String(s) },
+    FormData: CustomFormData,
+    URLSearchParams: URLSearchParams,
+    AbortController: AbortController,
+    TextDecoder: TextDecoder,
+    Uint8Array: Uint8Array,
+    Float32Array: Float32Array,
+    Uint32Array: Uint32Array,
+    ArrayBuffer: ArrayBuffer,
+    Map: Map,
+    Set: Set,
+    WeakMap: WeakMap,
+    WeakSet: WeakSet,
+    Promise: Promise,
+    Math: Math,
+    Number: Number,
+    String: String,
+    Boolean: Boolean,
+    Object: Object,
+    Array: Array,
+    RegExp: RegExp,
+    Error: Error,
+    Date: Date,
+    Infinity: Infinity,
+    NaN: NaN,
+    parseInt: parseInt,
+    parseFloat: parseFloat,
+    isNaN: isNaN,
+    console: console,
+    performance: { now: () => Date.now() },
+    requestAnimationFrame: (cb) => { cb(Date.now()); return 1; },
+    cancelAnimationFrame: () => {},
+    setTimeout: setTimeout,
+    clearTimeout: clearTimeout,
+    ResizeObserver: class { observe() {} disconnect() {} },
+    Image: class { set src(v) { this._src = v; if (this.onload) this.onload(); } },
+    addEventListener(type, fn) { doc.addEventListener("win:" + type, fn); },
+    close() {},
+    __trackAction: (p) => {
+      inFlight.add(p);
+      p.finally(() => inFlight.delete(p));
+      return p;
+    },
+    fetch: async (urlStr, opts) => {
+      const fullURL = urlStr.startsWith("http") ? urlStr : baseURL + urlStr;
+      let bodyStr = "";
+      if (opts && opts.body) {
+        bodyStr = String(opts.body);
+        const sp = new URLSearchParams(bodyStr);
+        const act = sp.get("action");
+        if (act) actionLog.push(act + "(" + bodyStr + ")");
+      }
+      const p = fetch(fullURL, opts);
+      inFlight.add(p);
+      try {
+        const res = await p;
+        return res;
+      } finally {
+        inFlight.delete(p);
+      }
+    }
+  };
+  win.window = win;
+  win.globalThis = win;
+
+  vm.createContext(win);
+  vm.runInContext(appJSSrc, win, { filename: "app.js" });
+  win.__inFlight = inFlight;
+  vm.runInContext(
+    "const _origSend = sendServerAction; sendServerAction = async function(act, params) { const p = (async () => { try { return await _origSend(act, params); } catch (e) { console.error('SEND_ACTION_ERR=' + act + ':' + (e && e.stack ? e.stack : String(e))); throw e; } })(); __inFlight.add(p); try { return await p; } finally { __inFlight.delete(p); } };",
+    win
+  );
+
+  // Fire DOMContentLoaded to bind declarative action bridge & canvas gestures
+  doc.dispatchEvent(makeEvent("DOMContentLoaded", { target: doc }));
+
+  const waitForActions = async () => {
+    while (inFlight.size > 0) {
+      await Promise.all(Array.from(inFlight));
+    }
+    await new Promise((r) => setTimeout(r, 5));
+    while (inFlight.size > 0) {
+      await Promise.all(Array.from(inFlight));
+    }
+  };
+  const clickEl = async (selectorOrEl) => {
+    const el = typeof selectorOrEl === "string" ? doc.querySelector(selectorOrEl) : selectorOrEl;
+    if (!el) throw new Error("Missing element to click: " + selectorOrEl);
+    el.dispatchEvent(makeEvent("click", { target: el }));
+    await waitForActions();
+  };
+
+  // 1. Switch to Node Studio (#view-editor) via Topbar tab click
+  await clickEl('button.topbar-tab[data-view="editor"]');
+  if (!doc.querySelector("#view-editor")) {
+    const appChildren = doc.querySelector("#app") ? doc.querySelector("#app").children.map((c) => c.tagName + "#" + c.id).join(",") : "NONE";
+    const allIds = doc.querySelectorAll("*").map((c) => c.tagName + "#" + c.id).filter((s) => !s.endsWith("#")).join(",");
+    throw new Error("Expected #view-editor; actionLog=" + actionLog.join(" | ") + " appChildren=" + appChildren + " allIds=" + allIds);
+  }
+
+  // 2. Click OpenNewBookModal button in Node Studio
+  await clickEl('button[action="OpenNewBookModal"]');
+  const newBookTitle = doc.querySelector("#new-book-title");
+  if (!newBookTitle) {
+    throw new Error("Expected #new-book-title in #modals-root after OpenNewBookModal");
+  }
+
+  // 3. Test Escape key closing modal
+  doc.body.dispatchEvent(makeEvent("keydown", { key: "Escape", code: "Escape", target: doc.body }));
+  await waitForActions();
+  if (doc.querySelector("#new-book-title")) {
+    throw new Error("Expected Escape key to close NewBookModal");
+  }
+
+  // 4. Re-open NewBookModal and submit form via button[type="submit"] click
+  await clickEl('button[action="OpenNewBookModal"]');
+  const titleInp = doc.querySelector("#new-book-title");
+  titleInp.value = "Książka Testowa JS";
+  await clickEl('form[action="CreateNewBook"] button[type="submit"]');
+
+  const viewport = doc.querySelector("#timeline-scroll-viewport");
+  const canvas = doc.querySelector("#studio-canvas");
+  if (!viewport || !canvas) {
+    throw new Error("Expected #timeline-scroll-viewport and #studio-canvas after CreateNewBook");
+  }
+  const nodesCount = vm.runInContext("studioGraphState.nodes.length", win);
+  if (nodesCount < 1 || !canvas._gl || canvas._glDrawCalls < 1) {
+    throw new Error("Expected WebGL canvas to initialize and draw nodes, got nodes=" + nodesCount + " actionLog=" + actionLog.join(" | ") + " toast=" + (doc.querySelector("#toast-banner") ? doc.querySelector("#toast-banner").textContent : ""));
+  }
+
+  // 5. Click empty canvas to clear selection, then click node card on WebGL canvas
+  canvas.dispatchEvent(makeEvent("mousedown", { button: 0, clientX: 10, clientY: 10, target: canvas }));
+  canvas.dispatchEvent(makeEvent("mouseup", { button: 0, clientX: 10, clientY: 10, target: canvas }));
+  await waitForActions();
+  if (!doc.querySelector("#editor-context-form").classList.contains("hidden")) {
+    throw new Error("Expected #editor-context-form to hide after clicking empty canvas");
+  }
+
+  const nodeScreenPt = vm.runInContext("(() => { const n = studioGraphState.nodes[0]; const z = editorCanvasState.zoom; return { x: Math.round((n.x + 60) * z + editorCanvasState.panX), y: Math.round((n.y + 20) * z + editorCanvasState.panY), addX: Math.round((n.x + 24) * z + editorCanvasState.panX), addY: Math.round((n.y + n.h - 20) * z + editorCanvasState.panY), gripX: Math.round((n.x + 12) * z + editorCanvasState.panX), gripY: Math.round((n.y + 16) * z + editorCanvasState.panY) }; })()", win);
+
+  canvas.dispatchEvent(makeEvent("mousedown", { button: 0, clientX: nodeScreenPt.x, clientY: nodeScreenPt.y, target: canvas }));
+  canvas.dispatchEvent(makeEvent("mouseup", { button: 0, clientX: nodeScreenPt.x, clientY: nodeScreenPt.y, target: canvas }));
+  await waitForActions();
+  if (doc.querySelector("#editor-context-form").classList.contains("hidden")) {
+    throw new Error("Expected #editor-context-form to be visible after clicking node card on canvas");
+  }
+
+  // 6. Click "+ Wybór" button directly on WebGL canvas node card
+  canvas.dispatchEvent(makeEvent("mousedown", { button: 0, clientX: nodeScreenPt.addX, clientY: nodeScreenPt.addY, target: canvas }));
+  canvas.dispatchEvent(makeEvent("mouseup", { button: 0, clientX: nodeScreenPt.addX, clientY: nodeScreenPt.addY, target: canvas }));
+  await waitForActions();
+  const portCountAfterAdd = vm.runInContext("studioGraphState.nodes[0].ports.length", win);
+  if (portCountAfterAdd < 2) {
+    throw new Error("Expected canvas '+ Wybór' click to add choices (ports >= 2), got " + portCountAfterAdd);
+  }
+
+  // 7. Drag node grip on WebGL canvas (+48px X, +24px Y) and verify grid snap + SaveEditorState
+  const startNodeX = vm.runInContext("studioGraphState.nodes[0].x", win);
+  const updatedGripPt = vm.runInContext("(() => { const n = studioGraphState.nodes[0]; const z = editorCanvasState.zoom; return { x: Math.round((n.x + 12) * z + editorCanvasState.panX), y: Math.round((n.y + 16) * z + editorCanvasState.panY) }; })()", win);
+  canvas.dispatchEvent(makeEvent("mousedown", { button: 0, clientX: updatedGripPt.x, clientY: updatedGripPt.y, target: canvas }));
+  canvas.dispatchEvent(makeEvent("mousemove", { button: 0, clientX: updatedGripPt.x + 48, clientY: updatedGripPt.y + 24, target: canvas }));
+  canvas.dispatchEvent(makeEvent("mouseup", { button: 0, clientX: updatedGripPt.x + 48, clientY: updatedGripPt.y + 24, target: canvas }));
+  await waitForActions();
+  const movedNodeX = vm.runInContext("studioGraphState.nodes[0].x", win);
+  if (movedNodeX !== startNodeX + 48) {
+    throw new Error("Expected node grip drag to snap +48px on 24px grid, got " + startNodeX + " -> " + movedNodeX);
+  }
+
+  // 8. Double-click node card on WebGL canvas to open #modal-scene-text
+  const afterMovePt = vm.runInContext("(() => { const n = studioGraphState.nodes[0]; const z = editorCanvasState.zoom; return { x: Math.round((n.x + 60) * z + editorCanvasState.panX), y: Math.round((n.y + 20) * z + editorCanvasState.panY) }; })()", win);
+  canvas.dispatchEvent(makeEvent("dblclick", { button: 0, clientX: afterMovePt.x, clientY: afterMovePt.y, target: canvas }));
+  await waitForActions();
+  const modalTa = doc.querySelector("#modal-scene-textarea");
+  if (!modalTa) {
+    throw new Error("Expected double-clicking node card on canvas to open #modal-scene-text");
+  }
+
+  // 9. Toggle scene settings inside #modal-scene-text, edit textarea, and click back button
+  await clickEl("[data-scene-settings-toggle]");
+  const settingsBlock = doc.querySelector("#modal-scene-settings-block");
+  if (!settingsBlock || settingsBlock.classList.contains("hidden")) {
+    throw new Error("Expected [data-scene-settings-toggle] to unhide #modal-scene-settings-block");
+  }
+  modalTa.value = "Treść zapisana przez mostek JS.";
+  modalTa.dispatchEvent(makeEvent("input", { target: modalTa }));
+  await clickEl('button.scene-text-back-btn[action="CloseSceneTextModal"]');
+  if (doc.querySelector("#modal-scene-text")) {
+    throw new Error("Expected CloseSceneTextModal to close #modal-scene-text");
+  }
+
+  // 10. Topbar toggles (Theme, UI Scale, Hamburger Menu)
+  await clickEl("#btn-topbar-menu");
+  if (!doc.querySelector("#topbar-actions-menu").classList.contains("open")) {
+    throw new Error("Expected #btn-topbar-menu to open #topbar-actions-menu");
+  }
+  await clickEl("#btn-toggle-ui-scale");
+  if (doc.body.getAttribute("data-ui-scale") !== "large") {
+    throw new Error("Expected #btn-toggle-ui-scale to set data-ui-scale=large");
+  }
+  await clickEl('button[action="ToggleTheme"]');
+  if (doc.body.getAttribute("data-theme") !== "light") {
+    throw new Error("Expected ToggleTheme to set data-theme=light");
+  }
+
+  // 11. Switch to Player view via Topbar and click a ChoiceBranch button
+  await clickEl('#tab-player');
+  if (!doc.querySelector("#view-player")) {
+    throw new Error("Expected #view-player after clicking #tab-player");
+  }
+  const proseText = doc.querySelector("#active-scene-stage .scene-prose").textContent;
+  if (!proseText.includes("Treść zapisana przez mostek JS.")) {
+    throw new Error("Expected dirty textarea auto-flush on CloseSceneTextModal to persist prose in player view");
+  }
+  await clickEl('#active-scene-stage button.choice-btn[action="ChooseBranch"]');
+  if (!doc.querySelector("#history-stack")) {
+    throw new Error("Expected #history-stack in player view after clicking ChooseBranch");
+  }
+
+  // 12. Switch to Editor, create a Screenplay project via custom-select mode picker, test Breakdown Panel forms & jump
+  await clickEl('button.topbar-tab[data-view="editor"]');
+  await clickEl('button[action="OpenNewBookModal"]');
+  await clickEl('.new-book-mode-select [data-select-toggle]');
+  await clickEl('.new-book-mode-select .custom-select-option[data-select-value="screenplay"]');
+  if (doc.querySelector("#new-book-standard-field").classList.contains("hidden")) {
+    throw new Error("Expected selecting screenplay mode in custom-select to reveal #new-book-standard-field");
+  }
+  doc.querySelector("#new-book-title").value = "Scenariusz Responsywny";
+  await clickEl('form[action="CreateNewBook"] button[type="submit"]');
+
+  // Open Scene Text Modal in screenplay mode and click [data-insert-script-block="dialogue"] pill
+  await clickEl('#editor-context-form button[action="OpenSceneTextModal"]');
+  await clickEl('button[data-insert-script-block="dialogue"]');
+  const spTaVal = doc.querySelector("#modal-scene-textarea").value;
+  if (!spTaVal.includes("POSTAĆ")) {
+    throw new Error("Expected [data-insert-script-block=dialogue] to insert POSTAĆ block into #modal-scene-textarea");
+  }
+  await clickEl('button.scene-text-back-btn[action="CloseSceneTextModal"]');
+
+  await clickEl("#btn-editor-breakdown");
+  if (!doc.querySelector("#editor-breakdown-panel") || doc.querySelector("#editor-breakdown-panel").classList.contains("hidden")) {
+    throw new Error("Expected #btn-editor-breakdown to open #editor-breakdown-panel");
+  }
+
+  // Clear canvas selection first, then click .breakdown-jump-btn[action="SelectStudioScene"]
+  const spCanvas = doc.querySelector("#studio-canvas");
+  spCanvas.dispatchEvent(makeEvent("mousedown", { button: 0, clientX: 5, clientY: 5, target: spCanvas }));
+  spCanvas.dispatchEvent(makeEvent("mouseup", { button: 0, clientX: 5, clientY: 5, target: spCanvas }));
+  await waitForActions();
+  await clickEl('.breakdown-jump-btn[action="SelectStudioScene"]');
+  if (doc.querySelector("#editor-context-form").classList.contains("hidden")) {
+    throw new Error("Expected clicking .breakdown-jump-btn after canvas deselect to reveal #editor-context-form");
+  }
+
+  // Submit Character Rename form and Location Rename form in Breakdown Panel via DOM submit button
+  const charRenameForm = doc.querySelector('form.breakdown-rename-form[action="RenameCharacter"]');
+  if (!charRenameForm) {
+    throw new Error("Expected form.breakdown-rename-form[action=RenameCharacter] in #editor-breakdown-panel");
+  }
+  const newCharInp = charRenameForm.querySelector('input[name="new_name"]');
+  newCharInp.value = "DETEKTYW";
+  await clickEl(charRenameForm.querySelector('button[type="submit"]'));
+
+  const locRenameForm = doc.querySelector('form.breakdown-rename-form[action="RenameLocation"]');
+  if (!locRenameForm) {
+    throw new Error("Expected form.breakdown-rename-form[action=RenameLocation] in #editor-breakdown-panel");
+  }
+  const newLocInp = locRenameForm.querySelector('input[name="new_location"]');
+  newLocInp.value = "PORT RZECZNY";
+  await clickEl(locRenameForm.querySelector('button[type="submit"]'));
+
+  console.log("STATUS=OK");
+  console.log("ACTIONS=" + actionLog.join(","));
+})().catch((err) => {
+  console.error("FATAL=" + (err && err.stack ? err.stack : String(err)));
+  process.exit(1);
+});
+`
+
+	for _, bundleCase := range []struct {
+		name string
+		code string
+	}{
+		{name: "prod_app_js", code: prodJS},
+		{name: "dev_app_js", code: devJS},
+	} {
+		caseDir := t.TempDir()
+		srv := NewServer(caseDir, storyteller.AppFS)
+		ts := httptest.NewServer(srv.Handler())
+
+		cmd := exec.Command(nodeBin, "-e", harnessScript)
+		cmd.Env = append(os.Environ(),
+			"ST_TEST_BASE_URL="+ts.URL,
+			"ST_TEST_APP_JS="+bundleCase.code,
+		)
+		out, err := cmd.CombinedOutput()
+		ts.Close()
+		if err != nil {
+			t.Fatalf("%s live DOM responsiveness test failed: %v\nOutput:\n%s", bundleCase.name, err, string(out))
+		}
+		if !strings.Contains(string(out), "STATUS=OK") {
+			t.Fatalf("expected STATUS=OK from %s harness, got:\n%s", bundleCase.name, string(out))
+		}
+		if srv.ActiveBook == nil || !srv.ActiveBook.IsScreenplay() {
+			t.Fatalf("%s: expected active screenplay book after JS test", bundleCase.name)
+		}
+		if !strings.Contains(srv.ActiveBook.Scenes[0].Text, "DETEKTYW") || !strings.Contains(srv.ActiveBook.Scenes[0].Slugline, "PORT RZECZNY") {
+			t.Fatalf("%s: expected DOM-submitted RenameCharacter and RenameLocation forms to update scene on server, got slugline=%q text=%q",
+				bundleCase.name, srv.ActiveBook.Scenes[0].Slugline, srv.ActiveBook.Scenes[0].Text)
+		}
+	}
+
+	// Verify standalone player.js bundle syntax & clean initialization in Node VM
+	playerCheckCmd := exec.Command(nodeBin, "--check")
+	playerCheckCmd.Stdin = strings.NewReader(playerJS)
+	if out, err := playerCheckCmd.CombinedOutput(); err != nil {
+		t.Fatalf("standalone player.js syntax check failed: %v\n%s", err, string(out))
+	}
+}
+
+
 
 
 

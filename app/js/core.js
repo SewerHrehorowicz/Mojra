@@ -249,6 +249,16 @@ function syncEditorHistoryHeaders(resp) {
       badge.classList.toggle("hidden", count <= 0);
     }
   }
+
+  const histPreviewHeader = resp.headers.get("X-History-Preview");
+  if (histPreviewHeader === "true" || histPreviewHeader === "false") {
+    document.body.setAttribute("data-history-preview", histPreviewHeader);
+    const edView = qs("#view-editor");
+    if (edView) {
+      edView.setAttribute("data-history-preview", histPreviewHeader);
+      edView.classList.toggle("is-history-preview", histPreviewHeader === "true");
+    }
+  }
 }
 
 function applyServerResponseHeaders(resp, actionName) {
@@ -400,7 +410,12 @@ async function sendServerAction(actionName, params) {
     actionName === "UndoEditor" ||
     actionName === "ToggleEditorHistoryPanel" ||
     actionName === "OpenEditorHistoryPanel" ||
+    actionName === "PreviewHistoryRevision" ||
+    actionName === "PlayHistoryRevision" ||
     actionName === "SaveHistoryVersion" ||
+    actionName === "CreateHistoryBranch" ||
+    actionName === "SwitchHistoryBranch" ||
+    actionName === "CopyHistoryRevisionToBranch" ||
     actionName === "CloseSceneTextModal" ||
     actionName === "NavigateSceneTextModal" ||
     actionName === "SwitchView" ||
@@ -409,9 +424,38 @@ async function sendServerAction(actionName, params) {
     if (typeof consumeDirtyInspectorFormIntoParams === "function") {
       consumeDirtyInspectorFormIntoParams(params);
     }
-  } else if (actionName === "RedoEditor" || actionName === "RestoreHistoryRevision") {
+  } else if (
+    actionName === "RedoEditor" ||
+    actionName === "RestoreHistoryRevision" ||
+    actionName === "ExitHistoryPreview"
+  ) {
     if (typeof cancelPendingInspectorTimers === "function") {
       cancelPendingInspectorTimers();
+    }
+  }
+  if (actionName === "SelectStudioScene" && params.scene) {
+    if (typeof editorSelectionCleared !== "undefined") {
+      editorSelectionCleared = false;
+    }
+    if (typeof selectedNodeIds !== "undefined") {
+      selectedNodeIds.clear();
+      selectedNodeIds.add(String(params.scene));
+    }
+  } else if (
+    actionName === "PreviewHistoryRevision" ||
+    actionName === "ExitHistoryPreview" ||
+    actionName === "PlayHistoryRevision" ||
+    actionName === "RestoreHistoryRevision" ||
+    actionName === "CopyHistoryRevisionToBranch" ||
+    actionName === "SwitchHistoryBranch" ||
+    actionName === "UndoEditor" ||
+    actionName === "RedoEditor"
+  ) {
+    if (typeof editorSelectionCleared !== "undefined") {
+      editorSelectionCleared = false;
+    }
+    if (typeof selectedNodeIds !== "undefined") {
+      selectedNodeIds.clear();
     }
   }
 
@@ -607,9 +651,16 @@ async function sendServerAction(actionName, params) {
       }
     }
     const updatedForm = qs("#editor-context-form");
-    const selId = updatedForm ? updatedForm.getAttribute("data-context-scene-id") || "" : "";
+    const isNodeFormVisible = Boolean(updatedForm && !updatedForm.classList.contains("hidden"));
+    const selId = isNodeFormVisible ? updatedForm.getAttribute("data-context-scene-id") || "" : "";
     if (selId && typeof selectedNodeIds !== "undefined" && typeof syncNodeSelectionDOM === "function") {
-      if ((typeof editorSelectionCleared === "undefined" || !editorSelectionCleared) && selectedNodeIds.size <= 1) {
+      if (actionName === "SelectStudioScene") {
+        if (typeof editorSelectionCleared !== "undefined") {
+          editorSelectionCleared = false;
+        }
+        selectedNodeIds.clear();
+        selectedNodeIds.add(selId);
+      } else if ((typeof editorSelectionCleared === "undefined" || !editorSelectionCleared) && selectedNodeIds.size <= 1) {
         selectedNodeIds.clear();
         selectedNodeIds.add(selId);
       }
@@ -626,6 +677,8 @@ async function sendServerAction(actionName, params) {
   const prevEditorViewport = qs("#timeline-scroll-viewport");
   const prevEditorScrollTop = prevEditorViewport ? prevEditorViewport.scrollTop : null;
   const prevEditorScrollLeft = prevEditorViewport ? prevEditorViewport.scrollLeft : null;
+  const prevHistScroll = qs("#history-graph-scroll");
+  const prevHistScrollTop = prevHistScroll ? prevHistScroll.scrollTop : null;
   const resetCanvas = resp.headers.get("X-Reset-Canvas") === "true";
   const isAnimatedSceneTransition =
     actionName === "ChooseBranch" ||
@@ -652,6 +705,15 @@ async function sendServerAction(actionName, params) {
     if (nextEditorViewport && prevEditorScrollTop !== null) {
       nextEditorViewport.scrollTop = prevEditorScrollTop;
       nextEditorViewport.scrollLeft = prevEditorScrollLeft || 0;
+    }
+    const nextHistScroll = qs("#history-graph-scroll");
+    if (nextHistScroll && prevHistScrollTop !== null && actionName !== "SaveHistoryVersion" && actionName !== "CreateHistoryBranch") {
+      nextHistScroll.scrollTop = prevHistScrollTop;
+    }
+    if (typeof updateHistoryScrollCue === "function") {
+      requestAnimationFrame(() => {
+        updateHistoryScrollCue();
+      });
     }
 
     const nextAudio = qs("#story-audio");
@@ -932,6 +994,11 @@ function bindDeclarativeActionBridge() {
 
     const submitBtn = e.target.closest('form[action] button[type="submit"], form[action] input[type="submit"]');
     if (submitBtn) {
+      if (submitBtn.disabled || submitBtn.classList.contains("is-disabled")) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
       const form = submitBtn.closest("form[action]");
       if (form) {
         e.preventDefault();
@@ -968,6 +1035,7 @@ function bindDeclarativeActionBridge() {
     const params = {};
     const isModalOnlyAction =
       actionName === "OpenSceneTextModal" ||
+      actionName === "SelectStudioScene" ||
       actionName === "PromptDeleteScene" ||
       actionName === "PromptDeleteScenes";
     if (
@@ -984,7 +1052,7 @@ function bindDeclarativeActionBridge() {
         selectedNodeIds.clear();
       }
     }
-    const parentCardForm = target.closest("form.editor-context-form, form.timeline-node-card, form#form-scene-text");
+    const parentCardForm = target.closest("form.editor-context-form, form.timeline-node-card, form#form-scene-text, form#form-new-book");
     if (parentCardForm && (!isModalOnlyAction || (typeof dirtyInspectorForms !== "undefined" && dirtyInspectorForms.has(parentCardForm)))) {
       if (typeof dirtyInspectorForms !== "undefined") {
         dirtyInspectorForms.delete(parentCardForm);

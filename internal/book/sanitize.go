@@ -26,6 +26,16 @@ func SanitizePlainText(s string) string {
 		if r == '<' || r == '>' {
 			if r == '>' && b.Len() > 0 && strings.HasSuffix(b.String(), "-") {
 				b.WriteRune(r)
+			} else if r == '>' {
+				cur := b.String()
+				lastNL := strings.LastIndexByte(cur, '\n')
+				linePrefix := cur
+				if lastNL >= 0 {
+					linePrefix = cur[lastNL+1:]
+				}
+				if strings.TrimSpace(linePrefix) == "" {
+					b.WriteRune(r)
+				}
 			}
 			continue
 		}

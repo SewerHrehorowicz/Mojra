@@ -165,7 +165,18 @@ func LoadLibraryBooks(booksDir string, externalPaths []string) ([]*Book, error) 
 			continue
 		}
 		b.IsExternal = !isPathDirectlyInDir(absPath, booksDir)
-		if _, exists := byID[b.ID]; exists {
+		if existing, exists := byID[b.ID]; exists {
+			if existing.IsPacked && !b.IsPacked {
+				byID[b.ID] = b
+				seenRoots[rootKey] = true
+				for idx := range out {
+					if out[idx] == existing {
+						out[idx] = b
+						break
+					}
+				}
+				continue
+			}
 			candidateID := fmt.Sprintf("%s-%s", b.ID, shortPathHash(absPath))
 			for i := 2; byID[candidateID] != nil; i++ {
 				candidateID = fmt.Sprintf("%s-%s-%d", b.ID, shortPathHash(absPath), i)
@@ -818,6 +829,54 @@ func LoadBookFromZip(zipPath string) (*Book, error) {
 	FinalizeBook(b)
 	matchBookMedia(b, audioFiles, imageFiles)
 	return b, nil
+}
+
+// UnpackBookZip extracts a packed .stbook or .zip archive into targetDir so it can be edited in Node Studio.
+func UnpackBookZip(zipPath, targetDir string) error {
+	zr, err := zip.OpenReader(zipPath)
+	if err != nil {
+		return err
+	}
+	defer zr.Close()
+
+	if err := os.MkdirAll(targetDir, 0755); err != nil {
+		return err
+	}
+
+	commonPrefix := detectZipCommonPrefix(zr.File)
+	for _, f := range zr.File {
+		if f.FileInfo().IsDir() {
+			continue
+		}
+		relSlash := filepath.ToSlash(f.Name)
+		if isIgnoredZipEntry(relSlash) {
+			continue
+		}
+		if commonPrefix != "" && strings.HasPrefix(relSlash, commonPrefix) {
+			relSlash = strings.TrimPrefix(relSlash, commonPrefix)
+		}
+		relSlash = SanitizeRelativeMediaPath(relSlash)
+		if relSlash == "" || strings.HasPrefix(filepath.Base(relSlash), ".") {
+			continue
+		}
+		dstPath := filepath.Join(targetDir, filepath.FromSlash(relSlash))
+		if err := os.MkdirAll(filepath.Dir(dstPath), 0755); err != nil {
+			return err
+		}
+		rc, err := f.Open()
+		if err != nil {
+			return err
+		}
+		data, readErr := io.ReadAll(io.LimitReader(rc, MaxSingleMediaBytes+1024))
+		_ = rc.Close()
+		if readErr != nil {
+			return readErr
+		}
+		if err := os.WriteFile(dstPath, data, 0644); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func isIgnoredZipEntry(slashed string) bool {

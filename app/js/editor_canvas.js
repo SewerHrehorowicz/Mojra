@@ -216,6 +216,9 @@ function findClosestChapterAtWorldCoords(worldX, worldY) {
 }
 
 function createSceneNodeAtWorldCoords(worldX, worldY, chapterName) {
+  if (typeof isEditorHistoryPreview === "function" && isEditorHistoryPreview()) {
+    return;
+  }
   closeCanvasContextMenu();
   hideFloatingChapterInput(false);
   editorSelectionCleared = false;

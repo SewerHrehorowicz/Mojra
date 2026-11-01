@@ -115,6 +115,11 @@ func LoadAppSettings(savesDir string) *AppSettings {
 			if val != "" {
 				cfg.AddExternalBook(val)
 			}
+		case "library.new_book_dir", ".new_book_dir":
+			cleanDir := filepath.Clean(strings.TrimSpace(val))
+			if cleanDir != "" && cleanDir != "." {
+				cfg.NewBookDir = cleanDir
+			}
 		}
 	}
 	return cfg
@@ -193,8 +198,15 @@ func SaveAppSettings(savesDir string, cfg *AppSettings) error {
 	fmt.Fprintf(&sb, "auto_choice = %t\n", cfg.AutoChoice)
 	fmt.Fprintf(&sb, "auto_strategy = %s\n", cfg.AutoChoiceStrategy)
 
-	if len(cfg.ExternalBooks) > 0 {
+	cleanNewBookDir := filepath.Clean(strings.TrimSpace(cfg.NewBookDir))
+	if cleanNewBookDir == "." {
+		cleanNewBookDir = ""
+	}
+	if len(cfg.ExternalBooks) > 0 || cleanNewBookDir != "" {
 		sb.WriteString("\n[library]\n")
+		if cleanNewBookDir != "" {
+			fmt.Fprintf(&sb, "new_book_dir = %s\n", cleanNewBookDir)
+		}
 		seen := make(map[string]bool, len(cfg.ExternalBooks))
 		for _, p := range cfg.ExternalBooks {
 			clean := filepath.Clean(strings.TrimSpace(p))

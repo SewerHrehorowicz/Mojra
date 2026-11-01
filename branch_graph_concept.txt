@@ -1,0 +1,48 @@
+PROPOZYCJA KONCEPTUALNA I ARCHITEKTONICZNA:
+WIZUALIZACJA WARIANTÓW I WERSJI SCENARIUSZA (JEDNOLITA OŚ + ZUNIFIKOWANY HOVER)
+===============================================================================
+
+Powiązana makieta wizualna: branch_graph_design.png (Tryb ciemny + Tryb jasny)
+
+
+1. UKŁAD WIZUALNY I INTERAKCJE
+------------------------------
+1.1. Jednolita oś czasu (Bieżące kroki edycji połączone bezpośrednio z linią wariantu):
+  - Bieżące, nienazwane kroki edycji (od ostatniej nazwanej wersji do teraz) nie tworzą osobnej sekcji u góry panelu — znajdują się bezpośrednio na przerywanym przedłużeniu (`┆`) aktywnego toru powyżej ostatniej nazwanej wersji (`r14`).
+  - Aktywny punkt pracy oznaczony jest podwójnym pierścieniem (`◉`). Zapisanie nowej wersji spłaszcza przerywane kroki robocze w nowy pełny węzeł (`●`) na torze aktywnego wariantu.
+
+1.2. Przełączanie wariantów kliknięciem w linię i brak paska przycisków gałęzi:
+  - Brak górnego paska przycisków wariantów i brak ukośnych linii łączących.
+  - Przełączenie wariantu następuje bezpośrednio przez kliknięcie pionowego toru lub jego węzła (bez przestawiania miejsc kolumn — aktywny tor staje się biały `#fff` w trybie ciemnym / czarny `#000` w trybie jasnym).
+  - Gdy wewnętrzne tory kończą się na swoim węźle bazowym (`BaseRevID`), zewnętrzne tory płynnie dosuwają się w lewo (`╭─╯`).
+
+1.3. Skompresowane wiersze 1-liniowe (`28px`) i przewijanie z „...”:
+  - Każdy wiersz ma wysokość `28px`, ciągły poziomy łącznik `1px` w kolorze ramki boxa i zawiera wyłącznie `[⋮⋮] Nazwa wersji   rX • HH:MM`.
+  - Na dole przewijalnej listy znajduje się wizualny wskaźnik `.scroll-more-cue > span.scroll-more-dots "..."` (gradient do tła + trzy kropki w szeryfowym kroju `Aleo`, identycznie jak w czytniku książki).
+
+1.4. Zunifikowane Hover Info dla całej aplikacji (`.ui-tooltip`):
+  - Jednolita, bezramkowa pigułka o pełnym odwróconym kolorze tła (`background: --accent-bg; color: --accent-fg-inverted; border: none`):
+    • Tryb ciemny: pełne białe tło (`#ffffff`), czarny tekst (`#000000`), miękki cień `0 4px 12px rgba(0,0,0,0.65)`.
+    • Tryb jasny: pełne czarne tło (`#000000`), biały tekst (`#ffffff`), miękki cień `0 3px 10px rgba(0,0,0,0.18)`.
+  - Po najechaniu na tor lub węzeł wyświetla zwięzłą informację o wariancie i różnicy stanu (np. `mroczny-final  11 scen • -2 1/8 str.`), bez instrukcji obsługowych.
+  - Ten sam komponent `.ui-tooltip` (`app/styles/app.tss`) obsługuje wszystkie podpowiedzi `data-hint` w całej aplikacji (`#topbar`, `Node Studio`, `Czytnik`, `Historia`).
+
+
+2. IMPLEMENTACJA W ARCHITEKTURZE STORYTELLERA
+---------------------------------------------
+2.1. Zunifikowany `.ui-tooltip` (`app/styles/app.tss`):
+  - Zastąpienie dotychczasowego `background: --bg-elevated; border: 1px solid --border-subtle` przez:
+    ```
+    .ui-tooltip
+      background --accent-bg
+      color --accent-fg-inverted
+      border none
+      font-weight 600
+      padding 4px 8px
+    ```
+
+2.2. Jednolity graf w `internal/gui/render_editor.go` i `app/templates/editor_history_panel.tpl`:
+  - Dwa kompaktowe wiersze formularzy u góry (`Zapisz wersję` oraz `+ Wariant`) bez nagłówków tekstowych.
+  - Pojedyncza przewijalna lista `.history-graph-scroll` łącząca na jednym aktywnym torze bieżące kroki pośrednie (`is_unnamed_step: true`) oraz nazwane wersje wszystkich wariantów, zakończona `.scroll-more-cue`.
+  - Każdy tor i węzeł posiada atrybut `data-hint="{row.hover_info}"` korzystający z globalnego, zunifikowanego `.ui-tooltip`.
+  - Przeciągnięcie kulki (`●`) lub uchwytu boxa (`⋮⋮`) na inny tor nakłada wybrany stan na szczyt docelowego wariantu (`CopyHistoryRevisionToBranch`).

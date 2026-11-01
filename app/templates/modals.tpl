@@ -48,43 +48,106 @@
         data-backdrop-action: CloseNewBookModal
         .modal-card
             .modal-header
-                h3.modal-title "Utwórz Nową Książkę"
-            form.modal-body
+                {if new_book_is_screenplay}
+                    h3.modal-title#new-book-modal-title "Utwórz Nowy Scenariusz"
+                {else}
+                    h3.modal-title#new-book-modal-title "Utwórz Nową Książkę"
+            form.modal-body#form-new-book
                 action: CreateNewBook
                 .form-field
-                    label.field-label "Tytuł opowieści"
+                    {if new_book_is_screenplay}
+                        label.field-label#new-book-title-label "Tytuł scenariusza"
+                    {else}
+                        label.field-label#new-book-title-label "Tytuł opowieści"
                     input.field-input#new-book-title
                         type: text
                         name: title
-                        placeholder: "np. Tajemnica Starego Młyna"
+                        value: "{new_book_title}"
+                        placeholder: "{new_book_title_placeholder}"
                 .form-field
                     label.field-label "Autor"
-                    input.field-input
+                    input.field-input#new-book-author
                         type: text
                         name: author
-                        value: "Autor"
-                .form-field.checkbox-field
+                        value: "{new_book_author}"
+                        placeholder: "Autor"
+                .form-field
+                    label.field-label "Tryb projektu"
+                    .custom-select.node-media-select.new-book-mode-select
+                        input.custom-select-input
+                            type: hidden
+                            name: mode
+                            value: "{new_book_mode}"
+                        button.custom-select-trigger.modal-field-select-trigger
+                            type: button
+                            data-select-toggle: "true"
+                            span.custom-select-label {new_book_mode_label}
+                            span.custom-select-caret "▾"
+                        .custom-select-menu.hidden
+                            {for md_opt in new_book_mode_options}
+                                button.custom-select-option .active?: {md_opt.is_active}
+                                    type: button
+                                    data-select-value: "{md_opt.value}"
+                                    data-select-label: "{md_opt.label}"
+                                    {md_opt.label}
+                .form-field#new-book-standard-field .hidden?: {!new_book_is_screenplay}
+                    label.field-label "Standard scenariusza"
+                    .custom-select.node-media-select
+                        input.custom-select-input
+                            type: hidden
+                            name: standard
+                            value: "{new_book_standard}"
+                        button.custom-select-trigger.modal-field-select-trigger
+                            type: button
+                            data-select-toggle: "true"
+                            span.custom-select-label {new_book_standard_label}
+                            span.custom-select-caret "▾"
+                        .custom-select-menu.hidden
+                            {for std_opt in new_book_standard_options}
+                                button.custom-select-option .active?: {std_opt.is_active}
+                                    type: button
+                                    data-select-value: "{std_opt.value}"
+                                    data-select-label: "{std_opt.label}"
+                                    {std_opt.label}
+                .form-field
+                    label.field-label#new-book-location-label "Lokalizacja zapisu na dysku"
+                    .add-book-input-row
+                        input.field-input#new-book-path
+                            type: text
+                            name: save_path
+                            value: "{new_book_default_dir}"
+                            placeholder: "{new_book_default_dir}"
+                        button.btn.btn-sm
+                            type: button
+                            action: BrowseNewBookFolder
+                            "Wybierz folder..."
+                .form-field.checkbox-field#new-book-narrated-field .hidden?: {new_book_is_screenplay}
                     label.checkbox-label
                         input
                             type: checkbox
                             name: narrated
                             value: true
-                        span "Książka z pełną narracją (narrated: true — wymaga nagrania voice dla każdej sceny)"
-                .form-field.checkbox-field
+                            checked?: {new_book_narrated}
+                        span "Pełna narracja głosowa (narrated: true — wymaga nagrania voice dla każdej sceny)"
+                .form-field.checkbox-field#new-book-imageless-field .hidden?: {new_book_is_screenplay}
                     label.checkbox-label
                         input
                             type: checkbox
                             name: imageless
                             value: true
+                            checked?: {new_book_imageless}
                         span "Książka bez obrazów (imageless: true — wymusza tryb bez ilustracji)"
                 .modal-actions
                     button.btn
                         type: button
                         action: CloseNewBookModal
                         "Anuluj"
-                    button.btn.btn-primary
+                    button.btn.btn-primary#new-book-submit-btn
                         type: submit
-                        "Utwórz książkę"
+                        {if new_book_is_screenplay}
+                            "Utwórz scenariusz"
+                        {else}
+                            "Utwórz książkę"
 
 {if show_add_book_modal}
     .modal-backdrop
@@ -195,11 +258,16 @@
                                         name: name
                                         value: "{scene_text_modal_raw_name}"
                                         placeholder: "Nazwa sceny (opcjonalna przy ID)..."
-                                button.contextual-rewind-btn.scene-settings-toggle-btn .active?: {scene_text_modal_settings_open}
-                                    type: button
-                                    data-scene-settings-toggle: "true"
-                                    data-hint: "Ustawienia sceny"
-                                    svg.scene-settings-icon src: /icons/settings.svg
+                                        disabled?: {is_history_preview}
+                                        readonly?: {is_history_preview}
+                                {if is_history_preview}
+                                    span.history-step-badge "PODGLĄD (TYLKO DO ODCZYTU)"
+                                {else}
+                                    button.contextual-rewind-btn.scene-settings-toggle-btn .active?: {scene_text_modal_settings_open}
+                                        type: button
+                                        data-scene-settings-toggle: "true"
+                                        data-hint: "Ustawienia sceny"
+                                        svg.scene-settings-icon src: /icons/settings.svg
                             .scene-settings-block#modal-scene-settings-block .hidden?: {!scene_text_modal_settings_open}
                                 .scene-settings-row
                                     span.node-meta-key "id:"
@@ -208,31 +276,36 @@
                                         name: explicit_id
                                         value: "{scene_text_modal_explicit_id}"
                                         placeholder: "opcjonalne id (np. warsztat)"
-                                .scene-settings-row
-                                    span.node-meta-key "image:"
-                                    .custom-select.node-media-select
-                                        input.custom-select-input
-                                            type: hidden
-                                            name: explicit_image
-                                            value: "{scene_text_modal_current_image}"
-                                        button.custom-select-trigger
-                                            type: button
-                                            data-select-toggle: "true"
-                                            span.custom-select-label {scene_text_modal_current_image_label}
-                                            span.custom-select-caret "▾"
-                                        .custom-select-menu.hidden
-                                            {for img_opt in scene_text_modal_image_options}
-                                                button.custom-select-option .active?: {img_opt.is_active}
-                                                    type: button
-                                                    data-select-value: "{img_opt.value}"
-                                                    data-select-label: "{img_opt.label}"
-                                                    {img_opt.label}
-                                    button.node-icon-btn.node-media-add-btn
-                                        type: button
-                                        action: BrowseAddBookMedia
-                                        data-kind: image
-                                        data-scene: "{scene_text_modal_id}"
-                                        svg.media-plus-icon src: /icons/plus.svg
+                                        disabled?: {is_history_preview}
+                                        readonly?: {is_history_preview}
+                                {if not is_screenplay_mode}
+                                    .scene-settings-row
+                                        span.node-meta-key "image:"
+                                        .custom-select.node-media-select
+                                            input.custom-select-input
+                                                type: hidden
+                                                name: explicit_image
+                                                value: "{scene_text_modal_current_image}"
+                                            button.custom-select-trigger
+                                                type: button
+                                                data-select-toggle: "true"
+                                                disabled?: {is_history_preview}
+                                                span.custom-select-label {scene_text_modal_current_image_label}
+                                                span.custom-select-caret "▾"
+                                            .custom-select-menu.hidden
+                                                {for img_opt in scene_text_modal_image_options}
+                                                    button.custom-select-option .active?: {img_opt.is_active}
+                                                        type: button
+                                                        data-select-value: "{img_opt.value}"
+                                                        data-select-label: "{img_opt.label}"
+                                                        {img_opt.label}
+                                        {if not is_history_preview}
+                                            button.node-icon-btn.node-media-add-btn
+                                                type: button
+                                                action: BrowseAddBookMedia
+                                                data-kind: image
+                                                data-scene: "{scene_text_modal_id}"
+                                                svg.media-plus-icon src: /icons/plus.svg
                                 {if scene_text_modal_book_narrated}
                                     .scene-settings-row
                                         span.node-meta-key "voice:"
@@ -244,6 +317,7 @@
                                             button.custom-select-trigger
                                                 type: button
                                                 data-select-toggle: "true"
+                                                disabled?: {is_history_preview}
                                                 span.custom-select-label {scene_text_modal_current_voice_label}
                                                 span.custom-select-caret "▾"
                                             .custom-select-menu.hidden
@@ -253,22 +327,89 @@
                                                         data-select-value: "{voice_opt.value}"
                                                         data-select-label: "{voice_opt.label}"
                                                         {voice_opt.label}
-                                        button.node-icon-btn.node-media-add-btn
-                                            type: button
-                                            action: BrowseAddBookMedia
-                                            data-kind: audio
-                                            data-scene: "{scene_text_modal_id}"
-                                            svg.media-plus-icon src: /icons/plus.svg
+                                        {if not is_history_preview}
+                                            button.node-icon-btn.node-media-add-btn
+                                                type: button
+                                                action: BrowseAddBookMedia
+                                                data-kind: audio
+                                                data-scene: "{scene_text_modal_id}"
+                                                svg.media-plus-icon src: /icons/plus.svg
                         {if scene_text_modal_has_image}
                             .scene-illustration-spacer
                                 img.scene-portrait-img
                                     alt: "{scene_text_modal_name}"
                                     src: {scene_text_modal_image_url}
                         .scene-body-block.scene-text-editor-body
-                            textarea.scene-prose.modal-scene-textarea#modal-scene-textarea
+                            {if is_screenplay_mode}
+                                .modal-screenplay-meta-bar
+                                    .modal-slugline-row
+                                        span.node-meta-key "SCENA:"
+                                        input.node-meta-input.node-slugline-input#modal-slugline-input
+                                            type: text
+                                            name: slugline
+                                            value: "{scene_text_modal_slugline}"
+                                            placeholder: "WN. LOKACJA - DZIEŃ"
+                                            disabled?: {is_history_preview}
+                                            readonly?: {is_history_preview}
+                                        {if scene_text_modal_length_label}
+                                            span.node-script-length-badge {scene_text_modal_length_label}
+                                    {if not is_history_preview}
+                                        .slugline-helper-pills
+                                            {for p in slugline_prefix_pills}
+                                                button.slugline-pill-btn
+                                                    type: button
+                                                    action: ApplySluglineToken
+                                                    data-scene: "{scene_text_modal_id}"
+                                                    data-prefix: "{p.token}"
+                                                    {p.token}
+                                            {for t in slugline_time_pills}
+                                                button.slugline-pill-btn
+                                                    type: button
+                                                    action: ApplySluglineToken
+                                                    data-scene: "{scene_text_modal_id}"
+                                                    data-time: "{t.token}"
+                                                    {t.token}
+                                    .modal-slugline-row
+                                        span.node-meta-key "OPIS:"
+                                        input.node-meta-input
+                                            type: text
+                                            name: synopsis
+                                            value: "{scene_text_modal_synopsis}"
+                                            placeholder: "Streszczenie sceny (1 zdanie)..."
+                                            disabled?: {is_history_preview}
+                                            readonly?: {is_history_preview}
+                                {if not is_history_preview}
+                                    .modal-screenplay-format-bar#modal-screenplay-format-bar
+                                        .modal-format-row
+                                            span.node-meta-key "WSTAW:"
+                                            .slugline-helper-pills
+                                                {for fp in screenplay_insert_pills}
+                                                    button.slugline-pill-btn.script-format-pill-btn
+                                                        type: button
+                                                        action: InsertScreenplayBlock
+                                                        data-insert-script-block: "{fp.kind}"
+                                                        data-script-standard: "{script_standard}"
+                                                        data-scene: "{scene_text_modal_id}"
+                                                        data-hint: "{fp.hint}"
+                                                        {fp.label}
+                                        {if has_screenplay_character_pills}
+                                            .modal-format-row
+                                                span.node-meta-key "POSTAĆ:"
+                                                .slugline-helper-pills
+                                                    {for cp in screenplay_character_pills}
+                                                        button.slugline-pill-btn.script-char-pill-btn
+                                                            type: button
+                                                            action: InsertScreenplayBlock
+                                                            data-insert-script-char: "{cp.name}"
+                                                            data-scene: "{scene_text_modal_id}"
+                                                            data-hint: "{cp.hint}"
+                                                            {cp.label}
+                            textarea.scene-prose.modal-scene-textarea#modal-scene-textarea .is-screenplay?: {is_screenplay_mode}
                                 name: text
                                 rows: 14
                                 placeholder: "Wpisz treść sceny..."
+                                disabled?: {is_history_preview}
+                                readonly?: {is_history_preview}
                                 {scene_text_modal_text}
                             .scene-choices-list
                                 {if scene_text_modal_is_terminal}
@@ -279,23 +420,24 @@
                                             data-scene: "{scene_text_modal_start_id}"
                                             span.choice-label-text "Koniec opowieści — Wróć na początek"
                                         .modal-choice-controls
-                                            .custom-select.node-choice-select.modal-choice-select
-                                                input.custom-select-input
-                                                    type: hidden
-                                                    name: "choice_target_0"
-                                                    value: "{scene_text_modal_terminal_selected_value}"
-                                                button.custom-select-trigger.choice-port-trigger
-                                                    type: button
-                                                    data-select-toggle: "true"
-                                                    data-hint: "{scene_text_modal_terminal_selected_label}"
-                                                    span.choice-port-icon .port-filled?: {scene_text_modal_terminal_port_filled}
-                                                .custom-select-menu.hidden
-                                                    {for opt in scene_text_modal_terminal_target_options}
-                                                        button.custom-select-option .active?: {opt.is_active}
-                                                            type: button
-                                                            data-select-value: "{opt.value}"
-                                                            data-select-label: "{opt.short_label}"
-                                                            {opt.label}
+                                            {if not is_history_preview}
+                                                .custom-select.node-choice-select.modal-choice-select
+                                                    input.custom-select-input
+                                                        type: hidden
+                                                        name: "choice_target_0"
+                                                        value: "{scene_text_modal_terminal_selected_value}"
+                                                    button.custom-select-trigger.choice-port-trigger
+                                                        type: button
+                                                        data-select-toggle: "true"
+                                                        data-hint: "{scene_text_modal_terminal_selected_label}"
+                                                        span.choice-port-icon .port-filled?: {scene_text_modal_terminal_port_filled}
+                                                    .custom-select-menu.hidden
+                                                        {for opt in scene_text_modal_terminal_target_options}
+                                                            button.custom-select-option .active?: {opt.is_active}
+                                                                type: button
+                                                                data-select-value: "{opt.value}"
+                                                                data-select-label: "{opt.short_label}"
+                                                                {opt.label}
                                             button.contextual-rewind-btn.modal-choice-nav-btn
                                                 type: button
                                                 action: NavigateSceneTextModal
@@ -311,30 +453,33 @@
                                                     data-choice-idx: "{ch.idx}"
                                                     value: "{ch.label}"
                                                     placeholder: "Tekst wyboru..."
+                                                    disabled?: {is_history_preview}
+                                                    readonly?: {is_history_preview}
                                                 .modal-choice-controls
-                                                    .custom-select.node-choice-select.modal-choice-select
-                                                        input.custom-select-input
-                                                            type: hidden
-                                                            name: "choice_target_{ch.idx}"
-                                                            value: "{ch.selected_value}"
-                                                        button.custom-select-trigger.choice-port-trigger
+                                                    {if not is_history_preview}
+                                                        .custom-select.node-choice-select.modal-choice-select
+                                                            input.custom-select-input
+                                                                type: hidden
+                                                                name: "choice_target_{ch.idx}"
+                                                                value: "{ch.selected_value}"
+                                                            button.custom-select-trigger.choice-port-trigger
+                                                                type: button
+                                                                data-select-toggle: "true"
+                                                                data-hint: "{ch.selected_label}"
+                                                                span.choice-port-icon .port-filled?: {ch.is_filled}
+                                                            .custom-select-menu.hidden
+                                                                {for opt in ch.target_options}
+                                                                    button.custom-select-option .active?: {opt.is_active}
+                                                                        type: button
+                                                                        data-select-value: "{opt.value}"
+                                                                        data-select-label: "{opt.short_label}"
+                                                                        {opt.label}
+                                                        button.node-icon-btn.node-choice-btn.node-choice-remove
                                                             type: button
-                                                            data-select-toggle: "true"
-                                                            data-hint: "{ch.selected_label}"
-                                                            span.choice-port-icon .port-filled?: {ch.is_filled}
-                                                        .custom-select-menu.hidden
-                                                            {for opt in ch.target_options}
-                                                                button.custom-select-option .active?: {opt.is_active}
-                                                                    type: button
-                                                                    data-select-value: "{opt.value}"
-                                                                    data-select-label: "{opt.short_label}"
-                                                                    {opt.label}
-                                                    button.node-icon-btn.node-choice-btn.node-choice-remove
-                                                        type: button
-                                                        action: PromptRemoveChoice
-                                                        data-scene: "{scene_text_modal_id}"
-                                                        data-choice-idx: "{ch.idx}"
-                                                        svg.choice-trash-icon src: /icons/trash.svg
+                                                            action: PromptRemoveChoice
+                                                            data-scene: "{scene_text_modal_id}"
+                                                            data-choice-idx: "{ch.idx}"
+                                                            svg.choice-trash-icon src: /icons/trash.svg
                                                     button.contextual-rewind-btn.modal-choice-nav-btn
                                                         type: button
                                                         action: NavigateSceneTextModal
@@ -351,23 +496,24 @@
                                                     data-choice-idx: "{ch.idx}"
                                                     span.choice-label-text {ch.label}
                                                 .modal-choice-controls
-                                                    .custom-select.node-choice-select.modal-choice-select
-                                                        input.custom-select-input
-                                                            type: hidden
-                                                            name: "choice_target_{ch.idx}"
-                                                            value: "{ch.selected_value}"
-                                                        button.custom-select-trigger.choice-port-trigger
-                                                            type: button
-                                                            data-select-toggle: "true"
-                                                            data-hint: "{ch.selected_label}"
-                                                            span.choice-port-icon .port-filled?: {ch.is_filled}
-                                                        .custom-select-menu.hidden
-                                                            {for opt in ch.target_options}
-                                                                button.custom-select-option .active?: {opt.is_active}
-                                                                    type: button
-                                                                    data-select-value: "{opt.value}"
-                                                                    data-select-label: "{opt.short_label}"
-                                                                    {opt.label}
+                                                    {if not is_history_preview}
+                                                        .custom-select.node-choice-select.modal-choice-select
+                                                            input.custom-select-input
+                                                                type: hidden
+                                                                name: "choice_target_{ch.idx}"
+                                                                value: "{ch.selected_value}"
+                                                            button.custom-select-trigger.choice-port-trigger
+                                                                type: button
+                                                                data-select-toggle: "true"
+                                                                data-hint: "{ch.selected_label}"
+                                                                span.choice-port-icon .port-filled?: {ch.is_filled}
+                                                            .custom-select-menu.hidden
+                                                                {for opt in ch.target_options}
+                                                                    button.custom-select-option .active?: {opt.is_active}
+                                                                        type: button
+                                                                        data-select-value: "{opt.value}"
+                                                                        data-select-label: "{opt.short_label}"
+                                                                        {opt.label}
                                                     button.contextual-rewind-btn.modal-choice-nav-btn
                                                         type: button
                                                         action: NavigateSceneTextModal
@@ -375,11 +521,12 @@
                                                         data-choice-idx: "{ch.idx}"
                                                         data-hint: "Przejdź do sceny docelowej"
                                                         span.choice-arrow {ch.arrow}
-                                button.node-icon-btn.node-media-add-btn.modal-add-choice-btn
-                                    type: button
-                                    action: AddChoice
-                                    data-scene: "{scene_text_modal_id}"
-                                    svg.media-plus-icon src: /icons/plus.svg
+                                {if not is_history_preview}
+                                    button.node-icon-btn.node-media-add-btn.modal-add-choice-btn
+                                        type: button
+                                        action: AddChoice
+                                        data-scene: "{scene_text_modal_id}"
+                                        svg.media-plus-icon src: /icons/plus.svg
                 .scroll-more-cue.hidden#modal-scroll-more-cue
                     span.scroll-more-dots "..."
 

@@ -269,3 +269,134 @@ func TestBookHistoryMultiChapterDeltaAndBlobPruning(t *testing.T) {
 		t.Fatalf("expected unreferenced intermediate blob %s.gz to be pruned after SaveNamedBookVersion", oldCh3Hash)
 	}
 }
+
+func TestHistoryBranchesCreateSwitchCompareDelete(t *testing.T) {
+	booksDir := t.TempDir()
+	b, err := CreateNewBookWithMode(booksDir, "Wersje Scenariusza", "Autor", "screenplay", "pl", false, false)
+	if err != nil {
+		t.Fatalf("CreateNewBookWithMode failed: %v", err)
+	}
+	if err := EnsureBookHistoryBaseline(b, b.StartSceneID); err != nil {
+		t.Fatalf("EnsureBookHistoryBaseline failed: %v", err)
+	}
+
+	// Fork a new branch "wersja-rezysera"
+	br, err := CreateBookBranch(b, "wersja-rezysera", "")
+	if err != nil || br == nil || br.Name != "wersja-rezysera" {
+		t.Fatalf("CreateBookBranch failed: br=%+v err=%v", br, err)
+	}
+
+	// Add a new scene on "wersja-rezysera"
+	inserted, err := InsertSceneBetween(b, b.Scenes[0].ID, b.Scenes[1].ID, "Dodatkowa scena reżysera")
+	if err != nil || inserted == nil {
+		t.Fatalf("InsertSceneBetween on branch failed: %v", err)
+	}
+	if err := RecordBookHistoryStep(b, "Dodano scenę na gałęzi reżysera", "graph", "", inserted.ID); err != nil {
+		t.Fatalf("RecordBookHistoryStep on branch failed: %v", err)
+	}
+	if len(b.Scenes) != 4 {
+		t.Fatalf("expected 4 scenes on wersja-rezysera, got %d", len(b.Scenes))
+	}
+
+	// Compare "main" vs "wersja-rezysera"
+	cmp, err := CompareBookBranches(b, "main", "wersja-rezysera")
+	if err != nil {
+		t.Fatalf("CompareBookBranches failed: %v", err)
+	}
+	if cmp.SceneDelta != 1 || len(cmp.AddedScenes) != 1 {
+		t.Fatalf("expected +1 scene delta between main and wersja-rezysera, got %+v", cmp)
+	}
+
+	// Switch back to "main"
+	if _, err := SwitchBookBranch(b, "main"); err != nil {
+		t.Fatalf("SwitchBookBranch(main) failed: %v", err)
+	}
+	if len(b.Scenes) != 3 {
+		t.Fatalf("expected 3 scenes after switching back to main, got %d", len(b.Scenes))
+	}
+
+	// Switch to "wersja-rezysera" again and verify 4 scenes are restored
+	if _, err := SwitchBookBranch(b, "wersja-rezysera"); err != nil {
+		t.Fatalf("SwitchBookBranch(wersja-rezysera) failed: %v", err)
+	}
+	if len(b.Scenes) != 4 {
+		t.Fatalf("expected 4 scenes after switching to wersja-rezysera, got %d", len(b.Scenes))
+	}
+
+	// Protecting "main" and active branch from deletion
+	if err := DeleteBookBranch(b, "main"); err == nil {
+		t.Fatalf("expected DeleteBookBranch(main) to be rejected")
+	}
+	if err := DeleteBookBranch(b, "wersja-rezysera"); err == nil {
+		t.Fatalf("expected DeleteBookBranch on active branch to be rejected")
+	}
+
+	// Switch to "main" and delete "wersja-rezysera"
+	if _, err := SwitchBookBranch(b, "main"); err != nil {
+		t.Fatalf("SwitchBookBranch(main) failed: %v", err)
+	}
+	if err := DeleteBookBranch(b, "wersja-rezysera"); err != nil {
+		t.Fatalf("DeleteBookBranch(wersja-rezysera) failed: %v", err)
+	}
+	h, _ := LoadBookHistory(b)
+	if len(h.Branches) != 1 || h.Branches[0].Name != "main" {
+		t.Fatalf("expected only main branch remaining, got %+v", h.Branches)
+	}
+}
+
+func TestCopyHistoryRevisionToBranchAndHoverSummaries(t *testing.T) {
+	booksDir := t.TempDir()
+	b, err := CreateNewBookWithMode(booksDir, "Drzewo Wariantów", "Autor", "screenplay", "pl", false, false)
+	if err != nil {
+		t.Fatalf("CreateNewBookWithMode failed: %v", err)
+	}
+	if err := EnsureBookHistoryBaseline(b, b.StartSceneID); err != nil {
+		t.Fatalf("EnsureBookHistoryBaseline failed: %v", err)
+	}
+
+	// Create branch "mroczny-final" and add a scene on it
+	brDark, err := CreateBookBranch(b, "mroczny-final", "")
+	if err != nil || brDark == nil {
+		t.Fatalf("CreateBookBranch(mroczny-final) failed: %v", err)
+	}
+	inserted, err := InsertSceneBetween(b, b.Scenes[0].ID, b.Scenes[1].ID, "Scena mrocznego finału")
+	if err != nil || inserted == nil {
+		t.Fatalf("InsertSceneBetween failed: %v", err)
+	}
+	if err := RecordBookHistoryStep(b, "Dodano mroczny finał", "graph", "", inserted.ID); err != nil {
+		t.Fatalf("RecordBookHistoryStep failed: %v", err)
+	}
+	verDark, err := SaveNamedBookVersion(b, "Mroczny Finał v1", inserted.ID)
+	if err != nil || verDark == nil {
+		t.Fatalf("SaveNamedBookVersion on mroczny-final failed: %v", err)
+	}
+
+	// Switch back to "main" (3 scenes)
+	if _, err := SwitchBookBranch(b, "main"); err != nil {
+		t.Fatalf("SwitchBookBranch(main) failed: %v", err)
+	}
+	if len(b.Scenes) != 3 {
+		t.Fatalf("expected 3 scenes on main before copy, got %d", len(b.Scenes))
+	}
+
+	// Copy verDark.ID from "mroczny-final" onto "main"
+	selID, copiedLabel, err := CopyHistoryRevisionToBranch(b, verDark.ID, "main")
+	if err != nil {
+		t.Fatalf("CopyHistoryRevisionToBranch failed: %v", err)
+	}
+	if copiedLabel != "Mroczny Finał v1" || selID == "" {
+		t.Fatalf("unexpected CopyHistoryRevisionToBranch result: sel=%q label=%q", selID, copiedLabel)
+	}
+	if len(b.Scenes) != 4 {
+		t.Fatalf("expected 4 scenes on main after copying revision from mroczny-final, got %d", len(b.Scenes))
+	}
+
+	h, err := LoadBookHistory(b)
+	if err != nil {
+		t.Fatalf("LoadBookHistory failed: %v", err)
+	}
+	revHints, branchHints := BuildHistoryHoverSummaries(b, h)
+	if !strings.Contains(branchHints["main"], "main • 4 scen") || !strings.Contains(revHints[verDark.ID], "mroczny-final • 4 scen") {
+		t.Fatalf("unexpected hover summaries: branchHints=%+v revHints=%+v", branchHints, revHints)
+	}
+}

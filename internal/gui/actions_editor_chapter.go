@@ -10,6 +10,9 @@ import (
 )
 
 func (s *Server) renameActiveBookChapter(r *http.Request) string {
+	if s.isHistoryPreview() {
+		return historyPreviewLockedToast
+	}
 	if s.ActiveBook == nil || s.ActiveBook.IsPacked {
 		return ""
 	}
@@ -64,6 +67,9 @@ func (s *Server) renameActiveBookChapter(r *http.Request) string {
 		if strings.EqualFold(s.SelectedChapter, oldCh) {
 			s.SelectedChapter = newCh
 		}
+		if b.IsScreenplay() {
+			return fmt.Sprintf("Zmieniono akt na „%s” (%d scen)", newCh, updated), "chapter", "renamechapter", true
+		}
 		return fmt.Sprintf("Zmieniono rozdział na „%s” (%d scen)", newCh, updated), "chapter", "renamechapter", true
 	})
 }
@@ -103,11 +109,17 @@ func (s *Server) setChapterStartScene(r *http.Request) string {
 		ch.StartSceneID = target.ID
 		s.SelectedChapter = ch.Name
 		s.BookSettingsOpen = false
+		if b.IsScreenplay() {
+			return fmt.Sprintf("Ustawiono scenę początkową aktu „%s”: %s", ch.DisplayName(), target.DisplayName()), "chapter", "setchapterstart", true
+		}
 		return fmt.Sprintf("Ustawiono scenę początkową rozdziału „%s”: %s", ch.DisplayName(), target.DisplayName()), "chapter", "setchapterstart", true
 	})
 }
 
 func (s *Server) saveChapterSettings(r *http.Request) string {
+	if s.isHistoryPreview() {
+		return historyPreviewLockedToast
+	}
 	toast := s.renameActiveBookChapter(r)
 	if startSc := strings.TrimSpace(r.FormValue("start_scene")); startSc != "" {
 		if t2 := s.setChapterStartScene(r); t2 != "" {
@@ -118,6 +130,9 @@ func (s *Server) saveChapterSettings(r *http.Request) string {
 }
 
 func (s *Server) assignChapterToScenes(r *http.Request) string {
+	if s.isHistoryPreview() {
+		return historyPreviewLockedToast
+	}
 	if s.ActiveBook == nil || s.ActiveBook.IsPacked {
 		return ""
 	}
@@ -150,11 +165,17 @@ func (s *Server) assignChapterToScenes(r *http.Request) string {
 		if updated == 0 {
 			return "", "", "", false
 		}
+		if b.IsScreenplay() {
+			return fmt.Sprintf("Przypisano %d scen do aktu „%s”", updated, targetCh), "chapter", "", true
+		}
 		return fmt.Sprintf("Przypisano %d scen do rozdziału „%s”", updated, targetCh), "chapter", "", true
 	})
 }
 
 func (s *Server) createChapterGroup(r *http.Request) string {
+	if s.isHistoryPreview() {
+		return historyPreviewLockedToast
+	}
 	if r.FormValue("scene_id") != "" {
 		_ = s.saveSceneFromForm(r)
 	}
@@ -170,7 +191,11 @@ func (s *Server) createChapterGroup(r *http.Request) string {
 	s.ensureHistoryBaselineBeforeMutation()
 	chName := book.SanitizePlainText(r.FormValue("chapter"))
 	if chName == "" {
-		chName = fmt.Sprintf("Rozdział %d", len(s.ActiveBook.Chapters)+1)
+		if s.ActiveBook.IsScreenplay() {
+			chName = fmt.Sprintf("Akt %d", len(s.ActiveBook.Chapters)+1)
+		} else {
+			chName = fmt.Sprintf("Rozdział %d", len(s.ActiveBook.Chapters)+1)
+		}
 	}
 	x, errX := strconv.Atoi(strings.TrimSpace(r.FormValue("x")))
 	y, errY := strconv.Atoi(strings.TrimSpace(r.FormValue("y")))
@@ -197,6 +222,9 @@ func (s *Server) createChapterGroup(r *http.Request) string {
 	s.reloadActiveBook()
 	s.SelectedSceneID = created.ID
 	toast := fmt.Sprintf("Utworzono rozdział „%s”", chName)
+	if s.ActiveBook != nil && s.ActiveBook.IsScreenplay() {
+		toast = fmt.Sprintf("Utworzono akt „%s”", chName)
+	}
 	s.recordHistoryAfterMutation(toast, "chapter", "")
 	return toast
 }
@@ -235,6 +263,9 @@ func applyChapterLinkToScene(fromSc *book.Scene, idx int, targetCh *book.Chapter
 }
 
 func (s *Server) connectChoiceOnScene(r *http.Request) string {
+	if s.isHistoryPreview() {
+		return historyPreviewLockedToast
+	}
 	if s.ActiveBook == nil || s.ActiveBook.IsPacked {
 		return ""
 	}
@@ -343,6 +374,9 @@ func (s *Server) connectChoiceOnScene(r *http.Request) string {
 }
 
 func (s *Server) connectChapterTransition(r *http.Request) string {
+	if s.isHistoryPreview() {
+		return historyPreviewLockedToast
+	}
 	if r.FormValue("scene_id") != "" {
 		_ = s.saveSceneFromForm(r)
 	}

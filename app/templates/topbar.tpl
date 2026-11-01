@@ -38,7 +38,7 @@ header.topbar#topbar
                     action: PromptResetProgress
                     data-hint: "Wymaż postęp i zacznij od początku"
                     svg.action-icon src: /icons/reset.svg
-            button.top-action-btn#btn-toggle-imageless .active?: {imageless_mode} .is-disabled?: {imageless_locked}
+            button.top-action-btn#btn-toggle-imageless .active?: {imageless_mode} .is-disabled?: {imageless_locked} .hidden?: {is_screenplay_mode}
                 type: button
                 action: ToggleImageless
                 disabled?: {imageless_locked}

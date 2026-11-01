@@ -421,6 +421,55 @@
   overflow-y hidden
   outline none
 
+.modal-scene-textarea.is-screenplay
+  font-family --font-screenplay
+  font-size 15px
+  line-height 1.5
+
+.modal-screenplay-meta-bar
+  display flex
+  flex-direction column
+  gap 8px
+  padding 10px 14px
+  background --bg-elevated
+  border 1px solid --border-subtle
+
+.modal-screenplay-format-bar
+  display flex
+  flex-direction column
+  gap 6px
+  padding 8px 14px
+  background --bg-obsidian
+  border 1px solid --border-subtle
+  margin-top -10px
+
+.modal-format-row
+  display flex
+  align-items center
+  gap 8px
+  width 100%
+
+.modal-format-row .node-meta-key
+  width 54px
+  flex-shrink 0
+
+.script-format-pill-btn, .script-char-pill-btn
+  font-size 10px
+  padding 3px 8px
+
+.modal-slugline-row
+  display flex
+  align-items center
+  gap 8px
+  width 100%
+
+.modal-field-select-trigger
+  width 100%
+  background --bg-elevated
+  border 1px solid --border-subtle
+  padding 8px 10px
+  font-size 13px
+
 .modal-choice-row
   gap 12px
   padding 7px 4px

@@ -50,10 +50,22 @@ func ParseDataFile(content string, b *Book) {
 			}
 		case "narrated", "narracja", "voiced":
 			vLower := strings.ToLower(strings.TrimSpace(val))
-			b.Narrated = vLower == "true" || vLower == "1" || vLower == "yes" || vLower == "tak"
+			b.Narrated = !b.IsScreenplay() && (vLower == "true" || vLower == "1" || vLower == "yes" || vLower == "tak")
 		case "imageless", "bez_obrazow", "bez_obrazów", "text_only":
 			vLower := strings.ToLower(strings.TrimSpace(val))
-			b.Imageless = vLower == "true" || vLower == "1" || vLower == "yes" || vLower == "tak"
+			b.Imageless = b.IsScreenplay() || vLower == "true" || vLower == "1" || vLower == "yes" || vLower == "tak"
+		case "mode", "tryb", "typ", "type":
+			if val != "" {
+				b.Mode = NormalizeBookMode(val)
+				if b.IsScreenplay() {
+					b.Narrated = false
+					b.Imageless = true
+				}
+			}
+		case "standard", "format", "norma":
+			if val != "" {
+				b.ScriptStandard = NormalizeScriptStandard(val)
+			}
 		default:
 			b.Warnings = append(b.Warnings, fmt.Sprintf("data.txt:%d: nieznany klucz „%s”", lineIdx+1, key))
 		}
@@ -89,9 +101,16 @@ func ParseStoryFile(content string, sourceFileName string, b *Book) {
 	pendingSceneID := ""
 	pendingImage := ""
 	pendingVoice := ""
+	pendingSlugline := ""
+	pendingSynopsis := ""
 	sawSceneHeader := false
 	headerBlockEnded := false
 	inChapterHeaderBlock := false
+
+	defaultChName := "Rozdział 1"
+	if b.IsScreenplay() {
+		defaultChName = "Akt I"
+	}
 
 	flushScene := func() {
 		if currentScene == nil {
@@ -102,6 +121,12 @@ func ParseStoryFile(content string, sourceFileName string, b *Book) {
 		}
 		rawProse := strings.TrimSpace(strings.Join(proseLines, "\n"))
 		currentScene.Text = SanitizePlainText(rawProse)
+		if b.IsScreenplay() && strings.TrimSpace(currentScene.Slugline) == "" && currentScene.Text != "" {
+			if extracted, rest, ok := ExtractLeadingSlugline(currentScene.Text); ok {
+				currentScene.Slugline = extracted
+				currentScene.Text = rest
+			}
+		}
 		if !b.deferProseHTML {
 			currentScene.EnsureHTML()
 		}
@@ -124,7 +149,7 @@ func ParseStoryFile(content string, sourceFileName string, b *Book) {
 			} else if fileChapterID != "" {
 				currentChapter = fileChapterID
 			} else {
-				currentChapter = "Rozdział 1"
+				currentChapter = defaultChName
 			}
 			b.ensureChapterWithMeta(currentChapter, fileChapterID, currentChapterExplicitID, sourceFileName)
 		}
@@ -138,11 +163,17 @@ func ParseStoryFile(content string, sourceFileName string, b *Book) {
 		pendingImage = ""
 		voiceVal := pendingVoice
 		pendingVoice = ""
+		slugVal := pendingSlugline
+		pendingSlugline = ""
+		synVal := pendingSynopsis
+		pendingSynopsis = ""
 
 		currentScene = &Scene{
 			ID:            sceneID,
 			ExplicitID:    explicitID,
 			Name:          cleanName,
+			Slugline:      slugVal,
+			Synopsis:      synVal,
 			Chapter:       currentChapter,
 			ChapterID:     currentChapterExplicitID,
 			ExplicitImage: imgVal,
@@ -160,10 +191,10 @@ func ParseStoryFile(content string, sourceFileName string, b *Book) {
 			continue
 		}
 
-		// Check structural headers: chapter:, scene:, id:, image:, voice:, end:, text:
+		// Check structural headers: chapter:, scene:, id:, slugline:, synopsis:, image:, voice:, end:, text:
 		if key, val, ok := parseStructuralHeader(trimmed); ok {
 			switch key {
-			case "chapter", "rozdzial", "rozdział":
+			case "chapter", "rozdzial", "rozdział", "act", "akt":
 				flushScene()
 				chName := SanitizePlainText(val)
 				currentChapter = chName
@@ -181,6 +212,26 @@ func ParseStoryFile(content string, sourceFileName string, b *Book) {
 					sawSceneHeader = true
 				} else {
 					startScene(val, true)
+				}
+				continue
+
+			case "slugline", "naglowek", "nagłówek", "heading":
+				inChapterHeaderBlock = false
+				cleanSlug := strings.TrimSpace(SanitizePlainText(val))
+				if currentScene != nil && !headerBlockEnded && len(proseLines) == 0 && len(currentScene.Choices) == 0 {
+					currentScene.Slugline = cleanSlug
+				} else {
+					pendingSlugline = cleanSlug
+				}
+				continue
+
+			case "synopsis", "streszczenie":
+				inChapterHeaderBlock = false
+				cleanSyn := strings.TrimSpace(SanitizePlainText(val))
+				if currentScene != nil && !headerBlockEnded && len(proseLines) == 0 && len(currentScene.Choices) == 0 {
+					currentScene.Synopsis = cleanSyn
+				} else {
+					pendingSynopsis = cleanSyn
 				}
 				continue
 
@@ -212,7 +263,7 @@ func ParseStoryFile(content string, sourceFileName string, b *Book) {
 						} else if fileChapterID != "" {
 							currentChapter = fileChapterID
 						} else {
-							currentChapter = "Rozdział 1"
+							currentChapter = defaultChName
 						}
 					}
 					b.ensureChapterWithMeta(currentChapter, fileChapterID, currentChapterExplicitID, sourceFileName)
@@ -257,7 +308,7 @@ func ParseStoryFile(content string, sourceFileName string, b *Book) {
 						} else if fileChapterID != "" {
 							currentChapter = fileChapterID
 						} else {
-							currentChapter = "Rozdział 1"
+							currentChapter = defaultChName
 						}
 					}
 					startScene(currentChapter, false)
@@ -286,7 +337,7 @@ func ParseStoryFile(content string, sourceFileName string, b *Book) {
 						} else if fileChapterID != "" {
 							currentChapter = fileChapterID
 						} else {
-							currentChapter = "Rozdział 1"
+							currentChapter = defaultChName
 						}
 					}
 					startScene(currentChapter, false)
@@ -304,7 +355,7 @@ func ParseStoryFile(content string, sourceFileName string, b *Book) {
 						} else if fileChapterID != "" {
 							currentChapter = fileChapterID
 						} else {
-							currentChapter = "Rozdział 1"
+							currentChapter = defaultChName
 						}
 					}
 					startScene(currentChapter, false)
@@ -321,7 +372,7 @@ func ParseStoryFile(content string, sourceFileName string, b *Book) {
 			if colonIdx := strings.IndexByte(trimmed, ':'); colonIdx > 0 {
 				candKey := strings.TrimSpace(trimmed[:colonIdx])
 				if headerKeyRe.MatchString(candKey) && !strings.Contains(candKey, " ") {
-					b.Warnings = append(b.Warnings, fmt.Sprintf("%s:%d: nierozpoznany klucz nagłówka „%s:” w scenie „%s” (dozwolone: id, image, voice, next, end)", sourceFileName, lineIdx+1, candKey, currentScene.DisplayName()))
+					b.Warnings = append(b.Warnings, fmt.Sprintf("%s:%d: nierozpoznany klucz nagłówka „%s:” w scenie „%s” (dozwolone: id, slugline, synopsis, image, voice, next, end)", sourceFileName, lineIdx+1, candKey, currentScene.DisplayName()))
 				}
 			}
 		}
@@ -346,7 +397,7 @@ func ParseStoryFile(content string, sourceFileName string, b *Book) {
 				} else if fileChapterID != "" {
 					currentChapter = fileChapterID
 				} else {
-					currentChapter = "Rozdział 1"
+					currentChapter = defaultChName
 				}
 				b.ensureChapterWithMeta(currentChapter, fileChapterID, currentChapterExplicitID, sourceFileName)
 			}
@@ -389,9 +440,11 @@ func parseStructuralHeader(trimmed string) (string, string, bool) {
 	key := strings.ToLower(strings.TrimSpace(trimmed[:idx]))
 	val := strings.TrimSpace(trimmed[idx+1:])
 	switch key {
-	case "chapter", "rozdzial", "rozdział",
+	case "chapter", "rozdzial", "rozdział", "act", "akt",
 		"scene", "scena",
 		"id",
+		"slugline", "naglowek", "nagłówek", "heading",
+		"synopsis", "streszczenie",
 		"start", "first_scene", "pierwsza_scena", "wejscie", "wejście",
 		"image", "obraz", "img",
 		"voice", "audio", "glos", "głos",

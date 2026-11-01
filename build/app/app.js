@@ -250,6 +250,16 @@ function syncEditorHistoryHeaders(resp) {
       badge.classList.toggle("hidden", count <= 0);
     }
   }
+
+  const histPreviewHeader = resp.headers.get("X-History-Preview");
+  if (histPreviewHeader === "true" || histPreviewHeader === "false") {
+    document.body.setAttribute("data-history-preview", histPreviewHeader);
+    const edView = qs("#view-editor");
+    if (edView) {
+      edView.setAttribute("data-history-preview", histPreviewHeader);
+      edView.classList.toggle("is-history-preview", histPreviewHeader === "true");
+    }
+  }
 }
 
 function applyServerResponseHeaders(resp, actionName) {
@@ -389,7 +399,12 @@ async function sendServerAction(actionName, params) {
     actionName === "UndoEditor" ||
     actionName === "ToggleEditorHistoryPanel" ||
     actionName === "OpenEditorHistoryPanel" ||
+    actionName === "PreviewHistoryRevision" ||
+    actionName === "PlayHistoryRevision" ||
     actionName === "SaveHistoryVersion" ||
+    actionName === "CreateHistoryBranch" ||
+    actionName === "SwitchHistoryBranch" ||
+    actionName === "CopyHistoryRevisionToBranch" ||
     actionName === "CloseSceneTextModal" ||
     actionName === "NavigateSceneTextModal" ||
     actionName === "SwitchView" ||
@@ -398,9 +413,38 @@ async function sendServerAction(actionName, params) {
     if (typeof consumeDirtyInspectorFormIntoParams === "function") {
       consumeDirtyInspectorFormIntoParams(params);
     }
-  } else if (actionName === "RedoEditor" || actionName === "RestoreHistoryRevision") {
+  } else if (
+    actionName === "RedoEditor" ||
+    actionName === "RestoreHistoryRevision" ||
+    actionName === "ExitHistoryPreview"
+  ) {
     if (typeof cancelPendingInspectorTimers === "function") {
       cancelPendingInspectorTimers();
+    }
+  }
+  if (actionName === "SelectStudioScene" && params.scene) {
+    if (typeof editorSelectionCleared !== "undefined") {
+      editorSelectionCleared = false;
+    }
+    if (typeof selectedNodeIds !== "undefined") {
+      selectedNodeIds.clear();
+      selectedNodeIds.add(String(params.scene));
+    }
+  } else if (
+    actionName === "PreviewHistoryRevision" ||
+    actionName === "ExitHistoryPreview" ||
+    actionName === "PlayHistoryRevision" ||
+    actionName === "RestoreHistoryRevision" ||
+    actionName === "CopyHistoryRevisionToBranch" ||
+    actionName === "SwitchHistoryBranch" ||
+    actionName === "UndoEditor" ||
+    actionName === "RedoEditor"
+  ) {
+    if (typeof editorSelectionCleared !== "undefined") {
+      editorSelectionCleared = false;
+    }
+    if (typeof selectedNodeIds !== "undefined") {
+      selectedNodeIds.clear();
     }
   }
 
@@ -596,9 +640,16 @@ async function sendServerAction(actionName, params) {
       }
     }
     const updatedForm = qs("#editor-context-form");
-    const selId = updatedForm ? updatedForm.getAttribute("data-context-scene-id") || "" : "";
+    const isNodeFormVisible = Boolean(updatedForm && !updatedForm.classList.contains("hidden"));
+    const selId = isNodeFormVisible ? updatedForm.getAttribute("data-context-scene-id") || "" : "";
     if (selId && typeof selectedNodeIds !== "undefined" && typeof syncNodeSelectionDOM === "function") {
-      if ((typeof editorSelectionCleared === "undefined" || !editorSelectionCleared) && selectedNodeIds.size <= 1) {
+      if (actionName === "SelectStudioScene") {
+        if (typeof editorSelectionCleared !== "undefined") {
+          editorSelectionCleared = false;
+        }
+        selectedNodeIds.clear();
+        selectedNodeIds.add(selId);
+      } else if ((typeof editorSelectionCleared === "undefined" || !editorSelectionCleared) && selectedNodeIds.size <= 1) {
         selectedNodeIds.clear();
         selectedNodeIds.add(selId);
       }
@@ -615,6 +666,8 @@ async function sendServerAction(actionName, params) {
   const prevEditorViewport = qs("#timeline-scroll-viewport");
   const prevEditorScrollTop = prevEditorViewport ? prevEditorViewport.scrollTop : null;
   const prevEditorScrollLeft = prevEditorViewport ? prevEditorViewport.scrollLeft : null;
+  const prevHistScroll = qs("#history-graph-scroll");
+  const prevHistScrollTop = prevHistScroll ? prevHistScroll.scrollTop : null;
   const resetCanvas = resp.headers.get("X-Reset-Canvas") === "true";
   const isAnimatedSceneTransition =
     actionName === "ChooseBranch" ||
@@ -641,6 +694,15 @@ async function sendServerAction(actionName, params) {
     if (nextEditorViewport && prevEditorScrollTop !== null) {
       nextEditorViewport.scrollTop = prevEditorScrollTop;
       nextEditorViewport.scrollLeft = prevEditorScrollLeft || 0;
+    }
+    const nextHistScroll = qs("#history-graph-scroll");
+    if (nextHistScroll && prevHistScrollTop !== null && actionName !== "SaveHistoryVersion" && actionName !== "CreateHistoryBranch") {
+      nextHistScroll.scrollTop = prevHistScrollTop;
+    }
+    if (typeof updateHistoryScrollCue === "function") {
+      requestAnimationFrame(() => {
+        updateHistoryScrollCue();
+      });
     }
 
     const nextAudio = qs("#story-audio");
@@ -918,6 +980,11 @@ function bindDeclarativeActionBridge() {
 
     const submitBtn = e.target.closest('form[action] button[type="submit"], form[action] input[type="submit"]');
     if (submitBtn) {
+      if (submitBtn.disabled || submitBtn.classList.contains("is-disabled")) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
       const form = submitBtn.closest("form[action]");
       if (form) {
         e.preventDefault();
@@ -954,6 +1021,7 @@ function bindDeclarativeActionBridge() {
     const params = {};
     const isModalOnlyAction =
       actionName === "OpenSceneTextModal" ||
+      actionName === "SelectStudioScene" ||
       actionName === "PromptDeleteScene" ||
       actionName === "PromptDeleteScenes";
     if (
@@ -970,7 +1038,7 @@ function bindDeclarativeActionBridge() {
         selectedNodeIds.clear();
       }
     }
-    const parentCardForm = target.closest("form.editor-context-form, form.timeline-node-card, form#form-scene-text");
+    const parentCardForm = target.closest("form.editor-context-form, form.timeline-node-card, form#form-scene-text, form#form-new-book");
     if (parentCardForm && (!isModalOnlyAction || (typeof dirtyInspectorForms !== "undefined" && dirtyInspectorForms.has(parentCardForm)))) {
       if (typeof dirtyInspectorForms !== "undefined") {
         dirtyInspectorForms.delete(parentCardForm);
@@ -3000,10 +3068,12 @@ function compileStaticSceneQuads(theme) {
 
     const footerTop = nd.y + nd.h - NODE_FOOTER_HEIGHT;
     pushSolidQuad(nd.x + 1, footerTop + 1, nd.w - 2, NODE_FOOTER_HEIGHT - 2, cardBg);
-    const btnX = nd.x + 8;
-    const btnY = footerTop + 8;
-    pushBorderedBoxQuads(btnX, btnY, addChoiceBtnW, addChoiceBtnH, 1, theme.borderStrong, cardBg);
-    pushShapedTextQuads(addChoiceShaped, btnX + (addChoiceBtnW - addChoiceShaped.totalW) * 0.5, btnY + addChoiceBtnH * 0.5, textPri);
+    if (!(typeof isEditorHistoryPreview === "function" && isEditorHistoryPreview())) {
+      const btnX = nd.x + 8;
+      const btnY = footerTop + 8;
+      pushBorderedBoxQuads(btnX, btnY, addChoiceBtnW, addChoiceBtnH, 1, theme.borderStrong, cardBg);
+      pushShapedTextQuads(addChoiceShaped, btnX + (addChoiceBtnW - addChoiceShaped.totalW) * 0.5, btnY + addChoiceBtnH * 0.5, textPri);
+    }
   }
 
   // 4. Default Circular Ports
@@ -3629,6 +3699,9 @@ function findClosestChapterAtWorldCoords(worldX, worldY) {
 }
 
 function createSceneNodeAtWorldCoords(worldX, worldY, chapterName) {
+  if (typeof isEditorHistoryPreview === "function" && isEditorHistoryPreview()) {
+    return;
+  }
   closeCanvasContextMenu();
   hideFloatingChapterInput(false);
   editorSelectionCleared = false;
@@ -4906,6 +4979,17 @@ let dirtyChapterInputs = new Set();
 let bookTitleSaveTimer = null;
 let dirtyBookTitleInput = null;
 
+function isEditorHistoryPreview() {
+  const ed = typeof qs === "function" ? qs("#view-editor") : null;
+  if (ed) {
+    return ed.getAttribute("data-history-preview") === "true" || ed.classList.contains("is-history-preview");
+  }
+  if (typeof document !== "undefined" && document.body) {
+    return document.body.getAttribute("data-history-preview") === "true";
+  }
+  return false;
+}
+
 function syncBookTitleDOM(newTitle) {
   const clean = (newTitle || "").trim();
   if (!clean) return;
@@ -4926,7 +5010,7 @@ function syncBookTitleDOM(newTitle) {
 }
 
 function commitBookTitleInput(inputEl) {
-  if (!inputEl) return;
+  if (!inputEl || isEditorHistoryPreview()) return;
   if (bookTitleSaveTimer) {
     clearTimeout(bookTitleSaveTimer);
     bookTitleSaveTimer = null;
@@ -4952,7 +5036,7 @@ function commitBookTitleInput(inputEl) {
 }
 
 function scheduleBookTitleLiveSave(inputEl) {
-  if (!inputEl) return;
+  if (!inputEl || isEditorHistoryPreview()) return;
   const newTitle = (inputEl.value || "").trim();
   if (newTitle) {
     syncBookTitleDOM(newTitle);
@@ -5038,7 +5122,7 @@ function syncChapterGroupRenameDOM(inputEl, targetChapterName) {
 }
 
 function commitChapterTitleInput(inputEl) {
-  if (!inputEl) return;
+  if (!inputEl || isEditorHistoryPreview()) return;
   const existingTimer = chapterLiveSaveTimers.get(inputEl);
   if (existingTimer) {
     clearTimeout(existingTimer);
@@ -5065,7 +5149,7 @@ function commitChapterTitleInput(inputEl) {
 }
 
 function scheduleChapterLiveSave(inputEl) {
-  if (!inputEl) return;
+  if (!inputEl || isEditorHistoryPreview()) return;
   const newCh = (inputEl.value || "").trim();
   if (newCh) {
     syncChapterGroupRenameDOM(inputEl, newCh);
@@ -5107,6 +5191,10 @@ function cancelPendingInspectorTimers() {
 }
 
 function consumeDirtyInspectorFormIntoParams(params) {
+  if (isEditorHistoryPreview()) {
+    cancelPendingInspectorTimers();
+    return;
+  }
   if (dirtyBookTitleInput) {
     commitBookTitleInput(dirtyBookTitleInput);
   }
@@ -5136,6 +5224,10 @@ function consumeDirtyInspectorFormIntoParams(params) {
 }
 
 function flushInspectorFormIfDirty() {
+  if (isEditorHistoryPreview()) {
+    cancelPendingInspectorTimers();
+    return;
+  }
   if (dirtyBookTitleInput) {
     commitBookTitleInput(dirtyBookTitleInput);
   }
@@ -5460,7 +5552,7 @@ function closeAllCustomSelects(exceptSelect) {
 }
 
 function scheduleNodeLiveSave(form) {
-  if (!form) return;
+  if (!form || isEditorHistoryPreview()) return;
   dirtyInspectorForms.add(form);
   const existing = liveSaveTimers.get(form);
   if (existing) {
@@ -5485,7 +5577,7 @@ function autoResizeInspectorTextarea(ta) {
 }
 
 function scheduleBookSettingsLiveSave(form) {
-  if (!form) return;
+  if (!form || isEditorHistoryPreview()) return;
   const existing = liveSaveTimers.get(form);
   if (existing) {
     clearTimeout(existing);
@@ -5498,6 +5590,173 @@ function scheduleBookSettingsLiveSave(form) {
   }, 250);
   liveSaveTimers.set(form, timer);
 }
+
+let historyDragState = null;
+let suppressNextHistoryClickUntil = 0;
+
+function updateHistoryScrollCue() {
+  const scrollEl = typeof qs === "function" ? qs("#history-graph-scroll") : null;
+  const cueEl = typeof qs === "function" ? qs("#history-scroll-more-cue") : null;
+  if (!scrollEl || !cueEl) return;
+  const canScrollMore = scrollEl.scrollHeight - scrollEl.scrollTop - scrollEl.clientHeight > 6;
+  cueEl.classList.toggle("hidden", !canScrollMore);
+}
+
+function clearHistoryDragHighlights() {
+  qsa(".history-lane-cell.is-drop-target-rail").forEach((cell) => {
+    cell.classList.remove("is-drop-target-rail");
+  });
+  qsa(".history-graph-row.is-dragging-source").forEach((row) => {
+    row.classList.remove("is-dragging-source");
+  });
+  const previewRow = qs("#history-drop-preview-row");
+  if (previewRow) {
+    previewRow.classList.add("hidden");
+  }
+}
+
+function bindHistoryGraphInteractions() {
+  if (typeof document === "undefined") return;
+
+  document.addEventListener(
+    "scroll",
+    (e) => {
+      if (e.target && e.target.id === "history-graph-scroll") {
+        updateHistoryScrollCue();
+      }
+    },
+    true
+  );
+
+  if (typeof window !== "undefined") {
+    window.addEventListener("resize", () => {
+      updateHistoryScrollCue();
+    });
+  }
+
+  document.addEventListener(
+    "click",
+    (e) => {
+      if (Date.now() < suppressNextHistoryClickUntil) {
+        e.preventDefault();
+        e.stopPropagation();
+        suppressNextHistoryClickUntil = 0;
+      }
+    },
+    true
+  );
+
+  document.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0 || !e.target || !e.target.closest) return;
+    const handle = e.target.closest(".history-row-grip, .history-rail-node");
+    if (!handle) return;
+    const rowEl = handle.closest(".history-graph-row");
+    if (!rowEl) return;
+    const revID = (rowEl.getAttribute("data-revision") || "").trim();
+    const sourceBranch = (rowEl.getAttribute("data-branch") || "").trim();
+    const label = (rowEl.getAttribute("data-label") || "").trim();
+    if (!revID) return;
+
+    historyDragState = {
+      revID: revID,
+      sourceBranch: sourceBranch,
+      label: label || revID,
+      isCurrentNode: Boolean(handle.classList.contains("is-current-node")),
+      startX: e.clientX,
+      startY: e.clientY,
+      moved: false,
+      targetBranch: "",
+      targetRevID: "",
+      sourceRowEl: rowEl
+    };
+  });
+
+  document.addEventListener("pointermove", (e) => {
+    if (!historyDragState) return;
+    if (!historyDragState.moved) {
+      const dist = Math.hypot(e.clientX - historyDragState.startX, e.clientY - historyDragState.startY);
+      if (dist < 5) return;
+      historyDragState.moved = true;
+      if (historyDragState.sourceRowEl) {
+        historyDragState.sourceRowEl.classList.add("is-dragging-source");
+      }
+      if (typeof hideUITooltip === "function") {
+        hideUITooltip();
+      }
+    }
+
+    const hitEl = document.elementFromPoint(e.clientX, e.clientY);
+    let hoverBranch = "";
+    let hoverRevID = "";
+    if (hitEl && hitEl.closest) {
+      const laneCell = hitEl.closest(".history-lane-cell[data-branch]");
+      const rowHit = hitEl.closest(".history-graph-row[data-branch]");
+      if (laneCell) {
+        hoverBranch = (laneCell.getAttribute("data-branch") || "").trim();
+      } else if (rowHit) {
+        hoverBranch = (rowHit.getAttribute("data-branch") || "").trim();
+      }
+      if (rowHit) {
+        hoverRevID = (rowHit.getAttribute("data-revision") || "").trim();
+      }
+    }
+
+    historyDragState.targetBranch = hoverBranch;
+    historyDragState.targetRevID = hoverRevID;
+
+    qsa(".history-lane-cell.is-drop-target-rail").forEach((cell) => {
+      cell.classList.remove("is-drop-target-rail");
+    });
+    if (hoverBranch) {
+      qsa(".history-lane-cell[data-branch]").forEach((cell) => {
+        if ((cell.getAttribute("data-branch") || "").trim() === hoverBranch) {
+          cell.classList.add("is-drop-target-rail");
+        }
+      });
+    }
+
+    const previewRow = qs("#history-drop-preview-row");
+    const previewTitle = qs("#history-drop-preview-title");
+    const previewMeta = qs("#history-drop-preview-meta");
+    if (previewRow) {
+      const showPreview = Boolean(hoverBranch && (hoverBranch !== historyDragState.sourceBranch || hoverRevID !== historyDragState.revID));
+      previewRow.classList.toggle("hidden", !showPreview);
+      if (showPreview) {
+        if (previewTitle) previewTitle.textContent = historyDragState.label;
+        if (previewMeta) previewMeta.textContent = hoverBranch;
+      }
+    }
+  });
+
+  const finishHistoryDrag = () => {
+    if (!historyDragState) return;
+    const state = historyDragState;
+    historyDragState = null;
+    clearHistoryDragHighlights();
+    if (!state.moved) return;
+
+    suppressNextHistoryClickUntil = Date.now() + 260;
+    if (state.isCurrentNode) {
+      if (state.targetBranch && state.targetBranch !== state.sourceBranch) {
+        sendServerAction("SwitchHistoryBranch", { branch: state.targetBranch });
+      } else if (state.targetRevID && state.targetRevID !== state.revID) {
+        sendServerAction("RestoreHistoryRevision", { revision: state.targetRevID });
+      }
+      return;
+    }
+    if (state.targetBranch) {
+      sendServerAction("CopyHistoryRevisionToBranch", {
+        revision: state.revID,
+        target_branch: state.targetBranch
+      });
+    }
+  };
+
+  document.addEventListener("pointerup", finishHistoryDrag);
+  document.addEventListener("pointercancel", finishHistoryDrag);
+}
+
+bindHistoryGraphInteractions();
 
 "use strict";
 
@@ -5545,68 +5804,71 @@ function distToSegmentSq(px, py, x1, y1, x2, y2) {
 function hitTestStudioCanvas(wx, wy) {
   const nodes = studioGraphState.nodes;
   const chapters = studioGraphState.chapters;
+  const isPreview = typeof isEditorHistoryPreview === "function" && isEditorHistoryPreview();
   const portHitR = 10;
   const portHitRSq = portHitR * portHitR;
 
-  // 1. Scene output ports
-  for (let i = nodes.length - 1; i >= 0; i--) {
-    const nd = nodes[i];
-    if (nd.hasChoices && nd.ports.length > 0) {
-      for (let j = 0; j < nd.ports.length; j++) {
-        const pt = nd.ports[j];
-        const px = nd.x + pt.ox;
-        const py = nd.y + pt.oy;
+  if (!isPreview) {
+    // 1. Scene output ports
+    for (let i = nodes.length - 1; i >= 0; i--) {
+      const nd = nodes[i];
+      if (nd.hasChoices && nd.ports.length > 0) {
+        for (let j = 0; j < nd.ports.length; j++) {
+          const pt = nd.ports[j];
+          const px = nd.x + pt.ox;
+          const py = nd.y + pt.oy;
+          const dx = wx - px;
+          const dy = wy - py;
+          if (dx * dx + dy * dy <= portHitRSq) {
+            return {
+              type: "scene-out-port",
+              node: nd,
+              port: pt,
+              portIdx: j,
+              isBottom: false,
+              x: px,
+              y: py
+            };
+          }
+        }
+      } else if (nd.implicitPort) {
+        const ip = nd.implicitPort;
+        const px = nd.x + ip.ox;
+        const py = nd.y + ip.oy;
         const dx = wx - px;
         const dy = wy - py;
         if (dx * dx + dy * dy <= portHitRSq) {
           return {
             type: "scene-out-port",
             node: nd,
-            port: pt,
-            portIdx: j,
-            isBottom: false,
+            port: ip,
+            portIdx: 0,
+            isBottom: true,
             x: px,
             y: py
           };
         }
       }
-    } else if (nd.implicitPort) {
-      const ip = nd.implicitPort;
-      const px = nd.x + ip.ox;
-      const py = nd.y + ip.oy;
-      const dx = wx - px;
-      const dy = wy - py;
-      if (dx * dx + dy * dy <= portHitRSq) {
-        return {
-          type: "scene-out-port",
-          node: nd,
-          port: ip,
-          portIdx: 0,
-          isBottom: true,
-          x: px,
-          y: py
-        };
-      }
     }
-  }
 
-  // 2. Chapter output ports
-  for (let i = chapters.length - 1; i >= 0; i--) {
-    const ch = chapters[i];
-    if (ch.hidden) continue;
-    for (let j = 0; j < ch.outPorts.length; j++) {
-      const op = ch.outPorts[j];
-      const dx = wx - op.x;
-      const dy = wy - op.y;
-      if (dx * dx + dy * dy <= portHitRSq) {
-        return {
-          type: "chapter-out-port",
-          chapter: ch,
-          outPort: op,
-          portIdx: j,
-          x: op.x,
-          y: op.y
-        };
+    // 2. Chapter output ports
+    for (let i = chapters.length - 1; i >= 0; i--) {
+      const ch = chapters[i];
+      if (ch.hidden) continue;
+      for (let j = 0; j < ch.outPorts.length; j++) {
+        const op = ch.outPorts[j];
+        const dx = wx - op.x;
+        const dy = wy - op.y;
+        if (dx * dx + dy * dy <= portHitRSq) {
+          return {
+            type: "chapter-out-port",
+            chapter: ch,
+            outPort: op,
+            portIdx: j,
+            x: op.x,
+            y: op.y
+          };
+        }
       }
     }
   }
@@ -5617,6 +5879,9 @@ function hitTestStudioCanvas(wx, wy) {
   for (let i = nodes.length - 1; i >= 0; i--) {
     const nd = nodes[i];
     if (wx >= nd.x && wx <= nd.x + nd.w && wy >= nd.y && wy <= nd.y + nd.h) {
+      if (isPreview) {
+        return { type: "node-card", node: nd };
+      }
       const footerTop = nd.y + nd.h - NODE_FOOTER_HEIGHT;
       if (wx >= nd.x + 8 && wx <= nd.x + 8 + addChoiceBtnW && wy >= footerTop + 8 && wy <= footerTop + 32) {
         return { type: "add-choice-btn", node: nd };
@@ -5633,6 +5898,9 @@ function hitTestStudioCanvas(wx, wy) {
     const ch = chapters[i];
     if (ch.hidden) continue;
     if (wx >= ch.x && wx <= ch.x + ch.w && wy >= ch.y && wy <= ch.y + 28) {
+      if (isPreview) {
+        return { type: "chapter-title", chapter: ch };
+      }
       if (wx <= ch.x + 26) {
         return { type: "chapter-grip", chapter: ch };
       }
@@ -5702,7 +5970,7 @@ function updateCanvasHoverCursor(viewport, hit) {
 }
 
 function triggerCanvasAddChoiceForNode(nd) {
-  if (!nd || !nd.id) return;
+  if (!nd || !nd.id || (typeof isEditorHistoryPreview === "function" && isEditorHistoryPreview())) return;
   const params = { scene: nd.id };
   const contextForm = qs("#editor-context-form");
   if (contextForm && contextForm.getAttribute("data-context-scene-id") === nd.id) {
@@ -5856,6 +6124,101 @@ function handleEditorCanvasClick(e) {
     return true;
   }
 
+  const scriptInsertBtn = e.target.closest("[data-insert-script-block], [data-insert-script-char]");
+  if (scriptInsertBtn) {
+    const ta = qs("#modal-scene-textarea");
+    if (ta) {
+      e.preventDefault();
+      e.stopPropagation();
+      const kind = scriptInsertBtn.getAttribute("data-insert-script-block") || "";
+      const charName = scriptInsertBtn.getAttribute("data-insert-script-char") || "";
+      const std = scriptInsertBtn.getAttribute("data-script-standard") || "pl";
+      const isPL = std === "pl";
+
+      let blockText = "";
+      let selectTarget = "";
+      let needsDoubleNewline = true;
+
+      if (charName) {
+        blockText = charName + "\nKwestia dialogowa...";
+        selectTarget = "Kwestia dialogowa...";
+      } else if (kind === "dialogue") {
+        blockText = "POSTAĆ\nKwestia dialogowa...";
+        selectTarget = "POSTAĆ";
+      } else if (kind === "parenthetical") {
+        blockText = "(cicho)\n";
+        selectTarget = "cicho";
+        needsDoubleNewline = false;
+      } else if (kind === "action") {
+        blockText = "Opis akcji...";
+        selectTarget = "Opis akcji...";
+      } else if (kind === "dialogue_off") {
+        blockText = (isPL ? "POSTAĆ (OFF)\n" : "POSTAĆ (O.S.)\n") + "Kwestia spoza kadru...";
+        selectTarget = "POSTAĆ";
+      } else if (kind === "dialogue_vo") {
+        blockText = "POSTAĆ (V.O.)\nKwestia narratora...";
+        selectTarget = "POSTAĆ";
+      } else if (kind === "transition_cut") {
+        blockText = isPL ? "> CIĘCIE DO:\n" : "> CUT TO:\n";
+        selectTarget = "";
+      } else if (kind === "transition_fade") {
+        blockText = isPL ? "> ŚCIEMNIENIE.\n" : "> FADE OUT.\n";
+        selectTarget = "";
+      } else if (kind === "subslug") {
+        blockText = isPL ? "WN. LOKACJA - CIĄG DALSZY\n" : "INT. LOCATION - CONTINUOUS\n";
+        selectTarget = isPL ? "LOKACJA" : "LOCATION";
+      }
+
+      if (blockText) {
+        const val = ta.value || "";
+        const start = typeof ta.selectionStart === "number" ? ta.selectionStart : val.length;
+        const end = typeof ta.selectionEnd === "number" ? ta.selectionEnd : val.length;
+        const before = val.slice(0, start);
+        const after = val.slice(end);
+
+        let prefix = "";
+        if (before.length > 0) {
+          if (needsDoubleNewline) {
+            if (before.endsWith("\n\n")) {
+              prefix = "";
+            } else if (before.endsWith("\n")) {
+              prefix = "\n";
+            } else {
+              prefix = "\n\n";
+            }
+          } else if (!before.endsWith("\n")) {
+            prefix = "\n";
+          }
+        }
+
+        const inserted = prefix + blockText;
+        ta.value = before + inserted + after;
+        ta.focus();
+
+        const insertStart = before.length + prefix.length;
+        if (selectTarget) {
+          const relIdx = blockText.indexOf(selectTarget);
+          if (relIdx >= 0) {
+            ta.setSelectionRange(insertStart + relIdx, insertStart + relIdx + selectTarget.length);
+          } else {
+            ta.setSelectionRange(insertStart + blockText.length, insertStart + blockText.length);
+          }
+        } else {
+          ta.setSelectionRange(insertStart + blockText.length, insertStart + blockText.length);
+        }
+
+        if (typeof autoResizeSceneModalTextarea === "function") {
+          autoResizeSceneModalTextarea(ta);
+        }
+        const modalForm = ta.closest("form#form-scene-text");
+        if (modalForm && typeof scheduleNodeLiveSave === "function") {
+          scheduleNodeLiveSave(modalForm);
+        }
+        return true;
+      }
+    }
+  }
+
   const selectToggle = e.target.closest("[data-select-toggle]");
   if (selectToggle) {
     e.preventDefault();
@@ -5960,6 +6323,44 @@ function handleEditorCanvasClick(e) {
       }
     }
 
+    if (selectEl.classList.contains("new-book-mode-select")) {
+      const stdField = qs("#new-book-standard-field");
+      const narrField = qs("#new-book-narrated-field");
+      const imgField = qs("#new-book-imageless-field");
+      const modalTitle = qs("#new-book-modal-title");
+      const titleLabel = qs("#new-book-title-label");
+      const titleInp = qs("#new-book-title");
+      const submitBtn = qs("#new-book-submit-btn");
+      const isScreenplay = val === "screenplay";
+      if (stdField) stdField.classList.toggle("hidden", !isScreenplay);
+      if (narrField) narrField.classList.toggle("hidden", isScreenplay);
+      if (imgField) imgField.classList.toggle("hidden", isScreenplay);
+      if (modalTitle) {
+        modalTitle.textContent = isScreenplay ? "Utwórz Nowy Scenariusz" : "Utwórz Nową Książkę";
+      }
+      if (titleLabel) {
+        titleLabel.textContent = isScreenplay ? "Tytuł scenariusza" : "Tytuł opowieści";
+      }
+      if (titleInp) {
+        titleInp.setAttribute("placeholder", isScreenplay ? "np. Ostatni Rejs" : "np. Tajemnica Starego Młyna");
+      }
+      if (submitBtn) {
+        submitBtn.textContent = isScreenplay ? "Utwórz scenariusz" : "Utwórz książkę";
+      }
+      return true;
+    }
+
+    const bookForm = selectEl.closest("form.editor-book-form");
+    if (bookForm) {
+      const params = {};
+      const fd = new FormData(bookForm);
+      fd.forEach((v, k) => {
+        params[k] = v;
+      });
+      sendServerAction("SaveBookSettings", params);
+      return true;
+    }
+
     const modalForm = selectEl.closest("form#form-scene-text");
     if (modalForm) {
       const params = {};
@@ -6043,6 +6444,10 @@ function beginChapterWireConnectGesture(hit, viewport, isTouch) {
 
 function beginChapterDragGesture(ch, viewport, clientX, clientY, isTouch, clickedTitleArea) {
   if (!ch) return false;
+  if (typeof isEditorHistoryPreview === "function" && isEditorHistoryPreview()) {
+    selectChapterForContextPanel(ch.name);
+    return true;
+  }
   const chNodes = studioGraphState.nodes.filter(
     (nd) => nd.chapterLower === ch.nameLower || nd.chapterLower === ch.refLower
   );
@@ -6091,6 +6496,14 @@ function beginNodeDragGesture(nd, viewport, clientX, clientY, isTouch, isMultiMo
     if (sceneId) selectedNodeIds.add(sceneId);
   }
   syncNodeSelectionDOM();
+
+  if (typeof isEditorHistoryPreview === "function" && isEditorHistoryPreview()) {
+    renderStudioCanvas();
+    if (selectedNodeIds.size === 1) {
+      selectNodeForContextPanel(Array.from(selectedNodeIds)[0]);
+    }
+    return true;
+  }
 
   const dragNodes = studioGraphState.nodes.filter((n) => selectedNodeIds.has(n.id));
   if (dragNodes.length === 0) {
@@ -6170,7 +6583,8 @@ function bindEditorCanvasEvents() {
       (e.ctrlKey || e.metaKey) &&
       !e.altKey &&
       !e.target.closest("input, textarea, select, [contenteditable]") &&
-      qs("#timeline-scroll-viewport")
+      qs("#timeline-scroll-viewport") &&
+      !(typeof isEditorHistoryPreview === "function" && isEditorHistoryPreview())
     ) {
       const keyLower = (e.key || "").toLowerCase();
       if (keyLower === "z" && !e.shiftKey) {
@@ -6204,7 +6618,8 @@ function bindEditorCanvasEvents() {
       (e.key === "Delete" || e.key === "Backspace") &&
       !e.target.closest("input, textarea, select") &&
       !qs(".modal-backdrop") &&
-      qs("#timeline-scroll-viewport")
+      qs("#timeline-scroll-viewport") &&
+      !(typeof isEditorHistoryPreview === "function" && isEditorHistoryPreview())
     ) {
       if (selectedNodeIds.size === 1) {
         e.preventDefault();
@@ -6818,7 +7233,7 @@ function bindEditorCanvasEvents() {
       lastPointerClientPos.x = t.clientX;
       lastPointerClientPos.y = t.clientY;
 
-      if (e.target.closest("#canvas-context-menu, .custom-select-menu, #canvas-chapter-input")) {
+      if (e.target.closest("#canvas-context-menu, .custom-select-menu, #canvas-chapter-input, #editor-empty-state")) {
         return;
       }
       closeCanvasContextMenu();
@@ -7170,15 +7585,25 @@ function bindEditorCanvasEvents() {
   document.addEventListener("dblclick", (e) => {
     const vp = e.target.closest("#timeline-scroll-viewport");
     if (!vp) return;
-    if (e.target.closest("#canvas-context-menu, #canvas-chapter-input")) return;
+    if (e.target.closest("#canvas-context-menu, #canvas-chapter-input, #editor-empty-state")) return;
     const ptWorld = clientToStudioWorld(vp, e.clientX, e.clientY);
     const hit = hitTestStudioCanvas(ptWorld.wx, ptWorld.wy);
     if (hit.type === "chapter-title" || hit.type === "chapter-grip") {
       e.preventDefault();
-      selectChapterForContextPanel(hit.chapter.name);
+      if (!(typeof isEditorHistoryPreview === "function" && isEditorHistoryPreview())) {
+        openFloatingChapterInput(hit.chapter);
+      } else {
+        selectChapterForContextPanel(hit.chapter.name);
+      }
+      return;
+    }
+    if (hit.type === "node-card") {
+      e.preventDefault();
+      sendServerAction("OpenSceneTextModal", { scene: hit.node.id });
       return;
     }
     if (hit.type !== "empty") return;
+    if (typeof isEditorHistoryPreview === "function" && isEditorHistoryPreview()) return;
     e.preventDefault();
     createSceneNodeAtWorldCoords(ptWorld.wx - 96, ptWorld.wy - 20);
   });
@@ -7192,6 +7617,9 @@ function bindEditorCanvasEvents() {
   });
 
   document.addEventListener("input", (e) => {
+    if (typeof isEditorHistoryPreview === "function" && isEditorHistoryPreview()) {
+      return;
+    }
     if (e.target && e.target.classList && e.target.classList.contains("chapter-group-title-input")) {
       scheduleChapterLiveSave(e.target);
       return;

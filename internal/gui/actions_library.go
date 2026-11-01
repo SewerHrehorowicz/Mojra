@@ -53,6 +53,9 @@ func (s *Server) addBookFromURLAction(r *http.Request) string {
 }
 
 func (s *Server) browseAddBookMedia(r *http.Request) string {
+	if s.isHistoryPreview() {
+		return historyPreviewLockedToast
+	}
 	if _, hasSettingsOpen := r.Form["scene_settings_open"]; hasSettingsOpen {
 		s.SceneTextModalSettingsOpen = r.FormValue("scene_settings_open") == "true"
 	}
@@ -87,6 +90,9 @@ func (s *Server) browseAddBookMedia(r *http.Request) string {
 }
 
 func (s *Server) addBookMediaFromDisk(r *http.Request) string {
+	if s.isHistoryPreview() {
+		return historyPreviewLockedToast
+	}
 	if _, hasSettingsOpen := r.Form["scene_settings_open"]; hasSettingsOpen {
 		s.SceneTextModalSettingsOpen = r.FormValue("scene_settings_open") == "true"
 	}
@@ -111,18 +117,88 @@ func (s *Server) addBookMediaFromDisk(r *http.Request) string {
 	return ""
 }
 
+func (s *Server) browseNewBookFolder(r *http.Request) string {
+	s.NewBookDraftTitle = r.FormValue("title")
+	s.NewBookDraftAuthor = r.FormValue("author")
+	if m := strings.TrimSpace(r.FormValue("mode")); m != "" {
+		s.NewBookDraftMode = book.NormalizeBookMode(m)
+	}
+	if std := strings.TrimSpace(r.FormValue("standard")); std != "" {
+		s.NewBookDraftStandard = book.NormalizeScriptStandard(std)
+	}
+	rawNarr := strings.ToLower(strings.TrimSpace(r.FormValue("narrated")))
+	s.NewBookDraftNarrated = rawNarr == "true" || rawNarr == "on" || rawNarr == "1"
+	rawImg := strings.ToLower(strings.TrimSpace(r.FormValue("imageless")))
+	s.NewBookDraftImageless = rawImg == "true" || rawImg == "on" || rawImg == "1"
+	if curPath := strings.TrimSpace(r.FormValue("save_path")); curPath != "" {
+		if expanded, err := book.ExpandLocalPath(curPath); err == nil && expanded != "" {
+			s.NewBookDraftDir = expanded
+		}
+	}
+
+	s.mu.Unlock()
+	picked := PickNativeBookPath(true)
+	s.mu.Lock()
+
+	if picked != "" {
+		if expanded, err := book.ExpandLocalPath(picked); err == nil && expanded != "" {
+			picked = expanded
+		}
+		s.NewBookDraftDir = picked
+		if s.Settings != nil {
+			s.Settings.NewBookDir = picked
+			_ = s.saveAppSettings()
+		}
+	}
+	return ""
+}
+
 func (s *Server) createNewBook(r *http.Request) string {
 	title := r.FormValue("title")
 	author := r.FormValue("author")
+	mode := r.FormValue("mode")
+	standard := r.FormValue("standard")
 	rawNarr := strings.ToLower(strings.TrimSpace(r.FormValue("narrated")))
 	narrated := rawNarr == "true" || rawNarr == "on" || rawNarr == "1"
 	rawImg := strings.ToLower(strings.TrimSpace(r.FormValue("imageless")))
 	imageless := rawImg == "true" || rawImg == "on" || rawImg == "1"
-	if created, err := book.CreateNewBook(s.BooksDir, title, author, narrated, imageless); err == nil && created != nil {
+
+	targetDir := s.defaultNewBookDir()
+	rawSavePath := strings.TrimSpace(r.FormValue("save_path"))
+	if rawSavePath != "" {
+		expanded, err := book.ExpandLocalPath(rawSavePath)
+		if err != nil {
+			return err.Error()
+		}
+		targetDir = expanded
+	}
+	if targetDir == "" {
+		targetDir = s.BooksDir
+	}
+
+	if created, err := book.CreateNewBookWithMode(targetDir, title, author, mode, standard, narrated, imageless); err == nil && created != nil {
 		s.NewBookModalOpen = false
+		s.NewBookDraftTitle = ""
+		s.NewBookDraftAuthor = ""
+		s.NewBookDraftMode = ""
+		s.NewBookDraftStandard = ""
+		s.NewBookDraftNarrated = false
+		s.NewBookDraftImageless = false
+		s.NewBookDraftDir = ""
+
+		if rawSavePath != "" && s.Settings != nil {
+			s.Settings.NewBookDir = filepath.Dir(created.RootPath)
+		}
+		if filepath.Clean(filepath.Dir(created.RootPath)) != filepath.Clean(s.BooksDir) {
+			s.Settings.AddExternalBook(created.RootPath)
+			created.IsExternal = true
+		}
 		s.setActiveBook(created)
 		s.Settings.ActiveView = "editor"
-		_ = book.SaveAppSettings(s.SavesDir, s.Settings)
+		_ = s.saveAppSettings()
+		if created.IsScreenplay() {
+			return "Utworzono nowy scenariusz: " + created.Title
+		}
 		return "Utworzono nową książkę: " + created.Title
 	} else if err != nil {
 		return err.Error()
@@ -223,6 +299,9 @@ func (s *Server) addBookFromURL(rawURL string) string {
 }
 
 func (s *Server) addBookMediaFromDiskPaths(paths []string, kind, sceneID string) string {
+	if s.isHistoryPreview() {
+		return historyPreviewLockedToast
+	}
 	if s.ActiveBook == nil {
 		return "Brak aktywnej książki"
 	}

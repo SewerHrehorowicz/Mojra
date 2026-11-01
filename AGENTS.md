@@ -43,12 +43,16 @@
 - **UI & Control Rules**:
   - Keep `border-radius: 0 !important` globally (`base.tss`), except circular node ports, slider thumbs, and progress/notch pills.
   - Never use native `<select>` elements; always use `.custom-select`.
+  - Encapsulate reusable UI primitives via `.tpl` `@component` definitions (`app/templates/components.tpl`) and avoid nested grouping boxes or redundant borders inside `#editor-context-panel`.
+  - Place action icons (`expand/collapse`, `close`, `trash`) on the right side of headers, rows, and cards; use SVG icons (`app/icons/*.svg`) instead of text glyphs (`▾`, `×`, `−`), use `trash.svg` for all delete/remove actions, and reserve `close.svg` strictly for closing modals/popovers.
   - Never add `border-bottom` or `text-decoration: underline` to `.topbar-tab` or `.top-action-btn`.
   - Never use up/down arrow buttons (`↑`, `↓`) to reorder scenes, choices, or items (rejected at `.tpl` compile time); use 24px-grid canvas dragging (`data-node-drag-grip`) and wire ports.
+  - Never explain the UI inside the UI (never write `"Kliknij przycisk..."`, `"Kliknij aby..."`, `"Przeciągnij..."`, or tutorial hints) and never spam the UI with unnecessary text, subtitles, or redundant headers.
   - Keep canvas node cards (`.timeline-node-card`) read-only on the canvas (grip `⋮⋮`, title, choice labels, ports, `+ Wybór`); all editable inputs and delete buttons belong in `#editor-context-panel`.
 
 ## 5. Performance, Zero External Dependencies & Repository Hygiene
 - **Performance Hard Rules (P0)**:
+  - Explicitly evaluate hot-path complexity, memory allocations, request-path I/O, and rendering latency in every plan and code change, and keep canvas/pointer/drag interactions at 120fps.
   - Stream template responses via `tpl.RenderTemplateTo` into pooled `sync.Pool` buffers (`tpl.AcquireBuffer` / `tpl.ReleaseBuffer`) and keep `RenderContext.WithVar` zero-copy.
   - Never re-parse `.tpl`/`.tss` or re-bundle `.js` per request when disk files are unchanged; rely on mtime/size stamp caching (`ensureTemplatesLoaded`, `serveUIAsset`) and verify hot paths with `go test -bench=. -benchmem ./...`.
 - **Media, Audio Policy & Book Packaging (`internal/book/`)**:
@@ -76,5 +80,7 @@
 - Never spawn a native window or OS file picker when `ST_NO_WINDOW=1` or running under `go test`.
 - `TestTopbarAlwaysVisibleIncludingSceneTextEditor` (`internal/gui/server_test.go`): Fails if `#topbar` is ever removed, hidden, or covered by `.modal-backdrop` / `.scene-text-fullscreen-backdrop`, or if switching views from `#topbar` fails to exit `#modal-scene-text`.
 - **Repository Hygiene & Post-Work Cleanup**:
+  - Apply fixes directly without asking for permission or confirmation first; implement and verify immediately.
+  - Keep all rules, configs, and edits strictly inside the repository root; never modify or touch files outside the repository root.
   - Never hardcode absolute local paths, usernames, or secrets in code, templates, or tests.
   - Never leave temporary files, scratch tests, or `.py` scripts in the repository; inspect working tree state, run `go test ./...`, and always build the application for the current platform (`./build.sh --macos` on macOS, `./build.sh --linux` on Linux, `./build.sh --windows` on Windows) after changes.

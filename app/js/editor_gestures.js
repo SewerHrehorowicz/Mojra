@@ -44,68 +44,71 @@ function distToSegmentSq(px, py, x1, y1, x2, y2) {
 function hitTestStudioCanvas(wx, wy) {
   const nodes = studioGraphState.nodes;
   const chapters = studioGraphState.chapters;
+  const isPreview = typeof isEditorHistoryPreview === "function" && isEditorHistoryPreview();
   const portHitR = 10;
   const portHitRSq = portHitR * portHitR;
 
-  // 1. Scene output ports
-  for (let i = nodes.length - 1; i >= 0; i--) {
-    const nd = nodes[i];
-    if (nd.hasChoices && nd.ports.length > 0) {
-      for (let j = 0; j < nd.ports.length; j++) {
-        const pt = nd.ports[j];
-        const px = nd.x + pt.ox;
-        const py = nd.y + pt.oy;
+  if (!isPreview) {
+    // 1. Scene output ports
+    for (let i = nodes.length - 1; i >= 0; i--) {
+      const nd = nodes[i];
+      if (nd.hasChoices && nd.ports.length > 0) {
+        for (let j = 0; j < nd.ports.length; j++) {
+          const pt = nd.ports[j];
+          const px = nd.x + pt.ox;
+          const py = nd.y + pt.oy;
+          const dx = wx - px;
+          const dy = wy - py;
+          if (dx * dx + dy * dy <= portHitRSq) {
+            return {
+              type: "scene-out-port",
+              node: nd,
+              port: pt,
+              portIdx: j,
+              isBottom: false,
+              x: px,
+              y: py
+            };
+          }
+        }
+      } else if (nd.implicitPort) {
+        const ip = nd.implicitPort;
+        const px = nd.x + ip.ox;
+        const py = nd.y + ip.oy;
         const dx = wx - px;
         const dy = wy - py;
         if (dx * dx + dy * dy <= portHitRSq) {
           return {
             type: "scene-out-port",
             node: nd,
-            port: pt,
-            portIdx: j,
-            isBottom: false,
+            port: ip,
+            portIdx: 0,
+            isBottom: true,
             x: px,
             y: py
           };
         }
       }
-    } else if (nd.implicitPort) {
-      const ip = nd.implicitPort;
-      const px = nd.x + ip.ox;
-      const py = nd.y + ip.oy;
-      const dx = wx - px;
-      const dy = wy - py;
-      if (dx * dx + dy * dy <= portHitRSq) {
-        return {
-          type: "scene-out-port",
-          node: nd,
-          port: ip,
-          portIdx: 0,
-          isBottom: true,
-          x: px,
-          y: py
-        };
-      }
     }
-  }
 
-  // 2. Chapter output ports
-  for (let i = chapters.length - 1; i >= 0; i--) {
-    const ch = chapters[i];
-    if (ch.hidden) continue;
-    for (let j = 0; j < ch.outPorts.length; j++) {
-      const op = ch.outPorts[j];
-      const dx = wx - op.x;
-      const dy = wy - op.y;
-      if (dx * dx + dy * dy <= portHitRSq) {
-        return {
-          type: "chapter-out-port",
-          chapter: ch,
-          outPort: op,
-          portIdx: j,
-          x: op.x,
-          y: op.y
-        };
+    // 2. Chapter output ports
+    for (let i = chapters.length - 1; i >= 0; i--) {
+      const ch = chapters[i];
+      if (ch.hidden) continue;
+      for (let j = 0; j < ch.outPorts.length; j++) {
+        const op = ch.outPorts[j];
+        const dx = wx - op.x;
+        const dy = wy - op.y;
+        if (dx * dx + dy * dy <= portHitRSq) {
+          return {
+            type: "chapter-out-port",
+            chapter: ch,
+            outPort: op,
+            portIdx: j,
+            x: op.x,
+            y: op.y
+          };
+        }
       }
     }
   }
@@ -116,6 +119,9 @@ function hitTestStudioCanvas(wx, wy) {
   for (let i = nodes.length - 1; i >= 0; i--) {
     const nd = nodes[i];
     if (wx >= nd.x && wx <= nd.x + nd.w && wy >= nd.y && wy <= nd.y + nd.h) {
+      if (isPreview) {
+        return { type: "node-card", node: nd };
+      }
       const footerTop = nd.y + nd.h - NODE_FOOTER_HEIGHT;
       if (wx >= nd.x + 8 && wx <= nd.x + 8 + addChoiceBtnW && wy >= footerTop + 8 && wy <= footerTop + 32) {
         return { type: "add-choice-btn", node: nd };
@@ -132,6 +138,9 @@ function hitTestStudioCanvas(wx, wy) {
     const ch = chapters[i];
     if (ch.hidden) continue;
     if (wx >= ch.x && wx <= ch.x + ch.w && wy >= ch.y && wy <= ch.y + 28) {
+      if (isPreview) {
+        return { type: "chapter-title", chapter: ch };
+      }
       if (wx <= ch.x + 26) {
         return { type: "chapter-grip", chapter: ch };
       }
@@ -201,7 +210,7 @@ function updateCanvasHoverCursor(viewport, hit) {
 }
 
 function triggerCanvasAddChoiceForNode(nd) {
-  if (!nd || !nd.id) return;
+  if (!nd || !nd.id || (typeof isEditorHistoryPreview === "function" && isEditorHistoryPreview())) return;
   const params = { scene: nd.id };
   const contextForm = qs("#editor-context-form");
   if (contextForm && contextForm.getAttribute("data-context-scene-id") === nd.id) {
@@ -355,6 +364,101 @@ function handleEditorCanvasClick(e) {
     return true;
   }
 
+  const scriptInsertBtn = e.target.closest("[data-insert-script-block], [data-insert-script-char]");
+  if (scriptInsertBtn) {
+    const ta = qs("#modal-scene-textarea");
+    if (ta) {
+      e.preventDefault();
+      e.stopPropagation();
+      const kind = scriptInsertBtn.getAttribute("data-insert-script-block") || "";
+      const charName = scriptInsertBtn.getAttribute("data-insert-script-char") || "";
+      const std = scriptInsertBtn.getAttribute("data-script-standard") || "pl";
+      const isPL = std === "pl";
+
+      let blockText = "";
+      let selectTarget = "";
+      let needsDoubleNewline = true;
+
+      if (charName) {
+        blockText = charName + "\nKwestia dialogowa...";
+        selectTarget = "Kwestia dialogowa...";
+      } else if (kind === "dialogue") {
+        blockText = "POSTAĆ\nKwestia dialogowa...";
+        selectTarget = "POSTAĆ";
+      } else if (kind === "parenthetical") {
+        blockText = "(cicho)\n";
+        selectTarget = "cicho";
+        needsDoubleNewline = false;
+      } else if (kind === "action") {
+        blockText = "Opis akcji...";
+        selectTarget = "Opis akcji...";
+      } else if (kind === "dialogue_off") {
+        blockText = (isPL ? "POSTAĆ (OFF)\n" : "POSTAĆ (O.S.)\n") + "Kwestia spoza kadru...";
+        selectTarget = "POSTAĆ";
+      } else if (kind === "dialogue_vo") {
+        blockText = "POSTAĆ (V.O.)\nKwestia narratora...";
+        selectTarget = "POSTAĆ";
+      } else if (kind === "transition_cut") {
+        blockText = isPL ? "> CIĘCIE DO:\n" : "> CUT TO:\n";
+        selectTarget = "";
+      } else if (kind === "transition_fade") {
+        blockText = isPL ? "> ŚCIEMNIENIE.\n" : "> FADE OUT.\n";
+        selectTarget = "";
+      } else if (kind === "subslug") {
+        blockText = isPL ? "WN. LOKACJA - CIĄG DALSZY\n" : "INT. LOCATION - CONTINUOUS\n";
+        selectTarget = isPL ? "LOKACJA" : "LOCATION";
+      }
+
+      if (blockText) {
+        const val = ta.value || "";
+        const start = typeof ta.selectionStart === "number" ? ta.selectionStart : val.length;
+        const end = typeof ta.selectionEnd === "number" ? ta.selectionEnd : val.length;
+        const before = val.slice(0, start);
+        const after = val.slice(end);
+
+        let prefix = "";
+        if (before.length > 0) {
+          if (needsDoubleNewline) {
+            if (before.endsWith("\n\n")) {
+              prefix = "";
+            } else if (before.endsWith("\n")) {
+              prefix = "\n";
+            } else {
+              prefix = "\n\n";
+            }
+          } else if (!before.endsWith("\n")) {
+            prefix = "\n";
+          }
+        }
+
+        const inserted = prefix + blockText;
+        ta.value = before + inserted + after;
+        ta.focus();
+
+        const insertStart = before.length + prefix.length;
+        if (selectTarget) {
+          const relIdx = blockText.indexOf(selectTarget);
+          if (relIdx >= 0) {
+            ta.setSelectionRange(insertStart + relIdx, insertStart + relIdx + selectTarget.length);
+          } else {
+            ta.setSelectionRange(insertStart + blockText.length, insertStart + blockText.length);
+          }
+        } else {
+          ta.setSelectionRange(insertStart + blockText.length, insertStart + blockText.length);
+        }
+
+        if (typeof autoResizeSceneModalTextarea === "function") {
+          autoResizeSceneModalTextarea(ta);
+        }
+        const modalForm = ta.closest("form#form-scene-text");
+        if (modalForm && typeof scheduleNodeLiveSave === "function") {
+          scheduleNodeLiveSave(modalForm);
+        }
+        return true;
+      }
+    }
+  }
+
   const selectToggle = e.target.closest("[data-select-toggle]");
   if (selectToggle) {
     e.preventDefault();
@@ -459,6 +563,44 @@ function handleEditorCanvasClick(e) {
       }
     }
 
+    if (selectEl.classList.contains("new-book-mode-select")) {
+      const stdField = qs("#new-book-standard-field");
+      const narrField = qs("#new-book-narrated-field");
+      const imgField = qs("#new-book-imageless-field");
+      const modalTitle = qs("#new-book-modal-title");
+      const titleLabel = qs("#new-book-title-label");
+      const titleInp = qs("#new-book-title");
+      const submitBtn = qs("#new-book-submit-btn");
+      const isScreenplay = val === "screenplay";
+      if (stdField) stdField.classList.toggle("hidden", !isScreenplay);
+      if (narrField) narrField.classList.toggle("hidden", isScreenplay);
+      if (imgField) imgField.classList.toggle("hidden", isScreenplay);
+      if (modalTitle) {
+        modalTitle.textContent = isScreenplay ? "Utwórz Nowy Scenariusz" : "Utwórz Nową Książkę";
+      }
+      if (titleLabel) {
+        titleLabel.textContent = isScreenplay ? "Tytuł scenariusza" : "Tytuł opowieści";
+      }
+      if (titleInp) {
+        titleInp.setAttribute("placeholder", isScreenplay ? "np. Ostatni Rejs" : "np. Tajemnica Starego Młyna");
+      }
+      if (submitBtn) {
+        submitBtn.textContent = isScreenplay ? "Utwórz scenariusz" : "Utwórz książkę";
+      }
+      return true;
+    }
+
+    const bookForm = selectEl.closest("form.editor-book-form");
+    if (bookForm) {
+      const params = {};
+      const fd = new FormData(bookForm);
+      fd.forEach((v, k) => {
+        params[k] = v;
+      });
+      sendServerAction("SaveBookSettings", params);
+      return true;
+    }
+
     const modalForm = selectEl.closest("form#form-scene-text");
     if (modalForm) {
       const params = {};
@@ -542,6 +684,10 @@ function beginChapterWireConnectGesture(hit, viewport, isTouch) {
 
 function beginChapterDragGesture(ch, viewport, clientX, clientY, isTouch, clickedTitleArea) {
   if (!ch) return false;
+  if (typeof isEditorHistoryPreview === "function" && isEditorHistoryPreview()) {
+    selectChapterForContextPanel(ch.name);
+    return true;
+  }
   const chNodes = studioGraphState.nodes.filter(
     (nd) => nd.chapterLower === ch.nameLower || nd.chapterLower === ch.refLower
   );
@@ -590,6 +736,14 @@ function beginNodeDragGesture(nd, viewport, clientX, clientY, isTouch, isMultiMo
     if (sceneId) selectedNodeIds.add(sceneId);
   }
   syncNodeSelectionDOM();
+
+  if (typeof isEditorHistoryPreview === "function" && isEditorHistoryPreview()) {
+    renderStudioCanvas();
+    if (selectedNodeIds.size === 1) {
+      selectNodeForContextPanel(Array.from(selectedNodeIds)[0]);
+    }
+    return true;
+  }
 
   const dragNodes = studioGraphState.nodes.filter((n) => selectedNodeIds.has(n.id));
   if (dragNodes.length === 0) {
@@ -669,7 +823,8 @@ function bindEditorCanvasEvents() {
       (e.ctrlKey || e.metaKey) &&
       !e.altKey &&
       !e.target.closest("input, textarea, select, [contenteditable]") &&
-      qs("#timeline-scroll-viewport")
+      qs("#timeline-scroll-viewport") &&
+      !(typeof isEditorHistoryPreview === "function" && isEditorHistoryPreview())
     ) {
       const keyLower = (e.key || "").toLowerCase();
       if (keyLower === "z" && !e.shiftKey) {
@@ -703,7 +858,8 @@ function bindEditorCanvasEvents() {
       (e.key === "Delete" || e.key === "Backspace") &&
       !e.target.closest("input, textarea, select") &&
       !qs(".modal-backdrop") &&
-      qs("#timeline-scroll-viewport")
+      qs("#timeline-scroll-viewport") &&
+      !(typeof isEditorHistoryPreview === "function" && isEditorHistoryPreview())
     ) {
       if (selectedNodeIds.size === 1) {
         e.preventDefault();
@@ -1317,7 +1473,7 @@ function bindEditorCanvasEvents() {
       lastPointerClientPos.x = t.clientX;
       lastPointerClientPos.y = t.clientY;
 
-      if (e.target.closest("#canvas-context-menu, .custom-select-menu, #canvas-chapter-input")) {
+      if (e.target.closest("#canvas-context-menu, .custom-select-menu, #canvas-chapter-input, #editor-empty-state")) {
         return;
       }
       closeCanvasContextMenu();
@@ -1669,15 +1825,25 @@ function bindEditorCanvasEvents() {
   document.addEventListener("dblclick", (e) => {
     const vp = e.target.closest("#timeline-scroll-viewport");
     if (!vp) return;
-    if (e.target.closest("#canvas-context-menu, #canvas-chapter-input")) return;
+    if (e.target.closest("#canvas-context-menu, #canvas-chapter-input, #editor-empty-state")) return;
     const ptWorld = clientToStudioWorld(vp, e.clientX, e.clientY);
     const hit = hitTestStudioCanvas(ptWorld.wx, ptWorld.wy);
     if (hit.type === "chapter-title" || hit.type === "chapter-grip") {
       e.preventDefault();
-      selectChapterForContextPanel(hit.chapter.name);
+      if (!(typeof isEditorHistoryPreview === "function" && isEditorHistoryPreview())) {
+        openFloatingChapterInput(hit.chapter);
+      } else {
+        selectChapterForContextPanel(hit.chapter.name);
+      }
+      return;
+    }
+    if (hit.type === "node-card") {
+      e.preventDefault();
+      sendServerAction("OpenSceneTextModal", { scene: hit.node.id });
       return;
     }
     if (hit.type !== "empty") return;
+    if (typeof isEditorHistoryPreview === "function" && isEditorHistoryPreview()) return;
     e.preventDefault();
     createSceneNodeAtWorldCoords(ptWorld.wx - 96, ptWorld.wy - 20);
   });
@@ -1691,6 +1857,9 @@ function bindEditorCanvasEvents() {
   });
 
   document.addEventListener("input", (e) => {
+    if (typeof isEditorHistoryPreview === "function" && isEditorHistoryPreview()) {
+      return;
+    }
     if (e.target && e.target.classList && e.target.classList.contains("chapter-group-title-input")) {
       scheduleChapterLiveSave(e.target);
       return;
