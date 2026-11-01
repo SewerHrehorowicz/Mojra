@@ -22,6 +22,14 @@ function recomputeNodeMetrics(node) {
   node.inOx = NODE_CARD_WIDTH * 0.5;
   node.inOy = 0;
   node.hasInputPort = !node.isStart;
+  if (node.branchRole === "primary" || node.branchRole === "secondary") {
+    const estBadgeOffset = node.isStart ? 54 : node.isEntry ? 64 : 0;
+    node.branchRadioX = node.x + node.w - 16 - estBadgeOffset;
+    node.branchRadioY = node.y + 13;
+  } else {
+    node.branchRadioX = 0;
+    node.branchRadioY = 0;
+  }
 
   if (portCount > 0) {
     for (let i = 0; i < node.ports.length; i++) {
@@ -58,24 +66,270 @@ function recomputeNodeMetrics(node) {
   }
 }
 
-function recomputeChapterPortPositions(ch) {
+function recomputeChapterInputPortPosition(ch) {
   ch.left = ch.x;
   ch.right = ch.x + ch.w;
   ch.top = ch.y;
   ch.bottom = ch.y + ch.h;
-  ch.inX = ch.x + ch.w * 0.5;
   ch.inY = ch.y;
-  if (!ch.outPorts || ch.outPorts.length === 0) {
-    ch.outPorts = [{ idx: 0, target: "", targetLower: "", connected: false, x: ch.x + ch.w * 0.5, y: ch.y + ch.h }];
-    return;
+  let desiredInX = ch.x + ch.w * 0.5;
+  const chNodes = ch.nodes || studioGraphState.nodes;
+  if (chNodes && chNodes.length > 0) {
+    let entryNode = ch.startSceneId ? studioGraphState.nodeById.get(ch.startSceneId) : null;
+    if (
+      !entryNode ||
+      (entryNode.chapterLower !== ch.nameLower && entryNode.chapterLower !== ch.refLower)
+    ) {
+      entryNode = null;
+      for (let i = 0; i < chNodes.length; i++) {
+        const nd = chNodes[i];
+        if (nd.chapterLower === ch.nameLower || nd.chapterLower === ch.refLower) {
+          if (nd.isEntry || !entryNode) {
+            entryNode = nd;
+            if (nd.isEntry) break;
+          }
+        }
+      }
+    }
+    if (entryNode) {
+      desiredInX = entryNode.x + (entryNode.inOx || NODE_CARD_WIDTH * 0.5);
+    }
   }
+  const minEdgeX = ch.x + 24;
+  const maxEdgeX = Math.max(minEdgeX, ch.x + ch.w - 24);
+  ch.inX = Math.max(minEdgeX, Math.min(maxEdgeX, desiredInX));
+}
+
+function recomputeChapterPortPositions(ch) {
+  recomputeChapterInputPortPosition(ch);
+  const minEdgeX = ch.x + 24;
+  const maxEdgeX = Math.max(minEdgeX, ch.x + ch.w - 16);
+  const minEdgeY = ch.y + 48;
+  const maxEdgeY = Math.max(minEdgeY, ch.y + ch.h - 24);
+
+  if (!ch.outPorts || ch.outPorts.length === 0) {
+    ch.outPorts = [
+      {
+        idx: 0,
+        target: "",
+        targetLower: "",
+        connected: false,
+        side: "bottom",
+        x: ch.x + ch.w * 0.5,
+        y: ch.y + ch.h
+      }
+    ];
+  }
+
+  let chNodes = ch.nodes;
+  if (!chNodes) {
+    const nodes = studioGraphState.nodes || [];
+    chNodes = [];
+    for (let i = 0; i < nodes.length; i++) {
+      const nd = nodes[i];
+      if (nd.chapterLower === ch.nameLower || nd.chapterLower === ch.refLower) {
+        chNodes.push(nd);
+      }
+    }
+    ch.nodes = chNodes;
+  }
+
+  const bottomPorts = [];
+  const leftPorts = [];
+  const rightPorts = [];
+
   const m = ch.outPorts.length;
   for (let i = 0; i < m; i++) {
     const op = ch.outPorts[i];
-    op.idx = i;
     op.connected = Boolean(op.targetLower);
-    op.x = ch.x + ch.w * 0.5 + (i - (m - 1) * 0.5) * CHAPTER_OUT_PORT_PITCH;
-    op.y = ch.y + ch.h;
+    const toCh = op.targetLower ? studioGraphState.chapterByKey.get(op.targetLower) : null;
+    const targetX = toCh ? (toCh.inX || toCh.x + toCh.w * 0.5) : ch.x + ch.w * 0.5;
+    const targetY = toCh ? (toCh.inY || toCh.y) : ch.y + ch.h + 120;
+
+    let sumX = 0;
+    let sumY = 0;
+    let maxSrcBottom = ch.y + 96;
+    let srcCount = 0;
+    let lastSrcNode = null;
+    let hasBlockedDropToBottom = false;
+
+    if (op.targetLower && chNodes.length > 0) {
+      for (let j = 0; j < chNodes.length; j++) {
+        const nd = chNodes[j];
+        const portList =
+          nd.hasChoices && nd.ports && nd.ports.length > 0
+            ? nd.ports
+            : nd.implicitPort
+              ? [nd.implicitPort]
+              : [];
+        for (let k = 0; k < portList.length; k++) {
+          const pt = portList[k];
+          const tLower = (pt.targetChapter || "").trim().toLowerCase();
+          if (!tLower) continue;
+          if (
+            tLower === op.targetLower ||
+            (toCh && (tLower === toCh.nameLower || tLower === toCh.refLower))
+          ) {
+            const sy = nd.y + pt.oy;
+            let candX;
+            if (pt.isBottom) {
+              candX = nd.x + (nd.inOx || NODE_CARD_WIDTH * 0.5);
+              if (typeof linecastVertical === "function") {
+                if (linecastVertical(candX, sy + 6, ch.y + ch.h, chNodes, nd, null, 10)) {
+                  hasBlockedDropToBottom = true;
+                }
+              }
+              if (typeof resolveClearX === "function") {
+                candX = resolveClearX(candX, sy + 4, ch.y + ch.h, chNodes, nd, null, 0, 14);
+              }
+            } else {
+              const stubRank = Math.max(0, portList.length - 1 - k);
+              candX = nd.x + pt.ox + 16 + stubRank * 14;
+              if (typeof linecastVertical === "function") {
+                if (linecastVertical(candX, sy + 6, ch.y + ch.h, chNodes, nd, null, 10)) {
+                  hasBlockedDropToBottom = true;
+                }
+              }
+              if (typeof resolveClearX === "function") {
+                candX = resolveClearX(candX, sy, ch.y + ch.h, chNodes, nd, null, 1, 14);
+              }
+            }
+            sumX += candX;
+            sumY += sy;
+            if (nd.bottom > maxSrcBottom) {
+              maxSrcBottom = nd.bottom;
+            }
+            lastSrcNode = nd;
+            srcCount++;
+          }
+        }
+      }
+    }
+
+    let side = "bottom";
+    if (toCh && !toCh.hidden) {
+      const isLeftAdjacent = toCh.right <= ch.left + 24;
+      const isRightAdjacent = toCh.left >= ch.right - 24;
+      const isSideVerticalBand = toCh.top < ch.bottom - 24;
+      if (isLeftAdjacent && (isSideVerticalBand || (hasBlockedDropToBottom && toCh.top <= ch.bottom + 24))) {
+        side = "left";
+      } else if (isRightAdjacent && (isSideVerticalBand || (hasBlockedDropToBottom && toCh.top <= ch.bottom + 24))) {
+        side = "right";
+      }
+    }
+    op.side = side;
+
+    if (side === "left" || side === "right") {
+      op.x = side === "left" ? ch.x : ch.x + ch.w;
+      let idealY = srcCount > 0 ? maxSrcBottom + 24 : (ch.y + ch.h) * 0.5;
+      if (side === "right" && srcCount === 1 && lastSrcNode && !lastSrcNode.implicitPort) {
+        const directY = sumY / srcCount;
+        if (
+          typeof linecastHorizontal !== "function" ||
+          !linecastHorizontal(directY, lastSrcNode.right + 4, ch.right, chNodes, lastSrcNode, null, 10)
+        ) {
+          idealY = directY;
+        }
+      }
+      if (typeof resolveClearY === "function") {
+        const spanX1 = side === "left" ? ch.left : (lastSrcNode ? lastSrcNode.right + 4 : ch.left + ch.w * 0.5);
+        const spanX2 = side === "left" ? (lastSrcNode ? lastSrcNode.right + 20 : ch.left + ch.w * 0.5) : ch.right;
+        idealY = resolveClearY(idealY, spanX1, spanX2, chNodes, lastSrcNode, null, 1, 12);
+      }
+      op._idealY = Math.max(minEdgeY, Math.min(maxEdgeY, Math.round(idealY)));
+      op._targetY = targetY;
+      if (side === "left") {
+        leftPorts.push(op);
+      } else {
+        rightPorts.push(op);
+      }
+    } else {
+      let idealX = ch.x + ch.w * 0.5;
+      if (srcCount > 0) {
+        idealX = sumX / srcCount;
+      } else if (op.targetLower && toCh) {
+        idealX = targetX;
+      } else if (chNodes.length === 1) {
+        idealX = chNodes[0].x + (chNodes[0].inOx || NODE_CARD_WIDTH * 0.5);
+      }
+      op.y = ch.y + ch.h;
+      op._idealX = Math.max(minEdgeX, Math.min(maxEdgeX, idealX));
+      op._targetX = targetX;
+      bottomPorts.push(op);
+    }
+  }
+
+  const minGap = 24;
+  const minBottomPortGap = 14;
+  if (bottomPorts.length > 1) {
+    bottomPorts.sort((a, b) => {
+      if (Math.abs(a._idealX - b._idealX) > 6) return a._idealX - b._idealX;
+      if (Math.abs(a._targetX - b._targetX) > 1) return a._targetX - b._targetX;
+      return (a.idx || 0) - (b.idx || 0);
+    });
+  }
+  for (let i = 0; i < bottomPorts.length; i++) {
+    bottomPorts[i].x = bottomPorts[i]._idealX;
+    bottomPorts[i].y = ch.y + ch.h;
+  }
+  if (bottomPorts.length > 1) {
+    let firstX = bottomPorts[0]._idealX;
+    let lastX = bottomPorts[bottomPorts.length - 1]._idealX;
+    if (Math.abs(lastX - firstX) <= 6) {
+      const center = (firstX + lastX) * 0.5;
+      const totalSpan = (bottomPorts.length - 1) * minGap;
+      const startX = center - totalSpan * 0.5;
+      for (let i = 0; i < bottomPorts.length; i++) {
+        bottomPorts[i].x = Math.max(minEdgeX, Math.min(maxEdgeX, Math.round(startX + i * minGap)));
+      }
+    }
+  }
+  for (let i = 1; i < bottomPorts.length; i++) {
+    if (bottomPorts[i].x < bottomPorts[i - 1].x + minBottomPortGap) {
+      bottomPorts[i].x = bottomPorts[i - 1].x + minBottomPortGap;
+    }
+  }
+  if (bottomPorts.length > 0 && bottomPorts[bottomPorts.length - 1].x > maxEdgeX) {
+    bottomPorts[bottomPorts.length - 1].x = maxEdgeX;
+    for (let i = bottomPorts.length - 2; i >= 0; i--) {
+      if (bottomPorts[i].x > bottomPorts[i + 1].x - minBottomPortGap) {
+        bottomPorts[i].x = Math.max(minEdgeX, bottomPorts[i + 1].x - minBottomPortGap);
+      }
+    }
+  }
+
+  const layoutSidePorts = (list, edgeX) => {
+    if (list.length === 0) return;
+    if (list.length > 1) {
+      list.sort((a, b) => {
+        if (Math.abs(a._idealY - b._idealY) > 6) return a._idealY - b._idealY;
+        return a._targetY - b._targetY;
+      });
+    }
+    for (let i = 0; i < list.length; i++) {
+      list[i].x = edgeX;
+      list[i].y = list[i]._idealY;
+    }
+    for (let i = 1; i < list.length; i++) {
+      if (list[i].y < list[i - 1].y + minGap) {
+        list[i].y = list[i - 1].y + minGap;
+      }
+    }
+    if (list[list.length - 1].y > maxEdgeY) {
+      list[list.length - 1].y = maxEdgeY;
+      for (let i = list.length - 2; i >= 0; i--) {
+        if (list[i].y > list[i + 1].y - minGap) {
+          list[i].y = Math.max(minEdgeY, list[i + 1].y - minGap);
+        }
+      }
+    }
+  };
+
+  layoutSidePorts(leftPorts, ch.x);
+  layoutSidePorts(rightPorts, ch.x + ch.w);
+
+  for (let i = 0; i < m; i++) {
+    ch.outPorts[i].idx = i;
   }
 }
 
@@ -85,6 +339,7 @@ function parseStudioGraphPayload(rawText) {
   studioGraphState.nodes = [];
   studioGraphState.nodeById.clear();
   studioGraphState.wires = [];
+  studioGraphState.wirePins.clear();
   studioGraphState.bundleOverlays = [];
   studioGraphState.hoveredItem = null;
   studioGraphState.staticBatchDirty = true;
@@ -145,9 +400,9 @@ function parseStudioGraphPayload(rawText) {
         w: parseInt(kv.w || "240", 10) || 240,
         h: parseInt(kv.h || "140", 10) || 140,
         outPorts: outPorts,
+        nodes: [],
         hidden: false
       };
-      recomputeChapterPortPositions(ch);
       studioGraphState.chapters.push(ch);
       if (ch.nameLower) studioGraphState.chapterByKey.set(ch.nameLower, ch);
       if (ch.refLower) studioGraphState.chapterByKey.set(ch.refLower, ch);
@@ -169,6 +424,8 @@ function parseStudioGraphPayload(rawText) {
         hasChoices: kv.has_choices === "1",
         impTarget: kv.imp_target || "",
         impChapter: kv.imp_chapter || "",
+        branchRole: kv.branch_role || "",
+        branchParentId: kv.branch_parent || "",
         ports: []
       };
       recomputeNodeMetrics(node);
@@ -190,10 +447,142 @@ function parseStudioGraphPayload(rawText) {
       });
       node.hasChoices = node.ports.length >= 2;
       recomputeNodeMetrics(node);
+    } else if (kind === "wire_pins") {
+      const wKey = (kv.key || "").trim().toLowerCase();
+      const pinsRaw = (kv.pins || "").trim();
+      if (wKey && pinsRaw) {
+        const pins = [];
+        const segs = pinsRaw.split(";");
+        for (let p = 0; p < segs.length; p++) {
+          const xy = segs[p].split(",");
+          if (xy.length === 2) {
+            const px = parseInt(xy[0].trim(), 10);
+            const py = parseInt(xy[1].trim(), 10);
+            if (!isNaN(px) && !isNaN(py)) {
+              pins.push({ x: px, y: py });
+            }
+          }
+        }
+        if (pins.length > 0) {
+          studioGraphState.wirePins.set(wKey, pins);
+        }
+      }
     }
   }
 
+  studioGraphState.topologyDirty = true;
   return vpInfo;
+}
+
+const SPATIAL_CELL_SHIFT = 8; // 256x256 px spatial hash cells
+
+function buildSpatialGridForNodes(nodeList) {
+  const grid = new Map();
+  if (!nodeList) return grid;
+  for (let i = 0; i < nodeList.length; i++) {
+    insertNodeIntoSpatialGrid(grid, nodeList[i]);
+  }
+  nodeList._spatialGrid = grid;
+  return grid;
+}
+
+function insertNodeIntoSpatialGrid(grid, nd) {
+  if (!grid || !nd || nd.hidden) return;
+  const gx0 = (nd.left - 24) >> SPATIAL_CELL_SHIFT;
+  const gx1 = (nd.right + 24) >> SPATIAL_CELL_SHIFT;
+  const gy0 = (nd.top - 24) >> SPATIAL_CELL_SHIFT;
+  const gy1 = (nd.bottom + 24) >> SPATIAL_CELL_SHIFT;
+  nd._gx0 = gx0;
+  nd._gx1 = gx1;
+  nd._gy0 = gy0;
+  nd._gy1 = gy1;
+  for (let gy = gy0; gy <= gy1; gy++) {
+    const rowMask = (gy & 0xffff) << 16;
+    for (let gx = gx0; gx <= gx1; gx++) {
+      const key = rowMask | (gx & 0xffff);
+      let cell = grid.get(key);
+      if (!cell) {
+        cell = [nd];
+        grid.set(key, cell);
+      } else {
+        cell.push(nd);
+      }
+    }
+  }
+}
+
+function removeNodeFromSpatialGrid(grid, nd) {
+  if (!grid || !nd || nd._gx0 === undefined) return;
+  for (let gy = nd._gy0; gy <= nd._gy1; gy++) {
+    const rowMask = (gy & 0xffff) << 16;
+    for (let gx = nd._gx0; gx <= nd._gx1; gx++) {
+      const key = rowMask | (gx & 0xffff);
+      const cell = grid.get(key);
+      if (cell) {
+        const idx = cell.indexOf(nd);
+        if (idx >= 0) {
+          cell[idx] = cell[cell.length - 1];
+          cell.pop();
+        }
+      }
+    }
+  }
+}
+
+function updateNodeInSpatialGrids(nd) {
+  if (studioGraphState.nodeSpatialGrid) {
+    removeNodeFromSpatialGrid(studioGraphState.nodeSpatialGrid, nd);
+    insertNodeIntoSpatialGrid(studioGraphState.nodeSpatialGrid, nd);
+  }
+  const ch = nd.chapterObj;
+  if (ch && ch.nodes && ch.nodes._spatialGrid) {
+    removeNodeFromSpatialGrid(ch.nodes._spatialGrid, nd);
+    insertNodeIntoSpatialGrid(ch.nodes._spatialGrid, nd);
+  }
+}
+
+function hasSpatialNodeOverlap(grid, nodesFallback, nx, ny, nw, nh) {
+  const nr = nx + nw;
+  const nb = ny + nh;
+  if (grid && grid.size > 0) {
+    const gx0 = (nx - 24) >> SPATIAL_CELL_SHIFT;
+    const gx1 = (nr + 24) >> SPATIAL_CELL_SHIFT;
+    const gy0 = (ny - 24) >> SPATIAL_CELL_SHIFT;
+    const gy1 = (nb + 24) >> SPATIAL_CELL_SHIFT;
+    for (let gy = gy0; gy <= gy1; gy++) {
+      const rowMask = (gy & 0xffff) << 16;
+      for (let gx = gx0; gx <= gx1; gx++) {
+        const cell = grid.get(rowMask | (gx & 0xffff));
+        if (!cell) continue;
+        for (let i = 0; i < cell.length; i++) {
+          const other = cell[i];
+          if (other._isDragging) continue;
+          if (
+            nx < other.right + 24 &&
+            nr + 24 > other.left &&
+            ny < other.bottom + 24 &&
+            nb + 24 > other.top
+          ) {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
+  }
+  for (let i = 0; i < nodesFallback.length; i++) {
+    const other = nodesFallback[i];
+    if (other._isDragging) continue;
+    if (
+      nx < other.right + 24 &&
+      nr + 24 > other.left &&
+      ny < other.bottom + 24 &&
+      nb + 24 > other.top
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function findClosestChapterAtWorldCoords(worldX, worldY) {
@@ -215,6 +604,327 @@ function findClosestChapterAtWorldCoords(worldX, worldY) {
   return bestCh;
 }
 
+function resolveNonOverlappingNodeCoords(baseX, baseY, chapterName, nodeW, nodeH) {
+  const w = nodeW || NODE_CARD_WIDTH;
+  const h = nodeH || NODE_BASE_HEIGHT;
+  const nodes = studioGraphState.nodes || [];
+  const chapters = studioGraphState.chapters || [];
+  const chKey = (chapterName || "").trim().toLowerCase();
+  let targetCh = null;
+  for (let i = 0; i < chapters.length; i++) {
+    const ch = chapters[i];
+    if (!ch.hidden && (ch.nameLower === chKey || ch.refLower === chKey)) {
+      targetCh = ch;
+      break;
+    }
+  }
+
+  const collidesAt = (cx, cy, checkChapterUnion) => {
+    for (let i = 0; i < nodes.length; i++) {
+      const other = nodes[i];
+      if (
+        cx < other.right + 24 &&
+        cx + w + 24 > other.left &&
+        cy < other.bottom + 24 &&
+        cy + h + 24 > other.top
+      ) {
+        return true;
+      }
+    }
+    let candLeft = cx - 36;
+    let candTop = cy - 52;
+    let candRight = cx + w + 36;
+    let candBottom = cy + Math.max(h, 120) + 44;
+    if (checkChapterUnion && targetCh) {
+      if (targetCh.left < candLeft) candLeft = targetCh.left;
+      if (targetCh.top < candTop) candTop = targetCh.top;
+      if (targetCh.right > candRight) candRight = targetCh.right;
+      if (targetCh.bottom > candBottom) candBottom = targetCh.bottom;
+    }
+    for (let i = 0; i < chapters.length; i++) {
+      const ch = chapters[i];
+      if (ch.hidden || ch === targetCh || ch.nameLower === chKey || ch.refLower === chKey) continue;
+      if (
+        candLeft < ch.right + 24 &&
+        candRight + 24 > ch.left &&
+        candTop < ch.bottom + 24 &&
+        candBottom + 24 > ch.top
+      ) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  if (!collidesAt(baseX, baseY, true)) {
+    return { x: baseX, y: baseY };
+  }
+  const unionPasses = [true, false];
+  for (let p = 0; p < unionPasses.length; p++) {
+    const checkUnion = unionPasses[p];
+    for (let step = 1; step <= 48; step++) {
+      const stepPx = step * EDITOR_GRID_SIZE;
+      const candidates = [
+        [baseX, baseY + stepPx],
+        [baseX + stepPx, baseY],
+        [baseX - stepPx, baseY],
+        [baseX, baseY - stepPx],
+        [baseX + stepPx, baseY + stepPx],
+        [baseX - stepPx, baseY + stepPx]
+      ];
+      for (let c = 0; c < candidates.length; c++) {
+        const cx = snapToEditorGrid(candidates[c][0]);
+        const cy = snapToEditorGrid(candidates[c][1]);
+        if (!collidesAt(cx, cy, checkUnion)) {
+          return { x: cx, y: cy };
+        }
+      }
+    }
+  }
+  return { x: baseX, y: baseY };
+}
+
+function resolveValidChapterDragDelta(ch, items, desiredDx, desiredDy, lastValidDx, lastValidDy) {
+  const chapters = studioGraphState.chapters || [];
+  if (chapters.length <= 1 || !items || items.length === 0) {
+    return { dx: desiredDx, dy: desiredDy };
+  }
+  let baseMinX = Infinity;
+  let baseMinY = Infinity;
+  let baseMaxX = -Infinity;
+  let baseMaxY = -Infinity;
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i];
+    const nd = it.node;
+    const nh = Math.max(nd.h || 74, 120);
+    if (it.startX < baseMinX) baseMinX = it.startX;
+    if (it.startY < baseMinY) baseMinY = it.startY;
+    if (it.startX + nd.w > baseMaxX) baseMaxX = it.startX + nd.w;
+    if (it.startY + nh > baseMaxY) baseMaxY = it.startY + nh;
+  }
+  const baseLeft = baseMinX - 36;
+  const baseTop = baseMinY - 52;
+  const baseRight = baseMaxX + 36;
+  const baseBottom = baseMaxY + 44;
+
+  const isDeltaValid = (dx, dy) => {
+    const l = baseLeft + dx;
+    const t = baseTop + dy;
+    const r = baseRight + dx;
+    const b = baseBottom + dy;
+    for (let i = 0; i < chapters.length; i++) {
+      const other = chapters[i];
+      if (other === ch || other.hidden) continue;
+      if (
+        l < other.right + 24 &&
+        r + 24 > other.left &&
+        t < other.bottom + 24 &&
+        b + 24 > other.top
+      ) {
+        return false;
+      }
+    }
+    return true;
+  };
+
+  if (isDeltaValid(desiredDx, desiredDy)) {
+    return { dx: desiredDx, dy: desiredDy };
+  }
+
+  let bestDx = lastValidDx;
+  let bestDy = lastValidDy;
+  let bestDistSq = Infinity;
+
+  const tryCandidate = (cx, cy) => {
+    if (!isDeltaValid(cx, cy)) return;
+    const ddx = cx - desiredDx;
+    const ddy = cy - desiredDy;
+    const dSq = ddx * ddx + ddy * ddy;
+    if (dSq < bestDistSq) {
+      bestDistSq = dSq;
+      bestDx = cx;
+      bestDy = cy;
+    }
+  };
+
+  tryCandidate(desiredDx, lastValidDy);
+  tryCandidate(lastValidDx, desiredDy);
+
+  const stepX = desiredDx >= lastValidDx ? -EDITOR_GRID_SIZE : EDITOR_GRID_SIZE;
+  for (let cx = desiredDx; cx !== lastValidDx; cx += stepX) {
+    tryCandidate(cx, desiredDy);
+    tryCandidate(cx, lastValidDy);
+    if (Math.abs(cx - desiredDx) > 960) break;
+  }
+  const stepY = desiredDy >= lastValidDy ? -EDITOR_GRID_SIZE : EDITOR_GRID_SIZE;
+  for (let cy = desiredDy; cy !== lastValidDy; cy += stepY) {
+    tryCandidate(desiredDx, cy);
+    tryCandidate(lastValidDx, cy);
+    if (Math.abs(cy - desiredDy) > 960) break;
+  }
+
+  return { dx: bestDx, dy: bestDy };
+}
+
+function resolveValidNodeDragDelta(items, desiredDx, desiredDy, lastValidDx, lastValidDy) {
+  const nodes = studioGraphState.nodes || [];
+  const chapters = studioGraphState.chapters || [];
+  if (!items || items.length === 0) {
+    return { dx: desiredDx, dy: desiredDy };
+  }
+
+  for (let i = 0; i < items.length; i++) {
+    items[i].node._isDragging = true;
+  }
+
+  // Precompute stationary chapter bounds once so candidate testing is O(items.length), not O(chNodes.length)
+  const affectedChapters = [];
+  for (let i = 0; i < items.length; i++) {
+    const ch = items[i].node.chapterObj;
+    if (ch && affectedChapters.indexOf(ch) === -1) {
+      let sMinX = Infinity;
+      let sMinY = Infinity;
+      let sMaxX = -Infinity;
+      let sMaxY = -Infinity;
+      let iMinX = Infinity;
+      let iMinY = Infinity;
+      let iMaxX = -Infinity;
+      let iMaxY = -Infinity;
+      const chNodes = ch.nodes || [];
+      for (let j = 0; j < chNodes.length; j++) {
+        const nd = chNodes[j];
+        const nh = Math.max(nd.h || 74, 120);
+        if (nd.x < iMinX) iMinX = nd.x;
+        if (nd.y < iMinY) iMinY = nd.y;
+        if (nd.x + nd.w > iMaxX) iMaxX = nd.x + nd.w;
+        if (nd.y + nh > iMaxY) iMaxY = nd.y + nh;
+        if (nd._isDragging) continue;
+        if (nd.x < sMinX) sMinX = nd.x;
+        if (nd.y < sMinY) sMinY = nd.y;
+        if (nd.x + nd.w > sMaxX) sMaxX = nd.x + nd.w;
+        if (nd.y + nh > sMaxY) sMaxY = nd.y + nh;
+      }
+      ch._statMinX = sMinX;
+      ch._statMinY = sMinY;
+      ch._statMaxX = sMaxX;
+      ch._statMaxY = sMaxY;
+      ch._initLeft = iMinX - 36;
+      ch._initTop = iMinY - 52;
+      ch._initRight = iMaxX + 36;
+      ch._initBottom = iMaxY + 44;
+      affectedChapters.push(ch);
+    }
+  }
+
+  const globalGrid = studioGraphState.nodeSpatialGrid;
+
+  const isDeltaValid = (dx, dy) => {
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      const nd = it.node;
+      const nx = snapToEditorGrid(it.startX + dx);
+      const ny = snapToEditorGrid(it.startY + dy);
+      if (hasSpatialNodeOverlap(globalGrid, nodes, nx, ny, nd.w, nd.h)) {
+        return false;
+      }
+    }
+
+    for (let c = 0; c < affectedChapters.length; c++) {
+      const ch = affectedChapters[c];
+      let minX = ch._statMinX;
+      let minY = ch._statMinY;
+      let maxX = ch._statMaxX;
+      let maxY = ch._statMaxY;
+      for (let k = 0; k < items.length; k++) {
+        const it = items[k];
+        const nd = it.node;
+        if (nd.chapterObj !== ch) continue;
+        const nx = snapToEditorGrid(it.startX + dx);
+        const ny = snapToEditorGrid(it.startY + dy);
+        const nh = Math.max(nd.h || 74, 120);
+        if (nx < minX) minX = nx;
+        if (ny < minY) minY = ny;
+        if (nx + nd.w > maxX) maxX = nx + nd.w;
+        if (ny + nh > maxY) maxY = ny + nh;
+      }
+      const cLeft = minX - 36;
+      const cTop = minY - 52;
+      const cRight = maxX + 36;
+      const cBottom = maxY + 44;
+
+      for (let o = 0; o < chapters.length; o++) {
+        const otherCh = chapters[o];
+        if (otherCh === ch || otherCh.hidden) continue;
+        if (
+          cLeft < otherCh.right + 24 &&
+          cRight + 24 > otherCh.left &&
+          cTop < otherCh.bottom + 24 &&
+          cBottom + 24 > otherCh.top
+        ) {
+          const wasOverlapping =
+            ch._initLeft < otherCh.right + 24 &&
+            ch._initRight + 24 > otherCh.left &&
+            ch._initTop < otherCh.bottom + 24 &&
+            ch._initBottom + 24 > otherCh.top;
+          if (!wasOverlapping) {
+            return false;
+          }
+          if (
+            cLeft < ch._initLeft ||
+            cRight > ch._initRight ||
+            cTop < ch._initTop ||
+            cBottom > ch._initBottom
+          ) {
+            return false;
+          }
+        }
+      }
+    }
+    return true;
+  };
+
+  let resDx = desiredDx;
+  let resDy = desiredDy;
+  if (!isDeltaValid(desiredDx, desiredDy)) {
+    resDx = lastValidDx;
+    resDy = lastValidDy;
+    let bestDistSq = Infinity;
+
+    const tryCandidate = (cx, cy) => {
+      if (!isDeltaValid(cx, cy)) return;
+      const ddx = cx - desiredDx;
+      const ddy = cy - desiredDy;
+      const dSq = ddx * ddx + ddy * ddy;
+      if (dSq < bestDistSq) {
+        bestDistSq = dSq;
+        resDx = cx;
+        resDy = cy;
+      }
+    };
+
+    tryCandidate(desiredDx, lastValidDy);
+    tryCandidate(lastValidDx, desiredDy);
+
+    const stepX = desiredDx >= lastValidDx ? -EDITOR_GRID_SIZE : EDITOR_GRID_SIZE;
+    for (let cx = desiredDx; cx !== lastValidDx; cx += stepX) {
+      tryCandidate(cx, desiredDy);
+      tryCandidate(cx, lastValidDy);
+      if (Math.abs(cx - desiredDx) > 720) break;
+    }
+    const stepY = desiredDy >= lastValidDy ? -EDITOR_GRID_SIZE : EDITOR_GRID_SIZE;
+    for (let cy = desiredDy; cy !== lastValidDy; cy += stepY) {
+      tryCandidate(desiredDx, cy);
+      tryCandidate(lastValidDx, cy);
+      if (Math.abs(cy - desiredDy) > 720) break;
+    }
+  }
+
+  for (let i = 0; i < items.length; i++) {
+    items[i].node._isDragging = false;
+  }
+  return { dx: resDx, dy: resDy };
+}
+
 function createSceneNodeAtWorldCoords(worldX, worldY, chapterName) {
   if (typeof isEditorHistoryPreview === "function" && isEditorHistoryPreview()) {
     return;
@@ -223,12 +933,13 @@ function createSceneNodeAtWorldCoords(worldX, worldY, chapterName) {
   hideFloatingChapterInput(false);
   editorSelectionCleared = false;
   selectedNodeIds.clear();
-  const nx = snapToEditorGrid(worldX);
-  const ny = snapToEditorGrid(worldY);
-  const resolvedChapter = chapterName || findClosestChapterAtWorldCoords(nx, ny);
+  const baseX = snapToEditorGrid(worldX);
+  const baseY = snapToEditorGrid(worldY);
+  const resolvedChapter = chapterName || findClosestChapterAtWorldCoords(baseX, baseY);
+  const cleanCoords = resolveNonOverlappingNodeCoords(baseX, baseY, resolvedChapter, NODE_CARD_WIDTH, NODE_BASE_HEIGHT);
   const params = {
-    x: nx,
-    y: ny
+    x: cleanCoords.x,
+    y: cleanCoords.y
   };
   if (resolvedChapter) {
     params.chapter = resolvedChapter;
@@ -362,6 +1073,22 @@ function saveBatchNodePositionsOnServer(items) {
   postServerActionSilent("SaveEditorState", params);
 }
 
+function saveWirePinsOnServer(wireKey, pins) {
+  if (!wireKey) return;
+  const cleanKey = wireKey.trim().toLowerCase();
+  const encodedPins =
+    pins && pins.length > 0
+      ? pins.map((p) => Math.round(p.x) + "," + Math.round(p.y)).join(";")
+      : "";
+  postServerActionSilent("SaveEditorState", {
+    wire_key: cleanKey,
+    wire_pins: encodedPins,
+    pan_x: Math.round(editorCanvasState.panX),
+    pan_y: Math.round(editorCanvasState.panY),
+    zoom: editorCanvasState.zoom.toFixed(2)
+  });
+}
+
 function positionFloatingChapterInput() {
   const inp = qs("#canvas-chapter-input");
   const ch = studioGraphState.editingChapter;
@@ -405,6 +1132,133 @@ function hideFloatingChapterInput(shouldCommit) {
   renderStudioCanvas();
 }
 
+function positionFloatingNodeTitleInput() {
+  const inp = qs("#canvas-node-title-input");
+  const nd = studioGraphState.editingNodeTitle;
+  if (!inp || !nd || inp.classList.contains("hidden")) return;
+  const z = editorCanvasState.zoom || 1.0;
+  const px = editorCanvasState.panX || 0;
+  const py = editorCanvasState.panY || 0;
+  const badgeReserve = nd.isStart || nd.isEntry ? 52 : 8;
+  const left = (nd.x + 28) * z + px;
+  const top = (nd.y + 6) * z + py;
+  const width = Math.max(64, (nd.w - 30 - badgeReserve) * z);
+  const height = Math.max(18, 22 * z);
+  inp.style.left = Math.round(left) + "px";
+  inp.style.top = Math.round(top) + "px";
+  inp.style.width = Math.round(width) + "px";
+  inp.style.height = Math.round(height) + "px";
+}
+
+function commitNodeTitleInput(inp) {
+  const nd = studioGraphState.editingNodeTitle;
+  if (!inp || !nd) return;
+  const newName = (inp.value || "").trim();
+  const oldName = (nd.name || nd.id || "").trim();
+  if (!newName || newName === oldName) return;
+  nd.name = newName;
+  studioGraphState.staticBatchDirty = true;
+  renderStudioCanvas();
+  postServerActionSilent("AutoSaveScene", {
+    scene_id: nd.id,
+    name: newName
+  });
+}
+
+function openFloatingNodeTitleInput(nd) {
+  const inp = qs("#canvas-node-title-input");
+  if (!inp || !nd) return;
+  hideFloatingChapterInput(true);
+  hideFloatingChoiceInput(true);
+  studioGraphState.editingNodeTitle = nd;
+  studioGraphState.staticBatchDirty = true;
+  inp.value = nd.name || nd.id || "";
+  inp.setAttribute("data-scene-id", nd.id);
+  inp.classList.remove("hidden");
+  positionFloatingNodeTitleInput();
+  inp.focus();
+  inp.select();
+  renderStudioCanvas();
+}
+
+function hideFloatingNodeTitleInput(shouldCommit) {
+  const inp = qs("#canvas-node-title-input");
+  if (!inp || inp.classList.contains("hidden")) return;
+  if (shouldCommit) {
+    commitNodeTitleInput(inp);
+  }
+  studioGraphState.editingNodeTitle = null;
+  studioGraphState.staticBatchDirty = true;
+  inp.classList.add("hidden");
+  renderStudioCanvas();
+}
+
+function positionFloatingChoiceInput() {
+  const inp = qs("#canvas-choice-input");
+  const ec = studioGraphState.editingChoice;
+  if (!inp || !ec || !ec.node || inp.classList.contains("hidden")) return;
+  const nd = ec.node;
+  const idx = ec.idx;
+  const z = editorCanvasState.zoom || 1.0;
+  const px = editorCanvasState.panX || 0;
+  const py = editorCanvasState.panY || 0;
+  const rowY = nd.y + NODE_HEADER_HEIGHT + idx * NODE_CHOICE_ROW_HEIGHT;
+  const left = (nd.x + 21) * z + px;
+  const top = (rowY + 3) * z + py;
+  const width = Math.max(60, (nd.w - 47) * z);
+  const height = Math.max(16, (NODE_CHOICE_ROW_HEIGHT - 6) * z);
+  inp.style.left = Math.round(left) + "px";
+  inp.style.top = Math.round(top) + "px";
+  inp.style.width = Math.round(width) + "px";
+  inp.style.height = Math.round(height) + "px";
+}
+
+function commitChoiceInput(inp) {
+  const ec = studioGraphState.editingChoice;
+  if (!inp || !ec || !ec.node) return;
+  const nd = ec.node;
+  const idx = ec.idx;
+  const pt = nd.ports && nd.ports[idx];
+  if (!pt) return;
+  const newLabel = (inp.value || "").trim() || "Wybór " + (idx + 1);
+  if (newLabel === (pt.label || "")) return;
+  pt.label = newLabel;
+  studioGraphState.staticBatchDirty = true;
+  renderStudioCanvas();
+  const payload = { scene_id: nd.id };
+  payload["choice_label_" + idx] = newLabel;
+  postServerActionSilent("AutoSaveScene", payload);
+}
+
+function openFloatingChoiceInput(nd, choiceIdx) {
+  const inp = qs("#canvas-choice-input");
+  if (!inp || !nd || !nd.ports || !nd.ports[choiceIdx]) return;
+  hideFloatingChapterInput(true);
+  hideFloatingNodeTitleInput(true);
+  studioGraphState.editingChoice = { node: nd, idx: choiceIdx };
+  studioGraphState.staticBatchDirty = true;
+  inp.value = nd.ports[choiceIdx].label || "Wybór " + (choiceIdx + 1);
+  inp.setAttribute("data-scene-id", nd.id);
+  inp.setAttribute("data-choice-idx", String(choiceIdx));
+  inp.classList.remove("hidden");
+  positionFloatingChoiceInput();
+  inp.focus();
+  inp.select();
+  renderStudioCanvas();
+}
+
+function hideFloatingChoiceInput(shouldCommit) {
+  const inp = qs("#canvas-choice-input");
+  if (!inp || inp.classList.contains("hidden")) return;
+  if (shouldCommit) {
+    commitChoiceInput(inp);
+  }
+  studioGraphState.editingChoice = null;
+  studioGraphState.staticBatchDirty = true;
+  inp.classList.add("hidden");
+  renderStudioCanvas();
+}
+
 function applyEditorCanvasTransform() {
   if (isNaN(editorCanvasState.zoom) || editorCanvasState.zoom <= 0) {
     editorCanvasState.zoom = 1.0;
@@ -427,6 +1281,8 @@ function applyEditorCanvasTransform() {
   }
 
   positionFloatingChapterInput();
+  positionFloatingNodeTitleInput();
+  positionFloatingChoiceInput();
   renderStudioCanvas();
 }
 
@@ -463,10 +1319,54 @@ function zoomEditorAtPoint(newZoom, clientX, clientY) {
   scheduleSaveEditorViewport();
 }
 
-function updateChapterGroupFrames() {
+function updateChapterGroupFrames(onlyChaptersSet, hasInterChapterPortMove) {
   const nodes = studioGraphState.nodes;
   const chapters = studioGraphState.chapters;
-  if (!nodes || nodes.length === 0) return;
+  if (!nodes || nodes.length === 0) return null;
+
+  if (onlyChaptersSet && onlyChaptersSet.size > 0) {
+    const changedChapters = new Set();
+    onlyChaptersSet.forEach((ch) => {
+      const matching = ch.nodes;
+      if (!matching || matching.length === 0) return;
+      let minX = Infinity;
+      let minY = Infinity;
+      let maxX = -Infinity;
+      let maxY = -Infinity;
+      for (let j = 0; j < matching.length; j++) {
+        const nd = matching[j];
+        const h = Math.max(nd.h || 74, 120);
+        const laneSpread = nd.hasChoices && nd.ports && nd.ports.length > 0 ? 10 + nd.ports.length * 14 : 0;
+        const rightEdge = nd.x + nd.w + laneSpread;
+        if (nd.x < minX) minX = nd.x;
+        if (nd.y < minY) minY = nd.y;
+        if (rightEdge > maxX) maxX = rightEdge;
+        if (nd.y + h > maxY) maxY = nd.y + h;
+      }
+      const nextX = minX - 36;
+      const nextY = minY - 52;
+      const nextW = maxX - minX + 72;
+      const nextH = maxY - minY + 96;
+      const frameChanged =
+        ch.x !== nextX || ch.y !== nextY || ch.w !== nextW || ch.h !== nextH;
+      const prevInX = ch.inX;
+      const prevInY = ch.inY;
+      ch.x = nextX;
+      ch.y = nextY;
+      ch.w = nextW;
+      ch.h = nextH;
+      recomputeChapterInputPortPosition(ch);
+      const inPortChanged = ch.inX !== prevInX || ch.inY !== prevInY;
+      if (frameChanged || inPortChanged || hasInterChapterPortMove) {
+        recomputeChapterPortPositions(ch);
+        changedChapters.add(ch);
+      }
+    });
+    studioGraphState.staticBatchDirty = true;
+    return changedChapters;
+  }
+
+  studioGraphState.nodeSpatialGrid = buildSpatialGridForNodes(nodes);
 
   const byChapter = new Map();
   for (let i = 0; i < nodes.length; i++) {
@@ -508,6 +1408,8 @@ function updateChapterGroupFrames() {
   for (let i = 0; i < chapters.length; i++) {
     const ch = chapters[i];
     const matching = byChapter.get(ch.nameLower) || byChapter.get(ch.refLower) || [];
+    ch.nodes = matching;
+    buildSpatialGridForNodes(matching);
     if (matching.length === 0) {
       ch.hidden = true;
       continue;
@@ -520,19 +1422,28 @@ function updateChapterGroupFrames() {
     let maxY = -Infinity;
     for (let j = 0; j < matching.length; j++) {
       const nd = matching[j];
+      nd.chapterObj = ch;
       const h = Math.max(nd.h || 74, 120);
+      const laneSpread = nd.hasChoices && nd.ports && nd.ports.length > 0 ? 10 + nd.ports.length * 14 : 0;
+      const rightEdge = nd.x + nd.w + laneSpread;
       if (nd.x < minX) minX = nd.x;
       if (nd.y < minY) minY = nd.y;
-      if (nd.x + nd.w > maxX) maxX = nd.x + nd.w;
+      if (rightEdge > maxX) maxX = rightEdge;
       if (nd.y + h > maxY) maxY = nd.y + h;
     }
-    ch.x = minX - 24;
+    ch.x = minX - 36;
     ch.y = minY - 52;
-    ch.w = maxX - minX + 48;
+    ch.w = maxX - minX + 72;
     ch.h = maxY - minY + 96;
-    recomputeChapterPortPositions(ch);
+    recomputeChapterInputPortPosition(ch);
+  }
+  for (let i = 0; i < chapters.length; i++) {
+    if (!chapters[i].hidden) {
+      recomputeChapterPortPositions(chapters[i]);
+    }
   }
   studioGraphState.staticBatchDirty = true;
+  return null;
 }
 
 function syncCanvasBackingStoreSize(canvas, viewport) {
@@ -576,6 +1487,9 @@ function initNodeEditorCanvas() {
   ensureBuildTimeMSDFMetricsParsed();
   startPreloadingMSDFAtlasImage();
   syncCanvasBackingStoreSize(canvas, viewport);
+  if (typeof initStudioWebGLContext === "function") {
+    initStudioWebGLContext(canvas);
+  }
   bindStudioViewportResizeObserver(viewport, canvas);
   invalidateStudioThemeCache();
   hideFloatingChapterInput(false);
@@ -642,6 +1556,6 @@ function initNodeEditorCanvas() {
 
   updateChapterGroupFrames();
   syncNodeSelectionDOM();
-  drawStudioWires();
+  routeStudioWires();
   applyEditorCanvasTransform();
 }

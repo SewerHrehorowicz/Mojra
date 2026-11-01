@@ -59,11 +59,15 @@ var actionSpecs = map[string]ActionSpec{
 	"CloseQRModal":            {KeepScroll: true, Target: targetModals, Handler: (*Server).closeQRModal},
 	"OpenSettingsModal":       {KeepScroll: true, Target: targetModals, Handler: (*Server).openQRModal},
 	"CloseSettingsModal":      {KeepScroll: true, Target: targetModals, Handler: (*Server).closeQRModal},
-	"OpenEditorHelpModal":     {StandaloneForbidden: true, KeepScroll: true, Target: targetModals, Handler: (*Server).openEditorHelpModal},
-	"CloseEditorHelpModal":    {StandaloneForbidden: true, KeepScroll: true, Target: targetModals, Handler: (*Server).closeEditorHelpModal},
+	"OpenEditorHelpModal":     {StandaloneForbidden: true, KeepScroll: true, Target: targetActiveWorkspace, Handler: (*Server).openEditorHelpModal},
+	"CloseEditorHelpModal":    {StandaloneForbidden: true, KeepScroll: true, Target: targetActiveWorkspace, Handler: (*Server).closeEditorHelpModal},
 	"OpenNewBookModal":        {StandaloneForbidden: true, KeepScroll: true, Target: targetModals, Handler: (*Server).openNewBookModal},
 	"CloseNewBookModal":       {StandaloneForbidden: true, KeepScroll: true, Target: targetModals, Handler: (*Server).closeNewBookModal},
 	"BrowseNewBookFolder":     {StandaloneForbidden: true, KeepScroll: true, Target: targetModals, Handler: (*Server).browseNewBookFolder},
+	"OpenExportModal":         {StandaloneForbidden: true, KeepScroll: true, Target: targetModals, Handler: (*Server).openExportModal},
+	"CloseExportModal":        {StandaloneForbidden: true, KeepScroll: true, Target: targetModals, Handler: (*Server).closeExportModal},
+	"BrowseExportModalFolder": {StandaloneForbidden: true, KeepScroll: true, Target: targetModals, Handler: (*Server).browseExportModalFolder},
+	"ExportProject":           {StandaloneForbidden: true, KeepScroll: true, Target: targetModals, Handler: (*Server).exportProjectAction},
 	"OpenAddBookModal":        {StandaloneForbidden: true, KeepScroll: true, Target: targetModals, Handler: (*Server).openAddBookModal},
 	"CloseAddBookModal":       {StandaloneForbidden: true, KeepScroll: true, Target: targetModals, Handler: (*Server).closeAddBookModal},
 	"PromptRewindStep":        {KeepScroll: true, Target: targetModals, Handler: (*Server).promptRewindStep},
@@ -126,6 +130,7 @@ var actionSpecs = map[string]ActionSpec{
 	"ConnectChapter":           {StandaloneForbidden: true, Target: targetActiveWorkspaceOrModalsWhenSceneTextOpen, Handler: (*Server).connectChapterTransition},
 	"AddChoice":                {StandaloneForbidden: true, Target: targetActiveWorkspaceOrModalsWhenSceneTextOpen, Handler: (*Server).addChoiceToScene},
 	"RemoveChoice":             {StandaloneForbidden: true, Target: targetActiveWorkspaceOrModalsWhenSceneTextOpen, Handler: (*Server).removeChoiceFromScene},
+	"ReorderChoice":            {StandaloneForbidden: true, KeepScroll: true, Target: targetActiveWorkspaceOrModalsWhenSceneTextOpen, Handler: (*Server).reorderChoiceOnScene},
 	"BranchChoiceScene":        {StandaloneForbidden: true, Target: targetActiveWorkspaceOrModalsWhenSceneTextOpen, Handler: (*Server).branchSceneFromChoice},
 	"InsertScene":              {StandaloneForbidden: true, Target: targetActiveWorkspace, Handler: (*Server).insertScene},
 	"InsertSceneBefore":        {StandaloneForbidden: true, Target: targetActiveWorkspace, Handler: (*Server).insertSceneBefore},
@@ -158,6 +163,9 @@ var actionSpecs = map[string]ActionSpec{
 	"RenameLocation":             {StandaloneForbidden: true, Target: targetActiveWorkspace, Handler: (*Server).renameLocationAction},
 	"ExportScreenplayPDF":        {StandaloneForbidden: true, Target: targetNone, Handler: (*Server).exportScreenplayPDFAction},
 	"ExportScreenplayFountain":   {StandaloneForbidden: true, Target: targetNone, Handler: (*Server).exportScreenplayFountainAction},
+	"BrowseBookExportFolder":     {StandaloneForbidden: true, KeepScroll: true, Target: targetActiveWorkspace, Handler: (*Server).browseBookExportFolder},
+	"BrowseBookSaveFolder":       {StandaloneForbidden: true, KeepScroll: true, Target: targetActiveWorkspace, Handler: (*Server).browseBookSaveFolder},
+	"SelectPrimaryBranchScene":   {StandaloneForbidden: true, KeepScroll: true, Target: targetActiveWorkspace, Handler: (*Server).selectPrimaryBranchScene},
 	"ApplySluglineToken":         {StandaloneForbidden: true, Target: targetActiveWorkspaceOrModalsWhenSceneTextOpen, Handler: (*Server).applySluglineTokenAction},
 	"InsertScreenplayBlock":      {StandaloneForbidden: true, Target: targetActiveWorkspaceOrModalsWhenSceneTextOpen, Handler: (*Server).insertScreenplayBlockAction},
 }
@@ -361,7 +369,13 @@ func (s *Server) closeQRModal(_ *http.Request) string {
 }
 
 func (s *Server) openEditorHelpModal(_ *http.Request) string {
-	s.EditorHelpModalOpen = true
+	s.EditorHelpModalOpen = !s.EditorHelpModalOpen
+	if s.EditorHelpModalOpen {
+		s.BookSettingsOpen = false
+		s.SelectedChapter = ""
+		s.EditorBreakdownPanelOpen = false
+		s.EditorHistoryPanelOpen = false
+	}
 	return ""
 }
 
@@ -370,9 +384,34 @@ func (s *Server) closeEditorHelpModal(_ *http.Request) string {
 	return ""
 }
 
+func (s *Server) openExportModal(_ *http.Request) string {
+	if s.ActiveBook == nil {
+		return "Brak aktywnego projektu"
+	}
+	s.QRModalOpen = false
+	s.NewBookModalOpen = false
+	s.AddBookModalOpen = false
+	s.ExportModalOpen = true
+	if s.ActiveBook.IsScreenplay() {
+		s.ExportModalFormat = "pdf"
+	} else {
+		s.ExportModalFormat = "stbook"
+	}
+	s.ExportModalDir = s.defaultExportDir()
+	return ""
+}
+
+func (s *Server) closeExportModal(_ *http.Request) string {
+	s.ExportModalOpen = false
+	s.ExportModalFormat = ""
+	s.ExportModalDir = ""
+	return ""
+}
+
 func (s *Server) openNewBookModal(_ *http.Request) string {
 	s.QRModalOpen = false
 	s.AddBookModalOpen = false
+	s.ExportModalOpen = false
 	s.NewBookModalOpen = true
 	s.NewBookDraftTitle = ""
 	s.NewBookDraftAuthor = ""

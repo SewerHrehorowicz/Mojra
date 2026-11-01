@@ -972,3 +972,26 @@ func sortStoryFiles(files []string) {
 		return li < lj
 	})
 }
+
+// DefaultAppDataDir returns the standard OS application data directory for StoryTeller
+// (e.g. ~/Library/Application Support/StoryTeller on macOS, %AppData%\StoryTeller on Windows, ~/.config/StoryTeller on Linux).
+func DefaultAppDataDir() string {
+	if cfgDir, err := os.UserConfigDir(); err == nil && strings.TrimSpace(cfgDir) != "" {
+		return filepath.Join(cfgDir, "StoryTeller")
+	}
+	if home, err := os.UserHomeDir(); err == nil && strings.TrimSpace(home) != "" {
+		return filepath.Join(home, ".storyteller")
+	}
+	return filepath.Join(os.TempDir(), "StoryTeller")
+}
+
+// DefaultExportDir returns the default export directory inside standard application data.
+func DefaultExportDir() string {
+	return filepath.Join(DefaultAppDataDir(), "exports")
+}
+
+// DefaultProjectsDir returns the default directory for user-created projects inside standard application data.
+func DefaultProjectsDir() string {
+	return filepath.Join(DefaultAppDataDir(), "projects")
+}
+

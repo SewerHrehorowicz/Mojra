@@ -492,5 +492,32 @@ func TestSmartCoalescingDeltaAndFiveMinuteCompaction(t *testing.T) {
 		t.Fatalf("expected 5-minute bucket compaction to merge post-paste small edit and layout move while keeping pre-paste and large paste (total 4), got %d",
 			len(compactedH.Revisions))
 	}
+
+	// 6. Incremental scene rename ("L" -> "Lu" -> "Luis" -> "Luis cz" -> "Luis czeka") after a node drag,
+	// even when linked from scene[0] earlier in the file, must coalesce into a single "Edycja sceny: Luis czeka" revision.
+	sc2ID := b.Scenes[1].ID
+	b.Scenes[1].X = 480
+	_ = SaveBookEditorStateToDisk(b)
+	_ = RecordBookHistoryStep(b, "Przesunięto węzły", "layout", "nodedrag:batch", sc2ID)
+
+	for _, partialTitle := range []string{"L", "Lu", "Luis", "Luis cz", "Luis czeka"} {
+		b.Scenes[0].ExplicitNext = partialTitle
+		b.Scenes[1].Name = partialTitle
+		FinalizeBook(b)
+		_ = SaveBookScenesToDisk(b)
+		_ = RecordBookHistoryStep(b, "Edycja sceny: "+partialTitle, "scene", "autosave:"+sc2ID, sc2ID)
+	}
+
+	b.Scenes[1].Text = "Luis czeka przy oknie.\nPatrzy w deszcz."
+	FinalizeBook(b)
+	_ = SaveBookScenesToDisk(b)
+	_ = RecordBookHistoryStep(b, "Edycja sceny: Luis czeka", "scene", "autosave:"+sc2ID, sc2ID)
+
+	hAfterRename, _ := LoadBookHistory(b)
+	lastRev := hAfterRename.Revisions[len(hAfterRename.Revisions)-1]
+	if len(hAfterRename.Revisions) != 5 || lastRev.Label != "Edycja sceny: Luis czeka" {
+		t.Fatalf("expected layout drag + 5 incremental title renames + text edit to coalesce into 1 revision 'Edycja sceny: Luis czeka' (total 5), got len=%d last=%+v",
+			len(hAfterRename.Revisions), lastRev)
+	}
 }
 

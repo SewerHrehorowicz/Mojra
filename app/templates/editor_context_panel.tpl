@@ -1,4 +1,4 @@
-aside.editor-context-panel#editor-context-panel
+aside.editor-context-panel#editor-context-panel .hidden?: {is_context_panel_hidden}
     {if has_selected_node}
         form.editor-context-form#editor-context-form .hidden?: {is_node_inspector_hidden}
             action: SaveScene
@@ -189,6 +189,11 @@ aside.editor-context-panel#editor-context-panel
                     .context-choices-list
                         {for pt in selected_node.ports}
                             .context-choice-item
+                                {if not is_history_preview}
+                                    span.choice-drag-grip
+                                        data-choice-grip: "true"
+                                        data-choice-idx: "{pt.idx}"
+                                        svg.choice-grip-icon src: /icons/grip.svg
                                 input.node-choice-label
                                     type: text
                                     name: "choice_label_{pt.idx}"
@@ -250,159 +255,217 @@ aside.editor-context-panel#editor-context-panel
                 type: hidden
                 name: chapter
                 value: "{selected_chapter.name}"
-            .context-panel-section
-                input.node-inline-title.chapter-group-title-input
-                    type: text
-                    name: new_chapter
-                    value: "{selected_chapter.name}"
-                    data-old-chapter: "{selected_chapter.name}"
-                    placeholder: "Nazwa rozdziału..."
-                    disabled?: {is_history_preview}
-                    readonly?: {is_history_preview}
-            .context-panel-section
-                .node-meta-fields
-                    .node-meta-row
-                        span.node-meta-key "start:"
-                        .custom-select.node-media-select.chapter-start-scene-select
-                            input.custom-select-input
-                                type: hidden
-                                name: start_scene
-                                value: "{selected_chapter.start_scene_id}"
-                            button.custom-select-trigger
-                                type: button
-                                data-select-toggle: "true"
-                                disabled?: {is_history_preview}
-                                span.custom-select-label {selected_chapter.start_scene_label}
-                                svg.custom-select-caret src: /icons/chevron-down.svg
-                            .custom-select-menu.hidden
-                                {for ch_st_opt in selected_chapter.start_scene_options}
-                                    button.custom-select-option .active?: {ch_st_opt.is_active}
-                                        type: button
-                                        data-select-value: "{ch_st_opt.value}"
-                                        data-select-label: "{ch_st_opt.label}"
-                                        {ch_st_opt.label}
+            .history-panel-header
+                {if is_screenplay_mode}
+                    span.history-panel-title "Ustawienia aktu"
+                {else}
+                    span.history-panel-title "Ustawienia rozdziału"
+            .history-panel-body
+                .context-panel-section
+                    input.node-inline-title.chapter-group-title-input
+                        type: text
+                        name: new_chapter
+                        value: "{selected_chapter.name}"
+                        data-old-chapter: "{selected_chapter.name}"
+                        placeholder: "Nazwa rozdziału..."
+                        disabled?: {is_history_preview}
+                        readonly?: {is_history_preview}
+                .context-panel-section
+                    .node-meta-fields
+                        .node-meta-row
+                            span.node-meta-key "wejście:"
+                            .custom-select.node-media-select.chapter-start-scene-select
+                                input.custom-select-input
+                                    type: hidden
+                                    name: start_scene
+                                    value: "{selected_chapter.start_scene_id}"
+                                button.custom-select-trigger
+                                    type: button
+                                    data-select-toggle: "true"
+                                    disabled?: {is_history_preview}
+                                    span.custom-select-label {selected_chapter.start_scene_label}
+                                    svg.custom-select-caret src: /icons/chevron-down.svg
+                                .custom-select-menu.hidden
+                                    {for ch_st_opt in selected_chapter.start_scene_options}
+                                        button.custom-select-option .active?: {ch_st_opt.is_active}
+                                            type: button
+                                            data-select-value: "{ch_st_opt.value}"
+                                            data-select-label: "{ch_st_opt.label}"
+                                            {ch_st_opt.label}
+                .context-panel-section
+                    .breakdown-metrics-grid
+                        .breakdown-metric-cell
+                            span.breakdown-metric-label "Sceny"
+                            span.breakdown-metric-value {selected_chapter.scene_count}
+                        .breakdown-metric-cell
+                            span.breakdown-metric-label "Długość"
+                            span.breakdown-metric-value {selected_chapter.length_stat}
+                        .breakdown-metric-cell
+                            span.breakdown-metric-label "Odgałęzienia"
+                            span.breakdown-metric-value {selected_chapter.branch_count}
+                        .breakdown-metric-cell
+                            span.breakdown-metric-label "Wyjścia"
+                            span.breakdown-metric-value {selected_chapter.exit_count}
 
     {if has_active_book}
         form.editor-book-form#editor-book-form .hidden?: {!book_settings_open}
             action: SaveBookSettings
-            .context-panel-section
-                input.node-inline-title#book-settings-title-input
-                    type: text
-                    name: title
-                    value: "{active_book_title}"
-                    data-old-title: "{active_book_title}"
-                    placeholder: "{editor_title_placeholder}"
-                    disabled?: {is_history_preview}
-                    readonly?: {is_history_preview}
-            .context-panel-section
-                .node-meta-fields
-                    {if is_screenplay_mode}
-                        .node-meta-row.node-meta-row-radio
-                            span.node-meta-key "norma:"
-                            .form-radio-group
-                                {for std_opt in script_standard_options}
-                                    label.form-radio-option .active?: {std_opt.is_active} .is-disabled?: {is_history_preview}
-                                        data-hint: "{std_opt.label}"
-                                        input.form-radio-input
-                                            type: radio
-                                            name: standard
-                                            value: "{std_opt.value}"
-                                            checked?: {std_opt.is_active}
-                                            disabled?: {is_history_preview}
-                                        span.form-radio-label {std_opt.label}
-                                        span.form-radio-sq
-                    .node-meta-row
+            .history-panel-header
+                span.history-panel-title {editor_settings_hint}
+                button.node-close-btn
+                    type: button
+                    action: CloseBookSettings
+                    svg.node-close-icon src: /icons/close.svg
+            .history-panel-body
+                .context-panel-section
+                    input.node-inline-title#book-settings-title-input
+                        type: text
+                        name: title
+                        value: "{active_book_title}"
+                        data-old-title: "{active_book_title}"
+                        placeholder: "{editor_title_placeholder}"
+                        disabled?: {is_history_preview}
+                        readonly?: {is_history_preview}
+                .context-panel-section
+                    .node-meta-fields
                         {if is_screenplay_mode}
-                            span.node-meta-key "akt:"
-                        {else}
-                            span.node-meta-key "rozdział:"
-                        .custom-select.node-media-select.book-start-chapter-select#book-start-chapter-select
-                            input.custom-select-input
-                                type: hidden
-                                name: start_chapter
-                                value: "{book_start_chapter_name}"
-                            button.custom-select-trigger
-                                type: button
-                                data-select-toggle: "true"
-                                disabled?: {is_history_preview}
-                                span.custom-select-label {book_start_chapter_name}
-                                svg.custom-select-caret src: /icons/chevron-down.svg
-                            .custom-select-menu.hidden
-                                {for bk_ch_opt in book_start_chapter_options}
-                                    button.custom-select-option .active?: {bk_ch_opt.is_active}
-                                        type: button
-                                        data-select-value: "{bk_ch_opt.value}"
-                                        data-select-label: "{bk_ch_opt.label}"
-                                        {bk_ch_opt.label}
-                    .node-meta-row
-                        span.node-meta-key "start:"
-                        .custom-select.node-media-select.book-start-scene-select#book-start-scene-select
-                            input.custom-select-input
-                                type: hidden
-                                name: start_scene
-                                value: "{book_start_scene_id}"
-                            button.custom-select-trigger
-                                type: button
-                                data-select-toggle: "true"
-                                disabled?: {is_history_preview}
-                                span.custom-select-label {book_start_scene_label}
-                                svg.custom-select-caret src: /icons/chevron-down.svg
-                            .custom-select-menu.hidden
-                                {for bk_st_opt in book_start_scene_options}
-                                    button.custom-select-option .active?: {bk_st_opt.is_active}
-                                        type: button
-                                        data-select-value: "{bk_st_opt.value}"
-                                        data-select-label: "{bk_st_opt.label}"
-                                        {bk_st_opt.label}
-                    {if not is_screenplay_mode}
+                            .node-meta-row.node-meta-row-radio
+                                span.node-meta-key "norma:"
+                                .form-radio-group
+                                    {for std_opt in script_standard_options}
+                                        label.form-radio-option .active?: {std_opt.is_active} .is-disabled?: {is_history_preview}
+                                            data-hint: "{std_opt.label}"
+                                            input.form-radio-input
+                                                type: radio
+                                                name: standard
+                                                value: "{std_opt.value}"
+                                                checked?: {std_opt.is_active}
+                                                disabled?: {is_history_preview}
+                                            span.form-radio-label {std_opt.label}
+                                            span.form-radio-sq
                         .node-meta-row
-                            span.node-meta-key "narracja:"
-                            button.book-setting-toggle-btn .active?: {book_narrated} .is-disabled?: {is_history_preview}
-                                type: button
-                                action: ToggleBookNarrated
-                                data-hint: "{book_narrated_label}"
-                                disabled?: {is_history_preview}
-                                span.custom-select-label {book_narrated_short_label}
-                                span.toggle-right
-                                    {if book_narrated}
-                                        svg.action-icon src: /icons/mic.svg
-                                    {else}
-                                        svg.action-icon src: /icons/mic-off.svg
-                                    span.toggle-switch
-                                        span.toggle-thumb
+                            {if is_screenplay_mode}
+                                span.node-meta-key "akt:"
+                            {else}
+                                span.node-meta-key "rozdział:"
+                            .custom-select.node-media-select.book-start-chapter-select#book-start-chapter-select
+                                input.custom-select-input
+                                    type: hidden
+                                    name: start_chapter
+                                    value: "{book_start_chapter_name}"
+                                button.custom-select-trigger
+                                    type: button
+                                    data-select-toggle: "true"
+                                    disabled?: {is_history_preview}
+                                    span.custom-select-label {book_start_chapter_name}
+                                    svg.custom-select-caret src: /icons/chevron-down.svg
+                                .custom-select-menu.hidden
+                                    {for bk_ch_opt in book_start_chapter_options}
+                                        button.custom-select-option .active?: {bk_ch_opt.is_active}
+                                            type: button
+                                            data-select-value: "{bk_ch_opt.value}"
+                                            data-select-label: "{bk_ch_opt.label}"
+                                            {bk_ch_opt.label}
                         .node-meta-row
-                            span.node-meta-key "obrazy:"
-                            button.book-setting-toggle-btn .active?: {!book_imageless} .is-disabled?: {is_history_preview}
-                                type: button
-                                action: ToggleBookImageless
-                                data-hint: "{book_imageless_label}"
+                            span.node-meta-key "start:"
+                            .custom-select.node-media-select.book-start-scene-select#book-start-scene-select
+                                input.custom-select-input
+                                    type: hidden
+                                    name: start_scene
+                                    value: "{book_start_scene_id}"
+                                button.custom-select-trigger
+                                    type: button
+                                    data-select-toggle: "true"
+                                    disabled?: {is_history_preview}
+                                    span.custom-select-label {book_start_scene_label}
+                                    svg.custom-select-caret src: /icons/chevron-down.svg
+                                .custom-select-menu.hidden
+                                    {for bk_st_opt in book_start_scene_options}
+                                        button.custom-select-option .active?: {bk_st_opt.is_active}
+                                            type: button
+                                            data-select-value: "{bk_st_opt.value}"
+                                            data-select-label: "{bk_st_opt.label}"
+                                            {bk_st_opt.label}
+                        {if not is_screenplay_mode}
+                            .node-meta-row
+                                span.node-meta-key "narracja:"
+                                button.book-setting-toggle-btn .active?: {book_narrated} .is-disabled?: {is_history_preview}
+                                    type: button
+                                    action: ToggleBookNarrated
+                                    data-hint: "{book_narrated_label}"
+                                    disabled?: {is_history_preview}
+                                    span.custom-select-label {book_narrated_short_label}
+                                    span.toggle-right
+                                        {if book_narrated}
+                                            svg.action-icon src: /icons/mic.svg
+                                        {else}
+                                            svg.action-icon src: /icons/mic-off.svg
+                                        span.toggle-switch
+                                            span.toggle-thumb
+                            .node-meta-row
+                                span.node-meta-key "obrazy:"
+                                button.book-setting-toggle-btn .active?: {!book_imageless} .is-disabled?: {is_history_preview}
+                                    type: button
+                                    action: ToggleBookImageless
+                                    data-hint: "{book_imageless_label}"
+                                    disabled?: {is_history_preview}
+                                    span.custom-select-label {book_imageless_short_label}
+                                    span.toggle-right
+                                        {if book_imageless}
+                                            svg.action-icon src: /icons/image-off.svg
+                                        {else}
+                                            svg.action-icon src: /icons/image.svg
+                                        span.toggle-switch
+                                            span.toggle-thumb
+                        .node-meta-row
+                            span.node-meta-key "autor:"
+                            input.node-meta-input
+                                type: text
+                                name: author
+                                value: "{active_book_author}"
+                                placeholder: "{editor_author_placeholder}"
                                 disabled?: {is_history_preview}
-                                span.custom-select-label {book_imageless_short_label}
-                                span.toggle-right
-                                    {if book_imageless}
-                                        svg.action-icon src: /icons/image-off.svg
-                                    {else}
-                                        svg.action-icon src: /icons/image.svg
-                                    span.toggle-switch
-                                        span.toggle-thumb
-                    .node-meta-row
-                        span.node-meta-key "autor:"
-                        input.node-meta-input
-                            type: text
-                            name: author
-                            value: "{active_book_author}"
-                            placeholder: "{editor_author_placeholder}"
-                            disabled?: {is_history_preview}
-                            readonly?: {is_history_preview}
-                    .node-meta-row.node-meta-row-textarea
-                        span.node-meta-key "opis:"
-                        textarea.node-meta-input.node-meta-textarea
-                            name: description
-                            rows: 1
-                            placeholder: "{editor_description_placeholder}"
-                            disabled?: {is_history_preview}
-                            readonly?: {is_history_preview}
-                            {active_book_description}
+                                readonly?: {is_history_preview}
+                        .node-meta-row.node-meta-row-textarea
+                            span.node-meta-key "opis:"
+                            textarea.node-meta-input.node-meta-textarea
+                                name: description
+                                rows: 1
+                                placeholder: "{editor_description_placeholder}"
+                                disabled?: {is_history_preview}
+                                readonly?: {is_history_preview}
+                                {active_book_description}
+                        .node-meta-row
+                            span.node-meta-key "katalog:"
+                            .node-media-picker-row
+                                input.node-meta-input
+                                    type: text
+                                    name: book_save_dir
+                                    value: "{active_book_save_dir}"
+                                    placeholder: "{default_new_book_dir}"
+                                    readonly: true
+                                {if not is_history_preview}
+                                    button.node-icon-btn.node-media-add-btn
+                                        type: button
+                                        action: BrowseBookSaveFolder
+                                        data-hint: "Zmień katalog projektu"
+                                        svg.media-plus-icon src: /icons/folder.svg
+                        .node-meta-row
+                            span.node-meta-key "eksport:"
+                            .node-media-picker-row
+                                input.node-meta-input
+                                    type: text
+                                    name: export_dir
+                                    value: "{active_book_export_dir}"
+                                    placeholder: "{default_export_dir}"
+                                    disabled?: {is_history_preview}
+                                    readonly?: {is_history_preview}
+                                {if not is_history_preview}
+                                    button.node-icon-btn.node-media-add-btn
+                                        type: button
+                                        action: BrowseBookExportFolder
+                                        data-hint: "Zmień katalog eksportu"
+                                        svg.media-plus-icon src: /icons/folder.svg
 
     .editor-multi-panel.hidden#editor-multi-panel
         .context-panel-section

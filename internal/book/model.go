@@ -145,6 +145,11 @@ type NodePosition struct {
 	HasXY bool
 }
 
+type WirePin struct {
+	X int
+	Y int
+}
+
 type PackedMediaEntry struct {
 	DataOffset  int64
 	Size        int64
@@ -168,6 +173,7 @@ type Book struct {
 	Imageless      bool
 	CoverFile      string
 	CoverURL       string
+	ExportDir      string
 	IsPacked       bool
 	IsExternal     bool
 	SourceURL      string
@@ -179,6 +185,7 @@ type Book struct {
 	Chapters       []Chapter
 	Scenes         []*Scene
 	Layout         map[string]NodePosition
+	WirePins       map[string][]WirePin
 	EditorPanX     int
 	EditorPanY     int
 	EditorZoom     float64
@@ -260,6 +267,7 @@ type AppSettings struct {
 	PlaybackSpeed      float64
 	AutoChoice         bool
 	AutoChoiceStrategy string
-	NewBookDir         string
-	ExternalBooks      []string
+	NewBookDir    string
+	ExportDir     string
+	ExternalBooks []string
 }

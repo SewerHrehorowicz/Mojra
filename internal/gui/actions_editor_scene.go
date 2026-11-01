@@ -40,6 +40,12 @@ func (s *Server) hasSceneTextModalChanges(curSc *book.Scene, r *http.Request) bo
 			return true
 		}
 	}
+	if _, hasCh := r.Form["chapter"]; hasCh {
+		newCh := strings.TrimSpace(book.SanitizePlainText(r.FormValue("chapter")))
+		if newCh != "" && !strings.EqualFold(newCh, strings.TrimSpace(curSc.Chapter)) {
+			return true
+		}
+	}
 	if _, hasImg := r.Form["explicit_image"]; hasImg {
 		curImg := curSc.ExplicitImage
 		if curImg == "" && curSc.ImageFile != "" {
@@ -330,6 +336,31 @@ func (s *Server) materializeChoicesForEdit(sc *book.Scene) []book.Choice {
 	return list
 }
 
+func (s *Server) selectPrimaryBranchScene(r *http.Request) string {
+	if s.isHistoryPreview() {
+		return historyPreviewLockedToast
+	}
+	if s.ActiveBook == nil || s.ActiveBook.IsPacked {
+		return ""
+	}
+	scID := strings.TrimSpace(r.FormValue("scene"))
+	target := s.findScene(scID)
+	if target == nil {
+		return "Nie znaleziono sceny"
+	}
+	s.ensureHistoryBaselineBeforeMutation()
+	for _, sc := range s.ActiveBook.Scenes {
+		if len(sc.Choices) >= 2 {
+			sc.Choices = s.materializeChoicesForEdit(sc)
+		}
+	}
+	if !book.PromoteSceneToPrimaryPath(s.ActiveBook, target.ID) {
+		r.Form.Set("silent", "true")
+		return ""
+	}
+	return s.commitScenesMutation("Ustawiono główną ścieżkę (primary): "+target.DisplayName(), "graph", "")
+}
+
 func (s *Server) addChoiceToScene(r *http.Request) string {
 	if s.isHistoryPreview() {
 		return historyPreviewLockedToast
@@ -539,6 +570,70 @@ func (s *Server) removeChoiceOnTarget(target *book.Scene, choiceIdx int) string 
 	return msg
 }
 
+func (s *Server) reorderChoiceOnScene(r *http.Request) string {
+	if s.isHistoryPreview() {
+		return historyPreviewLockedToast
+	}
+	if _, hasSettingsOpen := r.Form["scene_settings_open"]; hasSettingsOpen {
+		s.SceneTextModalSettingsOpen = r.FormValue("scene_settings_open") == "true"
+	}
+	if s.ActiveBook == nil || s.ActiveBook.IsPacked {
+		return ""
+	}
+	scID := strings.TrimSpace(r.FormValue("scene"))
+	if scID == "" {
+		scID = strings.TrimSpace(r.FormValue("scene_id"))
+	}
+	if scID == "" {
+		scID = s.SceneTextModalID
+	}
+	if scID == "" {
+		scID = s.SelectedSceneID
+	}
+	target := s.findScene(scID)
+	if target == nil {
+		return "Nie znaleziono sceny"
+	}
+	fromIdx, err1 := strconv.Atoi(strings.TrimSpace(r.FormValue("from_idx")))
+	toIdx, err2 := strconv.Atoi(strings.TrimSpace(r.FormValue("to_idx")))
+	if err1 != nil || err2 != nil || fromIdx == toIdx {
+		return ""
+	}
+
+	s.ensureHistoryBaselineBeforeMutation()
+	s.applySceneFormFields(target, r)
+	choices := s.materializeChoicesForEdit(target)
+	if len(choices) < 2 || fromIdx < 0 || fromIdx >= len(choices) || toIdx < 0 || toIdx >= len(choices) {
+		return ""
+	}
+
+	moved := choices[fromIdx]
+	without := make([]book.Choice, 0, len(choices)-1)
+	without = append(without, choices[:fromIdx]...)
+	without = append(without, choices[fromIdx+1:]...)
+
+	reordered := make([]book.Choice, 0, len(choices))
+	reordered = append(reordered, without[:toIdx]...)
+	reordered = append(reordered, moved)
+	reordered = append(reordered, without[toIdx:]...)
+	target.Choices = reordered
+	target.ExplicitNext = ""
+	target.ExplicitEnd = false
+
+	book.FinalizeBook(s.ActiveBook)
+	if err := book.SaveBookScenesToDisk(s.ActiveBook); err != nil {
+		return err.Error()
+	}
+	s.reloadActiveBook()
+	s.SelectedSceneID = target.ID
+	if s.SceneTextModalID != "" {
+		s.SceneTextModalID = target.ID
+	}
+	msg := "Zmieniono kolejność wyborów: " + target.DisplayName()
+	s.recordHistoryAfterMutation(msg, "graph", "")
+	return msg
+}
+
 func (s *Server) branchSceneFromChoice(r *http.Request) string {
 	if s.isHistoryPreview() {
 		return historyPreviewLockedToast
@@ -563,7 +658,7 @@ func (s *Server) branchSceneFromChoice(r *http.Request) string {
 	s.applySceneFormFields(target, r)
 	choices := s.materializeChoicesForEdit(target)
 
-	newName := fmt.Sprintf("Nowa scena %d", len(s.ActiveBook.Scenes)+1)
+	newName := book.NextUniqueSceneName(s.ActiveBook)
 	newScene := &book.Scene{
 		Name:       newName,
 		Chapter:    target.Chapter,
@@ -600,6 +695,13 @@ func (s *Server) branchSceneFromChoice(r *http.Request) string {
 	s.ActiveBook.Scenes = append(s.ActiveBook.Scenes[:insertPos], append([]*book.Scene{newScene}, s.ActiveBook.Scenes[insertPos:]...)...)
 
 	book.FinalizeBook(s.ActiveBook)
+	book.StoreSceneNodePosition(s.ActiveBook, newScene, book.NodePosition{
+		Row:   newScene.Row,
+		Col:   newScene.Col,
+		X:     newScene.X,
+		Y:     newScene.Y,
+		HasXY: true,
+	})
 	if err := book.SaveBookScenesToDisk(s.ActiveBook); err != nil {
 		return err.Error()
 	}
@@ -607,6 +709,8 @@ func (s *Server) branchSceneFromChoice(r *http.Request) string {
 	if s.SceneTextModalID != "" {
 		s.SelectedSceneID = target.ID
 		s.SceneTextModalID = target.ID
+	} else if found := s.findScene(newScene.Name); found != nil {
+		s.SelectedSceneID = found.ID
 	} else {
 		s.SelectedSceneID = newScene.ID
 	}

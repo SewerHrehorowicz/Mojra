@@ -213,7 +213,6 @@ function syncEditorHistoryHeaders(resp) {
   if (!resp || !resp.headers) return;
   const canUndoHeader = resp.headers.get("X-Can-Undo");
   const canRedoHeader = resp.headers.get("X-Can-Redo");
-  const histCountHeader = resp.headers.get("X-History-Count");
   const undoTitleHeader = decodeHeaderUTF8(resp.headers.get("X-Undo-Title"));
   const redoTitleHeader = decodeHeaderUTF8(resp.headers.get("X-Redo-Title"));
 
@@ -238,15 +237,6 @@ function syncEditorHistoryHeaders(resp) {
       if (redoTitleHeader) {
         setElementHint(redoBtn, redoTitleHeader);
       }
-    }
-  }
-
-  if (histCountHeader !== null) {
-    const count = parseInt(histCountHeader, 10) || 0;
-    const badge = qs("#history-unsaved-badge");
-    if (badge) {
-      badge.textContent = String(count);
-      badge.classList.toggle("hidden", count <= 0);
     }
   }
 
@@ -432,6 +422,20 @@ async function sendServerAction(actionName, params) {
   ) {
     if (typeof cancelPendingInspectorTimers === "function") {
       cancelPendingInspectorTimers();
+    }
+  }
+  if (actionName === "ToggleBookSettings" && params.open === undefined) {
+    const bsBtn = qs("#btn-book-settings");
+    if (bsBtn) {
+      params.open = bsBtn.classList.contains("active") ? "false" : "true";
+    }
+  } else if (
+    (actionName === "ToggleEditorHistoryPanel" || actionName === "ToggleEditorBreakdownPanel") &&
+    params.book_settings_open === undefined
+  ) {
+    const bsBtn = qs("#btn-book-settings");
+    if (bsBtn) {
+      params.book_settings_open = bsBtn.classList.contains("active") ? "true" : "false";
     }
   }
   if (actionName === "SelectStudioScene" && params.scene) {
@@ -653,7 +657,11 @@ async function sendServerAction(actionName, params) {
     }
     const updatedForm = qs("#editor-context-form");
     const isNodeFormVisible = Boolean(updatedForm && !updatedForm.classList.contains("hidden"));
-    const selId = isNodeFormVisible ? updatedForm.getAttribute("data-context-scene-id") || "" : "";
+    const selId = isNodeFormVisible
+      ? updatedForm.getAttribute("data-context-scene-id") || ""
+      : actionName === "SelectStudioScene" && params && params.scene
+        ? String(params.scene)
+        : "";
     if (selId && typeof selectedNodeIds !== "undefined" && typeof syncNodeSelectionDOM === "function") {
       if (actionName === "SelectStudioScene") {
         if (typeof editorSelectionCleared !== "undefined") {
@@ -704,6 +712,7 @@ async function sendServerAction(actionName, params) {
     syncFullscreenButtonState();
     syncTopbarToggleIcons();
     syncEditorHistoryHeaders(resp);
+    syncBreakdownActBar(targetEl);
     if (typeof autoResizeAllInspectorTextareas === "function") {
       autoResizeAllInspectorTextareas(targetEl);
     }
@@ -757,6 +766,13 @@ async function sendServerAction(actionName, params) {
       }
     }
   }
+}
+
+function syncBreakdownActBar(root) {
+  qsa(".breakdown-act-segment[data-share-pct]", root || document).forEach((seg) => {
+    const pct = Math.max(1, Number(seg.getAttribute("data-share-pct")) || 1);
+    seg.style.flexGrow = String(pct);
+  });
 }
 
 function postServerActionSilent(actionName, paramsOrFormData) {
@@ -1149,6 +1165,7 @@ function bindDeclarativeActionBridge() {
   }
 
   syncTopbarToggleIcons();
+  syncBreakdownActBar(document);
   if (typeof autoResizeAllInspectorTextareas === "function") {
     autoResizeAllInspectorTextareas(document);
   }

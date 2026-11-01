@@ -12,11 +12,18 @@ const LOWEND_ANDROID_MULTIPLIER = 6.0;
 (function initEditorPerfModule() {
   if (!EDITOR_PERF_OVERLAY_ENABLED) return;
 
+  const WINDOW_SIZE = 16;
+  const renderRing = new Float64Array(WINDOW_SIZE);
+  const routeRing = new Float64Array(WINDOW_SIZE);
+
   const stats = {
     avgRenderMs: 0,
     avgRouteMs: 0,
     frameRouteMs: 0,
-    hasRenderSample: false,
+    ringIdx: 0,
+    ringCount: 0,
+    warmedUp: false,
+    inWarmupPass: false,
     nodeCount: 0,
     wireCount: 0,
     drawCalls: 1,
@@ -90,9 +97,60 @@ const LOWEND_ANDROID_MULTIPLIER = 6.0;
       const rMs = stats.frameRouteMs;
       stats.frameRouteMs = 0;
 
-      stats.avgRenderMs = stats.hasRenderSample ? stats.avgRenderMs * 0.8 + dt * 0.2 : dt;
-      stats.avgRouteMs = stats.hasRenderSample ? stats.avgRouteMs * 0.8 + rMs * 0.2 : rMs;
-      stats.hasRenderSample = true;
+      if (!stats.warmedUp && !stats.inWarmupPass && typeof studioGraphState !== "undefined" && studioGraphState.nodes && studioGraphState.nodes.length > 0) {
+        stats.inWarmupPass = true;
+        stats.warmedUp = true;
+        stats.frameRouteMs = 0;
+        const firstNode = studioGraphState.nodes[0];
+        const dummySet = new Set([firstNode.id]);
+        const dummyAabbs = [
+          {
+            minX: firstNode.left - 24,
+            minY: firstNode.top - 24,
+            maxX: firstNode.right + 24,
+            maxY: firstNode.bottom + 24
+          }
+        ];
+        const reps = 8;
+        const rt0 = performance.now();
+        for (let r = 0; r < reps; r++) {
+          if (typeof routeStudioWires === "function") {
+            routeStudioWires(dummySet, dummyAabbs, null);
+          }
+        }
+        const wrMs = (performance.now() - rt0) / reps;
+        stats.frameRouteMs = 0;
+        const wt0 = performance.now();
+        for (let r = 0; r < reps; r++) {
+          studioGraphState.staticBatchDirty = true;
+          origRenderStudioCanvas.apply(this, arguments);
+        }
+        const wdt = (performance.now() - wt0) / reps;
+        stats.inWarmupPass = false;
+        for (let i = 0; i < WINDOW_SIZE; i++) {
+          renderRing[i] = wdt;
+          routeRing[i] = wrMs;
+        }
+        stats.ringCount = WINDOW_SIZE;
+        stats.avgRenderMs = wdt;
+        stats.avgRouteMs = wrMs;
+      } else {
+        const idx = stats.ringIdx;
+        renderRing[idx] = dt;
+        routeRing[idx] = rMs;
+        stats.ringIdx = (idx + 1) & (WINDOW_SIZE - 1);
+        if (stats.ringCount < WINDOW_SIZE) {
+          stats.ringCount++;
+        }
+        let sumRender = 0;
+        let sumRoute = 0;
+        for (let i = 0; i < stats.ringCount; i++) {
+          sumRender += renderRing[i];
+          sumRoute += routeRing[i];
+        }
+        stats.avgRenderMs = sumRender / stats.ringCount;
+        stats.avgRouteMs = sumRoute / stats.ringCount;
+      }
 
       if (typeof studioGraphState !== "undefined") {
         stats.nodeCount = studioGraphState.nodes ? studioGraphState.nodes.length : 0;

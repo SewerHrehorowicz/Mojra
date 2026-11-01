@@ -6,7 +6,9 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 
@@ -28,6 +30,9 @@ type ModalState struct {
 	NewBookDraftNarrated       bool
 	NewBookDraftImageless      bool
 	NewBookDraftDir            string
+	ExportModalOpen            bool
+	ExportModalFormat          string
+	ExportModalDir             string
 	AddBookModalOpen           bool
 	EditorHelpModalOpen        bool
 	EditorHistoryPanelOpen     bool
@@ -102,6 +107,9 @@ func (s *Server) closeAllModals() {
 	s.NewBookDraftNarrated = false
 	s.NewBookDraftImageless = false
 	s.NewBookDraftDir = ""
+	s.ExportModalOpen = false
+	s.ExportModalFormat = ""
+	s.ExportModalDir = ""
 	s.AddBookModalOpen = false
 	s.ConfirmPendingAction = ""
 	s.ConfirmPendingParam = ""
@@ -273,6 +281,13 @@ func NewServerWithOptions(rootDir string, embeddedFS fs.FS, devMode bool) *Serve
 	return s
 }
 
+func isRunningUnderGoTestBinary() bool {
+	return os.Getenv("ST_NO_WINDOW") == "1" ||
+		strings.HasSuffix(os.Args[0], ".test") ||
+		strings.HasSuffix(os.Args[0], ".test.exe") ||
+		strings.Contains(os.Args[0], "/_test/")
+}
+
 func (s *Server) defaultNewBookDir() string {
 	if s.NewBookDraftDir != "" {
 		return s.NewBookDraftDir
@@ -282,19 +297,116 @@ func (s *Server) defaultNewBookDir() string {
 			return expanded
 		}
 	}
-	cleanRoot := filepath.Clean(s.RootDir)
-	if filepath.Base(cleanRoot) == "dist" {
-		parent := filepath.Dir(cleanRoot)
-		if info, err := os.Stat(filepath.Join(parent, "go.mod")); err == nil && !info.IsDir() {
-			return filepath.Join(parent, "books")
+	if isRunningUnderGoTestBinary() {
+		return s.BooksDir
+	}
+	return book.DefaultProjectsDir()
+}
+
+func (s *Server) defaultExportDir() string {
+	if s.ActiveBook != nil && strings.TrimSpace(s.ActiveBook.ExportDir) != "" {
+		if expanded, err := book.ExpandLocalPath(s.ActiveBook.ExportDir); err == nil && expanded != "" {
+			return expanded
 		}
 	}
-	if strings.Contains(filepath.ToSlash(s.BooksDir), ".app/Contents/Resources") {
-		if home, err := os.UserHomeDir(); err == nil && strings.TrimSpace(home) != "" {
-			return filepath.Join(home, "Documents", "StoryTeller")
+	if s.Settings != nil && strings.TrimSpace(s.Settings.ExportDir) != "" {
+		if expanded, err := book.ExpandLocalPath(s.Settings.ExportDir); err == nil && expanded != "" {
+			return expanded
 		}
 	}
-	return s.BooksDir
+	if isRunningUnderGoTestBinary() {
+		return filepath.Join(s.SavesDir, "exports")
+	}
+	return book.DefaultExportDir()
+}
+
+func (s *Server) resolveOrPickBookExportDir(r *http.Request) (string, string, bool) {
+	if s.ActiveBook == nil {
+		return "", "Brak aktywnego projektu", false
+	}
+	if r != nil {
+		if rawDir := strings.TrimSpace(r.FormValue("export_dir")); rawDir != "" {
+			expanded, err := book.ExpandLocalPath(rawDir)
+			if err != nil {
+				return "", err.Error(), false
+			}
+			s.ActiveBook.ExportDir = expanded
+			if !s.ActiveBook.IsPacked {
+				_ = book.SaveBookMetadataToDisk(s.ActiveBook)
+			}
+			if s.Settings != nil {
+				s.Settings.ExportDir = expanded
+				_ = s.saveAppSettings()
+			}
+			return expanded, "", true
+		}
+	}
+	forcePrompt := r != nil && r.FormValue("prompt_dir") == "true"
+	if !forcePrompt && strings.TrimSpace(s.ActiveBook.ExportDir) != "" {
+		expanded, err := book.ExpandLocalPath(s.ActiveBook.ExportDir)
+		if err != nil {
+			return "", err.Error(), false
+		}
+		return expanded, "", true
+	}
+	if !isRunningUnderGoTestBinary() {
+		s.mu.Unlock()
+		picked := PickNativeBookPath(true)
+		s.mu.Lock()
+		if picked == "" {
+			if r != nil {
+				r.Form.Set("silent", "true")
+			}
+			return "", "", false
+		}
+		if expanded, err := book.ExpandLocalPath(picked); err == nil && expanded != "" {
+			picked = expanded
+		}
+		s.ActiveBook.ExportDir = picked
+		if !s.ActiveBook.IsPacked {
+			_ = book.SaveBookMetadataToDisk(s.ActiveBook)
+		}
+		if s.Settings != nil {
+			s.Settings.ExportDir = picked
+			_ = s.saveAppSettings()
+		}
+		return picked, "", true
+	}
+	defDir := s.defaultExportDir()
+	s.ActiveBook.ExportDir = defDir
+	if !s.ActiveBook.IsPacked {
+		_ = book.SaveBookMetadataToDisk(s.ActiveBook)
+	}
+	if s.Settings != nil {
+		s.Settings.ExportDir = defDir
+		_ = s.saveAppSettings()
+	}
+	return defDir, "", true
+}
+
+func (s *Server) revealExportedFileInOS(filePath string) {
+	if isRunningUnderGoTestBinary() || os.Getenv("ST_NO_WINDOW") == "1" {
+		return
+	}
+	cleanPath := filepath.Clean(strings.TrimSpace(filePath))
+	if cleanPath == "" || cleanPath == "." {
+		return
+	}
+	dirPath := filepath.Dir(cleanPath)
+	go func() {
+		switch runtime.GOOS {
+		case "darwin":
+			if err := exec.Command("open", "-R", cleanPath).Start(); err != nil {
+				_ = exec.Command("open", dirPath).Start()
+			}
+		case "windows":
+			if err := exec.Command("explorer.exe", "/select,", cleanPath).Start(); err != nil {
+				_ = exec.Command("explorer.exe", dirPath).Start()
+			}
+		case "linux":
+			_ = exec.Command("xdg-open", dirPath).Start()
+		}
+	}()
 }
 
 func (s *Server) saveAppSettings() error {
@@ -391,6 +503,12 @@ func (s *Server) findScene(sceneID string) *book.Scene {
 			return sc
 		}
 	}
+	normKey := book.NormalizeLookupKey(sceneID)
+	for _, sc := range s.ActiveBook.Scenes {
+		if sc.Name != "" && (strings.EqualFold(sc.Name, sceneID) || (normKey != "" && book.NormalizeLookupKey(sc.Name) == normKey)) {
+			return sc
+		}
+	}
 	for i, sc := range s.ActiveBook.Scenes {
 		if fmt.Sprintf("s%d", i+1) == sceneID {
 			return sc
@@ -423,6 +541,9 @@ func withSecurityHeaders(next http.Handler) http.Handler {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Referrer-Policy", "no-referrer")
+		w.Header().Set("Cross-Origin-Opener-Policy", "same-origin")
+		w.Header().Set("Cross-Origin-Embedder-Policy", "require-corp")
+		w.Header().Set("Cross-Origin-Resource-Policy", "same-origin")
 		if !strings.HasPrefix(r.URL.Path, "/api/books/") || !strings.Contains(r.URL.Path, "/media/") {
 			w.Header().Set(
 				"Content-Security-Policy",
@@ -794,6 +915,24 @@ func (s *Server) serveUIAsset(w http.ResponseWriter, r *http.Request, relAppPath
 		for _, embedPath := range []string{"build/app/" + cleanSlash, "app/" + cleanSlash} {
 			if data, err := fs.ReadFile(s.EmbeddedFS, embedPath); err == nil {
 				writeAsset(data)
+				return
+			}
+		}
+		stripDev := !s.DevMode || s.StandaloneMode
+		switch cleanSlash {
+		case "style.css":
+			if bundled, err := tpl.BundleCSSFromFS(s.EmbeddedFS, stripDev); err == nil {
+				writeAsset([]byte(bundled))
+				return
+			}
+		case "app.js":
+			if bundled, err := tpl.BundleJSFromFS(s.EmbeddedFS, stripDev); err == nil {
+				writeAsset([]byte(bundled))
+				return
+			}
+		case "studio-atlas.png":
+			if pngBytes, _, err := tpl.BuildStudioMSDFAtlasFromFS(s.EmbeddedFS); err == nil && len(pngBytes) > 0 {
+				writeAsset(pngBytes)
 				return
 			}
 		}

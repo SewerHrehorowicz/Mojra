@@ -112,6 +112,44 @@ input, textarea
   flex-shrink 0
   pointer-events none
 
+// Universal 4-Corner Selection for Single-Icon Toggles (without separate on/off icons)
+.top-action-btn, .scene-settings-toggle-btn, .deck-chip, .icon-toggle-btn
+  position relative
+
+.top-action-btn.active, .scene-settings-toggle-btn.active, .deck-chip.chip-active, .icon-toggle-btn.active
+  color --text-primary
+
+.top-action-btn.active:not(#btn-toggle-imageless)::before,
+.top-action-btn.active:not(#btn-toggle-imageless)::after,
+.scene-settings-toggle-btn.active::before,
+.scene-settings-toggle-btn.active::after,
+.deck-chip.chip-active::before,
+.deck-chip.chip-active::after,
+.icon-toggle-btn.active::before,
+.icon-toggle-btn.active::after
+  content ""
+  position absolute
+  left 0
+  right 0
+  height 5px
+  border-left 1px solid currentColor
+  border-right 1px solid currentColor
+  pointer-events none
+
+.top-action-btn.active:not(#btn-toggle-imageless)::before,
+.scene-settings-toggle-btn.active::before,
+.deck-chip.chip-active::before,
+.icon-toggle-btn.active::before
+  top 0
+  background linear-gradient(to right, currentColor 5px, transparent 5px, transparent calc(100% - 5px), currentColor calc(100% - 5px)) 0 0 / 100% 1px no-repeat
+
+.top-action-btn.active:not(#btn-toggle-imageless)::after,
+.scene-settings-toggle-btn.active::after,
+.deck-chip.chip-active::after,
+.icon-toggle-btn.active::after
+  bottom 0
+  background linear-gradient(to right, currentColor 5px, transparent 5px, transparent calc(100% - 5px), currentColor calc(100% - 5px)) 0 100% / 100% 1px no-repeat
+
 body[data-ui-scale="large"]
   .btn
     padding 8px 14px

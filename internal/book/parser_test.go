@@ -290,6 +290,30 @@ func TestLoadRepositoryBookAndNextDirective(t *testing.T) {
 			}
 		}
 	}
+
+	sceneByID := make(map[string]*Scene, len(b.Scenes))
+	for _, sc := range b.Scenes {
+		sceneByID[sc.ID] = sc
+	}
+	parallelPairs := [][2]string{
+		{"siedem_kanu", "kanal_kwarantanny"},
+		{"zwiadowca_znikad", "wejscie_w_opar"},
+		{"wejscie_do_osady", "schody_w_korzeniach"},
+		{"dym_nad_osada", "sciana_dymu_i_trzcin"},
+	}
+	for _, pair := range parallelPairs {
+		leftSc := sceneByID[pair[0]]
+		rightSc := sceneByID[pair[1]]
+		if leftSc == nil || rightSc == nil {
+			t.Fatalf("missing chapter entry scene for pair %v", pair)
+		}
+		if leftSc.Y != rightSc.Y {
+			t.Fatalf("expected parallel chapters %q and %q to share top Y, got %d vs %d", pair[0], pair[1], leftSc.Y, rightSc.Y)
+		}
+		if leftSc.X >= rightSc.X {
+			t.Fatalf("expected parallel chapter %q (X=%d) to be placed left of %q (X=%d)", pair[0], leftSc.X, pair[1], rightSc.X)
+		}
+	}
 }
 
 func TestExternalBooksZeroCopyAndURLDownload(t *testing.T) {

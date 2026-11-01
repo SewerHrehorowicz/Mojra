@@ -658,7 +658,7 @@ func buildPlatformBinary(rootDir string, target platformTarget, outPath string) 
 			_ = os.Remove(sysoPath)
 		}()
 
-		cmd := exec.Command("go", "build", "-trimpath", "-ldflags=-H=windowsgui -X main.productionBuild=true", "-o", outPath, "./cmd/storyteller")
+		cmd := exec.Command("go", "build", "-tags=prod_embed", "-trimpath", "-ldflags=-H=windowsgui -X main.productionBuild=true", "-o", outPath, "./cmd/storyteller")
 		cmd.Dir = rootDir
 		cmd.Env = append(os.Environ(), "GOOS=windows", "GOARCH="+target.Arch, "CGO_ENABLED=0")
 		cmd.Stdout = os.Stdout
@@ -671,7 +671,7 @@ func buildPlatformBinary(rootDir string, target platformTarget, outPath string) 
 	case "darwin":
 		// On macOS host, prefer CGO_ENABLED=1 so native Cocoa/WKWebView window support is compiled in.
 		if runtime.GOOS == "darwin" {
-			cmd := exec.Command("go", "build", "-trimpath", "-ldflags=-X main.productionBuild=true", "-o", outPath, "./cmd/storyteller")
+			cmd := exec.Command("go", "build", "-tags=prod_embed", "-trimpath", "-ldflags=-X main.productionBuild=true", "-o", outPath, "./cmd/storyteller")
 			cmd.Dir = rootDir
 			cmd.Env = append(os.Environ(), "GOOS=darwin", "GOARCH="+target.Arch, "CGO_ENABLED=1")
 			var stderr bytes.Buffer
@@ -681,7 +681,7 @@ func buildPlatformBinary(rootDir string, target platformTarget, outPath string) 
 				return nil
 			}
 		}
-		cmd := exec.Command("go", "build", "-trimpath", "-ldflags=-s -w -X main.productionBuild=true", "-o", outPath, "./cmd/storyteller")
+		cmd := exec.Command("go", "build", "-tags=prod_embed", "-trimpath", "-ldflags=-s -w -X main.productionBuild=true", "-o", outPath, "./cmd/storyteller")
 		cmd.Dir = rootDir
 		cmd.Env = append(os.Environ(), "GOOS=darwin", "GOARCH="+target.Arch, "CGO_ENABLED=0")
 		cmd.Stdout = os.Stdout
@@ -696,7 +696,7 @@ func buildPlatformBinary(rootDir string, target platformTarget, outPath string) 
 		if err != nil {
 			return err
 		}
-		cmd := exec.Command("go", "build", "-trimpath", "-ldflags=-s -w -X main.productionBuild=true", "-o", outPath, "./cmd/storyteller")
+		cmd := exec.Command("go", "build", "-tags=prod_embed", "-trimpath", "-ldflags=-s -w -X main.productionBuild=true", "-o", outPath, "./cmd/storyteller")
 		cmd.Dir = rootDir
 		cmd.Env = append(os.Environ(), "GOOS=android", "GOARCH="+target.Arch, "CGO_ENABLED=1", "CC="+ndkClang)
 		cmd.Stdout = os.Stdout
@@ -707,7 +707,7 @@ func buildPlatformBinary(rootDir string, target platformTarget, outPath string) 
 		return nil
 
 	default: // linux and others
-		cmd := exec.Command("go", "build", "-trimpath", "-ldflags=-s -w -X main.productionBuild=true", "-o", outPath, "./cmd/storyteller")
+		cmd := exec.Command("go", "build", "-tags=prod_embed", "-trimpath", "-ldflags=-s -w -X main.productionBuild=true", "-o", outPath, "./cmd/storyteller")
 		cmd.Dir = rootDir
 		cmd.Env = append(os.Environ(), "GOOS="+target.OS, "GOARCH="+target.Arch, "CGO_ENABLED=0")
 		cmd.Stdout = os.Stdout

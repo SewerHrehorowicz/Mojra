@@ -53,6 +53,48 @@ func buildScreenplayFormatInsertPills(standard string, b *book.Book) ([]map[stri
 	return insertPills, charPills
 }
 
+func buildExportFormatOptions(rawFormat string, isScreenplay bool) (string, string, []map[string]any) {
+	norm := strings.ToLower(strings.TrimSpace(rawFormat))
+	if isScreenplay {
+		if norm != "pdf" && norm != "fountain" && norm != "stbook" {
+			norm = "pdf"
+		}
+		defs := []struct {
+			val   string
+			label string
+		}{
+			{"pdf", "Scenariusz PDF (.pdf)"},
+			{"fountain", "Scenariusz Fountain (.fountain)"},
+			{"stbook", "Paczka projektu StoryTeller (.stbook)"},
+		}
+		var opts []map[string]any
+		activeLabel := defs[0].label
+		for _, d := range defs {
+			active := d.val == norm
+			if active {
+				activeLabel = d.label
+			}
+			opts = append(opts, map[string]any{
+				"value":     d.val,
+				"label":     d.label,
+				"is_active": active,
+			})
+		}
+		return norm, activeLabel, opts
+	}
+
+	norm = "stbook"
+	activeLabel := "Paczka projektu StoryTeller (.stbook)"
+	opts := []map[string]any{
+		{
+			"value":     "stbook",
+			"label":     activeLabel,
+			"is_active": true,
+		},
+	}
+	return norm, activeLabel, opts
+}
+
 func (s *Server) populateModalsContext(vars map[string]any) {
 	if s.QRModalOpen && s.DevMode && !s.StandaloneMode {
 		lanIP := DetectLANIP()
@@ -68,8 +110,20 @@ func (s *Server) populateModalsContext(vars map[string]any) {
 	vars["confirm_message"] = s.ConfirmMessage
 	vars["confirm_is_danger"] = s.ConfirmPendingAction == "RemoveBook" || s.ConfirmPendingAction == "DeleteScene" || s.ConfirmPendingAction == "DeleteScenes" || s.ConfirmPendingAction == "RemoveChoice"
 	vars["show_new_book_modal"] = s.NewBookModalOpen
+	vars["show_export_modal"] = s.ExportModalOpen
 	vars["show_add_book_modal"] = s.AddBookModalOpen
 	vars["show_editor_help_modal"] = s.EditorHelpModalOpen
+
+	isScreenplayBook := s.ActiveBook != nil && s.ActiveBook.IsScreenplay()
+	exportFmt, exportFmtLabel, exportFmtOpts := buildExportFormatOptions(s.ExportModalFormat, isScreenplayBook)
+	vars["export_modal_format"] = exportFmt
+	vars["export_modal_format_label"] = exportFmtLabel
+	vars["export_modal_format_options"] = exportFmtOpts
+	exportDir := strings.TrimSpace(s.ExportModalDir)
+	if exportDir == "" {
+		exportDir = s.defaultExportDir()
+	}
+	vars["export_modal_dir"] = exportDir
 
 	draftMode := book.NormalizeBookMode(s.NewBookDraftMode)
 	draftStd := book.NormalizeScriptStandard(s.NewBookDraftStandard)
@@ -143,6 +197,45 @@ func (s *Server) populateModalsContext(vars map[string]any) {
 				}
 			}
 			vars["scene_text_modal_is_start"] = isStart
+
+			curChName := strings.TrimSpace(modalSc.Chapter)
+			if curChName == "" {
+				if s.ActiveBook != nil && s.ActiveBook.IsScreenplay() {
+					curChName = "Akt I"
+				} else {
+					curChName = "Rozdział 1"
+				}
+			}
+			chKey := "rozdział:"
+			if s.ActiveBook != nil && s.ActiveBook.IsScreenplay() {
+				chKey = "akt:"
+			}
+			var modalChOptions []map[string]any
+			if s.ActiveBook != nil {
+				modalChOptions = make([]map[string]any, 0, len(s.ActiveBook.Chapters)+1)
+				matchedCh := false
+				for _, chItem := range s.ActiveBook.Chapters {
+					isAct := strings.EqualFold(curChName, strings.TrimSpace(chItem.Name))
+					if isAct {
+						matchedCh = true
+					}
+					modalChOptions = append(modalChOptions, map[string]any{
+						"value":     chItem.Name,
+						"label":     chItem.Name,
+						"is_active": isAct,
+					})
+				}
+				if !matchedCh && curChName != "" {
+					modalChOptions = append(modalChOptions, map[string]any{
+						"value":     curChName,
+						"label":     curChName,
+						"is_active": true,
+					})
+				}
+			}
+			vars["scene_text_modal_chapter"] = curChName
+			vars["scene_text_modal_chapter_key"] = chKey
+			vars["scene_text_modal_chapter_options"] = modalChOptions
 
 			curImg, curImgLabel, imgOptions, curVoice, curVoiceLabel, voiceOptions := s.buildSceneMediaOptions(modalSc, true)
 			vars["scene_text_modal_current_image"] = curImg

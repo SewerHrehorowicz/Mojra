@@ -109,6 +109,9 @@ func (s *Server) setChapterStartScene(r *http.Request) string {
 		ch.StartSceneID = target.ID
 		s.SelectedChapter = ch.Name
 		s.BookSettingsOpen = false
+		s.EditorBreakdownPanelOpen = false
+		s.EditorHistoryPanelOpen = false
+		s.EditorHelpModalOpen = false
 		if b.IsScreenplay() {
 			return fmt.Sprintf("Ustawiono scenę początkową aktu „%s”: %s", ch.DisplayName(), target.DisplayName()), "chapter", "setchapterstart", true
 		}
@@ -211,7 +214,7 @@ func (s *Server) createChapterGroup(r *http.Request) string {
 		y = book.SnapToGrid(maxY + 552)
 		hasCoords = true
 	}
-	newName := fmt.Sprintf("Nowa scena %d", len(s.ActiveBook.Scenes)+1)
+	newName := book.NextUniqueSceneName(s.ActiveBook)
 	created, err := book.CreateStandaloneSceneInChapter(s.ActiveBook, newName, chName, x, y, hasCoords)
 	if err != nil {
 		return err.Error()
@@ -220,7 +223,11 @@ func (s *Server) createChapterGroup(r *http.Request) string {
 		return ""
 	}
 	s.reloadActiveBook()
-	s.SelectedSceneID = created.ID
+	if found := s.findScene(created.Name); found != nil {
+		s.SelectedSceneID = found.ID
+	} else {
+		s.SelectedSceneID = created.ID
+	}
 	toast := fmt.Sprintf("Utworzono rozdział „%s”", chName)
 	if s.ActiveBook != nil && s.ActiveBook.IsScreenplay() {
 		toast = fmt.Sprintf("Utworzono akt „%s”", chName)
@@ -370,7 +377,17 @@ func (s *Server) connectChoiceOnScene(r *http.Request) string {
 	if !changed {
 		return toast
 	}
-	return s.commitScenesMutation(toast, "graph", "")
+	nonEndingTargets := 0
+	for _, ch := range fromSc.Choices {
+		if !ch.IsEnding && ch.Target != "" && !strings.EqualFold(ch.Target, "END") && !strings.EqualFold(ch.TargetSceneID, "END") {
+			nonEndingTargets++
+		}
+	}
+	resToast := s.commitScenesMutation(toast, "graph", "")
+	if nonEndingTargets >= 2 && resToast == toast {
+		return toast + " (rozwidlenie — kliknij kwadrat na równoległym węźle, aby wybrać główną ścieżkę)"
+	}
+	return resToast
 }
 
 func (s *Server) connectChapterTransition(r *http.Request) string {

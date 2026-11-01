@@ -33,9 +33,3 @@ section.view-panel#view-library
                             max: 100
                     h3.book-card-title {b.title}
                     p.book-card-desc {b.description}
-                    {if b.has_warnings}
-                        .book-warnings-box
-                            .book-warnings-title "⚠ Ostrzeżenia parsera i walidacji ({b.warning_count}):"
-                            ul.book-warnings-list
-                                {for w in b.warnings}
-                                    li {w.text}

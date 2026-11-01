@@ -226,13 +226,19 @@ func (s *Server) removeBookFromForm(r *http.Request) string {
 	return s.removeBookByID(book.SanitizeBookID(r.FormValue("book")))
 }
 
-func (s *Server) packActiveBook(_ *http.Request) string {
+func (s *Server) packActiveBook(r *http.Request) string {
 	if s.ActiveBook != nil && !s.ActiveBook.IsPacked {
-		distDir := filepath.Join(s.RootDir, "dist")
-		_ = os.MkdirAll(distDir, 0755)
-		outZip := filepath.Join(distDir, s.ActiveBook.ID+".stbook")
+		exportDir, errMsg, ok := s.resolveOrPickBookExportDir(r)
+		if !ok {
+			return errMsg
+		}
+		if err := os.MkdirAll(exportDir, 0755); err != nil {
+			return err.Error()
+		}
+		outZip := filepath.Join(exportDir, s.ActiveBook.ID+".stbook")
 		if err := book.PackBookToZip(s.ActiveBook.RootPath, outZip); err == nil {
-			return "Spakowano archiwum: dist/" + s.ActiveBook.ID + ".stbook"
+			s.revealExportedFileInOS(outZip)
+			return "Spakowano archiwum: " + outZip
 		} else {
 			return err.Error()
 		}

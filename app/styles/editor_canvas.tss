@@ -77,16 +77,6 @@
   align-items center
   gap 4px
 
-.history-unsaved-badge
-  font-family --font-sans
-  font-size 9px
-  font-weight 700
-  line-height 1
-  padding 2px 5px
-  border 1px solid --text-primary
-  background --bg-elevated
-  color --text-primary
-
 .canvas-zoom-controls
   display inline-flex
   align-items center
@@ -283,6 +273,24 @@
 
 .timeline-node-card
   width 192px
+
+.canvas-floating-node-input, .canvas-floating-choice-input
+  position absolute
+  z-index 95
+  background --bg-obsidian
+  border none
+  border-bottom 1px solid --text-primary
+  color --text-primary
+  outline none
+  padding 0 2px
+
+.canvas-floating-node-input
+  font-family --font-serif
+  font-size 13px
+
+.canvas-floating-choice-input
+  font-family --font-sans
+  font-size 11px
 
 body[data-ui-scale="large"]
   .canvas-toolbar

@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 const (
@@ -824,16 +825,78 @@ func isCompactableHistoryKind(kind string) bool {
 	}
 }
 
+func isFiveMinBucketCompactableKind(kind string) bool {
+	switch strings.ToLower(strings.TrimSpace(kind)) {
+	case "restore", "version", "baseline":
+		return false
+	default:
+		return true
+	}
+}
+
+func isSceneOrTextKind(kind string) bool {
+	switch strings.ToLower(strings.TrimSpace(kind)) {
+	case "scene", "text", "edit", "":
+		return true
+	default:
+		return false
+	}
+}
+
+func isSameSceneRenameLabel(labelA, labelB string) bool {
+	const prefix = "Edycja sceny: "
+	if !strings.HasPrefix(labelA, prefix) || !strings.HasPrefix(labelB, prefix) {
+		return false
+	}
+	nameA := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(labelA, prefix)))
+	nameB := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(labelB, prefix)))
+	if nameA == "" || nameB == "" {
+		return false
+	}
+	return strings.HasPrefix(nameA, nameB) || strings.HasPrefix(nameB, nameA)
+}
+
+func canLiveCoalesceRevisions(prev, curr HistoryRevision) bool {
+	if !isCompactableHistoryKind(prev.Kind) || !isCompactableHistoryKind(curr.Kind) {
+		return false
+	}
+	if prev.CoalesceKey == "major" || curr.CoalesceKey == "major" {
+		return false
+	}
+	prevKind := strings.ToLower(strings.TrimSpace(prev.Kind))
+	currKind := strings.ToLower(strings.TrimSpace(curr.Kind))
+	if prevKind == "layout" && currKind == "layout" {
+		return true
+	}
+	if prevKind == "layout" && isSceneOrTextKind(currKind) {
+		return true
+	}
+	if isSceneOrTextKind(prevKind) && isSceneOrTextKind(currKind) {
+		if prev.SelectedSceneID != "" && prev.SelectedSceneID == curr.SelectedSceneID {
+			return true
+		}
+		if isSameSceneRenameLabel(prev.Label, curr.Label) {
+			return true
+		}
+	}
+	prevGroup := normalizeCoalesceGroup(prev.Kind, prev.CoalesceKey, prev.SelectedSceneID)
+	currGroup := normalizeCoalesceGroup(curr.Kind, curr.CoalesceKey, curr.SelectedSceneID)
+	return prevGroup != "" && prevGroup == currGroup
+}
+
 func normalizeCoalesceGroup(kind, coalesceKey, selectedSceneID string) string {
 	cleanKind := strings.ToLower(strings.TrimSpace(kind))
 	cleanKey := strings.TrimSpace(coalesceKey)
+	if cleanKey == "major" {
+		return ""
+	}
 	if cleanKind == "layout" {
-		if strings.HasPrefix(cleanKey, "nodedrag:") {
+		if strings.HasPrefix(cleanKey, "nodedrag:") || cleanKey == "" {
 			return "layout:drag"
 		}
 		return cleanKey
 	}
-	if cleanKind == "scene" || cleanKind == "text" {
+	if isSceneOrTextKind(cleanKind) {
 		for _, prefix := range []string{"autosave:", "textmodal:", "scene:"} {
 			if strings.HasPrefix(cleanKey, prefix) {
 				target := strings.TrimSpace(strings.TrimPrefix(cleanKey, prefix))
@@ -842,51 +905,107 @@ func normalizeCoalesceGroup(kind, coalesceKey, selectedSceneID string) string {
 				}
 			}
 		}
-		if cleanKey == "" && strings.TrimSpace(selectedSceneID) != "" {
+		if strings.TrimSpace(selectedSceneID) != "" {
 			return "scene:" + strings.TrimSpace(selectedSceneID)
 		}
 	}
 	return cleanKey
 }
 
-func countChangedLines(span []rune) int {
-	trimmed := strings.TrimSpace(string(span))
+func isProseStructuralLine(trimmed string) bool {
 	if trimmed == "" {
-		return 0
+		return true
 	}
-	return strings.Count(trimmed, "\n") + 1
+	if strings.Contains(trimmed, "->") && !strings.Contains(trimmed, `\->`) {
+		return true
+	}
+	colonIdx := strings.IndexByte(trimmed, ':')
+	if colonIdx > 0 && colonIdx <= 16 {
+		key := strings.ToLower(strings.TrimSpace(trimmed[:colonIdx]))
+		switch key {
+		case "chapter", "scene", "id", "next", "end", "image", "voice",
+			"location", "characters", "slugline", "synopsis", "text",
+			"title", "author", "description", "narrated", "imageless",
+			"start", "cover", "export_dir", "mode", "language", "standard":
+			return true
+		}
+	}
+	return false
 }
 
-func computeTextSpanDelta(oldStr, newStr string) (int, int) {
+func extractProseLines(content string) []string {
+	rawLines := strings.Split(strings.ReplaceAll(content, "\r\n", "\n"), "\n")
+	out := make([]string, 0, len(rawLines))
+	for _, line := range rawLines {
+		trimmed := strings.TrimSpace(line)
+		if isProseStructuralLine(trimmed) {
+			continue
+		}
+		out = append(out, trimmed)
+	}
+	return out
+}
+
+func computeProseDelta(oldStr, newStr string) (int, int) {
 	if oldStr == newStr {
 		return 0, 0
 	}
-	oldRunes := []rune(oldStr)
-	newRunes := []rune(newStr)
-	prefix := 0
-	minLen := len(oldRunes)
-	if len(newRunes) < minLen {
-		minLen = len(newRunes)
+	oldLines := extractProseLines(oldStr)
+	newLines := extractProseLines(newStr)
+	if len(oldLines) == 0 && len(newLines) == 0 {
+		return 0, 0
 	}
-	for prefix < minLen && oldRunes[prefix] == newRunes[prefix] {
-		prefix++
+
+	lineCounts := make(map[string]int, len(oldLines))
+	for _, l := range oldLines {
+		lineCounts[l]++
 	}
-	suffix := 0
-	for suffix < (len(oldRunes)-prefix) && suffix < (len(newRunes)-prefix) &&
-		oldRunes[len(oldRunes)-1-suffix] == newRunes[len(newRunes)-1-suffix] {
-		suffix++
+	var unmatchedNew []string
+	for _, l := range newLines {
+		if lineCounts[l] > 0 {
+			lineCounts[l]--
+		} else {
+			unmatchedNew = append(unmatchedNew, l)
+		}
 	}
-	changedOld := oldRunes[prefix : len(oldRunes)-suffix]
-	changedNew := newRunes[prefix : len(newRunes)-suffix]
-	deltaRunes := len(changedOld)
-	if len(changedNew) > deltaRunes {
-		deltaRunes = len(changedNew)
+	var unmatchedOld []string
+	for _, l := range oldLines {
+		if lineCounts[l] > 0 {
+			lineCounts[l]--
+			unmatchedOld = append(unmatchedOld, l)
+		}
 	}
-	oldLines := countChangedLines(changedOld)
-	newLines := countChangedLines(changedNew)
-	deltaLines := oldLines
-	if newLines > deltaLines {
-		deltaLines = newLines
+
+	deltaLines := len(unmatchedOld)
+	if len(unmatchedNew) > deltaLines {
+		deltaLines = len(unmatchedNew)
+	}
+
+	wordCounts := make(map[string]int)
+	for _, l := range unmatchedOld {
+		for _, w := range strings.Fields(l) {
+			wordCounts[w]++
+		}
+	}
+	newWordRunes := 0
+	for _, l := range unmatchedNew {
+		for _, w := range strings.Fields(l) {
+			if wordCounts[w] > 0 {
+				wordCounts[w]--
+			} else {
+				newWordRunes += utf8.RuneCountInString(w) + 1
+			}
+		}
+	}
+	oldWordRunes := 0
+	for w, cnt := range wordCounts {
+		if cnt > 0 {
+			oldWordRunes += (utf8.RuneCountInString(w) + 1) * cnt
+		}
+	}
+	deltaRunes := oldWordRunes
+	if newWordRunes > deltaRunes {
+		deltaRunes = newWordRunes
 	}
 	return deltaRunes, deltaLines
 }
@@ -906,23 +1025,34 @@ func readHistoryBlobCached(bookRoot, hashHex string, cache map[string][]byte) ([
 }
 
 func isMajorHistoryDeltaWithCache(bookRoot string, oldFiles, newFiles map[string]string, kind string, cache map[string][]byte) bool {
-	if !isCompactableHistoryKind(kind) {
-		return true
-	}
-	if strings.EqualFold(strings.TrimSpace(kind), "layout") {
+	cleanKind := strings.ToLower(strings.TrimSpace(kind))
+	if cleanKind == "layout" || cleanKind == "meta" {
 		return false
 	}
-	if len(oldFiles) != len(newFiles) {
+	if cleanKind == "restore" || cleanKind == "version" || cleanKind == "baseline" {
 		return true
 	}
 	totalRunes := 0
 	totalLines := 0
 	for fileName, newHash := range newFiles {
+		if strings.EqualFold(fileName, "editor.txt") || strings.EqualFold(fileName, "data.txt") {
+			continue
+		}
 		oldHash, exists := oldFiles[fileName]
 		if !exists {
-			return true
+			newBytes, err := readHistoryBlobCached(bookRoot, newHash, cache)
+			if err != nil {
+				continue
+			}
+			dRunes, dLines := computeProseDelta("", string(newBytes))
+			totalRunes += dRunes
+			totalLines += dLines
+			if totalRunes >= HistoryLargeDeltaChars || totalLines > HistoryLargeDeltaLines {
+				return true
+			}
+			continue
 		}
-		if oldHash == newHash || strings.EqualFold(fileName, "editor.txt") {
+		if oldHash == newHash {
 			continue
 		}
 		oldBytes, err1 := readHistoryBlobCached(bookRoot, oldHash, cache)
@@ -930,20 +1060,37 @@ func isMajorHistoryDeltaWithCache(bookRoot string, oldFiles, newFiles map[string
 		if err1 != nil || err2 != nil {
 			continue
 		}
-		dRunes, dLines := computeTextSpanDelta(string(oldBytes), string(newBytes))
+		dRunes, dLines := computeProseDelta(string(oldBytes), string(newBytes))
 		totalRunes += dRunes
 		totalLines += dLines
 		if totalRunes >= HistoryLargeDeltaChars || totalLines > HistoryLargeDeltaLines {
 			return true
 		}
 	}
+	for fileName, oldHash := range oldFiles {
+		if strings.EqualFold(fileName, "editor.txt") || strings.EqualFold(fileName, "data.txt") {
+			continue
+		}
+		if _, exists := newFiles[fileName]; !exists {
+			oldBytes, err := readHistoryBlobCached(bookRoot, oldHash, cache)
+			if err != nil {
+				continue
+			}
+			dRunes, dLines := computeProseDelta(string(oldBytes), "")
+			totalRunes += dRunes
+			totalLines += dLines
+			if totalRunes >= HistoryLargeDeltaChars || totalLines > HistoryLargeDeltaLines {
+				return true
+			}
+		}
+	}
 	return false
 }
 
 // compactHistoryRevisions merges redundant unnamed small edits on the active branch:
-// 1. Same-scene / layout micro-saves within HistoryCoalesceWindowSec (3 minutes).
-// 2. Small edits older than HistoryLiveWindowSec (3 minutes) that fall into the same 5-minute time bucket.
-// Major text pastes (>= 300 chars or > 6 lines), structural graph/chapter actions, and named versions are always preserved.
+// 1. Live window (0-3 minutes): same-scene edits (including title renames) and layout moves coalesce immediately.
+// 2. Older than 3 minutes: all unnamed revisions in the same 5-minute time bucket compact into one entry per 5-minute block.
+// Major text pastes (>= 300 prose chars or > 6 prose lines) and named versions are always preserved.
 func compactHistoryRevisions(bookRoot string, h *BookHistory, now int64, cache map[string][]byte) bool {
 	if h == nil || len(h.Revisions) < 2 || strings.TrimSpace(bookRoot) == "" {
 		return false
@@ -994,23 +1141,22 @@ func compactHistoryRevisions(bookRoot string, h *BookHistory, now int64, cache m
 			if prev.Named || curr.Named || protectedIDs[prev.ID] || prev.ID == h.Cursor {
 				continue
 			}
-			if !isCompactableHistoryKind(prev.Kind) || !isCompactableHistoryKind(curr.Kind) {
+			if !isFiveMinBucketCompactableKind(prev.Kind) || !isFiveMinBucketCompactableKind(curr.Kind) {
 				continue
 			}
 
-			prevGroup := normalizeCoalesceGroup(prev.Kind, prev.CoalesceKey, prev.SelectedSceneID)
-			currGroup := normalizeCoalesceGroup(curr.Kind, curr.CoalesceKey, curr.SelectedSceneID)
 			dt := curr.TimeUnix - prev.TimeUnix
 			if dt < 0 {
 				dt = 0
 			}
 
-			sameTargetInWindow := prevGroup != "" && prevGroup == currGroup && dt <= HistoryCoalesceWindowSec
+			liveMerge := dt <= HistoryCoalesceWindowSec && canLiveCoalesceRevisions(*prev, *curr)
 			bothOlderInSameFiveMinBucket := (now-prev.TimeUnix) > HistoryLiveWindowSec &&
 				(now-curr.TimeUnix) > HistoryLiveWindowSec &&
-				(prev.TimeUnix/HistoryCompactionBucketSec) == (curr.TimeUnix/HistoryCompactionBucketSec)
+				(prev.TimeUnix/HistoryCompactionBucketSec) == (curr.TimeUnix/HistoryCompactionBucketSec) &&
+				prev.CoalesceKey != "major" && curr.CoalesceKey != "major"
 
-			if !sameTargetInWindow && !bothOlderInSameFiveMinBucket {
+			if !liveMerge && !bothOlderInSameFiveMinBucket {
 				continue
 			}
 
@@ -1020,9 +1166,6 @@ func compactHistoryRevisions(bookRoot string, h *BookHistory, now int64, cache m
 			if pos >= 2 {
 				baseFiles := h.Revisions[branchIdxs[pos-2]].Files
 				if isMajorHistoryDeltaWithCache(bookRoot, baseFiles, prev.Files, prev.Kind, cache) {
-					continue
-				}
-				if isMajorHistoryDeltaWithCache(bookRoot, baseFiles, curr.Files, curr.Kind, cache) {
 					continue
 				}
 			}
@@ -1113,23 +1256,32 @@ func RecordBookHistoryStep(b *Book, label, kind, coalesceKey, selectedSceneID st
 		curRev := &h.Revisions[curIdx]
 		stepMajor := isMajorHistoryDeltaWithCache(b.RootPath, curRev.Files, filesMap, cleanKind, blobCache)
 		if stepMajor {
-			cleanCoalesce = ""
-		} else if !curRev.Named && isCompactableHistoryKind(curRev.Kind) && isCompactableHistoryKind(cleanKind) {
-			curGroup := normalizeCoalesceGroup(curRev.Kind, curRev.CoalesceKey, curRev.SelectedSceneID)
-			newGroup := normalizeCoalesceGroup(cleanKind, cleanCoalesce, selectedSceneID)
-			cumulativeMajor := false
+			cleanCoalesce = "major"
+		} else if !curRev.Named {
+			candRev := HistoryRevision{
+				Kind:            cleanKind,
+				Label:           cleanLabel,
+				SelectedSceneID: selectedSceneID,
+				CoalesceKey:     cleanCoalesce,
+			}
+			prevWasMajor := false
 			if len(branchIdxs) >= 2 {
 				baseFiles := h.Revisions[branchIdxs[len(branchIdxs)-2]].Files
-				if isMajorHistoryDeltaWithCache(b.RootPath, baseFiles, curRev.Files, curRev.Kind, blobCache) ||
-					isMajorHistoryDeltaWithCache(b.RootPath, baseFiles, filesMap, cleanKind, blobCache) {
-					cumulativeMajor = true
+				if isMajorHistoryDeltaWithCache(b.RootPath, baseFiles, curRev.Files, curRev.Kind, blobCache) {
+					prevWasMajor = true
 				}
 			}
-			if !cumulativeMajor && curRev.CoalesceKey != "" && cleanCoalesce != "" &&
-				curGroup != "" && curGroup == newGroup && (now-curRev.TimeUnix) <= HistoryCoalesceWindowSec {
+			if !prevWasMajor && canLiveCoalesceRevisions(*curRev, candRev) && (now-curRev.TimeUnix) <= HistoryCoalesceWindowSec {
 				if cleanKind == "layout" && curRev.Kind == "layout" && curRev.Label != cleanLabel {
 					cleanLabel = "Przesunięto węzły"
 					cleanCoalesce = "nodedrag:batch"
+				} else if cleanKind == "layout" && curRev.Kind != "layout" {
+					cleanKind = curRev.Kind
+					cleanLabel = curRev.Label
+					if curRev.SelectedSceneID != "" {
+						selectedSceneID = curRev.SelectedSceneID
+					}
+					cleanCoalesce = curRev.CoalesceKey
 				}
 				curRev.TimeUnix = now
 				curRev.Label = cleanLabel

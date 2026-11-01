@@ -33,6 +33,9 @@ func (s *Server) openBookSettings(r *http.Request) string {
 	}
 	s.BookSettingsOpen = true
 	s.SelectedChapter = ""
+	s.EditorBreakdownPanelOpen = false
+	s.EditorHistoryPanelOpen = false
+	s.EditorHelpModalOpen = false
 	return ""
 }
 
@@ -45,9 +48,19 @@ func (s *Server) toggleBookSettings(r *http.Request) string {
 	if !s.isHistoryPreview() && r.FormValue("scene_id") != "" {
 		_ = s.saveSceneFromForm(r)
 	}
-	s.BookSettingsOpen = !s.BookSettingsOpen
+	switch r.FormValue("open") {
+	case "true":
+		s.BookSettingsOpen = true
+	case "false":
+		s.BookSettingsOpen = false
+	default:
+		s.BookSettingsOpen = !s.BookSettingsOpen
+	}
 	if s.BookSettingsOpen {
 		s.SelectedChapter = ""
+		s.EditorBreakdownPanelOpen = false
+		s.EditorHistoryPanelOpen = false
+		s.EditorHelpModalOpen = false
 	}
 	return ""
 }
@@ -94,6 +107,25 @@ func (s *Server) saveBookSettings(r *http.Request) string {
 				if s.Save != nil && len(s.Save.History) == 0 && s.Save.AudioTime == 0 {
 					s.Save.CurrentSceneID = target.ID
 					_ = book.WriteSaveState(s.SavesDir, s.Save)
+				}
+				changed = true
+			}
+		}
+		if _, hasExpDir := r.Form["export_dir"]; hasExpDir {
+			rawExpDir := strings.TrimSpace(r.FormValue("export_dir"))
+			newExpDir := ""
+			if rawExpDir != "" {
+				if expanded, err := book.ExpandLocalPath(rawExpDir); err == nil && expanded != "" {
+					newExpDir = expanded
+				} else {
+					newExpDir = book.SanitizePlainText(rawExpDir)
+				}
+			}
+			if newExpDir != s.ActiveBook.ExportDir {
+				s.ActiveBook.ExportDir = newExpDir
+				if s.Settings != nil && newExpDir != "" {
+					s.Settings.ExportDir = newExpDir
+					_ = s.saveAppSettings()
 				}
 				changed = true
 			}
@@ -337,6 +369,9 @@ func (s *Server) selectStudioChapter(r *http.Request) string {
 		if foundCh := s.ActiveBook.FindChapter(chKey); foundCh != nil {
 			s.SelectedChapter = foundCh.Name
 			s.BookSettingsOpen = false
+			s.EditorBreakdownPanelOpen = false
+			s.EditorHistoryPanelOpen = false
+			s.EditorHelpModalOpen = false
 		}
 	}
 	return ""
@@ -357,10 +392,14 @@ func (s *Server) insertScene(r *http.Request) string {
 		if parentID == "" && len(s.ActiveBook.Scenes) > 0 {
 			parentID = s.ActiveBook.Scenes[len(s.ActiveBook.Scenes)-1].ID
 		}
-		newName := fmt.Sprintf("Nowa scena %d", len(s.ActiveBook.Scenes)+1)
+		newName := book.NextUniqueSceneName(s.ActiveBook)
 		if inserted, err := book.InsertSceneBetween(s.ActiveBook, parentID, childID, newName); err == nil && inserted != nil {
 			s.reloadActiveBook()
-			s.SelectedSceneID = inserted.ID
+			if found := s.findScene(inserted.Name); found != nil {
+				s.SelectedSceneID = found.ID
+			} else {
+				s.SelectedSceneID = inserted.ID
+			}
 			toast = "Wstawiono nową scenę: " + inserted.Name
 			s.recordHistoryAfterMutation(toast, "graph", "")
 		} else if err != nil {
@@ -387,10 +426,14 @@ func (s *Server) insertSceneBefore(r *http.Request) string {
 		if targetID == "" {
 			targetID = strings.TrimSpace(r.FormValue("scene"))
 		}
-		newName := fmt.Sprintf("Nowa scena %d", len(s.ActiveBook.Scenes)+1)
+		newName := book.NextUniqueSceneName(s.ActiveBook)
 		if inserted, err := book.InsertSceneBefore(s.ActiveBook, targetID, newName); err == nil && inserted != nil {
 			s.reloadActiveBook()
-			s.SelectedSceneID = inserted.ID
+			if found := s.findScene(inserted.Name); found != nil {
+				s.SelectedSceneID = found.ID
+			} else {
+				s.SelectedSceneID = inserted.ID
+			}
 			toast = "Wstawiono nową scenę: " + inserted.Name
 			s.recordHistoryAfterMutation(toast, "graph", "")
 		} else if err != nil {
@@ -421,10 +464,14 @@ func (s *Server) createSceneAt(r *http.Request) string {
 		y, errY := strconv.Atoi(strings.TrimSpace(r.FormValue("y")))
 		hasCoords := errX == nil && errY == nil
 		targetCh := strings.TrimSpace(r.FormValue("chapter"))
-		newName := fmt.Sprintf("Nowa scena %d", len(s.ActiveBook.Scenes)+1)
+		newName := book.NextUniqueSceneName(s.ActiveBook)
 		if created, err := book.CreateStandaloneSceneInChapter(s.ActiveBook, newName, targetCh, x, y, hasCoords); err == nil && created != nil {
 			s.reloadActiveBook()
-			s.SelectedSceneID = created.ID
+			if found := s.findScene(created.Name); found != nil {
+				s.SelectedSceneID = found.ID
+			} else {
+				s.SelectedSceneID = created.ID
+			}
 			toast = "Dodano nową scenę: " + created.Name
 			s.recordHistoryAfterMutation(toast, "graph", "")
 		} else if err != nil {
@@ -553,12 +600,18 @@ func (s *Server) saveEditorViewportAndNodePositions(r *http.Request) string {
 	}
 	scID := strings.TrimSpace(r.FormValue("scene_id"))
 	batchStr := strings.TrimSpace(r.FormValue("positions"))
+	wireKeyRaw := strings.ToLower(strings.TrimSpace(r.FormValue("wire_key")))
+	wirePinsRaw := strings.TrimSpace(r.FormValue("wire_pins"))
 	hasNodeMove := scID != "" || batchStr != ""
-	if hasNodeMove {
+	hasWirePinUpdate := wireKeyRaw != ""
+	if hasNodeMove || hasWirePinUpdate {
 		s.ensureHistoryBaselineBeforeMutation()
 	}
 	if s.ActiveBook.Layout == nil {
 		s.ActiveBook.Layout = make(map[string]book.NodePosition)
+	}
+	if s.ActiveBook.WirePins == nil {
+		s.ActiveBook.WirePins = make(map[string][]book.WirePin)
 	}
 	movedCount := 0
 	lastMovedLabel := ""
@@ -568,15 +621,7 @@ func (s *Server) saveEditorViewportAndNodePositions(r *http.Request) string {
 			sc.X = x
 			sc.Y = y
 			pos := book.NodePosition{Row: sc.Row, Col: sc.Col, X: x, Y: y, HasXY: true}
-			s.ActiveBook.Layout[sc.ID] = pos
-			if sc.ExplicitID != "" {
-				s.ActiveBook.Layout[sc.ExplicitID] = pos
-				s.ActiveBook.Layout[strings.ToLower(sc.ExplicitID)] = pos
-			}
-			if sc.Name != "" {
-				s.ActiveBook.Layout[sc.Name] = pos
-				s.ActiveBook.Layout[book.NormalizeLookupKey(sc.Name)] = pos
-			}
+			book.StoreSceneNodePosition(s.ActiveBook, sc, pos)
 			movedCount++
 			lastMovedLabel = sc.DisplayName()
 			lastMovedID = sc.ID
@@ -629,6 +674,14 @@ func (s *Server) saveEditorViewportAndNodePositions(r *http.Request) string {
 			s.ActiveBook.HasEditorView = true
 		}
 	}
+	if hasWirePinUpdate {
+		pins := book.ParseWirePinList(wirePinsRaw)
+		if len(pins) > 0 {
+			s.ActiveBook.WirePins[wireKeyRaw] = pins
+		} else {
+			delete(s.ActiveBook.WirePins, wireKeyRaw)
+		}
+	}
 	_ = book.SaveBookEditorStateToDisk(s.ActiveBook)
 	if hasNodeMove && movedCount > 0 {
 		moveLbl := fmt.Sprintf("Przesunięto węzły (%d)", movedCount)
@@ -638,6 +691,8 @@ func (s *Server) saveEditorViewportAndNodePositions(r *http.Request) string {
 			coalesceKey = "nodedrag:" + lastMovedID
 		}
 		s.recordHistoryAfterMutation(moveLbl, "layout", coalesceKey)
+	} else if hasWirePinUpdate {
+		s.recordHistoryAfterMutation("Zmieniono trasę przewodu", "layout", "wirepin:"+wireKeyRaw)
 	}
 	return ""
 }
@@ -747,9 +802,15 @@ func (s *Server) toggleEditorBreakdownPanel(r *http.Request) string {
 	if !s.isHistoryPreview() && r.FormValue("scene_id") != "" {
 		_ = s.saveSceneFromForm(r)
 	}
+	if r.FormValue("book_settings_open") == "false" {
+		s.BookSettingsOpen = false
+	}
 	s.EditorBreakdownPanelOpen = !s.EditorBreakdownPanelOpen
 	if s.EditorBreakdownPanelOpen {
+		s.BookSettingsOpen = false
+		s.SelectedChapter = ""
 		s.EditorHistoryPanelOpen = false
+		s.EditorHelpModalOpen = false
 	}
 	return ""
 }
@@ -759,7 +820,10 @@ func (s *Server) openEditorBreakdownPanel(r *http.Request) string {
 		_ = s.saveSceneFromForm(r)
 	}
 	s.EditorBreakdownPanelOpen = true
+	s.BookSettingsOpen = false
+	s.SelectedChapter = ""
 	s.EditorHistoryPanelOpen = false
+	s.EditorHelpModalOpen = false
 	return ""
 }
 
@@ -818,35 +882,195 @@ func (s *Server) renameLocationAction(r *http.Request) string {
 	return fmt.Sprintf("Zmieniono lokację %s → %s (%d scen)", strings.ToUpper(oldLoc), strings.ToUpper(newLoc), count)
 }
 
-func (s *Server) exportScreenplayPDFAction(_ *http.Request) string {
+func (s *Server) exportScreenplayPDFAction(r *http.Request) string {
 	if s.ActiveBook == nil {
 		return "Brak aktywnego scenariusza"
+	}
+	exportDir, errMsg, ok := s.resolveOrPickBookExportDir(r)
+	if !ok {
+		return errMsg
 	}
 	pdfBytes, err := book.ExportScreenplayPDF(s.ActiveBook)
 	if err != nil {
 		return err.Error()
 	}
-	distDir := filepath.Join(s.RootDir, "dist")
-	_ = os.MkdirAll(distDir, 0755)
-	outPath := filepath.Join(distDir, s.ActiveBook.ID+".pdf")
+	if err := os.MkdirAll(exportDir, 0755); err != nil {
+		return err.Error()
+	}
+	outPath := filepath.Join(exportDir, s.ActiveBook.ID+".pdf")
 	if err := os.WriteFile(outPath, pdfBytes, 0644); err != nil {
 		return err.Error()
 	}
-	return "Wyeksportowano scenariusz PDF: dist/" + s.ActiveBook.ID + ".pdf"
+	s.revealExportedFileInOS(outPath)
+	return "Wyeksportowano scenariusz PDF: " + outPath
 }
 
-func (s *Server) exportScreenplayFountainAction(_ *http.Request) string {
+func (s *Server) exportScreenplayFountainAction(r *http.Request) string {
 	if s.ActiveBook == nil {
 		return "Brak aktywnego scenariusza"
 	}
+	exportDir, errMsg, ok := s.resolveOrPickBookExportDir(r)
+	if !ok {
+		return errMsg
+	}
 	fountainText := book.ExportScreenplayFountain(s.ActiveBook)
-	distDir := filepath.Join(s.RootDir, "dist")
-	_ = os.MkdirAll(distDir, 0755)
-	outPath := filepath.Join(distDir, s.ActiveBook.ID+".fountain")
+	if err := os.MkdirAll(exportDir, 0755); err != nil {
+		return err.Error()
+	}
+	outPath := filepath.Join(exportDir, s.ActiveBook.ID+".fountain")
 	if err := os.WriteFile(outPath, []byte(fountainText), 0644); err != nil {
 		return err.Error()
 	}
-	return "Wyeksportowano plik Fountain: dist/" + s.ActiveBook.ID + ".fountain"
+	s.revealExportedFileInOS(outPath)
+	return "Wyeksportowano plik Fountain: " + outPath
+}
+
+func (s *Server) browseExportModalFolder(r *http.Request) string {
+	if fmtVal := strings.ToLower(strings.TrimSpace(r.FormValue("format"))); fmtVal != "" {
+		s.ExportModalFormat = fmtVal
+	}
+	if curDir := strings.TrimSpace(r.FormValue("export_dir")); curDir != "" {
+		if expanded, err := book.ExpandLocalPath(curDir); err == nil && expanded != "" {
+			s.ExportModalDir = expanded
+		}
+	}
+	picked := strings.TrimSpace(r.FormValue("picked_dir"))
+	if picked == "" {
+		s.mu.Unlock()
+		picked = PickNativeBookPath(true)
+		s.mu.Lock()
+	}
+	if picked != "" {
+		if expanded, err := book.ExpandLocalPath(picked); err == nil && expanded != "" {
+			picked = expanded
+		}
+		s.ExportModalDir = picked
+		if s.ActiveBook != nil {
+			s.ActiveBook.ExportDir = picked
+			if !s.ActiveBook.IsPacked {
+				_ = book.SaveBookMetadataToDisk(s.ActiveBook)
+			}
+		}
+		if s.Settings != nil {
+			s.Settings.ExportDir = picked
+			_ = s.saveAppSettings()
+		}
+	}
+	return ""
+}
+
+func (s *Server) exportProjectAction(r *http.Request) string {
+	if s.ActiveBook == nil {
+		return "Brak aktywnego projektu"
+	}
+	format := strings.ToLower(strings.TrimSpace(r.FormValue("format")))
+	if format == "" {
+		format = strings.ToLower(strings.TrimSpace(s.ExportModalFormat))
+	}
+	if format == "" {
+		if s.ActiveBook.IsScreenplay() {
+			format = "pdf"
+		} else {
+			format = "stbook"
+		}
+	}
+	rawDir := strings.TrimSpace(r.FormValue("export_dir"))
+	if rawDir == "" {
+		rawDir = strings.TrimSpace(s.ExportModalDir)
+	}
+	if rawDir != "" && r != nil && r.Form != nil {
+		r.Form.Set("export_dir", rawDir)
+	}
+	var toast string
+	switch format {
+	case "pdf":
+		toast = s.exportScreenplayPDFAction(r)
+	case "fountain":
+		toast = s.exportScreenplayFountainAction(r)
+	default:
+		toast = s.packActiveBook(r)
+	}
+	if strings.HasPrefix(toast, "Wyeksportowano ") || strings.HasPrefix(toast, "Spakowano ") {
+		s.ExportModalOpen = false
+		s.ExportModalFormat = ""
+		s.ExportModalDir = ""
+	}
+	return toast
+}
+
+func (s *Server) browseBookExportFolder(r *http.Request) string {
+	if s.isHistoryPreview() {
+		return historyPreviewLockedToast
+	}
+	if s.ActiveBook == nil || s.ActiveBook.IsPacked {
+		return ""
+	}
+	picked := strings.TrimSpace(r.FormValue("export_dir"))
+	if picked == "" {
+		s.mu.Unlock()
+		picked = PickNativeBookPath(true)
+		s.mu.Lock()
+	}
+	if picked == "" {
+		r.Form.Set("silent", "true")
+		return ""
+	}
+	expanded, err := book.ExpandLocalPath(picked)
+	if err != nil {
+		return err.Error()
+	}
+	s.ensureHistoryBaselineBeforeMutation()
+	s.ActiveBook.ExportDir = expanded
+	if err := book.SaveBookMetadataToDisk(s.ActiveBook); err != nil {
+		return err.Error()
+	}
+	if s.Settings != nil {
+		s.Settings.ExportDir = expanded
+		_ = s.saveAppSettings()
+	}
+	s.reloadActiveBook()
+	toast := "Ustawiono katalog eksportu: " + expanded
+	s.recordHistoryAfterMutation(toast, "meta", "exportdir")
+	return toast
+}
+
+func (s *Server) browseBookSaveFolder(r *http.Request) string {
+	if s.isHistoryPreview() {
+		return historyPreviewLockedToast
+	}
+	if s.ActiveBook == nil || s.ActiveBook.IsPacked {
+		return ""
+	}
+	picked := strings.TrimSpace(r.FormValue("save_path"))
+	if picked == "" {
+		s.mu.Unlock()
+		picked = PickNativeBookPath(true)
+		s.mu.Lock()
+	}
+	if picked == "" {
+		r.Form.Set("silent", "true")
+		return ""
+	}
+	expanded, err := book.ExpandLocalPath(picked)
+	if err != nil {
+		return err.Error()
+	}
+	oldRoot := s.ActiveBook.RootPath
+	reloaded, err := book.MoveBookToDirectory(s.ActiveBook, expanded)
+	if err != nil {
+		return err.Error()
+	}
+	if s.Settings != nil {
+		s.Settings.RemoveExternalBook(oldRoot)
+		if filepath.Clean(filepath.Dir(reloaded.RootPath)) != filepath.Clean(s.BooksDir) {
+			s.Settings.AddExternalBook(reloaded.RootPath)
+			reloaded.IsExternal = true
+		}
+		s.Settings.NewBookDir = filepath.Dir(reloaded.RootPath)
+		_ = s.saveAppSettings()
+	}
+	s.setActiveBook(reloaded)
+	return "Przeniesiono projekt do: " + reloaded.RootPath
 }
 
 func (s *Server) applySluglineTokenAction(r *http.Request) string {

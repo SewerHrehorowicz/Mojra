@@ -183,6 +183,55 @@
                         {else}
                             "Utwórz książkę"
 
+{if show_export_modal}
+    .modal-backdrop
+        data-backdrop-action: CloseExportModal
+        .modal-card#modal-export-project
+            .modal-header
+                h3.modal-title "Eksport projektu"
+            form.modal-body#form-export-project
+                action: ExportProject
+                .node-meta-fields.modal-meta-fields
+                    .node-meta-row
+                        span.node-meta-key "format:"
+                        .custom-select.node-media-select.export-format-select
+                            input.custom-select-input
+                                type: hidden
+                                name: format
+                                value: "{export_modal_format}"
+                            button.custom-select-trigger.modal-field-select-trigger
+                                type: button
+                                data-select-toggle: "true"
+                                span.custom-select-label {export_modal_format_label}
+                                svg.custom-select-caret src: /icons/chevron-down.svg
+                            .custom-select-menu.hidden
+                                {for fmt_opt in export_modal_format_options}
+                                    button.custom-select-option .active?: {fmt_opt.is_active}
+                                        type: button
+                                        data-select-value: "{fmt_opt.value}"
+                                        data-select-label: "{fmt_opt.label}"
+                                        {fmt_opt.label}
+                    .node-meta-row
+                        span.node-meta-key "folder:"
+                        .add-book-input-row
+                            input.node-meta-input.field-input#export-modal-path
+                                type: text
+                                name: export_dir
+                                value: "{export_modal_dir}"
+                                placeholder: "{default_export_dir}"
+                            button.btn.btn-sm
+                                type: button
+                                action: BrowseExportModalFolder
+                                "Wybierz folder..."
+                .modal-actions
+                    button.btn
+                        type: button
+                        action: CloseExportModal
+                        "Anuluj"
+                    button.btn.btn-primary#export-modal-submit-btn
+                        type: submit
+                        "Eksportuj"
+
 {if show_add_book_modal}
     .modal-backdrop
         data-backdrop-action: CloseAddBookModal
@@ -252,6 +301,18 @@
                     .scene-text-editor-top-bar
                         button.scene-text-back-btn
                             type: button
+                            action: PlayFromScene
+                            data-scene: "{scene_text_modal_id}"
+                            "Graj od tej sceny"
+                        {if not is_history_preview}
+                            button.scene-text-back-btn.scene-text-delete-btn
+                                type: button
+                                action: PromptDeleteScene
+                                data-scene: "{scene_text_modal_id}"
+                                svg.btn-icon src: /icons/trash.svg
+                                "Usuń scenę"
+                        button.scene-text-back-btn
+                            type: button
                             action: CloseSceneTextModal
                             "← Wróć do edytora"
                 .active-scene-stage.scene-text-editor-stage
@@ -287,6 +348,13 @@
                                         span.node-start-indicator
                                             data-hint: "Ta scena jest punktem startowym (korzeniem) opowieści"
                                             svg.scene-star-icon src: /icons/star.svg
+                                    {elif not is_history_preview}
+                                        button.node-start-btn
+                                            type: button
+                                            action: SetStartScene
+                                            data-scene: "{scene_text_modal_id}"
+                                            data-hint: "Ustaw jako scenę startową"
+                                            svg.scene-star-icon src: /icons/star.svg
                                     input.scene-title.scene-title-present.node-inline-title
                                         type: text
                                         name: name
@@ -303,6 +371,29 @@
                                         data-hint: "Ustawienia sceny"
                                         svg.scene-settings-icon src: /icons/settings.svg
                             .scene-settings-block#modal-scene-settings-block .hidden?: {!scene_text_modal_settings_open}
+                                .scene-settings-row
+                                    span.node-meta-key {scene_text_modal_chapter_key}
+                                    .custom-select.node-chapter-select
+                                        .node-chapter-input-wrap
+                                            input.node-inline-chapter.custom-select-input
+                                                type: text
+                                                name: chapter
+                                                value: "{scene_text_modal_chapter}"
+                                                placeholder: "Rozdział..."
+                                                disabled?: {is_history_preview}
+                                                readonly?: {is_history_preview}
+                                            {if not is_history_preview}
+                                                button.node-chapter-caret-btn
+                                                    type: button
+                                                    data-select-toggle: "true"
+                                                    svg.custom-select-caret src: /icons/chevron-down.svg
+                                        .custom-select-menu.hidden
+                                            {for ch_opt in scene_text_modal_chapter_options}
+                                                button.custom-select-option .active?: {ch_opt.is_active}
+                                                    type: button
+                                                    data-select-value: "{ch_opt.value}"
+                                                    data-select-label: "{ch_opt.label}"
+                                                    {ch_opt.label}
                                 .scene-settings-row
                                     span.node-meta-key "id:"
                                     input.node-meta-input
@@ -481,6 +572,11 @@
                                     {for ch in scene_text_modal_choices}
                                         {if ch.is_editable}
                                             .choice-btn.modal-choice-row
+                                                {if not is_history_preview}
+                                                    span.choice-drag-grip
+                                                        data-choice-grip: "true"
+                                                        data-choice-idx: "{ch.idx}"
+                                                        svg.choice-grip-icon src: /icons/grip.svg
                                                 input.choice-label-text.node-inline-title
                                                     type: text
                                                     name: "choice_label_{ch.idx}"

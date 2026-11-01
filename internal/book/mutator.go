@@ -114,6 +114,34 @@ func SaveBookEditorStateToDisk(b *Book) error {
 	return writeFileIfChanged(editorPath, []byte(SerializeEditorFile(b)), 0644)
 }
 
+// NextUniqueSceneName returns a default scene title ("Nowa scena N") that does not collide with any existing scene in the book.
+func NextUniqueSceneName(b *Book) string {
+	n := 1
+	if b != nil {
+		n = len(b.Scenes) + 1
+	}
+	for {
+		cand := fmt.Sprintf("Nowa scena %d", n)
+		normCand := NormalizeLookupKey(cand)
+		taken := false
+		if b != nil {
+			for _, sc := range b.Scenes {
+				if strings.EqualFold(strings.TrimSpace(sc.Name), cand) ||
+					(normCand != "" && NormalizeLookupKey(sc.Name) == normCand) ||
+					strings.EqualFold(sc.ExplicitID, cand) ||
+					strings.EqualFold(sc.ID, cand) {
+					taken = true
+					break
+				}
+			}
+		}
+		if !taken {
+			return cand
+		}
+		n++
+	}
+}
+
 // InsertSceneBetween inserts a new scene into the book between parentSceneID and childSceneID
 // (or after parentSceneID if childSceneID is empty), updates links, and writes back to the .txt file.
 func InsertSceneBetween(b *Book, parentSceneID, childSceneID, newSceneName string) (*Scene, error) {
@@ -122,7 +150,7 @@ func InsertSceneBetween(b *Book, parentSceneID, childSceneID, newSceneName strin
 	}
 	cleanName := SanitizePlainText(newSceneName)
 	if cleanName == "" {
-		cleanName = fmt.Sprintf("Nowa Scena %d", len(b.Scenes)+1)
+		cleanName = NextUniqueSceneName(b)
 	}
 
 	var parent *Scene
@@ -236,6 +264,7 @@ func InsertSceneBetween(b *Book, parentSceneID, childSceneID, newSceneName strin
 	b.Scenes = append(b.Scenes[:insertPos], append([]*Scene{newScene}, b.Scenes[insertPos:]...)...)
 
 	FinalizeBook(b)
+	StoreSceneNodePosition(b, newScene, NodePosition{Row: newScene.Row, Col: newScene.Col, X: newScene.X, Y: newScene.Y, HasXY: true})
 	if err := SaveBookScenesToDisk(b); err != nil {
 		return nil, err
 	}
@@ -250,7 +279,7 @@ func InsertSceneBefore(b *Book, targetSceneID, newSceneName string) (*Scene, err
 	}
 	cleanName := SanitizePlainText(newSceneName)
 	if cleanName == "" {
-		cleanName = fmt.Sprintf("Nowa scena %d", len(b.Scenes)+1)
+		cleanName = NextUniqueSceneName(b)
 	}
 
 	var target *Scene
@@ -333,6 +362,7 @@ func InsertSceneBefore(b *Book, targetSceneID, newSceneName string) (*Scene, err
 	b.Scenes = append(b.Scenes[:targetIdx], append([]*Scene{newScene}, b.Scenes[targetIdx:]...)...)
 
 	FinalizeBook(b)
+	StoreSceneNodePosition(b, newScene, NodePosition{Row: newScene.Row, Col: newScene.Col, X: newScene.X, Y: newScene.Y, HasXY: true})
 	if err := SaveBookScenesToDisk(b); err != nil {
 		return nil, err
 	}
@@ -352,7 +382,7 @@ func CreateStandaloneSceneInChapter(b *Book, newSceneName, targetChapter string,
 	}
 	cleanName := SanitizePlainText(newSceneName)
 	if cleanName == "" {
-		cleanName = fmt.Sprintf("Nowa scena %d", len(b.Scenes)+1)
+		cleanName = NextUniqueSceneName(b)
 	}
 
 	chapterName := SanitizePlainText(targetChapter)
@@ -394,20 +424,24 @@ func CreateStandaloneSceneInChapter(b *Book, newSceneName, targetChapter string,
 						g.id = sc.ChapterID
 					}
 					sx, sy := sc.X, sc.Y
-					sw, sh := 192, 96
+					sw := 192
+					sh := sceneCanvasHeight(sc)
+					if sh < 120 {
+						sh = 120
+					}
 					if !g.hasNode {
-						g.minX, g.minY = sx-24, sy-52
-						g.maxX, g.maxY = sx+sw+24, sy+sh+44
+						g.minX, g.minY = sx-36, sy-52
+						g.maxX, g.maxY = sx+sw+36, sy+sh+44
 						g.hasNode = true
 					} else {
-						if sx-24 < g.minX {
-							g.minX = sx - 24
+						if sx-36 < g.minX {
+							g.minX = sx - 36
 						}
 						if sy-52 < g.minY {
 							g.minY = sy - 52
 						}
-						if sx+sw+24 > g.maxX {
-							g.maxX = sx + sw + 24
+						if sx+sw+36 > g.maxX {
+							g.maxX = sx + sw + 36
 						}
 						if sy+sh+44 > g.maxY {
 							g.maxY = sy + sh + 44
@@ -483,6 +517,10 @@ func CreateStandaloneSceneInChapter(b *Book, newSceneName, targetChapter string,
 		}
 	}
 
+	if hasCoords {
+		x, y = resolveNonCollidingStandaloneCoords(b, chapterName, x, y)
+	}
+
 	newScene := &Scene{
 		Name:        cleanName,
 		Chapter:     chapterName,
@@ -524,8 +562,7 @@ func CreateStandaloneSceneInChapter(b *Book, newSceneName, targetChapter string,
 	}
 	if hasCoords {
 		pos := NodePosition{X: x, Y: y, HasXY: true}
-		b.Layout[cleanName] = pos
-		b.Layout[NormalizeLookupKey(cleanName)] = pos
+		StoreSceneNodePosition(b, newScene, pos)
 	}
 
 	FinalizeBook(b)
@@ -533,14 +570,140 @@ func CreateStandaloneSceneInChapter(b *Book, newSceneName, targetChapter string,
 		newScene.X = x
 		newScene.Y = y
 		pos := NodePosition{Row: newScene.Row, Col: newScene.Col, X: x, Y: y, HasXY: true}
-		b.Layout[newScene.ID] = pos
-		b.Layout[cleanName] = pos
-		b.Layout[NormalizeLookupKey(cleanName)] = pos
+		StoreSceneNodePosition(b, newScene, pos)
 	}
 	if err := SaveBookScenesToDisk(b); err != nil {
 		return nil, err
 	}
 	return newScene, nil
+}
+
+func resolveNonCollidingStandaloneCoords(b *Book, targetChapter string, baseX, baseY int) (int, int) {
+	if b == nil || len(b.Scenes) == 0 {
+		return baseX, baseY
+	}
+	const (
+		nodeW      = 192
+		nodeH      = 74
+		nodeMargin = 24
+	)
+	targetChKey := strings.ToLower(strings.TrimSpace(targetChapter))
+
+	type chRect struct {
+		key    string
+		left   int
+		top    int
+		right  int
+		bottom int
+	}
+	byCh := make(map[string]*chRect)
+	var otherChapters []*chRect
+	var targetRect *chRect
+
+	for _, sc := range b.Scenes {
+		chN := strings.TrimSpace(sc.Chapter)
+		if chN == "" {
+			chN = "Rozdział 1"
+		}
+		k := strings.ToLower(chN)
+		sh := sceneCanvasHeight(sc)
+		if sh < 120 {
+			sh = 120
+		}
+		l := sc.X - 36
+		t := sc.Y - 52
+		r := sc.X + nodeW + 36
+		bt := sc.Y + sh + 44
+		rect, ok := byCh[k]
+		if !ok {
+			rect = &chRect{key: k, left: l, top: t, right: r, bottom: bt}
+			byCh[k] = rect
+			if k == targetChKey {
+				targetRect = rect
+			} else {
+				otherChapters = append(otherChapters, rect)
+			}
+		} else {
+			if l < rect.left {
+				rect.left = l
+			}
+			if t < rect.top {
+				rect.top = t
+			}
+			if r > rect.right {
+				rect.right = r
+			}
+			if bt > rect.bottom {
+				rect.bottom = bt
+			}
+		}
+	}
+
+	if len(otherChapters) == 0 {
+		return baseX, baseY
+	}
+
+	collidesChapterAt := func(cx, cy int) bool {
+		cLeft := cx - 36
+		cTop := cy - 52
+		cRight := cx + nodeW + 36
+		cBottom := cy + 120 + 44
+		if targetRect != nil {
+			if targetRect.left < cLeft {
+				cLeft = targetRect.left
+			}
+			if targetRect.top < cTop {
+				cTop = targetRect.top
+			}
+			if targetRect.right > cRight {
+				cRight = targetRect.right
+			}
+			if targetRect.bottom > cBottom {
+				cBottom = targetRect.bottom
+			}
+		}
+		for _, oc := range otherChapters {
+			if cLeft < oc.right+24 &&
+				cRight+24 > oc.left &&
+				cTop < oc.bottom+24 &&
+				cBottom+24 > oc.top {
+				return true
+			}
+		}
+		return false
+	}
+
+	if !collidesChapterAt(baseX, baseY) {
+		return baseX, baseY
+	}
+
+	collidesAt := func(cx, cy int) bool {
+		for _, sc := range b.Scenes {
+			if nodesOverlapWithMargin(cx, cy, nodeH, sc.X, sc.Y, sceneCanvasHeight(sc), nodeMargin) {
+				return true
+			}
+		}
+		return collidesChapterAt(cx, cy)
+	}
+	for step := 1; step <= 48; step++ {
+		stepPx := step * EditorGridSize
+		candidates := [][2]int{
+			{baseX, SnapToGrid(baseY + stepPx)},
+			{SnapToGrid(baseX + stepPx), baseY},
+			{SnapToGrid(baseX - stepPx), baseY},
+			{baseX, SnapToGrid(baseY - stepPx)},
+			{SnapToGrid(baseX + stepPx), SnapToGrid(baseY + stepPx)},
+			{SnapToGrid(baseX - stepPx), SnapToGrid(baseY + stepPx)},
+			{SnapToGrid(baseX - step*240), baseY},
+			{SnapToGrid(baseX + step*240), baseY},
+		}
+		for _, cand := range candidates {
+			if !collidesAt(cand[0], cand[1]) {
+				return cand[0], cand[1]
+			}
+		}
+	}
+	return baseX, baseY
 }
 
 // CreateNewBook scaffolds a brand new book directory with data.txt, story.txt, cover.png, and optional narration/imageless mode.

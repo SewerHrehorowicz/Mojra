@@ -316,4 +316,95 @@ func TestScreenplayPDFAndFountainExport(t *testing.T) {
 	if !strings.Contains(fountain, "= Scena otwierająca z długim dialogiem.\n") {
 		t.Fatalf("fountain export missing synopsis:\n%s", fountain)
 	}
+
+	// Verify parallel branching roles, primary path linearization, and export_dir persistence
+	b.ExportDir = "/tmp/storyteller-exports-test"
+	if err := SaveBookMetadataToDisk(b); err != nil {
+		t.Fatalf("SaveBookMetadataToDisk failed: %v", err)
+	}
+	reloaded, err := LoadBookFromPath(b.RootPath)
+	if err != nil {
+		t.Fatalf("LoadBookFromPath failed: %v", err)
+	}
+	if reloaded.ExportDir != "/tmp/storyteller-exports-test" {
+		t.Fatalf("expected ExportDir persisted in data.txt, got %q", reloaded.ExportDir)
+	}
+
+	// Add a parallel branch and an unlinked scene and verify LinearizeScreenplayScenes + ComputeBranchRoles + PromoteSceneToPrimaryPath
+	orig0ID := b.Scenes[0].ID
+	orig1ID := b.Scenes[1].ID
+	orig2ID := b.Scenes[2].ID
+	if err := SaveBookScenesToDisk(b); err != nil {
+		t.Fatalf("SaveBookScenesToDisk before branching failed: %v", err)
+	}
+	altScCreated, err := CreateStandaloneSceneInChapter(b, "Scena Alternatywna", "Akt II", 600, 120, true)
+	if err != nil {
+		t.Fatalf("CreateStandaloneSceneInChapter altSc: %v", err)
+	}
+	altID := altScCreated.ID
+
+	orphanSc, err := CreateStandaloneSceneInChapter(b, "Scena Luźna", "Akt II", 840, 120, true)
+	if err != nil {
+		t.Fatalf("CreateStandaloneSceneInChapter orphanSc: %v", err)
+	}
+	orphanSc.Slugline = "WN. PIWNICA - NOC"
+	orphanSc.Text = "Niepodpięta scena robocza, która nie może trafić do PDF."
+
+	findByID := func(id string) *Scene {
+		for _, sc := range b.Scenes {
+			if sc.ID == id {
+				return sc
+			}
+		}
+		return nil
+	}
+	sc0 := findByID(orig0ID)
+	sc1 := findByID(orig1ID)
+	sc2 := findByID(orig2ID)
+	altSc := findByID(altID)
+	if sc0 == nil || sc1 == nil || sc2 == nil || altSc == nil {
+		t.Fatalf("expected to find sc0/sc1/sc2/altSc after reload")
+	}
+	altSc.Slugline = "PL. DACH WIEŻOWCA - NOC"
+	altSc.Text = "Alternatywna gałąź akcji prowadząca do finału."
+	altSc.ExplicitNext = sc2.ReferenceKey()
+	altSc.Choices = []Choice{{Label: "Dalej", Target: sc2.ReferenceKey(), TargetSceneID: sc2.ID, IsImplicit: true}}
+
+	sc0.ExplicitNext = ""
+	sc0.Choices = []Choice{
+		{Label: "Ścieżka A", Target: sc1.ReferenceKey(), TargetSceneID: sc1.ID},
+		{Label: "Ścieżka B", Target: altSc.ReferenceKey(), TargetSceneID: altSc.ID},
+	}
+	FinalizeBook(b)
+
+	roles, _ := ComputeBranchRoles(b)
+	if roles[sc1.ID] != "primary" || roles[altSc.ID] != "secondary" {
+		t.Fatalf("expected sc1=primary and altSc=secondary, got roles=%v", roles)
+	}
+	if roles[sc2.ID] != "" {
+		t.Fatalf("expected reconvergence scene %q to have no branch radio role, got %q", sc2.ID, roles[sc2.ID])
+	}
+
+	linear1 := LinearizeScreenplayScenes(b)
+	if len(linear1) != 3 || linear1[1].ID != sc1.ID {
+		t.Fatalf("expected primary path of 3 scenes via sc1 without orphanSc/altSc, got len=%d", len(linear1))
+	}
+
+	fountain1 := ExportScreenplayFountain(b)
+	if strings.Contains(fountain1, "DACH WIEŻOWCA") || strings.Contains(fountain1, "PIWNICA") {
+		t.Fatalf("expected secondary branch and orphan scene excluded from export, got:\n%s", fountain1)
+	}
+
+	// Promote altSc to primary path
+	if !PromoteSceneToPrimaryPath(b, altSc.ID) {
+		t.Fatalf("expected PromoteSceneToPrimaryPath to succeed for altSc")
+	}
+	rolesAfter, _ := ComputeBranchRoles(b)
+	if rolesAfter[altSc.ID] != "primary" || rolesAfter[sc1.ID] != "secondary" {
+		t.Fatalf("expected altSc=primary and sc1=secondary after promotion, got %v", rolesAfter)
+	}
+	fountain2 := ExportScreenplayFountain(b)
+	if !strings.Contains(fountain2, "DACH WIEŻOWCA") || strings.Contains(fountain2, "PIWNICA") {
+		t.Fatalf("expected promoted altSc included and orphanSc still excluded after promotion, got:\n%s", fountain2)
+	}
 }

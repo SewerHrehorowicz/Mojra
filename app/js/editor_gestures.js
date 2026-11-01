@@ -111,23 +111,74 @@ function hitTestStudioCanvas(wx, wy) {
         }
       }
     }
+
+    // 2b. Wire control pins
+    const allWires = studioGraphState.wires || [];
+    const pinHitRSq = 100; // 10px world radius
+    for (let i = allWires.length - 1; i >= 0; i--) {
+      const w = allWires[i];
+      if (!w.pins || w.pins.length === 0) continue;
+      for (let pIdx = w.pins.length - 1; pIdx >= 0; pIdx--) {
+        const p = w.pins[pIdx];
+        const dx = wx - p.x;
+        const dy = wy - p.y;
+        if (dx * dx + dy * dy <= pinHitRSq) {
+          return {
+            type: "wire-pin",
+            wire: w,
+            pinIdx: pIdx,
+            pin: p,
+            x: p.x,
+            y: p.y
+          };
+        }
+      }
+    }
   }
 
-  // 3. Scene node cards (+ Wybór button, grip ⋮⋮, or card body)
-  const addChoiceShaped = typeof shapeTextGlyphs === "function" ? shapeTextGlyphs(FONT_BTN, "+ WYBÓR", 80) : null;
-  const addChoiceBtnW = addChoiceShaped ? Math.ceil(addChoiceShaped.totalW) + 20 : 72;
+  // 3. Scene node cards (footer icons, choice rows, header title, grip ⋮⋮, or card body)
+  const footerBtnSize = 24;
   for (let i = nodes.length - 1; i >= 0; i--) {
     const nd = nodes[i];
     if (wx >= nd.x && wx <= nd.x + nd.w && wy >= nd.y && wy <= nd.y + nd.h) {
+      const footerTop = nd.y + nd.h - NODE_FOOTER_HEIGHT;
+      if (wx >= nd.x + nd.w - 8 - footerBtnSize && wx <= nd.x + nd.w - 8 && wy >= footerTop + 8 && wy <= footerTop + 8 + footerBtnSize) {
+        return { type: "edit-scene-btn", node: nd };
+      }
       if (isPreview) {
         return { type: "node-card", node: nd };
       }
-      const footerTop = nd.y + nd.h - NODE_FOOTER_HEIGHT;
-      if (wx >= nd.x + 8 && wx <= nd.x + 8 + addChoiceBtnW && wy >= footerTop + 8 && wy <= footerTop + 32) {
+      if (wx >= nd.x + 8 && wx <= nd.x + 8 + footerBtnSize && wy >= footerTop + 8 && wy <= footerTop + 8 + footerBtnSize) {
         return { type: "add-choice-btn", node: nd };
       }
       if (wx >= nd.x + 2 && wx <= nd.x + 26 && wy >= nd.y + 4 && wy <= nd.y + 30) {
         return { type: "node-grip", node: nd };
+      }
+      if (
+        (nd.branchRole === "primary" || nd.branchRole === "secondary") &&
+        wx >= nd.branchRadioX - 4 &&
+        wx <= nd.branchRadioX + 12 &&
+        wy >= nd.branchRadioY - 4 &&
+        wy <= nd.branchRadioY + 12
+      ) {
+        return { type: "branch-radio", node: nd };
+      }
+      if (wx > nd.x + 26 && wx <= nd.x + nd.w - 8 && wy >= nd.y + 4 && wy < nd.y + NODE_HEADER_HEIGHT) {
+        return { type: "node-title", node: nd };
+      }
+      if (nd.hasChoices && nd.ports && nd.ports.length > 0 && wy >= nd.y + NODE_HEADER_HEIGHT && wy < footerTop) {
+        const choiceIdx = Math.floor((wy - (nd.y + NODE_HEADER_HEIGHT)) / NODE_CHOICE_ROW_HEIGHT);
+        if (choiceIdx >= 0 && choiceIdx < nd.ports.length) {
+          if (wx >= nd.x + 2 && wx <= nd.x + 20) {
+            return { type: "choice-grip", node: nd, choiceIdx: choiceIdx };
+          }
+          if (wx >= nd.x + nd.w - 26 && wx <= nd.x + nd.w - 8) {
+            return { type: "choice-trash-btn", node: nd, choiceIdx: choiceIdx };
+          }
+          if (wx > nd.x + 20 && wx < nd.x + nd.w - 26) {
+            return { type: "choice-label", node: nd, choiceIdx: choiceIdx };
+          }
+        }
       }
       return { type: "node-card", node: nd };
     }
@@ -153,13 +204,16 @@ function hitTestStudioCanvas(wx, wy) {
   const wireTolSq = 49; // 7px world radius
   for (let i = wires.length - 1; i >= 0; i--) {
     const w = wires[i];
-    if (w.bbox && (wx < w.bbox.minX || wx > w.bbox.maxX || wy < w.bbox.minY || wy > w.bbox.maxY)) {
+    if (
+      w.maxX !== undefined &&
+      (wx < w.minX - 8 || wx > w.maxX + 8 || wy < w.minY - 8 || wy > w.maxY + 8)
+    ) {
       continue;
     }
     const pts = w.pts;
     for (let j = 0; j < pts.length - 1; j++) {
       if (distToSegmentSq(wx, wy, pts[j].x, pts[j].y, pts[j + 1].x, pts[j + 1].y) <= wireTolSq) {
-        return { type: "wire", wire: w };
+        return { type: "wire", wire: w, segIdx: j, wx: wx, wy: wy };
       }
     }
   }
@@ -175,6 +229,8 @@ function isSameHoveredCanvasItem(a, b) {
     a.node === b.node &&
     a.chapter === b.chapter &&
     a.portIdx === b.portIdx &&
+    a.choiceIdx === b.choiceIdx &&
+    a.pinIdx === b.pinIdx &&
     a.wire === b.wire
   );
 }
@@ -196,10 +252,20 @@ function updateCanvasHoverCursor(viewport, hit) {
       break;
     case "node-grip":
     case "chapter-grip":
+    case "choice-grip":
+    case "wire-pin":
+    case "wire":
       viewport.style.cursor = "grab";
+      break;
+    case "node-title":
+    case "choice-label":
+      viewport.style.cursor = "text";
       break;
     case "chapter-title":
     case "add-choice-btn":
+    case "edit-scene-btn":
+    case "choice-trash-btn":
+    case "branch-radio":
     case "node-card":
       viewport.style.cursor = "pointer";
       break;
@@ -227,6 +293,85 @@ function triggerCanvasAddChoiceForNode(nd) {
     });
   }
   sendServerAction("AddChoice", params);
+}
+
+function triggerCanvasReorderChoice(nd, fromIdx, toIdx, sourceForm) {
+  if (!nd || !nd.id || fromIdx === toIdx || (typeof isEditorHistoryPreview === "function" && isEditorHistoryPreview())) {
+    return;
+  }
+  const params = {
+    scene: nd.id,
+    from_idx: String(fromIdx),
+    to_idx: String(toIdx)
+  };
+  const form =
+    sourceForm ||
+    (() => {
+      const cf = qs("#editor-context-form");
+      return cf && cf.getAttribute("data-context-scene-id") === nd.id ? cf : null;
+    })();
+  if (form) {
+    if (typeof dirtyInspectorForms !== "undefined") {
+      dirtyInspectorForms.delete(form);
+    }
+    if (typeof liveSaveTimers !== "undefined" && liveSaveTimers.has(form)) {
+      clearTimeout(liveSaveTimers.get(form));
+      liveSaveTimers.delete(form);
+    }
+    const fd = new FormData(form);
+    fd.forEach((val, key) => {
+      params[key] = val;
+    });
+  }
+  params.scene = nd.id;
+  params.from_idx = String(fromIdx);
+  params.to_idx = String(toIdx);
+  sendServerAction("ReorderChoice", params);
+}
+
+function moveNodePortInMemory(nd, fromIdx, toIdx) {
+  if (!nd || !nd.ports || fromIdx === toIdx) return false;
+  if (fromIdx < 0 || fromIdx >= nd.ports.length || toIdx < 0 || toIdx >= nd.ports.length) return false;
+  const movedPort = nd.ports.splice(fromIdx, 1)[0];
+  nd.ports.splice(toIdx, 0, movedPort);
+  for (let k = 0; k < nd.ports.length; k++) {
+    nd.ports[k].idx = k;
+  }
+  recomputeNodeMetrics(nd);
+  const ch = nd.chapterObj || studioGraphState.chapterByKey.get(nd.chapterLower);
+  if (ch) {
+    recomputeChapterPortPositions(ch);
+  }
+  routeStudioWires();
+  studioGraphState.staticBatchDirty = true;
+  studioGraphState.overlayBatchDirty = true;
+  renderStudioCanvas();
+  return true;
+}
+
+function beginChoiceDragGesture(nd, choiceIdx, viewport, clientX, clientY, isTouch) {
+  if (!nd || !nd.ports || nd.ports.length < 2) return false;
+  if (typeof isEditorHistoryPreview === "function" && isEditorHistoryPreview()) return false;
+  editorSelectionCleared = false;
+  selectedNodeIds.clear();
+  if (nd.id) selectedNodeIds.add(nd.id);
+  syncNodeSelectionDOM();
+  if (viewport) viewport.classList.add("is-panning");
+  activeCanvasGesture = {
+    type: "choice-drag",
+    isTouch: Boolean(isTouch),
+    viewport: viewport,
+    node: nd,
+    sceneId: nd.id,
+    startIdx: choiceIdx,
+    currentIdx: choiceIdx,
+    startClientX: clientX,
+    startClientY: clientY,
+    moved: false
+  };
+  studioGraphState.overlayBatchDirty = true;
+  renderStudioCanvas();
+  return true;
 }
 
 function handleEditorCanvasClick(e) {
@@ -699,6 +844,115 @@ function handleEditorCanvasClick(e) {
   return false;
 }
 
+function snapToWirePinGrid(val) {
+  return Math.round(val / 12) * 12;
+}
+
+function computePointArcLengthAlongPolyline(pts, px, py) {
+  if (!pts || pts.length < 2) return 0;
+  let bestDistSq = Infinity;
+  let bestArc = 0;
+  let accum = 0;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const ax = pts[i].x;
+    const ay = pts[i].y;
+    const bx = pts[i + 1].x;
+    const by = pts[i + 1].y;
+    const dx = bx - ax;
+    const dy = by - ay;
+    const lenSq = dx * dx + dy * dy;
+    const segLen = Math.sqrt(lenSq);
+    let t = 0;
+    if (lenSq > 0.001) {
+      t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / lenSq));
+    }
+    const projX = ax + t * dx;
+    const projY = ay + t * dy;
+    const dSq = (px - projX) * (px - projX) + (py - projY) * (py - projY);
+    if (dSq < bestDistSq) {
+      bestDistSq = dSq;
+      bestArc = accum + t * segLen;
+    }
+    accum += segLen;
+  }
+  return bestArc;
+}
+
+function findInsertIndexForWirePin(wire, wx, wy) {
+  const pins = wire.pins || [];
+  if (pins.length === 0) return 0;
+  const pts = wire.pts || wire.basePts || [];
+  const newArc = computePointArcLengthAlongPolyline(pts, wx, wy);
+  for (let i = 0; i < pins.length; i++) {
+    const pArc = computePointArcLengthAlongPolyline(pts, pins[i].x, pins[i].y);
+    if (newArc <= pArc) {
+      return i;
+    }
+  }
+  return pins.length;
+}
+
+function rerouteAfterWirePinMutation(wire) {
+  if (!wire) return;
+  if (wire.wireKey) {
+    if (wire.pins && wire.pins.length > 0) {
+      studioGraphState.wirePins.set(
+        wire.wireKey,
+        wire.pins.map((p) => ({ x: p.x, y: p.y }))
+      );
+    } else {
+      studioGraphState.wirePins.delete(wire.wireKey);
+    }
+  }
+  routeSingleWireBasePts(wire, studioGraphState.nodes, studioGraphState.chapters);
+  applyParallelOffsetsAndBundles(studioGraphState.wires, null);
+  studioGraphState.staticBatchDirty = true;
+  studioGraphState.overlayBatchDirty = true;
+  renderStudioCanvas();
+}
+
+function removeWirePinAt(wire, pinIdx) {
+  if (!wire || !wire.pins || pinIdx < 0 || pinIdx >= wire.pins.length) return false;
+  wire.pins.splice(pinIdx, 1);
+  rerouteAfterWirePinMutation(wire);
+  if (wire.wireKey) {
+    saveWirePinsOnServer(wire.wireKey, wire.pins);
+  }
+  return true;
+}
+
+function beginWirePinDragGesture(hit, viewport, clientX, clientY, isTouch) {
+  if (typeof isEditorHistoryPreview === "function" && isEditorHistoryPreview()) {
+    return false;
+  }
+  const wire = hit.wire;
+  if (!wire) return false;
+  if (!wire.pins) wire.pins = [];
+  const isNewPin = hit.type === "wire";
+  const ptWorld = clientToStudioWorld(viewport, clientX, clientY);
+  const startWx = isNewPin ? ptWorld.wx : hit.pin.x;
+  const startWy = isNewPin ? ptWorld.wy : hit.pin.y;
+  const pinIdx = isNewPin ? findInsertIndexForWirePin(wire, startWx, startWy) : hit.pinIdx;
+
+  activeCanvasGesture = {
+    type: "wire-pin-drag",
+    isTouch: Boolean(isTouch),
+    viewport: viewport,
+    wire: wire,
+    pinIdx: pinIdx,
+    isNewPin: isNewPin,
+    inserted: !isNewPin,
+    startClientX: clientX,
+    startClientY: clientY,
+    startWx: startWx,
+    startWy: startWy,
+    moved: false
+  };
+  studioGraphState.overlayBatchDirty = true;
+  renderStudioCanvas();
+  return true;
+}
+
 function beginWireConnectGesture(hit, viewport, isTouch) {
   const nd = hit.node;
   const pt = hit.port;
@@ -730,13 +984,15 @@ function beginWireConnectGesture(hit, viewport, isTouch) {
 function beginChapterWireConnectGesture(hit, viewport, isTouch) {
   const ch = hit.chapter;
   const op = hit.outPort;
+  const opSide = op.side || "bottom";
   activeCanvasGesture = {
     type: "chapter-wire-connect",
     isTouch: Boolean(isTouch),
     viewport: viewport,
     fromChapterObj: ch,
     activeChapterOutPort: op,
-    isBottomPort: true,
+    outPortSide: opSide,
+    isBottomPort: opSide === "bottom",
     fromChapter: ch.ref || ch.name,
     oldTargetChapter: op.target || "",
     startX: op.x,
@@ -756,9 +1012,12 @@ function beginChapterDragGesture(ch, viewport, clientX, clientY, isTouch, clicke
     selectChapterForContextPanel(ch.name);
     return true;
   }
-  const chNodes = studioGraphState.nodes.filter(
-    (nd) => nd.chapterLower === ch.nameLower || nd.chapterLower === ch.refLower
-  );
+  const chNodes =
+    ch.nodes && ch.nodes.length > 0
+      ? ch.nodes
+      : studioGraphState.nodes.filter(
+          (nd) => nd.chapterLower === ch.nameLower || nd.chapterLower === ch.refLower
+        );
   if (chNodes.length === 0) return false;
   const items = chNodes.map((nd) => ({
     node: nd,
@@ -777,6 +1036,8 @@ function beginChapterDragGesture(ch, viewport, clientX, clientY, isTouch, clicke
     items: items,
     startClientX: clientX,
     startClientY: clientY,
+    lastValidDx: 0,
+    lastValidDy: 0,
     moved: false
   };
   renderStudioCanvas();
@@ -835,6 +1096,8 @@ function beginNodeDragGesture(nd, viewport, clientX, clientY, isTouch, isMultiMo
     items: items,
     startClientX: clientX,
     startClientY: clientY,
+    lastValidDx: 0,
+    lastValidDy: 0,
     moved: false,
     hoveredChapterDrop: ""
   };
@@ -850,6 +1113,16 @@ function bindEditorCanvasEvents() {
       if (vp) vp.classList.add("is-panning");
     }
     if (e.key === "Escape") {
+      if (e.target && e.target.id === "canvas-node-title-input") {
+        e.preventDefault();
+        hideFloatingNodeTitleInput(false);
+        return;
+      }
+      if (e.target && e.target.id === "canvas-choice-input") {
+        e.preventDefault();
+        hideFloatingChoiceInput(false);
+        return;
+      }
       if (
         e.target &&
         e.target.classList &&
@@ -875,6 +1148,16 @@ function bindEditorCanvasEvents() {
       }
     }
     if (e.key === "Enter" && e.target && e.target.classList) {
+      if (e.target.id === "canvas-node-title-input") {
+        e.preventDefault();
+        hideFloatingNodeTitleInput(true);
+        return;
+      }
+      if (e.target.id === "canvas-choice-input") {
+        e.preventDefault();
+        hideFloatingChoiceInput(true);
+        return;
+      }
       if (e.target.classList.contains("chapter-group-title-input")) {
         e.preventDefault();
         hideFloatingChapterInput(true);
@@ -883,6 +1166,12 @@ function bindEditorCanvasEvents() {
       if (e.target.id === "book-settings-title-input") {
         e.preventDefault();
         commitBookTitleInput(e.target);
+        e.target.blur();
+        return;
+      }
+      if (e.target.classList.contains("breakdown-name-input")) {
+        e.preventDefault();
+        commitBreakdownRenameInput(e.target);
         e.target.blur();
         return;
       }
@@ -980,8 +1269,9 @@ function bindEditorCanvasEvents() {
 
   function applyIncrementalNodeMove(items, snappedDx, snappedDy) {
     const dirtyNodeIds = new Set();
-    const dirtyChaptersSet = new Set();
+    const affectedChaptersSet = new Set();
     const dirtyAabbs = [];
+    let hasInterChapterPortMove = false;
 
     for (let i = 0; i < items.length; i++) {
       const nd = items[i].node;
@@ -992,19 +1282,28 @@ function bindEditorCanvasEvents() {
         maxX: nd.right + 24,
         maxY: nd.bottom + 24
       });
-      const ch = studioGraphState.chapterByKey.get(nd.chapterLower);
-      if (ch && !dirtyChaptersSet.has(ch)) {
-        dirtyChaptersSet.add(ch);
-        dirtyAabbs.push({
-          minX: ch.left - 24,
-          minY: ch.top - 24,
-          maxX: ch.right + 24,
-          maxY: ch.bottom + 24
-        });
+      const ch = nd.chapterObj || studioGraphState.chapterByKey.get(nd.chapterLower);
+      if (ch) {
+        affectedChaptersSet.add(ch);
+      }
+      if (!hasInterChapterPortMove) {
+        if (nd.implicitPort && nd.implicitPort.targetChapter) {
+          hasInterChapterPortMove = true;
+        } else if (nd.ports) {
+          for (let k = 0; k < nd.ports.length; k++) {
+            if (nd.ports[k].targetChapter) {
+              hasInterChapterPortMove = true;
+              break;
+            }
+          }
+        }
       }
       nd.x = snapToEditorGrid(items[i].startX + snappedDx);
       nd.y = snapToEditorGrid(items[i].startY + snappedDy);
       recomputeNodeMetrics(nd);
+      if (typeof updateNodeInSpatialGrids === "function") {
+        updateNodeInSpatialGrids(nd);
+      }
       dirtyAabbs.push({
         minX: nd.left - 24,
         minY: nd.top - 24,
@@ -1013,17 +1312,12 @@ function bindEditorCanvasEvents() {
       });
     }
 
-    updateChapterGroupFrames();
-    dirtyChaptersSet.forEach((ch) => {
-      dirtyAabbs.push({
-        minX: ch.left - 24,
-        minY: ch.top - 24,
-        maxX: ch.right + 24,
-        maxY: ch.bottom + 24
-      });
-    });
+    const changedChapterFramesSet = updateChapterGroupFrames(
+      affectedChaptersSet,
+      hasInterChapterPortMove
+    );
 
-    drawStudioWires(dirtyNodeIds, dirtyAabbs, dirtyChaptersSet);
+    drawStudioWires(dirtyNodeIds, dirtyAabbs, changedChapterFramesSet, affectedChaptersSet);
   }
 
   function updateCanvasDragMove(clientX, clientY) {
@@ -1071,21 +1365,120 @@ function bindEditorCanvasEvents() {
       return;
     }
 
+    if (activeCanvasGesture.type === "choice-drag") {
+      const nd = activeCanvasGesture.node;
+      if (!nd || !nd.ports || nd.ports.length < 2) return;
+      const ptWorld = clientToStudioWorld(activeCanvasGesture.viewport, clientX, clientY);
+      const choicesTop = nd.y + NODE_HEADER_HEIGHT;
+      let targetIdx = Math.floor((ptWorld.wy - choicesTop) / NODE_CHOICE_ROW_HEIGHT);
+      if (targetIdx < 0) targetIdx = 0;
+      if (targetIdx >= nd.ports.length) targetIdx = nd.ports.length - 1;
+      if (targetIdx !== activeCanvasGesture.currentIdx) {
+        if (moveNodePortInMemory(nd, activeCanvasGesture.currentIdx, targetIdx)) {
+          activeCanvasGesture.currentIdx = targetIdx;
+          activeCanvasGesture.moved = true;
+        }
+      }
+      return;
+    }
+
+    if (activeCanvasGesture.type === "dom-choice-drag") {
+      const list = activeCanvasGesture.list;
+      const row = activeCanvasGesture.row;
+      if (!list || !row) return;
+      const children = Array.from(list.children);
+      let targetIdx = activeCanvasGesture.currentIdx;
+      for (let i = 0; i < children.length; i++) {
+        const child = children[i];
+        if (child === row) continue;
+        const rect = child.getBoundingClientRect();
+        const midY = rect.top + rect.height * 0.5;
+        if (i < activeCanvasGesture.currentIdx && clientY < midY) {
+          targetIdx = i;
+          break;
+        }
+        if (i > activeCanvasGesture.currentIdx && clientY > midY) {
+          targetIdx = i;
+        }
+      }
+      if (targetIdx !== activeCanvasGesture.currentIdx) {
+        const refNode =
+          targetIdx < activeCanvasGesture.currentIdx
+            ? children[targetIdx]
+            : children[targetIdx].nextSibling;
+        list.insertBefore(row, refNode);
+        if (activeCanvasGesture.node) {
+          moveNodePortInMemory(activeCanvasGesture.node, activeCanvasGesture.currentIdx, targetIdx);
+        }
+        activeCanvasGesture.currentIdx = targetIdx;
+        activeCanvasGesture.moved = true;
+      }
+      return;
+    }
+
+    if (activeCanvasGesture.type === "wire-pin-drag") {
+      const rawDist = Math.hypot(
+        clientX - activeCanvasGesture.startClientX,
+        clientY - activeCanvasGesture.startClientY
+      );
+      if (!activeCanvasGesture.moved && rawDist < 3) {
+        return;
+      }
+      const wire = activeCanvasGesture.wire;
+      if (!wire) return;
+      const ptWorld = clientToStudioWorld(activeCanvasGesture.viewport, clientX, clientY);
+      const snappedX = snapToWirePinGrid(ptWorld.wx);
+      const snappedY = snapToWirePinGrid(ptWorld.wy);
+      if (!activeCanvasGesture.inserted) {
+        wire.pins.splice(activeCanvasGesture.pinIdx, 0, { x: snappedX, y: snappedY });
+        activeCanvasGesture.inserted = true;
+      } else if (wire.pins[activeCanvasGesture.pinIdx]) {
+        if (
+          wire.pins[activeCanvasGesture.pinIdx].x === snappedX &&
+          wire.pins[activeCanvasGesture.pinIdx].y === snappedY &&
+          activeCanvasGesture.moved
+        ) {
+          return;
+        }
+        wire.pins[activeCanvasGesture.pinIdx].x = snappedX;
+        wire.pins[activeCanvasGesture.pinIdx].y = snappedY;
+      }
+      activeCanvasGesture.moved = true;
+      rerouteAfterWirePinMutation(wire);
+      return;
+    }
+
     if (activeCanvasGesture.type === "node-drag") {
       const z = editorCanvasState.zoom || 1.0;
       const dx = (clientX - activeCanvasGesture.startClientX) / z;
       const dy = (clientY - activeCanvasGesture.startClientY) / z;
-      const snappedDx = snapToEditorGrid(dx);
-      const snappedDy = snapToEditorGrid(dy);
-      if (snappedDx === activeCanvasGesture.lastSnappedDx && snappedDy === activeCanvasGesture.lastSnappedDy) {
+      const rawDx = snapToEditorGrid(dx);
+      const rawDy = snapToEditorGrid(dy);
+      if (rawDx === activeCanvasGesture.lastSnappedDx && rawDy === activeCanvasGesture.lastSnappedDy) {
         return;
       }
-      activeCanvasGesture.lastSnappedDx = snappedDx;
-      activeCanvasGesture.lastSnappedDy = snappedDy;
-      if (Math.abs(snappedDx) >= EDITOR_GRID_SIZE || Math.abs(snappedDy) >= EDITOR_GRID_SIZE) {
+      activeCanvasGesture.lastSnappedDx = rawDx;
+      activeCanvasGesture.lastSnappedDy = rawDy;
+      const valid = resolveValidNodeDragDelta(
+        activeCanvasGesture.items || [],
+        rawDx,
+        rawDy,
+        activeCanvasGesture.lastValidDx || 0,
+        activeCanvasGesture.lastValidDy || 0
+      );
+      if (
+        valid.dx === activeCanvasGesture.lastValidDx &&
+        valid.dy === activeCanvasGesture.lastValidDy &&
+        activeCanvasGesture.moved
+      ) {
+        return;
+      }
+      activeCanvasGesture.lastValidDx = valid.dx;
+      activeCanvasGesture.lastValidDy = valid.dy;
+      if (Math.abs(valid.dx) >= EDITOR_GRID_SIZE || Math.abs(valid.dy) >= EDITOR_GRID_SIZE) {
         activeCanvasGesture.moved = true;
       }
-      applyIncrementalNodeMove(activeCanvasGesture.items || [], snappedDx, snappedDy);
+      applyIncrementalNodeMove(activeCanvasGesture.items || [], valid.dx, valid.dy);
       return;
     }
 
@@ -1104,17 +1497,34 @@ function bindEditorCanvasEvents() {
       const z = editorCanvasState.zoom || 1.0;
       const dx = (clientX - activeCanvasGesture.startClientX) / z;
       const dy = (clientY - activeCanvasGesture.startClientY) / z;
-      const snappedDx = snapToEditorGrid(dx);
-      const snappedDy = snapToEditorGrid(dy);
-      if (snappedDx === activeCanvasGesture.lastSnappedDx && snappedDy === activeCanvasGesture.lastSnappedDy) {
+      const rawDx = snapToEditorGrid(dx);
+      const rawDy = snapToEditorGrid(dy);
+      if (rawDx === activeCanvasGesture.lastSnappedDx && rawDy === activeCanvasGesture.lastSnappedDy) {
         return;
       }
-      activeCanvasGesture.lastSnappedDx = snappedDx;
-      activeCanvasGesture.lastSnappedDy = snappedDy;
-      if (Math.abs(snappedDx) >= EDITOR_GRID_SIZE || Math.abs(snappedDy) >= EDITOR_GRID_SIZE) {
+      activeCanvasGesture.lastSnappedDx = rawDx;
+      activeCanvasGesture.lastSnappedDy = rawDy;
+      const valid = resolveValidChapterDragDelta(
+        activeCanvasGesture.chapter,
+        activeCanvasGesture.items || [],
+        rawDx,
+        rawDy,
+        activeCanvasGesture.lastValidDx || 0,
+        activeCanvasGesture.lastValidDy || 0
+      );
+      if (
+        valid.dx === activeCanvasGesture.lastValidDx &&
+        valid.dy === activeCanvasGesture.lastValidDy &&
+        activeCanvasGesture.moved
+      ) {
+        return;
+      }
+      activeCanvasGesture.lastValidDx = valid.dx;
+      activeCanvasGesture.lastValidDy = valid.dy;
+      if (Math.abs(valid.dx) >= EDITOR_GRID_SIZE || Math.abs(valid.dy) >= EDITOR_GRID_SIZE) {
         activeCanvasGesture.moved = true;
       }
-      applyIncrementalNodeMove(activeCanvasGesture.items || [], snappedDx, snappedDy);
+      applyIncrementalNodeMove(activeCanvasGesture.items || [], valid.dx, valid.dy);
       return;
     }
 
@@ -1322,6 +1732,13 @@ function bindEditorCanvasEvents() {
         scheduleSaveEditorViewport();
       } else if (g.startedAddChoiceNode) {
         triggerCanvasAddChoiceForNode(g.startedAddChoiceNode);
+      } else if (g.startedBranchRadioNode) {
+        if (g.startedBranchRadioNode.branchRole === "secondary") {
+          sendServerAction("SelectPrimaryBranchScene", {
+            scene: g.startedBranchRadioNode.id,
+            parent: g.startedBranchRadioNode.branchParentId || ""
+          });
+        }
       } else if (g.startedNodeId && !g.startedInteractive) {
         editorSelectionCleared = false;
         selectedNodeIds.clear();
@@ -1345,6 +1762,87 @@ function bindEditorCanvasEvents() {
     if (g.type === "right-pan") {
       if (g.moved) {
         scheduleSaveEditorViewport();
+      }
+      return;
+    }
+
+    if (g.type === "choice-drag") {
+      if (g.isTouch && g.moved) {
+        suppressNextTouchClickUntil = Date.now() + 360;
+      }
+      renderStudioCanvas();
+      if (g.node && g.startIdx !== g.currentIdx) {
+        triggerCanvasReorderChoice(g.node, g.startIdx, g.currentIdx, null);
+      } else if (g.sceneId) {
+        selectNodeForContextPanel(g.sceneId);
+      }
+      return;
+    }
+
+    if (g.type === "dom-choice-drag") {
+      if (g.row) {
+        g.row.classList.remove("is-dragging-choice");
+      }
+      document.body.classList.remove("is-dragging-choice-row");
+      if (g.startIdx !== g.currentIdx) {
+        if (g.node) {
+          triggerCanvasReorderChoice(g.node, g.startIdx, g.currentIdx, g.form);
+        } else if (g.sceneId) {
+          const params = {
+            scene: g.sceneId,
+            from_idx: String(g.startIdx),
+            to_idx: String(g.currentIdx)
+          };
+          if (g.form) {
+            const fd = new FormData(g.form);
+            fd.forEach((val, key) => {
+              params[key] = val;
+            });
+          }
+          params.scene = g.sceneId;
+          params.from_idx = String(g.startIdx);
+          params.to_idx = String(g.currentIdx);
+          sendServerAction("ReorderChoice", params);
+        }
+      }
+      return;
+    }
+
+    if (g.type === "wire-pin-drag") {
+      const wire = g.wire;
+      if (wire && g.inserted && g.moved && wire.pins && wire.pins[g.pinIdx]) {
+        if (g.isTouch) suppressNextTouchClickUntil = Date.now() + 360;
+        const p = wire.pins[g.pinIdx];
+        const nearStart = Math.hypot(p.x - wire.x1, p.y - wire.y1) <= 14;
+        const nearEnd = Math.hypot(p.x - wire.x2, p.y - wire.y2) <= 14;
+        const nearPrev =
+          g.pinIdx > 0 &&
+          Math.hypot(p.x - wire.pins[g.pinIdx - 1].x, p.y - wire.pins[g.pinIdx - 1].y) <= 12;
+        const nearNext =
+          g.pinIdx + 1 < wire.pins.length &&
+          Math.hypot(p.x - wire.pins[g.pinIdx + 1].x, p.y - wire.pins[g.pinIdx + 1].y) <= 12;
+        let redundantCollinear = false;
+        if (!g.isNewPin) {
+          const savedPin = wire.pins.splice(g.pinIdx, 1)[0];
+          routeSingleWireBasePts(wire, studioGraphState.nodes, studioGraphState.chapters);
+          const testPts = wire.basePts || [];
+          for (let j = 0; j < testPts.length - 1; j++) {
+            if (distToSegmentSq(savedPin.x, savedPin.y, testPts[j].x, testPts[j].y, testPts[j + 1].x, testPts[j + 1].y) <= 16) {
+              redundantCollinear = true;
+              break;
+            }
+          }
+          wire.pins.splice(g.pinIdx, 0, savedPin);
+        }
+        if (nearStart || nearEnd || nearPrev || nearNext || redundantCollinear) {
+          wire.pins.splice(g.pinIdx, 1);
+        }
+        rerouteAfterWirePinMutation(wire);
+        if (wire.wireKey) {
+          saveWirePinsOnServer(wire.wireKey, wire.pins);
+        }
+      } else {
+        renderStudioCanvas();
       }
       return;
     }
@@ -1541,11 +2039,13 @@ function bindEditorCanvasEvents() {
       lastPointerClientPos.x = t.clientX;
       lastPointerClientPos.y = t.clientY;
 
-      if (e.target.closest("#canvas-context-menu, .custom-select-menu, #canvas-chapter-input, #editor-empty-state")) {
+      if (e.target.closest("#canvas-context-menu, .custom-select-menu, #canvas-chapter-input, #canvas-node-title-input, #canvas-choice-input, #editor-empty-state")) {
         return;
       }
       closeCanvasContextMenu();
       hideFloatingChapterInput(true);
+      hideFloatingNodeTitleInput(true);
+      hideFloatingChoiceInput(true);
 
       const ptWorld = clientToStudioWorld(viewport, t.clientX, t.clientY);
       const hit = hitTestStudioCanvas(ptWorld.wx, ptWorld.wy);
@@ -1576,6 +2076,18 @@ function bindEditorCanvasEvents() {
         return;
       }
 
+      if (hit.type === "choice-grip") {
+        e.preventDefault();
+        beginChoiceDragGesture(hit.node, hit.choiceIdx, viewport, t.clientX, t.clientY, true);
+        return;
+      }
+
+      if (hit.type === "wire-pin" || hit.type === "wire") {
+        e.preventDefault();
+        beginWirePinDragGesture(hit, viewport, t.clientX, t.clientY, true);
+        return;
+      }
+
       activeCanvasGesture = {
         type: "touch-pan",
         isTouch: true,
@@ -1585,8 +2097,9 @@ function bindEditorCanvasEvents() {
         startPanX: editorCanvasState.panX,
         startPanY: editorCanvasState.panY,
         moved: false,
-        startedInteractive: hit.type === "add-choice-btn",
+        startedInteractive: hit.type === "add-choice-btn" || hit.type === "branch-radio",
         startedAddChoiceNode: hit.type === "add-choice-btn" ? hit.node : null,
+        startedBranchRadioNode: hit.type === "branch-radio" ? hit.node : null,
         startedNodeId: hit.type === "node-card" ? hit.node.id : "",
         startedOnEmptyCanvas: hit.type === "empty"
       };
@@ -1682,18 +2195,62 @@ function bindEditorCanvasEvents() {
   document.addEventListener("touchcancel", handleCanvasTouchEndOrCancel, { passive: false });
 
   document.addEventListener("mousedown", (e) => {
+    if (e.button === 0 && e.target && typeof e.target.closest === "function") {
+      const domChoiceGrip = e.target.closest("[data-choice-grip]");
+      if (domChoiceGrip && !(typeof isEditorHistoryPreview === "function" && isEditorHistoryPreview())) {
+        const row = domChoiceGrip.closest(".context-choice-item, .modal-choice-row");
+        const list = row ? row.parentElement : null;
+        if (row && list && list.children.length >= 2) {
+          e.preventDefault();
+          e.stopPropagation();
+          const children = Array.from(list.children);
+          const startIdx = children.indexOf(row);
+          if (startIdx >= 0) {
+            const form = row.closest("form");
+            const sceneIdInput = form ? qs('input[name="scene_id"], input[name="scene"]', form) : null;
+            const sceneId =
+              (form && form.getAttribute("data-context-scene-id")) ||
+              (sceneIdInput ? sceneIdInput.value : "") ||
+              "";
+            const nd = sceneId ? studioGraphState.nodeById.get(sceneId) : null;
+            row.classList.add("is-dragging-choice");
+            document.body.classList.add("is-dragging-choice-row");
+            activeCanvasGesture = {
+              type: "dom-choice-drag",
+              isTouch: false,
+              row: row,
+              list: list,
+              form: form,
+              node: nd,
+              sceneId: sceneId,
+              startIdx: startIdx,
+              currentIdx: startIdx,
+              startClientX: e.clientX,
+              startClientY: e.clientY,
+              moved: false
+            };
+            return;
+          }
+        }
+      }
+    }
+
     const viewport = e.target.closest("#timeline-scroll-viewport");
     if (!viewport) {
       closeCanvasContextMenu();
       hideFloatingChapterInput(true);
+      hideFloatingNodeTitleInput(true);
+      hideFloatingChoiceInput(true);
       return;
     }
 
-    if (e.target.closest("#canvas-context-menu, #canvas-chapter-input, #editor-empty-state")) {
+    if (e.target.closest("#canvas-context-menu, #canvas-chapter-input, #canvas-node-title-input, #canvas-choice-input, #editor-empty-state")) {
       return;
     }
     closeCanvasContextMenu();
     hideFloatingChapterInput(true);
+    hideFloatingNodeTitleInput(true);
+    hideFloatingChoiceInput(true);
 
     if (e.button === 1 || (e.button === 0 && editorCanvasState.spacePressed)) {
       e.preventDefault();
@@ -1756,6 +2313,57 @@ function bindEditorCanvasEvents() {
       return;
     }
 
+    if (hit.type === "branch-radio") {
+      e.preventDefault();
+      e.stopPropagation();
+      if (hit.node && hit.node.branchRole === "secondary") {
+        sendServerAction("SelectPrimaryBranchScene", {
+          scene: hit.node.id,
+          parent: hit.node.branchParentId || ""
+        });
+      }
+      return;
+    }
+
+    if (hit.type === "edit-scene-btn") {
+      e.preventDefault();
+      e.stopPropagation();
+      sendServerAction("OpenSceneTextModal", { scene: hit.node.id });
+      return;
+    }
+
+    if (hit.type === "choice-trash-btn") {
+      e.preventDefault();
+      e.stopPropagation();
+      sendServerAction("PromptRemoveChoice", {
+        scene: hit.node.id,
+        choice_idx: String(hit.choiceIdx)
+      });
+      return;
+    }
+
+    if (hit.type === "choice-label") {
+      e.preventDefault();
+      e.stopPropagation();
+      editorSelectionCleared = false;
+      selectedNodeIds.clear();
+      if (hit.node && hit.node.id) selectedNodeIds.add(hit.node.id);
+      syncNodeSelectionDOM();
+      openFloatingChoiceInput(hit.node, hit.choiceIdx);
+      return;
+    }
+
+    if (hit.type === "node-title") {
+      e.preventDefault();
+      e.stopPropagation();
+      editorSelectionCleared = false;
+      selectedNodeIds.clear();
+      if (hit.node && hit.node.id) selectedNodeIds.add(hit.node.id);
+      syncNodeSelectionDOM();
+      openFloatingNodeTitleInput(hit.node);
+      return;
+    }
+
     if (hit.type === "chapter-grip" || hit.type === "chapter-title") {
       e.preventDefault();
       beginChapterDragGesture(hit.chapter, viewport, e.clientX, e.clientY, false, hit.type === "chapter-title");
@@ -1767,6 +2375,18 @@ function bindEditorCanvasEvents() {
     if (hit.type === "node-grip") {
       e.preventDefault();
       beginNodeDragGesture(hit.node, viewport, e.clientX, e.clientY, false, isMultiModifier);
+      return;
+    }
+
+    if (hit.type === "choice-grip") {
+      e.preventDefault();
+      beginChoiceDragGesture(hit.node, hit.choiceIdx, viewport, e.clientX, e.clientY, false);
+      return;
+    }
+
+    if (hit.type === "wire-pin" || hit.type === "wire") {
+      e.preventDefault();
+      beginWirePinDragGesture(hit, viewport, e.clientX, e.clientY, false);
       return;
     }
 
@@ -1840,7 +2460,7 @@ function bindEditorCanvasEvents() {
       }
       return;
     }
-    if (!viewport || e.target.closest("#canvas-context-menu, #canvas-chapter-input")) {
+    if (!viewport || e.target.closest("#canvas-context-menu, #canvas-chapter-input, #canvas-node-title-input, #canvas-choice-input")) {
       if (studioGraphState.hoveredItem) {
         studioGraphState.hoveredItem = null;
         studioGraphState.overlayBatchDirty = true;
@@ -1873,6 +2493,12 @@ function bindEditorCanvasEvents() {
       editorCanvasState.suppressNextContextMenu = false;
       return;
     }
+    const ptWorld = clientToStudioWorld(vp, e.clientX, e.clientY);
+    const hit = hitTestStudioCanvas(ptWorld.wx, ptWorld.wy);
+    if (hit.type === "wire-pin") {
+      removeWirePinAt(hit.wire, hit.pinIdx);
+      return;
+    }
     closeAllCustomSelects(null);
     const rect = vp.getBoundingClientRect();
     const z = editorCanvasState.zoom || 1.0;
@@ -1893,9 +2519,14 @@ function bindEditorCanvasEvents() {
   document.addEventListener("dblclick", (e) => {
     const vp = e.target.closest("#timeline-scroll-viewport");
     if (!vp) return;
-    if (e.target.closest("#canvas-context-menu, #canvas-chapter-input, #editor-empty-state")) return;
+    if (e.target.closest("#canvas-context-menu, #canvas-chapter-input, #canvas-node-title-input, #canvas-choice-input, #editor-empty-state")) return;
     const ptWorld = clientToStudioWorld(vp, e.clientX, e.clientY);
     const hit = hitTestStudioCanvas(ptWorld.wx, ptWorld.wy);
+    if (hit.type === "wire-pin") {
+      e.preventDefault();
+      removeWirePinAt(hit.wire, hit.pinIdx);
+      return;
+    }
     if (hit.type === "chapter-title" || hit.type === "chapter-grip") {
       e.preventDefault();
       if (!(typeof isEditorHistoryPreview === "function" && isEditorHistoryPreview())) {
@@ -1905,8 +2536,15 @@ function bindEditorCanvasEvents() {
       }
       return;
     }
-    if (hit.type === "node-card") {
+    if (
+      hit.type === "node-card" ||
+      hit.type === "node-title" ||
+      hit.type === "choice-label" ||
+      hit.type === "edit-scene-btn"
+    ) {
       e.preventDefault();
+      hideFloatingNodeTitleInput(true);
+      hideFloatingChoiceInput(true);
       sendServerAction("OpenSceneTextModal", { scene: hit.node.id });
       return;
     }
@@ -1980,18 +2618,53 @@ function bindEditorCanvasEvents() {
     scheduleNodeLiveSave(form);
   });
 
+  function commitBreakdownRenameInput(inputEl) {
+    if (!inputEl || (typeof isEditorHistoryPreview === "function" && isEditorHistoryPreview())) return;
+    const form = inputEl.closest("form.breakdown-rename-form");
+    if (!form) return;
+    const actionName = (form.getAttribute("action") || "").trim();
+    if (!actionName) return;
+    const oldInp = qs('input[name="old_name"], input[name="old_location"]', form);
+    const oldVal = ((inputEl.getAttribute("data-old-value") || (oldInp ? oldInp.value : "")) || "").trim();
+    const newVal = (inputEl.value || "").trim();
+    if (!newVal && oldVal) {
+      inputEl.value = oldVal;
+      return;
+    }
+    if (oldVal && newVal && oldVal !== newVal) {
+      inputEl.setAttribute("data-old-value", newVal);
+      if (oldInp) oldInp.value = oldVal;
+      const params = {};
+      const fd = new FormData(form);
+      fd.forEach((val, key) => {
+        params[key] = val;
+      });
+      sendServerAction(actionName, params);
+    }
+  }
+
   document.addEventListener("change", (e) => {
-    if (e.target && e.target.classList && e.target.classList.contains("chapter-group-title-input")) {
+    if (e.target && e.target.id === "canvas-node-title-input") {
+      commitNodeTitleInput(e.target);
+    } else if (e.target && e.target.id === "canvas-choice-input") {
+      commitChoiceInput(e.target);
+    } else if (e.target && e.target.classList && e.target.classList.contains("chapter-group-title-input")) {
       commitChapterTitleInput(e.target);
     } else if (e.target && e.target.id === "book-settings-title-input") {
       commitBookTitleInput(e.target);
+    } else if (e.target && e.target.classList && e.target.classList.contains("breakdown-name-input")) {
+      commitBreakdownRenameInput(e.target);
     }
   });
 
   document.addEventListener(
     "blur",
     (e) => {
-      if (e.target && e.target.classList && e.target.classList.contains("chapter-group-title-input")) {
+      if (e.target && e.target.id === "canvas-node-title-input") {
+        hideFloatingNodeTitleInput(true);
+      } else if (e.target && e.target.id === "canvas-choice-input") {
+        hideFloatingChoiceInput(true);
+      } else if (e.target && e.target.classList && e.target.classList.contains("chapter-group-title-input")) {
         if (e.target.id === "canvas-chapter-input") {
           hideFloatingChapterInput(true);
         } else {
@@ -1999,6 +2672,8 @@ function bindEditorCanvasEvents() {
         }
       } else if (e.target && e.target.id === "book-settings-title-input") {
         commitBookTitleInput(e.target);
+      } else if (e.target && e.target.classList && e.target.classList.contains("breakdown-name-input")) {
+        commitBreakdownRenameInput(e.target);
       }
     },
     true

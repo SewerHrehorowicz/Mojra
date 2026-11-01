@@ -84,14 +84,20 @@ func (s *Server) BuildTargetedRenderContext(targetTpl string, books []*book.Book
 	vars["is_view_player"] = view == "player"
 	vars["is_view_editor"] = view == "editor"
 
+	vars["default_new_book_dir"] = s.defaultNewBookDir()
+	vars["default_export_dir"] = s.defaultExportDir()
 	isScreenplay := false
 	if s.ActiveBook != nil {
 		vars["active_book_title"] = s.ActiveBook.Title
+		vars["active_book_save_dir"] = s.ActiveBook.RootPath
+		vars["active_book_export_dir"] = s.ActiveBook.ExportDir
 		isScreenplay = s.ActiveBook.IsScreenplay()
 		vars["is_screenplay_mode"] = isScreenplay
 		vars["script_standard"] = s.ActiveBook.NormalizedStandard()
 	} else {
 		vars["active_book_title"] = "Biblioteka"
+		vars["active_book_save_dir"] = ""
+		vars["active_book_export_dir"] = ""
 		vars["is_screenplay_mode"] = false
 		vars["script_standard"] = "pl"
 	}

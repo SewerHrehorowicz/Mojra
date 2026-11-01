@@ -363,8 +363,9 @@ static char *pickNativeMacOSBookPath(int chooseDir) {
             if (chooseDir) {
                 [panel setCanChooseDirectories:YES];
                 [panel setCanChooseFiles:NO];
-                [panel setTitle:@"Wybierz folder książki z dysku"];
-                [panel setPrompt:@"Dodaj folder"];
+                [panel setCanCreateDirectories:YES];
+                [panel setTitle:@"Wybierz folder na dysku"];
+                [panel setPrompt:@"Wybierz folder"];
             } else {
                 [panel setCanChooseDirectories:YES];
                 [panel setCanChooseFiles:YES];

@@ -592,15 +592,55 @@ func (s *Server) populateEditorBookAndChapterSettings(vars map[string]any) {
 		if chStartLabel == "" && len(chStartOptions) > 0 {
 			chStartLabel, _ = chStartOptions[0]["label"].(string)
 		}
+
+		branchCount := 0
+		exitCount := 0
+		totalWords := 0
+		totalEighths := 0
+		for _, sc := range chScenes {
+			totalWords += len(strings.Fields(sc.Text))
+			if s.ActiveBook.IsScreenplay() {
+				metrics := book.ComputeSceneScriptMetrics(sc, sc.OrderIndex+1, s.ActiveBook.NormalizedStandard())
+				totalEighths += metrics.Eighths
+			}
+			if len(sc.Choices) >= 2 {
+				branchCount += len(sc.Choices)
+			}
+			for _, ch := range sc.Choices {
+				if ch.IsEnding || ch.IsChapterLink {
+					exitCount++
+				} else if ch.TargetSceneID != "" {
+					if targetSc := s.findScene(ch.TargetSceneID); targetSc != nil && !strings.EqualFold(strings.TrimSpace(targetSc.Chapter), chName) {
+						exitCount++
+					}
+				}
+			}
+		}
+		lengthStat := fmt.Sprintf("%d słów", totalWords)
+		if s.ActiveBook.IsScreenplay() {
+			lengthStat = book.FormatEighths(totalEighths)
+		}
+		deleteLabel := "Usuń rozdział"
+		if s.ActiveBook.IsScreenplay() {
+			deleteLabel = "Usuń akt"
+		}
 		vars["selected_chapter"] = map[string]any{
 			"name":                chName,
 			"start_scene_id":      chStartID,
 			"start_scene_label":   chStartLabel,
 			"start_scene_options": chStartOptions,
+			"scene_count":         len(chScenes),
+			"length_stat":         lengthStat,
+			"branch_count":        branchCount,
+			"exit_count":          exitCount,
+			"can_delete":          len(s.ActiveBook.Chapters) > 1,
+			"delete_label":        deleteLabel,
 		}
 	}
 	vars["has_selected_chapter"] = hasSelectedChapter
-	vars["is_node_inspector_hidden"] = s.BookSettingsOpen || hasSelectedChapter
+	vars["is_node_inspector_hidden"] = true
+	vars["is_context_panel_hidden"] = !s.BookSettingsOpen && !hasSelectedChapter
+	vars["show_editor_help_panel"] = s.EditorHelpModalOpen
 }
 
 func (s *Server) populateEditorSelectedNodeOnly(vars map[string]any) {
@@ -762,9 +802,9 @@ func (s *Server) populateEditorContext(vars map[string]any) {
 			"output_ports":   outputPorts,
 			"scene_count":    count,
 			"scene_word":     sceneWord,
-			"x":              minX - 24,
+			"x":              minX - 36,
 			"y":              minY - 52,
-			"w":              (maxX - minX) + 48,
+			"w":              (maxX - minX) + 72,
 			"h":              (maxY - minY) + 96,
 			"next_x":         book.SnapToGrid(minX),
 			"next_y":         book.SnapToGrid(maxY + 120),
@@ -798,6 +838,12 @@ func (s *Server) populateEditorBreakdownContext(vars map[string]any) {
 	vars["breakdown_int_ext_label"] = fmt.Sprintf("%d (%d%%) / %d (%d%%)", bd.IntScenes, bd.IntPct, bd.ExtScenes, bd.ExtPct)
 	vars["breakdown_day_night_label"] = fmt.Sprintf("%d (%d%%) / %d (%d%%)", bd.DayScenes, bd.DayPct, bd.NightScenes, bd.NightPct)
 
+	maxActPct := 0
+	for _, a := range bd.Acts {
+		if a.SharePct > maxActPct {
+			maxActPct = a.SharePct
+		}
+	}
 	actItems := make([]map[string]any, 0, len(bd.Acts))
 	for _, a := range bd.Acts {
 		actItems = append(actItems, map[string]any{
@@ -806,6 +852,7 @@ func (s *Server) populateEditorBreakdownContext(vars map[string]any) {
 			"scene_count":      a.SceneCount,
 			"formatted_length": a.FormattedLength,
 			"share_pct":        a.SharePct,
+			"is_dominant":      maxActPct > 0 && a.SharePct == maxActPct,
 		})
 	}
 	vars["breakdown_acts"] = actItems
@@ -907,6 +954,8 @@ func buildStudioGraphPayload(b *book.Book, edZoom float64, chapterGroups, allNod
 			strings.Join(outRefs, ","))
 	}
 
+	branchRoles, branchParents := book.ComputeBranchRoles(b)
+
 	for _, nd := range allNodes {
 		id, _ := nd["id"].(string)
 		name, _ := nd["name"].(string)
@@ -923,8 +972,10 @@ func buildStudioGraphPayload(b *book.Book, edZoom float64, chapterGroups, allNod
 		hasChoices, _ := nd["has_choices"].(bool)
 		impTarget, _ := nd["implicit_target_id"].(string)
 		impChapter, _ := nd["implicit_target_chapter"].(string)
+		branchRole := branchRoles[id]
+		branchParent := branchParents[id]
 
-		fmt.Fprintf(&sb, "node | id:%s | name:%s | chapter:%s | x:%d | y:%d | selected:%d | start:%d | entry:%d | unreachable:%d | has_choices:%d | imp_target:%s | imp_chapter:%s\n",
+		fmt.Fprintf(&sb, "node | id:%s | name:%s | chapter:%s | x:%d | y:%d | selected:%d | start:%d | entry:%d | unreachable:%d | has_choices:%d | imp_target:%s | imp_chapter:%s | branch_role:%s | branch_parent:%s\n",
 			sanitizeGraphPayloadField(id),
 			sanitizeGraphPayloadField(name),
 			sanitizeGraphPayloadField(chapter),
@@ -935,7 +986,9 @@ func buildStudioGraphPayload(b *book.Book, edZoom float64, chapterGroups, allNod
 			boolToPayloadBit(isUnreachable),
 			boolToPayloadBit(hasChoices),
 			sanitizeGraphPayloadField(impTarget),
-			sanitizeGraphPayloadField(impChapter))
+			sanitizeGraphPayloadField(impChapter),
+			sanitizeGraphPayloadField(branchRole),
+			sanitizeGraphPayloadField(branchParent))
 
 		if ports, ok := nd["ports"].([]map[string]any); ok {
 			for _, pt := range ports {
@@ -950,6 +1003,26 @@ func buildStudioGraphPayload(b *book.Book, edZoom float64, chapterGroups, allNod
 					sanitizeGraphPayloadField(targetID),
 					sanitizeGraphPayloadField(targetChapter))
 			}
+		}
+	}
+
+	if len(b.WirePins) > 0 {
+		wireKeys := make([]string, 0, len(b.WirePins))
+		for k, pins := range b.WirePins {
+			if k != "" && len(pins) > 0 {
+				wireKeys = append(wireKeys, k)
+			}
+		}
+		sort.Strings(wireKeys)
+		for _, k := range wireKeys {
+			pins := b.WirePins[k]
+			var parts []string
+			for _, p := range pins {
+				parts = append(parts, fmt.Sprintf("%d,%d", p.X, p.Y))
+			}
+			fmt.Fprintf(&sb, "wire_pins | key:%s | pins:%s\n",
+				sanitizeGraphPayloadField(k),
+				strings.Join(parts, ";"))
 		}
 	}
 

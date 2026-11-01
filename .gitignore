@@ -1,6 +1,7 @@
 # Compiled binaries & distribution bundles
 /storyteller
 /storyteller.exe
+/build/
 /dist/
 *.syso
 *.test

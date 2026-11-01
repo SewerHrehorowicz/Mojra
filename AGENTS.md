@@ -41,7 +41,7 @@
   - Wrap device preview rules in `/* @dev-only-start */ ... /* @dev-only-end */` and template nodes in `{if dev_mode}` so production builds strip them completely.
   - Register any new `.tss` or `.js` module in `CSSModuleFiles` / `JSModuleFiles` (and `CSSPlayerModuleFiles` / `JSPlayerModuleFiles` if needed in standalone player mode) in `internal/tpl/bundle.go`.
 - **UI & Control Rules**:
-  - Store all graphic UI/UX design sheets and visual specifications in `designs/` (`designs/forms.png`, `designs/branch-graph.png`, etc.).
+  - Store all graphic UI/UX design sheets and visual specifications in `designs/` (`designs/forms.png`, `designs/branch-graph.png`, `designs/breakdown-panel.png`, etc.).
   - Keep `border-radius: 0 !important` globally (`base.tss`), except circular node ports, slider thumbs, and progress/notch pills.
   - Never use native `<select>` elements; always use `.custom-select`.
   - **Minimalist Form Design System (`designs/forms.png`)**:
@@ -49,9 +49,15 @@
     - **Toggle**: No bottom underline (`border-bottom: none`) and no outer switch border; display the state label on the left and the contextual SVG icon + subtle borderless track (`22×10px`) with a `6×6px` square thumb on the right.
     - **Radio**: No bottom underlines and no borders; render options with solid `8×8px` borderless squares (`--border-subtle` idle, `--border-strong` hover, `--text-primary` active).
     - **Dropdown (`.custom-select`)**: Closed trigger has `border-bottom: 1px solid --border-strong` and right-aligned SVG chevron; when open, remove the trigger's bottom border so it merges into a single `1px solid --text-primary` top edge on `.custom-select-menu` (with `--border-strong` on left/right/bottom).
+  - **Minimalist Breakdown Panel (`designs/breakdown-panel.png`)**:
+    - Never wrap production metrics, act rows, characters, or locations in enclosed card boxes (`border: 1px solid`) or boxed badges. Use a borderless 2-column cross-line grid (`--border-subtle`) for metrics, a single segmented `3px` proportion bar above `--border-subtle`-separated act rows, and borderless character/location rows with a single `--border-strong` → `--text-primary` bottom line that auto-saves on `Enter`/`blur`/`change`.
   - Encapsulate reusable UI primitives via `.tpl` `@component` definitions (`app/templates/components.tpl`) and avoid nested grouping boxes or redundant borders inside `#editor-context-panel`.
   - Place action icons (`expand/collapse`, `close`, `trash`) on the right side of headers, rows, and cards; use SVG icons (`app/icons/*.svg`) instead of text glyphs (`▾`, `×`, `−`), use `trash.svg` for all delete/remove actions, and reserve `close.svg` strictly for closing modals/popovers.
   - Never add `border-bottom` or `text-decoration: underline` to `.topbar-tab` or `.top-action-btn`.
+  - **Toolbar & Toggle Icon Buttons**:
+    - Never attach numeric counters, badges, or extra labels (`span.history-unsaved-badge`, counts, pills) inside or next to icon buttons in `#topbar` or `.canvas-toolbar`.
+    - Single-icon toggle buttons (icons that do not have separate on/off states, such as `#btn-editor-breakdown`, `ToggleEditorHistoryPanel`, `#btn-book-settings`, `.scene-settings-toggle-btn`, and `#btn-auto-choice-toggle`) must use the universal 4-corner bracket active indicator (`::before` / `::after` in `base.tss`), never a full square border.
+    - Never duplicate entity names or values in the same card/row (e.g., never render a static title above an input prefilled with the exact same name in `#editor-breakdown-panel`).
   - Never use up/down arrow buttons (`↑`, `↓`) to reorder scenes, choices, or items (rejected at `.tpl` compile time); use 24px-grid canvas dragging (`data-node-drag-grip`) and wire ports.
   - Never explain the UI inside the UI (never write `"Kliknij przycisk..."`, `"Kliknij aby..."`, `"Przeciągnij..."`, or tutorial hints) and never spam the UI with unnecessary text, subtitles, or redundant headers.
   - Keep canvas node cards (`.timeline-node-card`) read-only on the canvas (grip `⋮⋮`, title, choice labels, ports, `+ Wybór`); all editable inputs and delete buttons belong in `#editor-context-panel`.

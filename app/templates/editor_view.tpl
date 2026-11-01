@@ -12,23 +12,11 @@ section.view-panel#view-editor .is-history-preview?: {is_history_preview}
                     action: OpenNewBookModal
                     data-hint: "Utwórz nową książkę lub scenariusz"
                     svg.action-icon src: /icons/book-plus.svg
-                button.top-action-btn
+                button.top-action-btn#btn-open-export-modal
                     type: button
-                    action: PackBook
-                    data-hint: "{editor_pack_hint}"
-                    svg.action-icon src: /icons/pack.svg
-                {if is_screenplay_mode}
-                    button.top-action-btn#btn-export-screenplay-pdf
-                        type: button
-                        action: ExportScreenplayPDF
-                        data-hint: "Eksportuj scenariusz do druku (.pdf)"
-                        "PDF"
-                    button.top-action-btn#btn-export-screenplay-fountain
-                        type: button
-                        action: ExportScreenplayFountain
-                        data-hint: "Eksportuj scenariusz (.fountain)"
-                        ".fountain"
-                    span.canvas-script-summary#canvas-script-summary {screenplay_toolbar_summary}
+                    action: OpenExportModal
+                    data-hint: "Eksportuj projekt"
+                    svg.action-icon src: /icons/export.svg
                 span.canvas-selection-badge.hidden#canvas-selection-badge "0 zaznaczonych"
             .canvas-toolbar-center
                 .canvas-zoom-controls
@@ -49,26 +37,30 @@ section.view-panel#view-editor .is-history-preview?: {is_history_preview}
                         data-canvas-zoom: "fit"
                         data-hint: "Dopasuj widok do węzłów (F)"
                         svg.action-icon src: /icons/fit-nodes.svg
+                    button.top-action-btn#btn-auto-layout-nodes
+                        type: button
+                        action: AutoLayoutNodes
+                        data-hint: "Auto-układ węzłów na siatce"
+                        svg.action-icon src: /icons/nodes.svg
             .canvas-toolbar-right
+                button.top-action-btn#btn-book-settings .active?: {book_settings_open}
+                    type: button
+                    action: ToggleBookSettings
+                    data-hint: "{editor_settings_hint}"
+                    svg.action-icon src: /icons/settings.svg
                 {if is_screenplay_mode}
                     button.top-action-btn#btn-editor-breakdown .active?: {show_editor_breakdown_panel}
                         type: button
                         action: ToggleEditorBreakdownPanel
                         data-hint: "Raport produkcyjny, obsada i lokacje"
-                        "Obsada / Lokacje"
+                        svg.action-icon src: /icons/cast.svg
                 .canvas-history-controls
                     button.top-action-btn .active?: {show_editor_history_panel}
                         type: button
                         action: ToggleEditorHistoryPanel
                         data-hint: "Historia zmian, gałęzie i wersje"
                         svg.action-icon src: /icons/history.svg
-                        span.history-unsaved-badge#history-unsaved-badge .hidden?: {!has_unnamed_edits} {unnamed_edits_count}
-                button.top-action-btn#btn-book-settings .active?: {book_settings_open}
-                    type: button
-                    action: ToggleBookSettings
-                    data-hint: "{editor_settings_hint}"
-                    svg.action-icon src: /icons/settings.svg
-                button.top-action-btn
+                button.top-action-btn#btn-editor-help .active?: {show_editor_help_panel}
                     type: button
                     action: OpenEditorHelpModal
                     data-hint: "Pomoc edytora węzłów"
@@ -95,8 +87,32 @@ section.view-panel#view-editor .is-history-preview?: {is_history_preview}
 
         .editor-workspace-body#editor-workspace-body
             @editor_context_panel
-            @editor_history_panel
             @editor_breakdown_panel
+            @editor_history_panel
+            aside.editor-help-panel#editor-help-panel .hidden?: {!show_editor_help_panel}
+                .history-panel-header
+                    span.history-panel-title "Pomoc — Node Studio"
+                    button.node-close-btn
+                        type: button
+                        action: CloseEditorHelpModal
+                        svg.node-close-icon src: /icons/close.svg
+                .history-panel-body
+                    .help-shortcuts-list.help-panel-list
+                        .help-shortcut-row
+                            span.help-shortcut-key "Chwyć uchwyt (⋮⋮)"
+                            span.help-shortcut-desc "Przesuwa węzeł sceny na płótnie po siatce (24 px)."
+                        .help-shortcut-row
+                            span.help-shortcut-key "Tytuł / Wybór na węźle"
+                            span.help-shortcut-desc "Kliknij tytuł sceny lub wiersz wyboru na węźle, aby zmienić jego nazwę bezpośrednio na płótnie."
+                        .help-shortcut-row
+                            span.help-shortcut-key "Stopka węzła (Rozgałęzienie / Rysik)"
+                            span.help-shortcut-desc "Ikona po lewej dodaje nowy wybór i port wyjściowy; ikona rysika po prawej (lub 2× klik) otwiera edytor treści sceny."
+                        .help-shortcut-row
+                            span.help-shortcut-key "Grupy rozdziałów / aktów"
+                            span.help-shortcut-desc "Kliknij nagłówek grupy, aby otworzyć jej ustawienia i statystyki w panelu bocznym; 2× klik zmienia nazwę inline."
+                        .help-shortcut-row
+                            span.help-shortcut-key "Spacja + przeciągnięcie / PPM"
+                            span.help-shortcut-desc "Przesuwa widok płótna (Pan). Rolka myszy przybliża i oddala widok (Zoom)."
 
             .timeline-scroll-viewport#timeline-scroll-viewport
                 canvas.studio-canvas#studio-canvas
@@ -121,6 +137,12 @@ section.view-panel#view-editor .is-history-preview?: {is_history_preview}
                 input.chapter-group-title-input.canvas-floating-chapter-input.hidden#canvas-chapter-input
                     type: text
                     placeholder: "{editor_chapter_title_placeholder}"
+                input.canvas-floating-node-input.hidden#canvas-node-title-input
+                    type: text
+                    placeholder: "Tytuł sceny..."
+                input.canvas-floating-choice-input.hidden#canvas-choice-input
+                    type: text
+                    placeholder: "Tekst wyboru..."
                 .canvas-context-menu.hidden#canvas-context-menu
                     {if not is_history_preview}
                         button.canvas-context-item#btn-context-add-node

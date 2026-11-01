@@ -308,9 +308,15 @@ func (s *Server) toggleEditorHistoryPanel(r *http.Request) string {
 	if !s.isHistoryPreview() && r.FormValue("scene_id") != "" {
 		_ = s.saveSceneFromForm(r)
 	}
+	if r.FormValue("book_settings_open") == "false" {
+		s.BookSettingsOpen = false
+	}
 	s.EditorHistoryPanelOpen = !s.EditorHistoryPanelOpen
 	if s.EditorHistoryPanelOpen {
+		s.BookSettingsOpen = false
+		s.SelectedChapter = ""
 		s.EditorBreakdownPanelOpen = false
+		s.EditorHelpModalOpen = false
 		s.ensureHistoryBaselineBeforeMutation()
 	}
 	return ""
@@ -321,7 +327,10 @@ func (s *Server) openEditorHistoryPanel(r *http.Request) string {
 		_ = s.saveSceneFromForm(r)
 	}
 	s.EditorHistoryPanelOpen = true
+	s.BookSettingsOpen = false
+	s.SelectedChapter = ""
 	s.EditorBreakdownPanelOpen = false
+	s.EditorHelpModalOpen = false
 	s.ensureHistoryBaselineBeforeMutation()
 	return ""
 }

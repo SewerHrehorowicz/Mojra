@@ -7,6 +7,7 @@ const NODE_CHOICE_ROW_HEIGHT = 26;
 const NODE_FOOTER_HEIGHT = 40;
 const NODE_BASE_HEIGHT = 74;
 const PORT_RADIUS = 6.5;
+const CHAPTER_PORT_RADIUS = 3.5;
 const CHAPTER_OUT_PORT_PITCH = 37;
 
 // Texture 0: Dedicated 256x64 UI Sprite Atlas (solid white, SDF ports, 90° wire corners, 2x3 grip)
@@ -54,9 +55,12 @@ const studioGraphState = {
   nodes: [],
   nodeById: new Map(),
   wires: [],
+  wirePins: new Map(),
   bundleOverlays: [],
   hoveredItem: null,
   editingChapter: null,
+  editingNodeTitle: null,
+  editingChoice: null,
   selectedChapterKey: "",
   themeColors: null,
   shapedTextCache: new Map(),
@@ -85,11 +89,24 @@ let lastDisplayedZoomPct = -1;
 // Instanced GPU Quad Batcher: 9 floats (36 bytes) per instance [x, y, w, h, u0, v0, u1, v1, packedRGBA]
 const FLOATS_PER_INSTANCE = 9;
 const BYTES_PER_INSTANCE = 36;
-const MAX_INSTANCES = 16384;
+let maxInstancesCapacity = 32768;
 
-const instanceArrayBuffer = new ArrayBuffer(MAX_INSTANCES * BYTES_PER_INSTANCE);
-const instanceFloatView = new Float32Array(instanceArrayBuffer);
-const instanceUint32View = new Uint32Array(instanceArrayBuffer);
+let instanceArrayBuffer = new ArrayBuffer(maxInstancesCapacity * BYTES_PER_INSTANCE);
+let instanceFloatView = new Float32Array(instanceArrayBuffer);
+let instanceUint32View = new Uint32Array(instanceArrayBuffer);
+
+function growInstanceBuffer() {
+  const nextCap = maxInstancesCapacity * 2;
+  const nextBuf = new ArrayBuffer(nextCap * BYTES_PER_INSTANCE);
+  const nextFloat = new Float32Array(nextBuf);
+  const nextUint = new Uint32Array(nextBuf);
+  nextFloat.set(instanceFloatView);
+  maxInstancesCapacity = nextCap;
+  instanceArrayBuffer = nextBuf;
+  instanceFloatView = nextFloat;
+  instanceUint32View = nextUint;
+  studioGL.vboCapacityBytes = 0;
+}
 
 const studioGL = {
   canvas: null,
@@ -122,7 +139,14 @@ const studioGL = {
     portFill: { u0: 16 / UI_ATLAS_W, v0: 2 / UI_ATLAS_H, u1: 48 / UI_ATLAS_W, v1: 34 / UI_ATLAS_H, size: 24 },
     portRing: { u0: 52 / UI_ATLAS_W, v0: 2 / UI_ATLAS_H, u1: 84 / UI_ATLAS_W, v1: 34 / UI_ATLAS_H, size: 24 },
     portHover: { u0: 88 / UI_ATLAS_W, v0: 2 / UI_ATLAS_H, u1: 120 / UI_ATLAS_W, v1: 34 / UI_ATLAS_H, size: 24 },
+    smallPortFill: { u0: 16 / UI_ATLAS_W, v0: 36 / UI_ATLAS_H, u1: 40 / UI_ATLAS_W, v1: 60 / UI_ATLAS_H, size: 16 },
+    smallPortRing: { u0: 52 / UI_ATLAS_W, v0: 36 / UI_ATLAS_H, u1: 76 / UI_ATLAS_W, v1: 60 / UI_ATLAS_H, size: 16 },
+    smallPortHover: { u0: 88 / UI_ATLAS_W, v0: 36 / UI_ATLAS_H, u1: 112 / UI_ATLAS_W, v1: 60 / UI_ATLAS_H, size: 16 },
+    bridgeArc: { u0: 188 / UI_ATLAS_W, v0: 2 / UI_ATLAS_H, u1: 220 / UI_ATLAS_W, v1: 22 / UI_ATLAS_H, w: 16, h: 10 },
     grip: { u0: 124 / UI_ATLAS_W, v0: 2 / UI_ATLAS_H, u1: 144 / UI_ATLAS_W, v1: 24 / UI_ATLAS_H, w: 20, h: 22 },
+    branchPlus: { u0: 120 / UI_ATLAS_W, v0: 34 / UI_ATLAS_H, u1: 148 / UI_ATLAS_W, v1: 62 / UI_ATLAS_H, size: 15 },
+    editPen: { u0: 152 / UI_ATLAS_W, v0: 34 / UI_ATLAS_H, u1: 180 / UI_ATLAS_W, v1: 62 / UI_ATLAS_H, size: 15 },
+    trashIcon: { u0: 184 / UI_ATLAS_W, v0: 34 / UI_ATLAS_H, u1: 212 / UI_ATLAS_W, v1: 62 / UI_ATLAS_H, size: 12 },
     cornerTL: { u0: 152 / UI_ATLAS_W, v0: 2 / UI_ATLAS_H, u1: 168 / UI_ATLAS_W, v1: 18 / UI_ATLAS_H },
     cornerTR: { u0: 168 / UI_ATLAS_W, v0: 2 / UI_ATLAS_H, u1: 184 / UI_ATLAS_W, v1: 18 / UI_ATLAS_H },
     cornerBL: { u0: 152 / UI_ATLAS_W, v0: 18 / UI_ATLAS_H, u1: 168 / UI_ATLAS_W, v1: 34 / UI_ATLAS_H },
@@ -176,6 +200,37 @@ function buildUISpriteTextureBytes() {
     }
   }
 
+  // 2b. Analytic 2x Smaller SDF Ports (r = 3.5px) for Chapter Ports & Wire Control Pins
+  const smScale = 24.0 / 16.0;
+  for (let y = 0; y < 24; y++) {
+    for (let x = 0; x < 24; x++) {
+      const wx = (x + 0.5 - 12.0) / smScale;
+      const wy = (y + 0.5 - 12.0) / smScale;
+      const r = Math.hypot(wx, wy);
+
+      const bFill = distToByte(CHAPTER_PORT_RADIUS - r);
+      setPixel(16 + x, 36 + y, bFill, bFill, bFill, bFill);
+
+      const bRing = distToByte(1.0 - Math.abs(r - CHAPTER_PORT_RADIUS));
+      setPixel(52 + x, 36 + y, bRing, bRing, bRing, bRing);
+
+      const bHov = distToByte(CHAPTER_PORT_RADIUS + 0.8 - r);
+      setPixel(88 + x, 36 + y, bHov, bHov, bHov, bHov);
+    }
+  }
+
+  // 2c. Analytic Semicircular Wire Crossing Bridge (R = 5.5px) at (188..220, 2..22)
+  const bridgeR = 5.5;
+  for (let y = 0; y < 20; y++) {
+    for (let x = 0; x < 32; x++) {
+      const wx = (x + 0.5 - 16.0) * (16.0 / 32.0);
+      const wy = (y + 0.5 - 16.0) * (10.0 / 20.0);
+      const d = wy <= 0.0 ? Math.abs(Math.hypot(wx, wy) - bridgeR) : Math.hypot(Math.abs(wx) - bridgeR, wy);
+      const bArc = distToByte(1.0 - d);
+      setPixel(188 + x, 2 + y, bArc, bArc, bArc, bArc);
+    }
+  }
+
   // 3. Grip 2x3 dots at (124, 2, 20, 22)
   for (let row = 0; row < 3; row++) {
     const cy = 2 + 5 + row * 5;
@@ -186,6 +241,76 @@ function buildUISpriteTextureBytes() {
       }
     }
   }
+
+  // 4. Analytic SDF Vector Icons (branchPlus at 120,34; editPen at 152,34; trashIcon at 184,34)
+  const ptSegDist = (px, py, x1, y1, x2, y2) => {
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const l2 = dx * dx + dy * dy;
+    if (l2 < 0.0001) return Math.hypot(px - x1, py - y1);
+    let t = ((px - x1) * dx + (py - y1) * dy) / l2;
+    if (t < 0) t = 0;
+    else if (t > 1) t = 1;
+    return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
+  };
+  const rasterizeSDFIcon = (ox, oy, segs, halfStroke) => {
+    const sc = 28.0 / 24.0;
+    for (let y = 0; y < 28; y++) {
+      for (let x = 0; x < 28; x++) {
+        const ix = (x + 0.5) / sc;
+        const iy = (y + 0.5) / sc;
+        let minD = 999.0;
+        for (let s = 0; s < segs.length; s++) {
+          const sg = segs[s];
+          const d = ptSegDist(ix, iy, sg[0], sg[1], sg[2], sg[3]);
+          if (d < minD) minD = d;
+        }
+        const b = distToByte(halfStroke - minD);
+        setPixel(ox + x, oy + y, b, b, b, b);
+      }
+    }
+  };
+  rasterizeSDFIcon(
+    120,
+    34,
+    [
+      [3, 12, 8, 12],
+      [8, 12, 12, 7],
+      [12, 7, 15, 7],
+      [8, 12, 12, 17],
+      [12, 17, 18, 17],
+      [19, 4, 19, 10],
+      [16, 7, 22, 7]
+    ],
+    0.95
+  );
+  rasterizeSDFIcon(
+    152,
+    34,
+    [
+      [12, 20, 21, 20],
+      [16.5, 3.5, 20.5, 7.5],
+      [20.5, 7.5, 7, 21],
+      [7, 21, 3, 21],
+      [3, 21, 3, 17],
+      [3, 17, 16.5, 3.5]
+    ],
+    0.95
+  );
+  rasterizeSDFIcon(
+    184,
+    34,
+    [
+      [3, 6, 21, 6],
+      [8, 6, 8, 4],
+      [8, 4, 16, 4],
+      [16, 4, 16, 6],
+      [6, 6, 7, 20],
+      [7, 20, 17, 20],
+      [17, 20, 18, 6]
+    ],
+    0.95
+  );
   return data;
 }
 
@@ -533,19 +658,30 @@ function initStudioWebGLContext(canvas) {
   gl.vertexAttribPointer(aUnit, 2, gl.FLOAT, false, 8, 0);
   if (instExt) instExt.vertexAttribDivisorANGLE(aUnit, 0);
 
-  const instVbo = gl.createBuffer();
-  gl.bindBuffer(gl.ARRAY_BUFFER, instVbo);
-  gl.bufferData(gl.ARRAY_BUFFER, instanceArrayBuffer.byteLength, gl.DYNAMIC_DRAW);
-
   const aRect = gl.getAttribLocation(prog, "aRect");
   const aUV = gl.getAttribLocation(prog, "aUV");
   const aColor = gl.getAttribLocation(prog, "aColor");
+
+  const instVbos = [gl.createBuffer(), gl.createBuffer(), gl.createBuffer()];
+  const instVboCapacities = [0, 0, 0];
+  const initCapBytes = 4096 * BYTES_PER_INSTANCE;
+  for (let b = 0; b < 3; b++) {
+    gl.bindBuffer(gl.ARRAY_BUFFER, instVbos[b]);
+    gl.bufferData(gl.ARRAY_BUFFER, initCapBytes, gl.STREAM_DRAW);
+    instVboCapacities[b] = initCapBytes;
+  }
+
+  const bindInstVboAttribs = (vbo) => {
+    gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+    gl.vertexAttribPointer(aRect, 4, gl.FLOAT, false, BYTES_PER_INSTANCE, 0);
+    gl.vertexAttribPointer(aUV, 4, gl.FLOAT, false, BYTES_PER_INSTANCE, 16);
+    gl.vertexAttribPointer(aColor, 4, gl.UNSIGNED_BYTE, true, BYTES_PER_INSTANCE, 32);
+  };
+
   gl.enableVertexAttribArray(aRect);
-  gl.vertexAttribPointer(aRect, 4, gl.FLOAT, false, BYTES_PER_INSTANCE, 0);
   gl.enableVertexAttribArray(aUV);
-  gl.vertexAttribPointer(aUV, 4, gl.FLOAT, false, BYTES_PER_INSTANCE, 16);
   gl.enableVertexAttribArray(aColor);
-  gl.vertexAttribPointer(aColor, 4, gl.UNSIGNED_BYTE, true, BYTES_PER_INSTANCE, 32);
+  bindInstVboAttribs(instVbos[0]);
 
   if (instExt) {
     instExt.vertexAttribDivisorANGLE(aRect, 1);
@@ -600,7 +736,22 @@ function initStudioWebGLContext(canvas) {
   studioGL.gl = gl;
   studioGL.prog = prog;
   studioGL.quadVbo = quadVbo;
-  studioGL.instVbo = instVbo;
+  studioGL.instVbos = instVbos;
+  studioGL.instVboCapacities = instVboCapacities;
+  studioGL.vboRingIdx = 0;
+  studioGL.instVbo = instVbos[0];
+  studioGL.bindInstVboAttribs = bindInstVboAttribs;
+  studioGL.hasCullBounds = false;
+  studioGL.lastVpW = 0;
+  studioGL.lastVpH = 0;
+  studioGL.lastUniformVw = -1;
+  studioGL.lastUniformVh = -1;
+  studioGL.lastUniformPx = NaN;
+  studioGL.lastUniformPy = NaN;
+  studioGL.lastUniformZ = -1;
+  studioGL.lastUniformDpr = -1;
+  studioGL.lastUniformLight = null;
+  studioGL.lastUniformGridStep = -1;
   studioGL.uiTex = uiTex;
   studioGL.fontTex = fontTex;
   studioGL.uViewSize = gl.getUniformLocation(prog, "uViewSize");
@@ -621,7 +772,9 @@ function initStudioWebGLContext(canvas) {
 
 function pushQuadInstance(x, y, w, h, u0, v0, u1, v1, packedColor) {
   const idx = studioGL.instCursor;
-  if (idx >= MAX_INSTANCES) return;
+  if (idx >= maxInstancesCapacity) {
+    growInstanceBuffer();
+  }
   const base = idx * FLOATS_PER_INSTANCE;
   instanceFloatView[base] = x;
   instanceFloatView[base + 1] = y;
@@ -706,92 +859,69 @@ function pushDashedRectQuads(x, y, w, h, thickness, period, packedColor) {
   pushQuadInstance(x + w - t, y + t, t, innerH, 0, negPeriod, spanH, negPeriod, packedColor);
 }
 
-function pushWirePolylineQuads(pts, thickness, isDashed, packedColor) {
-  if (!pts || pts.length < 2) return;
+function pushHorizontalWireSegmentWithBridges(xA, xB, y, thickness, packedColor, segBridges) {
   const halfT = thickness * 0.5;
-  const maxR = 8;
-
-  if (pts.length === 2 || isDashed) {
-    for (let i = 0; i < pts.length - 1; i++) {
-      const p0 = pts[i];
-      const p1 = pts[i + 1];
-      if (isDashed) {
-        pushDashedSegmentQuad(p0.x, p0.y, p1.x, p1.y, thickness, 8.0, packedColor);
-      } else if (Math.abs(p1.x - p0.x) >= Math.abs(p1.y - p0.y)) {
-        const minX = Math.min(p0.x, p1.x);
-        pushSolidQuad(minX, p0.y - halfT, Math.abs(p1.x - p0.x), thickness, packedColor);
-      } else {
-        const minY = Math.min(p0.y, p1.y);
-        pushSolidQuad(p0.x - halfT, minY, thickness, Math.abs(p1.y - p0.y), packedColor);
-      }
-    }
+  const minX = xA < xB ? xA : xB;
+  const maxX = xA > xB ? xA : xB;
+  if (maxX - minX < 0.5) return;
+  if (!segBridges || segBridges.length === 0) {
+    pushSolidQuad(minX, y - halfT, maxX - minX, thickness, packedColor);
     return;
   }
+  const gapR = 5.0;
+  let curX = minX;
+  for (let k = 0; k < segBridges.length; k++) {
+    const bx = segBridges[k];
+    if (bx - gapR <= curX + 1.0 || bx + gapR >= maxX - 1.0) continue;
+    const leftLen = bx - gapR - curX;
+    if (leftLen > 0.5) {
+      pushSolidQuad(curX, y - halfT, leftLen, thickness, packedColor);
+    }
+    curX = bx + gapR;
+  }
+  if (maxX - curX > 0.5) {
+    pushSolidQuad(curX, y - halfT, maxX - curX, thickness, packedColor);
+  }
+}
 
-  let curStartX = pts[0].x;
-  let curStartY = pts[0].y;
+function pushWirePolylineQuads(pts, thickness, isDashed, packedColor, bridgesBySeg) {
+  if (!pts || pts.length < 2) return;
+  const halfT = thickness * 0.5;
+  const lastSeg = pts.length - 2;
 
-  for (let i = 1; i < pts.length - 1; i++) {
-    const p0 = pts[i - 1];
-    const p1 = pts[i];
-    const p2 = pts[i + 1];
-    const dx1 = p1.x - p0.x;
-    const dy1 = p1.y - p0.y;
-    const len1 = Math.hypot(dx1, dy1);
-    const dx2 = p2.x - p1.x;
-    const dy2 = p2.y - p1.y;
-    const len2 = Math.hypot(dx2, dy2);
-    const r = Math.min(maxR, len1 * 0.5, len2 * 0.5);
-
-    if (r < 3) {
-      if (Math.abs(dx1) >= Math.abs(dy1)) {
-        pushSolidQuad(Math.min(curStartX, p1.x), p1.y - halfT, Math.abs(p1.x - curStartX), thickness, packedColor);
-      } else {
-        pushSolidQuad(p1.x - halfT, Math.min(curStartY, p1.y), thickness, Math.abs(p1.y - curStartY), packedColor);
-      }
-      curStartX = p1.x;
-      curStartY = p1.y;
+  for (let i = 0; i <= lastSeg; i++) {
+    const p0 = pts[i];
+    const p1 = pts[i + 1];
+    if (isDashed) {
+      pushDashedSegmentQuad(p0.x, p0.y, p1.x, p1.y, thickness, 8.0, packedColor);
       continue;
     }
-
-    const ux1 = Math.sign(dx1);
-    const uy1 = Math.sign(dy1);
-    const ux2 = Math.sign(dx2);
-    const uy2 = Math.sign(dy2);
-    const segEndX = p1.x - ux1 * r;
-    const segEndY = p1.y - uy1 * r;
-
-    if (Math.abs(dx1) >= Math.abs(dy1)) {
-      pushSolidQuad(Math.min(curStartX, segEndX), p1.y - halfT, Math.abs(segEndX - curStartX), thickness, packedColor);
+    const dx = p1.x - p0.x;
+    const dy = p1.y - p0.y;
+    if (Math.abs(dx) >= Math.abs(dy)) {
+      let xA = p0.x;
+      let xB = p1.x;
+      if (i > 0) {
+        xA += dx >= 0 ? -halfT : halfT;
+      }
+      if (i < lastSeg) {
+        xB += dx >= 0 ? halfT : -halfT;
+      }
+      pushHorizontalWireSegmentWithBridges(
+        xA,
+        xB,
+        p0.y,
+        thickness,
+        packedColor,
+        bridgesBySeg ? bridgesBySeg[i] : null
+      );
     } else {
-      pushSolidQuad(p1.x - halfT, Math.min(curStartY, segEndY), thickness, Math.abs(segEndY - curStartY), packedColor);
+      const minY = p0.y < p1.y ? p0.y : p1.y;
+      const maxY = p0.y > p1.y ? p0.y : p1.y;
+      if (maxY - minY >= 0.5) {
+        pushSolidQuad(p0.x - halfT, minY, thickness, maxY - minY, packedColor);
+      }
     }
-
-    const nextStartX = p1.x + ux2 * r;
-    const nextStartY = p1.y + uy2 * r;
-    const cx = ux1 !== 0 ? segEndX : nextStartX;
-    const cy = uy1 !== 0 ? segEndY : nextStartY;
-    const quadX = p1.x < cx ? p1.x - halfT : cx;
-    const quadY = p1.y < cy ? p1.y - halfT : cy;
-    const quadW = (p1.x < cx ? cx : p1.x + halfT) - quadX;
-    const quadH = (p1.y < cy ? cy : p1.y + halfT) - quadY;
-
-    let cornerUV = studioGL.uv.cornerTL;
-    if (p1.x >= cx && p1.y < cy) cornerUV = studioGL.uv.cornerTR;
-    else if (p1.x < cx && p1.y >= cy) cornerUV = studioGL.uv.cornerBL;
-    else if (p1.x >= cx && p1.y >= cy) cornerUV = studioGL.uv.cornerBR;
-
-    pushQuadInstance(quadX, quadY, quadW, quadH, cornerUV.u0, cornerUV.v0, cornerUV.u1, cornerUV.v1, packedColor);
-
-    curStartX = nextStartX;
-    curStartY = nextStartY;
-  }
-
-  const last = pts[pts.length - 1];
-  if (Math.abs(last.x - curStartX) >= Math.abs(last.y - curStartY)) {
-    pushSolidQuad(Math.min(curStartX, last.x), last.y - halfT, Math.abs(last.x - curStartX), thickness, packedColor);
-  } else {
-    pushSolidQuad(last.x - halfT, Math.min(curStartY, last.y), thickness, Math.abs(last.y - curStartY), packedColor);
   }
 }
 
@@ -830,6 +960,22 @@ function pushPortQuads(x, y, isConnected, isHoveredOrActive, theme, isUnreachabl
   pushQuadInstance(x - hs, y - hs, sp.size, sp.size, sp.u0, sp.v0, sp.u1, sp.v1, portColor);
 }
 
+function pushSmallPortQuads(x, y, isConnected, isHoveredOrActive, theme, isUnreachable) {
+  const fillSp = studioGL.uv.smallPortFill;
+  const hs = fillSp.size * 0.5;
+  const portColor =
+    typeof isHoveredOrActive === "number"
+      ? isHoveredOrActive
+      : isHoveredOrActive
+        ? theme.textPrimary
+        : isUnreachable
+          ? theme.unreachWire
+          : theme.borderStrong;
+  pushQuadInstance(x - hs, y - hs, fillSp.size, fillSp.size, fillSp.u0, fillSp.v0, fillSp.u1, fillSp.v1, theme.bgObsidian);
+  const sp = isConnected ? studioGL.uv.smallPortHover : studioGL.uv.smallPortRing;
+  pushQuadInstance(x - hs, y - hs, sp.size, sp.size, sp.u0, sp.v0, sp.u1, sp.v1, portColor);
+}
+
 function isHoveredPortItemConnected(hovered) {
   if (!hovered) return false;
   if (hovered.type === "scene-out-port") {
@@ -837,6 +983,9 @@ function isHoveredPortItemConnected(hovered) {
   }
   if (hovered.type === "chapter-out-port") {
     return Boolean(hovered.outPort && hovered.outPort.connected);
+  }
+  if (hovered.type === "wire-pin") {
+    return true;
   }
   return false;
 }
@@ -847,16 +996,40 @@ function compileStaticSceneQuads(theme) {
   // Slot 0: Fullscreen procedural GPU dot grid quad
   pushQuadInstance(0, 0, 1, 1, -100000.0, -100000.0, -100000.0, -100000.0, theme.bgObsidian);
 
+  const vw = studioGraphState.viewW || 1200;
+  const vh = studioGraphState.viewH || 700;
+  const z = editorCanvasState.zoom || 1.0;
+  const px = editorCanvasState.panX || 0;
+  const py = editorCanvasState.panY || 0;
+  const visMinX = -px / z;
+  const visMinY = -py / z;
+  const visMaxX = (vw - px) / z;
+  const visMaxY = (vh - py) / z;
+  const guardX = Math.max(120, (visMaxX - visMinX) * 0.25);
+  const guardY = Math.max(120, (visMaxY - visMinY) * 0.25);
+  const fMinX = visMinX - guardX;
+  const fMinY = visMinY - guardY;
+  const fMaxX = visMaxX + guardX;
+  const fMaxY = visMaxY + guardY;
+  studioGL.cullMinX = fMinX;
+  studioGL.cullMinY = fMinY;
+  studioGL.cullMaxX = fMaxX;
+  studioGL.cullMaxY = fMaxY;
+  studioGL.hasCullBounds = true;
+
   const chapters = studioGraphState.chapters;
   const wires = studioGraphState.wires;
   const bundles = studioGraphState.bundleOverlays;
   const nodes = studioGraphState.nodes;
   const gripSp = studioGL.uv.grip;
 
-  // 1. Chapter Group Frames
+  // 1. Chapter Group Frames (frustum-culled)
   for (let i = 0; i < chapters.length; i++) {
     const ch = chapters[i];
     if (ch.hidden) continue;
+    if (ch.right < fMinX || ch.left > fMaxX || ch.bottom < fMinY || ch.top > fMaxY) {
+      continue;
+    }
     pushSolidQuad(ch.x, ch.y, ch.w, ch.h, theme.chapterFill);
     pushSolidQuad(ch.x + 1, ch.y + 1, ch.w - 2, 27, theme.bgElevated);
     pushDashedRectQuads(ch.x, ch.y, ch.w, ch.h, 1, 9.0, theme.borderStrong);
@@ -872,25 +1045,43 @@ function compileStaticSceneQuads(theme) {
       gripSp.v1,
       theme.textMuted
     );
-    if (studioGraphState.editingChapter !== ch) {
-      const shapedCh = shapeTextGlyphs(FONT_CHAPTER, (ch.name || "").toUpperCase(), ch.w - 38);
-      pushShapedTextQuads(shapedCh, ch.x + 28, ch.y + 15, theme.textPrimary);
+    if (studioGraphState.editingChapter !== ch && ch.y + 30 >= fMinY && ch.y <= fMaxY) {
+      const chMaxW = ch.w - 38;
+      if (ch._shapedName !== ch.name || ch._shapedMaxW !== chMaxW || !ch._shapedTitle) {
+        ch._shapedName = ch.name;
+        ch._shapedMaxW = chMaxW;
+        ch._shapedTitle = shapeTextGlyphs(FONT_CHAPTER, (ch.name || "").toUpperCase(), chMaxW);
+      }
+      pushShapedTextQuads(ch._shapedTitle, ch.x + 28, ch.y + 15, theme.textPrimary);
     }
   }
 
-  // 2. Static Wires + Bundle Trunks + Bundle Count Badges
+  // 2. Static Wires + Bundle Trunks + Bundle Count Badges (frustum-culled)
   for (let i = 0; i < wires.length; i++) {
     const w = wires[i];
+    if (w.maxX < fMinX || w.minX > fMaxX || w.maxY < fMinY || w.minY > fMaxY) {
+      continue;
+    }
     if (w.unreachable) {
-      pushWirePolylineQuads(w.pts, 2, true, theme.unreachWire);
+      pushWirePolylineQuads(w.pts, 2, true, theme.unreachWire, null);
     } else {
-      pushWirePolylineQuads(w.pts, 2, false, theme.borderStrong);
+      pushWirePolylineQuads(w.pts, 2, false, theme.borderStrong, w.bridges);
+    }
+    if (w.pins && w.pins.length > 0) {
+      for (let p = 0; p < w.pins.length; p++) {
+        pushSmallPortQuads(w.pins[p].x, w.pins[p].y, true, false, theme, w.unreachable);
+      }
     }
   }
 
   for (let i = 0; i < bundles.length; i++) {
     const b = bundles[i];
-    pushSolidQuad(b.x1 - 2.25, Math.min(b.y1, b.y2), 4.5, Math.abs(b.y2 - b.y1), theme.borderStrong);
+    const bMinY = b.y1 < b.y2 ? b.y1 : b.y2;
+    const bMaxY = b.y1 > b.y2 ? b.y1 : b.y2;
+    if (b.x2 + 12 < fMinX || b.x1 - 12 > fMaxX || bMaxY + 12 < fMinY || bMinY - 12 > fMaxY) {
+      continue;
+    }
+    pushSolidQuad(b.x1 - 2.25, bMinY, 4.5, bMaxY - bMinY, theme.borderStrong);
     const mx = (b.x1 + b.x2) * 0.5;
     const my = (b.y1 + b.y2) * 0.5;
     pushBorderedBoxQuads(mx - 9, my - 8, 18, 16, 1.5, theme.textPrimary, theme.bgObsidian);
@@ -898,13 +1089,23 @@ function compileStaticSceneQuads(theme) {
     pushShapedTextQuads(shapedNum, mx - shapedNum.totalW * 0.5, my, theme.textPrimary);
   }
 
-  // 3. Scene Node Cards
-  const addChoiceShaped = shapeTextGlyphs(FONT_BTN, "+ WYBÓR", 80);
-  const addChoiceBtnW = Math.ceil(addChoiceShaped.totalW) + 20;
-  const addChoiceBtnH = 24;
+  // 3. Scene Node Cards (frustum-culled)
+  const branchPlusSp = studioGL.uv.branchPlus;
+  const editPenSp = studioGL.uv.editPen;
+  const trashSp = studioGL.uv.trashIcon;
+  const footerIconBtnSize = 24;
+  const isHistoryPreview = typeof isEditorHistoryPreview === "function" && isEditorHistoryPreview();
 
   for (let i = 0; i < nodes.length; i++) {
     const nd = nodes[i];
+    if (
+      nd.right + 12 < fMinX ||
+      nd.left - 12 > fMaxX ||
+      nd.bottom + 12 < fMinY ||
+      nd.top - 12 > fMaxY
+    ) {
+      continue;
+    }
     const isUnreach = Boolean(nd.unreachable);
     const cardBg = isUnreach ? theme.unreachCardBg : theme.bgObsidian;
     const textPri = isUnreach ? theme.unreachText : theme.textPrimary;
@@ -932,7 +1133,11 @@ function compileStaticSceneQuads(theme) {
     let badgeW = 0;
     if (nd.isStart || nd.isEntry) {
       const badgeTxt = nd.isStart ? "START" : "WEJŚCIE";
-      const shapedBadge = shapeTextGlyphs(FONT_BADGE, badgeTxt, 64);
+      if (nd._shapedBadgeTxt !== badgeTxt || !nd._shapedBadge) {
+        nd._shapedBadgeTxt = badgeTxt;
+        nd._shapedBadge = shapeTextGlyphs(FONT_BADGE, badgeTxt, 64);
+      }
+      const shapedBadge = nd._shapedBadge;
       badgeW = Math.ceil(shapedBadge.totalW) + 10;
       const bx = nd.x + nd.w - badgeW - 8;
       const by = nd.y + 8;
@@ -940,9 +1145,27 @@ function compileStaticSceneQuads(theme) {
       pushShapedTextQuads(shapedBadge, bx + 5, by + 8.5, nd.isStart ? theme.textPrimary : theme.textSecondary);
     }
 
-    const maxTitleW = nd.w - 36 - (badgeW > 0 ? badgeW + 6 : 0);
-    const shapedTitle = shapeTextGlyphs(FONT_TITLE, nd.name || nd.id, maxTitleW);
-    pushShapedTextQuads(shapedTitle, nd.x + 28, nd.y + 17, textPri);
+    let radioReserveW = 0;
+    if (nd.branchRole === "primary" || nd.branchRole === "secondary") {
+      const rx = nd.x + nd.w - (badgeW > 0 ? badgeW + 8 + 14 : 16);
+      const ry = nd.y + 13;
+      nd.branchRadioX = rx;
+      nd.branchRadioY = ry;
+      radioReserveW = 16;
+      const sqColor = nd.branchRole === "primary" ? theme.textPrimary : theme.borderStrong;
+      pushSolidQuad(rx, ry, 8, 8, sqColor);
+    }
+
+    if (studioGraphState.editingNodeTitle !== nd) {
+      const maxTitleW = nd.w - 36 - (badgeW > 0 ? badgeW + 6 : 0) - radioReserveW;
+      const rawTitle = nd.name || nd.id;
+      if (nd._shapedTitleTxt !== rawTitle || nd._shapedTitleMaxW !== maxTitleW || !nd._shapedTitle) {
+        nd._shapedTitleTxt = rawTitle;
+        nd._shapedTitleMaxW = maxTitleW;
+        nd._shapedTitle = shapeTextGlyphs(FONT_TITLE, rawTitle, maxTitleW);
+      }
+      pushShapedTextQuads(nd._shapedTitle, nd.x + 28, nd.y + 17, textPri);
+    }
 
     const choicesTop = nd.y + NODE_HEADER_HEIGHT;
     pushSolidQuad(nd.x + 1, choicesTop, nd.w - 2, nd.h - NODE_HEADER_HEIGHT - 1, theme.borderSubtle);
@@ -952,36 +1175,124 @@ function compileStaticSceneQuads(theme) {
         const pt = nd.ports[j];
         const rowY = choicesTop + j * NODE_CHOICE_ROW_HEIGHT;
         pushSolidQuad(nd.x + 1, rowY + 1, nd.w - 2, NODE_CHOICE_ROW_HEIGHT - 1, theme.bgObsidian);
-        const shapedChoice = shapeTextGlyphs(FONT_CHOICE, pt.label || "Wybór " + (j + 1), nd.w - 24);
-        pushShapedTextQuads(shapedChoice, nd.x + 10, rowY + NODE_CHOICE_ROW_HEIGHT * 0.5, textSec);
+        if (!isHistoryPreview) {
+          const cgW = 16;
+          const cgH = 18;
+          const cgX = nd.x + 3;
+          const cgY = rowY + (NODE_CHOICE_ROW_HEIGHT - cgH) * 0.5;
+          pushQuadInstance(
+            cgX,
+            cgY,
+            cgW,
+            cgH,
+            gripSp.u0 + 30.0,
+            gripSp.v0,
+            gripSp.u1 + 30.0,
+            gripSp.v1,
+            theme.textMuted
+          );
+        }
+        const isEditingThisChoice =
+          studioGraphState.editingChoice &&
+          studioGraphState.editingChoice.node === nd &&
+          studioGraphState.editingChoice.idx === j;
+        if (!isEditingThisChoice) {
+          const rawLabel = pt.label || "Wybór " + (j + 1);
+          const choiceMaxW = nd.w - (isHistoryPreview ? 36 : 47);
+          if (pt._shapedLabelTxt !== rawLabel || pt._shapedChoiceMaxW !== choiceMaxW || !pt._shapedChoice) {
+            pt._shapedLabelTxt = rawLabel;
+            pt._shapedChoiceMaxW = choiceMaxW;
+            pt._shapedChoice = shapeTextGlyphs(FONT_CHOICE, rawLabel, choiceMaxW);
+          }
+          pushShapedTextQuads(
+            pt._shapedChoice,
+            nd.x + (isHistoryPreview ? 10 : 21),
+            rowY + NODE_CHOICE_ROW_HEIGHT * 0.5,
+            textSec
+          );
+        }
+        if (!isHistoryPreview) {
+          const tx = nd.x + nd.w - 23;
+          const ty = rowY + (NODE_CHOICE_ROW_HEIGHT - trashSp.size) * 0.5;
+          pushQuadInstance(
+            tx,
+            ty,
+            trashSp.size,
+            trashSp.size,
+            trashSp.u0,
+            trashSp.v0,
+            trashSp.u1,
+            trashSp.v1,
+            theme.textMuted
+          );
+        }
       }
     }
 
     const footerTop = nd.y + nd.h - NODE_FOOTER_HEIGHT;
     pushSolidQuad(nd.x + 1, footerTop + 1, nd.w - 2, NODE_FOOTER_HEIGHT - 2, cardBg);
-    if (!(typeof isEditorHistoryPreview === "function" && isEditorHistoryPreview())) {
+    const btnY = footerTop + 8;
+    if (!isHistoryPreview) {
       const btnX = nd.x + 8;
-      const btnY = footerTop + 8;
-      pushBorderedBoxQuads(btnX, btnY, addChoiceBtnW, addChoiceBtnH, 1, theme.borderStrong, cardBg);
-      pushShapedTextQuads(addChoiceShaped, btnX + (addChoiceBtnW - addChoiceShaped.totalW) * 0.5, btnY + addChoiceBtnH * 0.5, textPri);
+      pushBorderedBoxQuads(btnX, btnY, footerIconBtnSize, footerIconBtnSize, 1, theme.borderStrong, cardBg);
+      pushQuadInstance(
+        btnX + (footerIconBtnSize - branchPlusSp.size) * 0.5,
+        btnY + (footerIconBtnSize - branchPlusSp.size) * 0.5,
+        branchPlusSp.size,
+        branchPlusSp.size,
+        branchPlusSp.u0,
+        branchPlusSp.v0,
+        branchPlusSp.u1,
+        branchPlusSp.v1,
+        textPri
+      );
     }
+    const editX = nd.x + nd.w - 8 - footerIconBtnSize;
+    pushBorderedBoxQuads(editX, btnY, footerIconBtnSize, footerIconBtnSize, 1, theme.borderStrong, cardBg);
+    pushQuadInstance(
+      editX + (footerIconBtnSize - editPenSp.size) * 0.5,
+      btnY + (footerIconBtnSize - editPenSp.size) * 0.5,
+      editPenSp.size,
+      editPenSp.size,
+      editPenSp.u0,
+      editPenSp.v0,
+      editPenSp.u1,
+      editPenSp.v1,
+      textPri
+    );
   }
 
-  // 4. Default Circular Ports
+  // 4. Default Circular Ports (frustum-culled)
   for (let i = 0; i < chapters.length; i++) {
     const ch = chapters[i];
     if (ch.hidden) continue;
+    if (
+      ch.right + 12 < fMinX ||
+      ch.left - 12 > fMaxX ||
+      ch.bottom + 12 < fMinY ||
+      ch.top - 12 > fMaxY
+    ) {
+      continue;
+    }
     if (!ch.isRoot) {
-      pushPortQuads(ch.inX, ch.inY, Boolean(ch.inConnected), false, theme, false);
+      pushSmallPortQuads(ch.inX, ch.inY, Boolean(ch.inConnected), false, theme, false);
     }
     for (let j = 0; j < ch.outPorts.length; j++) {
       const op = ch.outPorts[j];
-      pushPortQuads(op.x, op.y, Boolean(op.connected), false, theme, false);
+      pushSmallPortQuads(op.x, op.y, Boolean(op.connected), false, theme, false);
     }
   }
 
   for (let i = 0; i < nodes.length; i++) {
     const nd = nodes[i];
+    if (
+      nd.right + 12 < fMinX ||
+      nd.left - 12 > fMaxX ||
+      nd.bottom + 12 < fMinY ||
+      nd.top - 12 > fMaxY
+    ) {
+      continue;
+    }
     if (nd.hasInputPort) {
       pushPortQuads(nd.x + nd.inOx, nd.y + nd.inOy, Boolean(nd.inConnected), false, theme, nd.unreachable);
     }
@@ -1090,18 +1401,23 @@ function appendDynamicOverlayQuads(theme) {
   studioGL.instCursor = studioGL.staticInstCount;
 
   const hovered = studioGraphState.hoveredItem;
-  const hoveredWire = hovered && hovered.type === "wire" ? hovered.wire : null;
   const gesture = activeCanvasGesture;
+  const hoveredWire =
+    hovered && (hovered.type === "wire" || hovered.type === "wire-pin")
+      ? hovered.wire
+      : gesture && gesture.type === "wire-pin-drag" && gesture.wire
+        ? gesture.wire
+        : null;
   const gripSp = studioGL.uv.grip;
 
   const renderChapterPortsOverlay = (ch) => {
     if (!ch || ch.hidden) return;
     if (!ch.isRoot) {
-      pushPortQuads(ch.inX, ch.inY, Boolean(ch.inConnected), false, theme, false);
+      pushSmallPortQuads(ch.inX, ch.inY, Boolean(ch.inConnected), false, theme, false);
     }
     for (let j = 0; j < ch.outPorts.length; j++) {
       const op = ch.outPorts[j];
-      pushPortQuads(op.x, op.y, Boolean(op.connected), false, theme, false);
+      pushSmallPortQuads(op.x, op.y, Boolean(op.connected), false, theme, false);
     }
   };
 
@@ -1147,24 +1463,70 @@ function appendDynamicOverlayQuads(theme) {
     const chain = collectHoveredConnectionWires(hoveredWire);
     for (let i = 0; i < chain.length; i++) {
       const hw = chain[i];
-      pushWirePolylineQuads(hw.pts, 2, false, theme.textSecondary);
+      pushWirePolylineQuads(hw.pts, 2, false, theme.textSecondary, hw.bridges);
     }
     for (let i = 0; i < chain.length; i++) {
       const hw = chain[i];
+      if (hw.pins && hw.pins.length > 0) {
+        for (let p = 0; p < hw.pins.length; p++) {
+          pushSmallPortQuads(hw.pins[p].x, hw.pins[p].y, true, theme.textSecondary, theme, false);
+        }
+      }
       if (hw.fromNode) {
         pushPortQuads(hw.x1, hw.y1, true, theme.textSecondary, theme, false);
       } else if (hw.fromChapterOutPort) {
-        pushPortQuads(hw.fromChapterOutPort.x, hw.fromChapterOutPort.y, true, theme.textSecondary, theme, false);
+        pushSmallPortQuads(hw.fromChapterOutPort.x, hw.fromChapterOutPort.y, true, theme.textSecondary, theme, false);
       } else if (hw.kind === "chapter-in-to-entry" && hw.fromChapterObj) {
-        pushPortQuads(hw.fromChapterObj.inX, hw.fromChapterObj.inY, Boolean(hw.fromChapterObj.inConnected), theme.textSecondary, theme, false);
+        pushSmallPortQuads(hw.fromChapterObj.inX, hw.fromChapterObj.inY, Boolean(hw.fromChapterObj.inConnected), theme.textSecondary, theme, false);
       }
       if (hw.toNode) {
         pushPortQuads(hw.x2, hw.y2, true, theme.textSecondary, theme, false);
       } else if (hw.toChapterOutPort) {
-        pushPortQuads(hw.toChapterOutPort.x, hw.toChapterOutPort.y, true, theme.textSecondary, theme, false);
+        pushSmallPortQuads(hw.toChapterOutPort.x, hw.toChapterOutPort.y, true, theme.textSecondary, theme, false);
       } else if (hw.toChapterObj) {
-        pushPortQuads(hw.toChapterObj.inX, hw.toChapterObj.inY, true, theme.textSecondary, theme, false);
+        pushSmallPortQuads(hw.toChapterObj.inX, hw.toChapterObj.inY, true, theme.textSecondary, theme, false);
       }
+    }
+  }
+
+  if (gesture && gesture.type === "wire-pin-drag" && gesture.wire && gesture.wire.pins && gesture.wire.pins[gesture.pinIdx]) {
+    const activePin = gesture.wire.pins[gesture.pinIdx];
+    pushSmallPortQuads(activePin.x, activePin.y, true, true, theme, false);
+  }
+
+  if (gesture && gesture.type === "choice-drag" && gesture.node && gesture.node.ports) {
+    const nd = gesture.node;
+    const j = gesture.currentIdx;
+    if (j >= 0 && j < nd.ports.length) {
+      const pt = nd.ports[j];
+      const rowY = nd.y + NODE_HEADER_HEIGHT + j * NODE_CHOICE_ROW_HEIGHT;
+      pushBorderedBoxQuads(nd.x + 1, rowY, nd.w - 2, NODE_CHOICE_ROW_HEIGHT, 1, theme.textPrimary, theme.bgElevated);
+      const cgW = 16;
+      const cgH = 18;
+      pushQuadInstance(
+        nd.x + 3,
+        rowY + (NODE_CHOICE_ROW_HEIGHT - cgH) * 0.5,
+        cgW,
+        cgH,
+        gripSp.u0 + 30.0,
+        gripSp.v0,
+        gripSp.u1 + 30.0,
+        gripSp.v1,
+        theme.textPrimary
+      );
+      const rawLabel = pt.label || "Wybór " + (j + 1);
+      const choiceMaxW = nd.w - 47;
+      if (pt._shapedLabelTxt !== rawLabel || pt._shapedChoiceMaxW !== choiceMaxW || !pt._shapedChoice) {
+        pt._shapedLabelTxt = rawLabel;
+        pt._shapedChoiceMaxW = choiceMaxW;
+        pt._shapedChoice = shapeTextGlyphs(FONT_CHOICE, rawLabel, choiceMaxW);
+      }
+      pushShapedTextQuads(pt._shapedChoice, nd.x + 21, rowY + NODE_CHOICE_ROW_HEIGHT * 0.5, theme.textPrimary);
+      const trashSp = studioGL.uv.trashIcon;
+      const tx = nd.x + nd.w - 23;
+      const ty = rowY + (NODE_CHOICE_ROW_HEIGHT - trashSp.size) * 0.5;
+      pushQuadInstance(tx, ty, trashSp.size, trashSp.size, trashSp.u0, trashSp.v0, trashSp.u1, trashSp.v1, theme.textMuted);
+      pushPortQuads(nd.x + pt.ox, nd.y + pt.oy, Boolean(pt.connected), true, theme, nd.unreachable);
     }
   }
 
@@ -1224,13 +1586,17 @@ function appendDynamicOverlayQuads(theme) {
       gesture.type === "wire-connect"
         ? Boolean(gesture.sourcePort ? gesture.sourcePort.connected : gesture.hasExistingTarget)
         : Boolean(gesture.activeChapterOutPort && gesture.activeChapterOutPort.connected);
-    pushPortQuads(gesture.startX, gesture.startY, startConnected, true, theme, false);
+    if (gesture.type === "chapter-wire-connect") {
+      pushSmallPortQuads(gesture.startX, gesture.startY, startConnected, true, theme, false);
+    } else {
+      pushPortQuads(gesture.startX, gesture.startY, startConnected, true, theme, false);
+    }
     if (gesture.hoveredSceneNode) {
       const tnd = gesture.hoveredSceneNode;
       pushPortQuads(tnd.x + tnd.inOx, tnd.y + tnd.inOy, Boolean(tnd.inConnected), true, theme, false);
     }
     if (gesture.hoveredChapterIn) {
-      pushPortQuads(
+      pushSmallPortQuads(
         gesture.hoveredChapterIn.inX,
         gesture.hoveredChapterIn.inY,
         Boolean(gesture.hoveredChapterIn.inConnected),
@@ -1240,7 +1606,7 @@ function appendDynamicOverlayQuads(theme) {
       );
     }
     if (gesture.hoveredChapterOutPort) {
-      pushPortQuads(
+      pushSmallPortQuads(
         gesture.hoveredChapterOutPort.x,
         gesture.hoveredChapterOutPort.y,
         Boolean(gesture.hoveredChapterOutPort.connected),
@@ -1252,11 +1618,10 @@ function appendDynamicOverlayQuads(theme) {
   }
 
   if (hovered) {
-    if (
-      hovered.type === "scene-out-port" ||
-      hovered.type === "chapter-out-port"
-    ) {
+    if (hovered.type === "scene-out-port") {
       pushPortQuads(hovered.x, hovered.y, isHoveredPortItemConnected(hovered), true, theme, false);
+    } else if (hovered.type === "chapter-out-port" || hovered.type === "wire-pin") {
+      pushSmallPortQuads(hovered.x, hovered.y, isHoveredPortItemConnected(hovered), true, theme, false);
     } else if (hovered.type === "node-grip" && hovered.node) {
       const nd = hovered.node;
       pushQuadInstance(
@@ -1264,6 +1629,22 @@ function appendDynamicOverlayQuads(theme) {
         nd.y + 6,
         gripSp.w,
         gripSp.h,
+        gripSp.u0 + 30.0,
+        gripSp.v0,
+        gripSp.u1 + 30.0,
+        gripSp.v1,
+        theme.textPrimary
+      );
+    } else if (hovered.type === "choice-grip" && hovered.node && hovered.choiceIdx !== undefined) {
+      const nd = hovered.node;
+      const rowY = nd.y + NODE_HEADER_HEIGHT + hovered.choiceIdx * NODE_CHOICE_ROW_HEIGHT;
+      const cgW = 16;
+      const cgH = 18;
+      pushQuadInstance(
+        nd.x + 3,
+        rowY + (NODE_CHOICE_ROW_HEIGHT - cgH) * 0.5,
+        cgW,
+        cgH,
         gripSp.u0 + 30.0,
         gripSp.v0,
         gripSp.u1 + 30.0,
@@ -1285,13 +1666,61 @@ function appendDynamicOverlayQuads(theme) {
       );
     } else if (hovered.type === "add-choice-btn" && hovered.node) {
       const nd = hovered.node;
-      const addChoiceShaped = shapeTextGlyphs(FONT_BTN, "+ WYBÓR", 80);
+      const branchPlusSp = studioGL.uv.branchPlus;
       const btnX = nd.x + 8;
       const btnY = nd.y + nd.h - NODE_FOOTER_HEIGHT + 8;
-      const btnW = Math.ceil(addChoiceShaped.totalW) + 20;
-      const btnH = 24;
-      pushBorderedBoxQuads(btnX, btnY, btnW, btnH, 1, theme.textPrimary, theme.bgElevated);
-      pushShapedTextQuads(addChoiceShaped, btnX + (btnW - addChoiceShaped.totalW) * 0.5, btnY + btnH * 0.5, theme.textPrimary);
+      const btnS = 24;
+      pushBorderedBoxQuads(btnX, btnY, btnS, btnS, 1, theme.textPrimary, theme.bgElevated);
+      pushQuadInstance(
+        btnX + (btnS - branchPlusSp.size) * 0.5,
+        btnY + (btnS - branchPlusSp.size) * 0.5,
+        branchPlusSp.size,
+        branchPlusSp.size,
+        branchPlusSp.u0,
+        branchPlusSp.v0,
+        branchPlusSp.u1,
+        branchPlusSp.v1,
+        theme.textPrimary
+      );
+    } else if (hovered.type === "edit-scene-btn" && hovered.node) {
+      const nd = hovered.node;
+      const editPenSp = studioGL.uv.editPen;
+      const btnS = 24;
+      const btnX = nd.x + nd.w - 8 - btnS;
+      const btnY = nd.y + nd.h - NODE_FOOTER_HEIGHT + 8;
+      pushBorderedBoxQuads(btnX, btnY, btnS, btnS, 1, theme.textPrimary, theme.bgElevated);
+      pushQuadInstance(
+        btnX + (btnS - editPenSp.size) * 0.5,
+        btnY + (btnS - editPenSp.size) * 0.5,
+        editPenSp.size,
+        editPenSp.size,
+        editPenSp.u0,
+        editPenSp.v0,
+        editPenSp.u1,
+        editPenSp.v1,
+        theme.textPrimary
+      );
+    } else if (hovered.type === "choice-trash-btn" && hovered.node && typeof hovered.choiceIdx === "number") {
+      const nd = hovered.node;
+      const trashSp = studioGL.uv.trashIcon;
+      const rowY = nd.y + NODE_HEADER_HEIGHT + hovered.choiceIdx * NODE_CHOICE_ROW_HEIGHT;
+      const tx = nd.x + nd.w - 23;
+      const ty = rowY + (NODE_CHOICE_ROW_HEIGHT - trashSp.size) * 0.5;
+      pushQuadInstance(
+        tx,
+        ty,
+        trashSp.size,
+        trashSp.size,
+        trashSp.u0,
+        trashSp.v0,
+        trashSp.u1,
+        trashSp.v1,
+        theme.textPrimary
+      );
+    } else if (hovered.type === "branch-radio" && hovered.node) {
+      const nd = hovered.node;
+      const sqColor = nd.branchRole === "primary" ? theme.textPrimary : theme.textSecondary;
+      pushSolidQuad(nd.branchRadioX, nd.branchRadioY, 8, 8, sqColor);
     }
   }
 
@@ -1329,14 +1758,40 @@ function renderStudioCanvas() {
   const px = editorCanvasState.panX || 0;
   const py = editorCanvasState.panY || 0;
 
+  const visMinX = -px / z;
+  const visMinY = -py / z;
+  const visMaxX = (vw - px) / z;
+  const visMaxY = (vh - py) / z;
+  if (
+    !studioGraphState.staticBatchDirty &&
+    (!studioGL.hasCullBounds ||
+      visMinX < studioGL.cullMinX ||
+      visMaxX > studioGL.cullMaxX ||
+      visMinY < studioGL.cullMinY ||
+      visMaxY > studioGL.cullMaxY)
+  ) {
+    studioGraphState.staticBatchDirty = true;
+  }
+
   if (studioGraphState.staticBatchDirty) {
     compileStaticSceneQuads(theme);
     appendDynamicOverlayQuads(theme);
-    gl.bindBuffer(gl.ARRAY_BUFFER, studioGL.instVbo);
+    const ringIdx = ((studioGL.vboRingIdx || 0) + 1) % 3;
+    studioGL.vboRingIdx = ringIdx;
+    const vbo = studioGL.instVbos[ringIdx];
+    studioGL.instVbo = vbo;
+    studioGL.bindInstVboAttribs(vbo);
+    const activeFloats = studioGL.totalInstCount * FLOATS_PER_INSTANCE;
+    const requiredBytes = (studioGL.totalInstCount + 64) * BYTES_PER_INSTANCE;
+    if (studioGL.instVboCapacities[ringIdx] < requiredBytes) {
+      const nextCapBytes = Math.max(requiredBytes * 2, 4096 * BYTES_PER_INSTANCE);
+      gl.bufferData(gl.ARRAY_BUFFER, nextCapBytes, gl.STREAM_DRAW);
+      studioGL.instVboCapacities[ringIdx] = nextCapBytes;
+    }
     gl.bufferSubData(
       gl.ARRAY_BUFFER,
       0,
-      instanceFloatView.subarray(0, studioGL.totalInstCount * FLOATS_PER_INSTANCE)
+      instanceFloatView.subarray(0, activeFloats)
     );
     studioGraphState.staticBatchDirty = false;
     studioGraphState.overlayBatchDirty = false;
@@ -1344,28 +1799,64 @@ function renderStudioCanvas() {
     appendDynamicOverlayQuads(theme);
     const dynCount = studioGL.totalInstCount - studioGL.staticInstCount;
     if (dynCount > 0) {
+      const ringIdx = studioGL.vboRingIdx || 0;
+      const vbo = studioGL.instVbos[ringIdx];
       const startFloat = studioGL.staticInstCount * FLOATS_PER_INSTANCE;
       const endFloat = studioGL.totalInstCount * FLOATS_PER_INSTANCE;
-      gl.bindBuffer(gl.ARRAY_BUFFER, studioGL.instVbo);
-      gl.bufferSubData(
-        gl.ARRAY_BUFFER,
-        studioGL.staticInstCount * BYTES_PER_INSTANCE,
-        instanceFloatView.subarray(startFloat, endFloat)
-      );
+      const requiredBytes = studioGL.totalInstCount * BYTES_PER_INSTANCE;
+      gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+      if (studioGL.instVboCapacities[ringIdx] < requiredBytes) {
+        const nextCapBytes = Math.max(requiredBytes * 2, 4096 * BYTES_PER_INSTANCE);
+        gl.bufferData(gl.ARRAY_BUFFER, nextCapBytes, gl.STREAM_DRAW);
+        studioGL.instVboCapacities[ringIdx] = nextCapBytes;
+        gl.bufferSubData(
+          gl.ARRAY_BUFFER,
+          0,
+          instanceFloatView.subarray(0, endFloat)
+        );
+      } else {
+        gl.bufferSubData(
+          gl.ARRAY_BUFFER,
+          studioGL.staticInstCount * BYTES_PER_INSTANCE,
+          instanceFloatView.subarray(startFloat, endFloat)
+        );
+      }
     }
     studioGraphState.overlayBatchDirty = false;
   }
 
-  gl.viewport(0, 0, canvas.width, canvas.height);
-  gl.useProgram(studioGL.prog);
-  gl.uniform2f(studioGL.uViewSize, vw, vh);
-  gl.uniform3f(studioGL.uPanZoom, px, py, z);
-  gl.uniform1f(studioGL.uDpr, dpr);
-  gl.uniform3f(studioGL.uBgColor, theme.bgObsidianRgb[0], theme.bgObsidianRgb[1], theme.bgObsidianRgb[2]);
-  gl.uniform3f(studioGL.uDotColor, theme.gridDotRgb[0], theme.gridDotRgb[1], theme.gridDotRgb[2]);
-  gl.uniform1f(studioGL.uGridStep, z < 0.45 ? EDITOR_GRID_SIZE * 2 : EDITOR_GRID_SIZE);
+  if (studioGL.lastVpW !== canvas.width || studioGL.lastVpH !== canvas.height) {
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    studioGL.lastVpW = canvas.width;
+    studioGL.lastVpH = canvas.height;
+  }
+  if (studioGL.lastUniformVw !== vw || studioGL.lastUniformVh !== vh) {
+    gl.uniform2f(studioGL.uViewSize, vw, vh);
+    studioGL.lastUniformVw = vw;
+    studioGL.lastUniformVh = vh;
+  }
+  if (studioGL.lastUniformPx !== px || studioGL.lastUniformPy !== py || studioGL.lastUniformZ !== z) {
+    gl.uniform3f(studioGL.uPanZoom, px, py, z);
+    studioGL.lastUniformPx = px;
+    studioGL.lastUniformPy = py;
+    studioGL.lastUniformZ = z;
+  }
+  if (studioGL.lastUniformDpr !== dpr) {
+    gl.uniform1f(studioGL.uDpr, dpr);
+    studioGL.lastUniformDpr = dpr;
+  }
+  if (studioGL.lastUniformLight !== theme.isLight) {
+    gl.uniform3f(studioGL.uBgColor, theme.bgObsidianRgb[0], theme.bgObsidianRgb[1], theme.bgObsidianRgb[2]);
+    gl.uniform3f(studioGL.uDotColor, theme.gridDotRgb[0], theme.gridDotRgb[1], theme.gridDotRgb[2]);
+    studioGL.lastUniformLight = theme.isLight;
+  }
+  const gridStep = z < 0.45 ? EDITOR_GRID_SIZE * 2 : EDITOR_GRID_SIZE;
+  if (studioGL.lastUniformGridStep !== gridStep) {
+    gl.uniform1f(studioGL.uGridStep, gridStep);
+    studioGL.lastUniformGridStep = gridStep;
+  }
 
-  // 1 SINGLE INSTANCED GPU DRAW CALL (0 bytes uploaded on Pan/Zoom frames!)
+  // 1 SINGLE INSTANCED GPU DRAW CALL
   if (studioGL.instExt) {
     studioGL.instExt.drawArraysInstancedANGLE(gl.TRIANGLES, 0, 6, studioGL.totalInstCount);
   }

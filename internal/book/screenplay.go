@@ -941,7 +941,16 @@ func AnalyzeScreenplay(b *Book) *ScreenplayBreakdown {
 		return bd
 	}
 
-	bd.TotalScenes = len(b.Scenes)
+	activeScenes := LinearizeScreenplayScenes(b)
+	if len(activeScenes) == 0 {
+		activeScenes = b.Scenes
+	}
+	activeSet := make(map[string]bool, len(activeScenes))
+	for _, sc := range activeScenes {
+		activeSet[sc.ID] = true
+	}
+
+	bd.TotalScenes = len(activeScenes)
 
 	type locAccum struct {
 		stat     LocationStat
@@ -968,8 +977,13 @@ func AnalyzeScreenplay(b *Book) *ScreenplayBreakdown {
 	sceneBlocksMap := make(map[string][]ScreenplayBlock, len(b.Scenes))
 	sceneSlugInfo := make(map[string]SluglineInfo, len(b.Scenes))
 
-	// First pass: metrics, locations, and speaking characters
+	// Populate SceneMetrics for all scenes so editor modals always have metrics
 	for i, sc := range b.Scenes {
+		bd.SceneMetrics[sc.ID] = ComputeSceneScriptMetrics(sc, i+1, normStd)
+	}
+
+	// First pass on active primary path: metrics, locations, and speaking characters
+	for i, sc := range activeScenes {
 		metrics := ComputeSceneScriptMetrics(sc, i+1, normStd)
 		bd.SceneMetrics[sc.ID] = metrics
 		bd.TotalLines += metrics.Lines
@@ -1074,7 +1088,7 @@ func AnalyzeScreenplay(b *Book) *ScreenplayBreakdown {
 
 	// Second pass: detect silent (non-speaking) appearances of known characters in BlockAction
 	if len(charOrder) > 0 {
-		for _, sc := range b.Scenes {
+		for _, sc := range activeScenes {
 			blocks := sceneBlocksMap[sc.ID]
 			sInfo := sceneSlugInfo[sc.ID]
 			metrics := bd.SceneMetrics[sc.ID]
@@ -1172,7 +1186,7 @@ func AnalyzeScreenplay(b *Book) *ScreenplayBreakdown {
 	for _, ch := range b.Chapters {
 		actE := 0
 		scCount := 0
-		for _, sc := range b.Scenes {
+		for _, sc := range activeScenes {
 			if strings.EqualFold(strings.TrimSpace(sc.Chapter), strings.TrimSpace(ch.Name)) {
 				scCount++
 				actE += bd.SceneMetrics[sc.ID].Eighths

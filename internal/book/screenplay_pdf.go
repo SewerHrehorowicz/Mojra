@@ -395,10 +395,6 @@ func ExportScreenplayPDF(b *Book) ([]byte, error) {
 						curPage.runs = append(curPage.runs, pdfTextRun{
 							x: leftNumX, y: y, bold: true, size: fontSize, text: numLabel,
 						})
-						rightNumX := pageWidth - rightMargin - float64(len(numLabel))*charWidthPt
-						curPage.runs = append(curPage.runs, pdfTextRun{
-							x: rightNumX, y: y, bold: true, size: fontSize, text: numLabel,
-						})
 					}
 					curPage.runs = append(curPage.runs, pdfTextRun{
 						x: leftActionX, y: y, bold: true, size: fontSize, text: sl,

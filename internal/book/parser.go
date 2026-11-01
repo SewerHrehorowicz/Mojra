@@ -66,6 +66,8 @@ func ParseDataFile(content string, b *Book) {
 			if val != "" {
 				b.ScriptStandard = NormalizeScriptStandard(val)
 			}
+		case "export_dir":
+			b.ExportDir = SanitizePlainText(val)
 		default:
 			b.Warnings = append(b.Warnings, fmt.Sprintf("data.txt:%d: nieznany klucz „%s”", lineIdx+1, key))
 		}

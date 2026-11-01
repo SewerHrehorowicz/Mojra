@@ -405,8 +405,8 @@ func TestServerActionLifecycleAndSecurity(t *testing.T) {
 	}
 	helpHTML, _ := io.ReadAll(helpResp.Body)
 	_ = helpResp.Body.Close()
-	if !strings.Contains(string(helpHTML), `data-backdrop-action="CloseEditorHelpModal"`) {
-		t.Fatalf("expected editor help modal in rendered HTML")
+	if !strings.Contains(string(helpHTML), `id="editor-help-panel"`) || strings.Contains(string(helpHTML), `id="editor-help-panel" class="editor-help-panel hidden"`) {
+		t.Fatalf("expected visible #editor-help-panel in rendered workspace HTML")
 	}
 
 	closeHelpForm := url.Values{}
@@ -1064,7 +1064,7 @@ Dopiero kapitan Arvo wszystko mu wytłumaczył.
 		}
 	}
 
-	// 7b. Modal actions return only #modals-root chunk
+	// 7b. OpenEditorHelpModal returns #workspace with right-column #editor-help-panel visible
 	helpModalForm := url.Values{}
 	helpModalForm.Set("action", "OpenEditorHelpModal")
 	rHelp, err := http.PostForm(ts.URL+"/api/action", helpModalForm)
@@ -1074,14 +1074,14 @@ Dopiero kapitan Arvo wszystko mu wytłumaczył.
 	helpChunkBytes, _ := io.ReadAll(rHelp.Body)
 	_ = rHelp.Body.Close()
 	helpChunk := string(helpChunkBytes)
-	if rHelp.Header.Get("X-Target") != "#modals-root" {
-		t.Fatalf("expected X-Target=#modals-root for OpenEditorHelpModal, got %q", rHelp.Header.Get("X-Target"))
+	if rHelp.Header.Get("X-Target") != "#workspace" {
+		t.Fatalf("expected X-Target=#workspace for OpenEditorHelpModal, got %q", rHelp.Header.Get("X-Target"))
 	}
-	if !strings.Contains(helpChunk, `data-backdrop-action="CloseEditorHelpModal"`) {
-		t.Fatalf("expected editor help modal in modal chunk, got:\n%s", helpChunk)
+	if !strings.Contains(helpChunk, `id="editor-help-panel"`) || strings.Contains(helpChunk, `id="editor-help-panel" class="editor-help-panel hidden"`) {
+		t.Fatalf("expected visible #editor-help-panel in workspace chunk, got:\n%s", helpChunk)
 	}
-	if strings.Contains(helpChunk, `id="topbar"`) || strings.Contains(helpChunk, `id="workspace"`) {
-		t.Fatalf("modal chunk must not include #topbar or #workspace, got:\n%s", helpChunk)
+	if strings.Contains(helpChunk, `id="topbar"`) {
+		t.Fatalf("workspace chunk must not include #topbar, got:\n%s", helpChunk)
 	}
 
 	// 7c. ChooseBranch returns #workspace (player_view) without #topbar
@@ -2562,8 +2562,17 @@ func TestScreenplayModeEndToEndFlow(t *testing.T) {
 		t.Fatalf("expected new screenplay scenes to have spread-out vertical layout, got Y=(%d, %d, %d)",
 			srv.ActiveBook.Scenes[0].Y, srv.ActiveBook.Scenes[1].Y, srv.ActiveBook.Scenes[2].Y)
 	}
-	if !strings.Contains(html, `id="canvas-script-summary"`) || !strings.Contains(html, `id="btn-editor-breakdown"`) {
-		t.Fatalf("expected screenplay summary and breakdown button in Node Studio toolbar")
+	if !strings.Contains(html, `id="btn-open-export-modal"`) || !strings.Contains(html, `id="btn-editor-breakdown"`) {
+		t.Fatalf("expected export modal button and breakdown button in Node Studio toolbar")
+	}
+	if strings.Contains(html, `id="canvas-script-summary"`) || strings.Contains(html, `id="btn-export-screenplay-pdf"`) || strings.Contains(html, `id="btn-export-screenplay-fountain"`) {
+		t.Fatalf("expected screenplay summary and separate PDF/.fountain buttons removed from Node Studio toolbar")
+	}
+	if strings.Contains(html, "Obsada / Lokacje") {
+		t.Fatalf("expected #btn-editor-breakdown to use an SVG icon rather than text label 'Obsada / Lokacje'")
+	}
+	if strings.Contains(html, "history-unsaved-badge") {
+		t.Fatalf("expected no numeric counter badge next to history icon in toolbar")
 	}
 	if !strings.Contains(html, `placeholder="Tytuł scenariusza..."`) || !strings.Contains(html, `data-hint="Ustawienia scenariusza"`) {
 		t.Fatalf("expected screenplay terminology in editor UI")
@@ -2616,6 +2625,10 @@ func TestScreenplayModeEndToEndFlow(t *testing.T) {
 		t.Fatalf("expected Courier screenplay blocks in player view, got:\n%s", playHTML)
 	}
 
+	if strings.Contains(playHTML, `class="book-warnings-box"`) {
+		t.Fatalf("expected warnings to only appear in Node Studio, not in player view")
+	}
+
 	// 4. Switch back to Editor, open Breakdown panel, and rename character & location
 	_, _ = http.PostForm(ts.URL+"/api/action", url.Values{
 		"action": {"SwitchView"},
@@ -2626,8 +2639,15 @@ func TestScreenplayModeEndToEndFlow(t *testing.T) {
 	})
 	bdBytes, _ := io.ReadAll(bdResp.Body)
 	_ = bdResp.Body.Close()
-	if !strings.Contains(string(bdBytes), "OPERATOR") || !strings.Contains(string(bdBytes), "KINO STUDYJNE") {
+	bdHTML := string(bdBytes)
+	if !strings.Contains(bdHTML, "OPERATOR") || !strings.Contains(bdHTML, "KINO STUDYJNE") {
 		t.Fatalf("expected OPERATOR and KINO STUDYJNE in breakdown panel")
+	}
+	if !strings.Contains(bdHTML, `class="breakdown-acts-bar"`) || !strings.Contains(bdHTML, `class="breakdown-metric-cell"`) || strings.Contains(bdHTML, `breakdown-metric-card`) || strings.Contains(bdHTML, `breakdown-item-card`) || strings.Contains(bdHTML, `breakdown-export-bar`) {
+		t.Fatalf("expected minimalist line-based breakdown layout without boxed cards or export button bar")
+	}
+	if strings.Contains(bdHTML, `<span class="history-version-name">OPERATOR</span>`) {
+		t.Fatalf("expected character name not to be duplicated as both static span and input value in breakdown panel")
 	}
 
 	_, _ = http.PostForm(ts.URL+"/api/action", url.Values{
@@ -2725,6 +2745,66 @@ func TestScreenplayModeEndToEndFlow(t *testing.T) {
 	_ = fountainResp.Body.Close()
 	if !strings.Contains(string(fountainData), "WN. KINO ILUZJON - NOC #1#") {
 		t.Fatalf("expected numbered slugline in .fountain export, got:\n%s", string(fountainData))
+	}
+
+	// 7. Verify OpenExportModal / ExportProject modal flow and ExportScreenplayPDF / ExportScreenplayFountain
+	openExpModalResp, err := http.PostForm(ts.URL+"/api/action", url.Values{
+		"action": {"OpenExportModal"},
+	})
+	if err != nil || openExpModalResp.StatusCode != http.StatusOK {
+		t.Fatalf("OpenExportModal failed: status=%v err=%v", openExpModalResp.StatusCode, err)
+	}
+	openExpBytes, _ := io.ReadAll(openExpModalResp.Body)
+	_ = openExpModalResp.Body.Close()
+	openExpHTML := string(openExpBytes)
+	if !srv.ExportModalOpen || !strings.Contains(openExpHTML, `id="modal-export-project"`) || !strings.Contains(openExpHTML, `data-select-value="pdf"`) || !strings.Contains(openExpHTML, `data-select-value="fountain"`) || !strings.Contains(openExpHTML, `data-select-value="stbook"`) {
+		t.Fatalf("expected Export Modal with pdf/fountain/stbook dropdown options, got:\n%s", openExpHTML)
+	}
+
+	customExportDir := filepath.Join(rootDir, "custom-exports")
+	expProjResp, err := http.PostForm(ts.URL+"/api/action", url.Values{
+		"action":     {"ExportProject"},
+		"format":     {"pdf"},
+		"export_dir": {customExportDir},
+	})
+	if err != nil || expProjResp.StatusCode != http.StatusOK {
+		t.Fatalf("ExportProject (pdf) failed: status=%v err=%v", expProjResp.StatusCode, err)
+	}
+	_ = expProjResp.Body.Close()
+	if srv.ExportModalOpen {
+		t.Fatalf("expected ExportModalOpen=false after successful ExportProject")
+	}
+	if _, err := os.Stat(filepath.Join(customExportDir, srv.ActiveBook.ID+".pdf")); err != nil {
+		t.Fatalf("expected PDF exported to customExportDir: %v", err)
+	}
+	if srv.ActiveBook.ExportDir != customExportDir {
+		t.Fatalf("expected ActiveBook.ExportDir=%q, got %q", customExportDir, srv.ActiveBook.ExportDir)
+	}
+	// Subsequent export without export_dir parameter reuses remembered ActiveBook.ExportDir
+	expFountainResp, err := http.PostForm(ts.URL+"/api/action", url.Values{
+		"action": {"ExportProject"},
+		"format": {"fountain"},
+	})
+	if err != nil || expFountainResp.StatusCode != http.StatusOK {
+		t.Fatalf("ExportProject (fountain) failed: status=%v err=%v", expFountainResp.StatusCode, err)
+	}
+	_ = expFountainResp.Body.Close()
+	if _, err := os.Stat(filepath.Join(customExportDir, srv.ActiveBook.ID+".fountain")); err != nil {
+		t.Fatalf("expected Fountain exported to remembered customExportDir: %v", err)
+	}
+
+	// Change export_dir via BrowseBookExportFolder
+	updatedExportDir := filepath.Join(rootDir, "updated-exports")
+	browseExpResp, err := http.PostForm(ts.URL+"/api/action", url.Values{
+		"action":     {"BrowseBookExportFolder"},
+		"export_dir": {updatedExportDir},
+	})
+	if err != nil || browseExpResp.StatusCode != http.StatusOK {
+		t.Fatalf("BrowseBookExportFolder failed: status=%v err=%v", browseExpResp.StatusCode, err)
+	}
+	_ = browseExpResp.Body.Close()
+	if srv.ActiveBook.ExportDir != updatedExportDir {
+		t.Fatalf("expected ActiveBook.ExportDir updated to %q, got %q", updatedExportDir, srv.ActiveBook.ExportDir)
 	}
 }
 
@@ -3763,22 +3843,91 @@ function makeEvent(type, props) {
     throw new Error("Expected #editor-context-form to hide after clicking empty canvas");
   }
 
-  const nodeScreenPt = vm.runInContext("(() => { const n = studioGraphState.nodes[0]; const z = editorCanvasState.zoom; return { x: Math.round((n.x + 60) * z + editorCanvasState.panX), y: Math.round((n.y + 20) * z + editorCanvasState.panY), addX: Math.round((n.x + 24) * z + editorCanvasState.panX), addY: Math.round((n.y + n.h - 20) * z + editorCanvasState.panY), gripX: Math.round((n.x + 12) * z + editorCanvasState.panX), gripY: Math.round((n.y + 16) * z + editorCanvasState.panY) }; })()", win);
+  const nodeScreenPt = vm.runInContext("(() => { const n = studioGraphState.nodes[0]; const z = editorCanvasState.zoom; return { x: Math.round((n.x + 60) * z + editorCanvasState.panX), y: Math.round((n.y + 42) * z + editorCanvasState.panY), titleX: Math.round((n.x + 60) * z + editorCanvasState.panX), titleY: Math.round((n.y + 16) * z + editorCanvasState.panY), addX: Math.round((n.x + 20) * z + editorCanvasState.panX), addY: Math.round((n.y + n.h - 20) * z + editorCanvasState.panY), editX: Math.round((n.x + n.w - 20) * z + editorCanvasState.panX), editY: Math.round((n.y + n.h - 20) * z + editorCanvasState.panY), gripX: Math.round((n.x + 12) * z + editorCanvasState.panX), gripY: Math.round((n.y + 16) * z + editorCanvasState.panY) }; })()", win);
 
   canvas.dispatchEvent(makeEvent("mousedown", { button: 0, clientX: nodeScreenPt.x, clientY: nodeScreenPt.y, target: canvas }));
   canvas.dispatchEvent(makeEvent("mouseup", { button: 0, clientX: nodeScreenPt.x, clientY: nodeScreenPt.y, target: canvas }));
   await waitForActions();
-  if (doc.querySelector("#editor-context-form").classList.contains("hidden")) {
-    throw new Error("Expected #editor-context-form to be visible after clicking node card on canvas");
+  if (!doc.querySelector("#editor-context-form").classList.contains("hidden") || !doc.querySelector("#editor-context-panel").classList.contains("hidden")) {
+    throw new Error("Expected #editor-context-panel and #editor-context-form to remain hidden when clicking a node card on canvas");
+  }
+  if (!vm.runInContext("selectedNodeIds.has(studioGraphState.nodes[0].id)", win)) {
+    throw new Error("Expected clicking node card on canvas to select the node");
   }
 
-  // 6. Click "+ Wybór" button directly on WebGL canvas node card
+  // 5b. Click node title on WebGL canvas to edit title inline via #canvas-node-title-input
+  canvas.dispatchEvent(makeEvent("mousedown", { button: 0, clientX: nodeScreenPt.titleX, clientY: nodeScreenPt.titleY, target: canvas }));
+  canvas.dispatchEvent(makeEvent("mouseup", { button: 0, clientX: nodeScreenPt.titleX, clientY: nodeScreenPt.titleY, target: canvas }));
+  const nodeTitleInp = doc.querySelector("#canvas-node-title-input");
+  if (!nodeTitleInp || nodeTitleInp.classList.contains("hidden")) {
+    throw new Error("Expected clicking node title on canvas to open #canvas-node-title-input");
+  }
+  nodeTitleInp.value = "Scena Startowa Inline";
+  nodeTitleInp.dispatchEvent(makeEvent("keydown", { key: "Enter", target: nodeTitleInp }));
+  await waitForActions();
+  if (vm.runInContext("studioGraphState.nodes[0].name", win) !== "Scena Startowa Inline") {
+    throw new Error("Expected Enter on #canvas-node-title-input to update node name on canvas");
+  }
+
+  // 6. Click add-choice icon button (branch-plus) directly on WebGL canvas node card footer
   canvas.dispatchEvent(makeEvent("mousedown", { button: 0, clientX: nodeScreenPt.addX, clientY: nodeScreenPt.addY, target: canvas }));
   canvas.dispatchEvent(makeEvent("mouseup", { button: 0, clientX: nodeScreenPt.addX, clientY: nodeScreenPt.addY, target: canvas }));
   await waitForActions();
   const portCountAfterAdd = vm.runInContext("studioGraphState.nodes[0].ports.length", win);
   if (portCountAfterAdd < 2) {
-    throw new Error("Expected canvas '+ Wybór' click to add choices (ports >= 2), got " + portCountAfterAdd);
+    throw new Error("Expected canvas add-choice icon click to add choices (ports >= 2), got " + portCountAfterAdd);
+  }
+
+  // 6b. Click choice row label on WebGL canvas node card to edit choice inline via #canvas-choice-input
+  const choiceLabelPt = vm.runInContext("(() => { const n = studioGraphState.nodes[0]; const z = editorCanvasState.zoom; return { x: Math.round((n.x + 50) * z + editorCanvasState.panX), y: Math.round((n.y + 36 + 14) * z + editorCanvasState.panY) }; })()", win);
+  canvas.dispatchEvent(makeEvent("mousedown", { button: 0, clientX: choiceLabelPt.x, clientY: choiceLabelPt.y, target: canvas }));
+  canvas.dispatchEvent(makeEvent("mouseup", { button: 0, clientX: choiceLabelPt.x, clientY: choiceLabelPt.y, target: canvas }));
+  const choiceInp = doc.querySelector("#canvas-choice-input");
+  if (!choiceInp || choiceInp.classList.contains("hidden")) {
+    throw new Error("Expected clicking choice label on canvas node to open #canvas-choice-input");
+  }
+  choiceInp.value = "Wybór Inline 1";
+  choiceInp.dispatchEvent(makeEvent("keydown", { key: "Enter", target: choiceInp }));
+  await waitForActions();
+  if (vm.runInContext("studioGraphState.nodes[0].ports[0].label", win) !== "Wybór Inline 1") {
+    throw new Error("Expected Enter on #canvas-choice-input to update choice label on canvas");
+  }
+
+  // 6c. Connect choice ports to two parallel child scenes, then click gray 8x8 branch-radio square on secondary parallel node to promote it to primary
+  const rootId = vm.runInContext("studioGraphState.nodes[0].id", win);
+  await vm.runInContext("sendServerAction('BranchChoiceScene', { scene: '" + rootId + "', choice_idx: '0' })", win);
+  await waitForActions();
+  await vm.runInContext("sendServerAction('BranchChoiceScene', { scene: '" + rootId + "', choice_idx: '1' })", win);
+  await waitForActions();
+  const secRadioPt = vm.runInContext("(() => { const sec = studioGraphState.nodes.find((n) => n.branchRole === 'secondary'); if (!sec) return null; const z = editorCanvasState.zoom; return { id: sec.id, x: Math.round((sec.branchRadioX + 4) * z + editorCanvasState.panX), y: Math.round((sec.branchRadioY + 4) * z + editorCanvasState.panY) }; })()", win);
+  if (!secRadioPt) {
+    throw new Error("Expected parallel child node with branchRole=secondary on canvas");
+  }
+  canvas.dispatchEvent(makeEvent("mousedown", { button: 0, clientX: secRadioPt.x, clientY: secRadioPt.y, target: canvas }));
+  canvas.dispatchEvent(makeEvent("mouseup", { button: 0, clientX: secRadioPt.x, clientY: secRadioPt.y, target: canvas }));
+  await waitForActions();
+  const promotedRole = vm.runInContext("(() => { const n = studioGraphState.nodeById.get('" + secRadioPt.id + "'); return n ? n.branchRole : ''; })()", win);
+  if (promotedRole !== "primary") {
+    throw new Error("Expected clicking gray branch-radio square to promote node to primary, got " + promotedRole);
+  }
+
+  // 6d. Drag choice-grip handle on WebGL canvas node card from row 0 to row 1 to reorder choices live + persist via ReorderChoice
+  const beforeDragZeroLabel = vm.runInContext("studioGraphState.nodes[0].ports[0].label", win);
+  const choiceGripPt = vm.runInContext("(() => { const n = studioGraphState.nodes[0]; const hit = hitTestStudioCanvas(n.x + 10, n.y + 36 + 14); if (!hit || hit.type !== 'choice-grip') return null; const z = editorCanvasState.zoom; return { x: Math.round((n.x + 10) * z + editorCanvasState.panX), y0: Math.round((n.y + 36 + 14) * z + editorCanvasState.panY), y1: Math.round((n.y + 36 + 42) * z + editorCanvasState.panY) }; })()", win);
+  if (!choiceGripPt) {
+    throw new Error("Expected hitTestStudioCanvas to return choice-grip on left side of choice row");
+  }
+  canvas.dispatchEvent(makeEvent("mousedown", { button: 0, clientX: choiceGripPt.x, clientY: choiceGripPt.y0, target: canvas }));
+  canvas.dispatchEvent(makeEvent("mousemove", { button: 0, clientX: choiceGripPt.x, clientY: choiceGripPt.y1, target: canvas }));
+  canvas.dispatchEvent(makeEvent("mouseup", { button: 0, clientX: choiceGripPt.x, clientY: choiceGripPt.y1, target: canvas }));
+  await waitForActions();
+  const reorderedSecondLabel = vm.runInContext("studioGraphState.nodes[0].ports[1].label", win);
+  if (reorderedSecondLabel !== beforeDragZeroLabel) {
+    throw new Error("Expected choice-grip drag to reorder '" + beforeDragZeroLabel + "' from idx 0 to idx 1, got " + reorderedSecondLabel);
+  }
+  const directRightForkPtsLen = vm.runInContext("(() => { const n = studioGraphState.nodes[0]; const rightWire = studioGraphState.wires.find((w) => w.fromNode === n && w.toNode && w.x2 >= n.x + n.w + 16); return rightWire && rightWire.pts ? rightWire.pts.length : 0; })()", win);
+  if (directRightForkPtsLen !== 3) {
+    throw new Error("Expected right-branch choice wire to route as a clean 3-point L-wire without extra kinks, got pts.length=" + directRightForkPtsLen);
   }
 
   // 7. Drag node grip on WebGL canvas (+48px X, +24px Y) and verify grid snap + SaveEditorState
@@ -3791,6 +3940,34 @@ function makeEvent(type, props) {
   const movedNodeX = vm.runInContext("studioGraphState.nodes[0].x", win);
   if (movedNodeX !== startNodeX + 48) {
     throw new Error("Expected node grip drag to snap +48px on 24px grid, got " + startNodeX + " -> " + movedNodeX);
+  }
+
+  // 7a. Verify node-on-node collision prevention, frustum culling, and side chapter output ports
+  const collisionPrevented = vm.runInContext("(() => { const n0 = studioGraphState.nodes[0]; const n1 = studioGraphState.nodes[1]; const dx = n1.x - n0.x; const dy = n1.y - n0.y; const res = resolveValidNodeDragDelta([{ node: n0, sceneId: n0.id, startX: n0.x, startY: n0.y }], dx, dy, 0, 0); const nx = snapToEditorGrid(n0.x + res.dx); const ny = snapToEditorGrid(n0.y + res.dy); return !(nx < n1.right + 24 && nx + n0.w + 24 > n1.left && ny < n1.bottom + 24 && ny + n0.h + 24 > n1.top); })()", win);
+  if (!collisionPrevented) {
+    throw new Error("Expected resolveValidNodeDragDelta to prevent overlapping two nodes");
+  }
+  const culledQuadCount = vm.runInContext("(() => { const savedPanX = editorCanvasState.panX; const savedPanY = editorCanvasState.panY; editorCanvasState.panX = 200000; editorCanvasState.panY = 200000; renderStudioCanvas(); const c = studioGL.staticInstCount; editorCanvasState.panX = savedPanX; editorCanvasState.panY = savedPanY; renderStudioCanvas(); return c; })()", win);
+  if (culledQuadCount !== 1) {
+    throw new Error("Expected frustum culling to emit only 1 background grid quad when all nodes are off-screen, got " + culledQuadCount);
+  }
+
+  // 7b. Drag a wire segment on WebGL canvas to insert a control pin (wire-pin), then double-click pin to remove it
+  const wireMidScreenPt = vm.runInContext("(() => { const w = studioGraphState.wires[0]; const p0 = w.pts[0]; const p1 = w.pts[1]; const wx = (p0.x + p1.x) * 0.5; const wy = (p0.y + p1.y) * 0.5; const z = editorCanvasState.zoom; return { x: Math.round(wx * z + editorCanvasState.panX), y: Math.round(wy * z + editorCanvasState.panY) }; })()", win);
+  canvas.dispatchEvent(makeEvent("mousedown", { button: 0, clientX: wireMidScreenPt.x, clientY: wireMidScreenPt.y, target: canvas }));
+  canvas.dispatchEvent(makeEvent("mousemove", { button: 0, clientX: wireMidScreenPt.x + 36, clientY: wireMidScreenPt.y + 24, target: canvas }));
+  canvas.dispatchEvent(makeEvent("mouseup", { button: 0, clientX: wireMidScreenPt.x + 36, clientY: wireMidScreenPt.y + 24, target: canvas }));
+  await waitForActions();
+  const pinCountAfterDrag = vm.runInContext("studioGraphState.wires[0].pins ? studioGraphState.wires[0].pins.length : 0", win);
+  if (pinCountAfterDrag !== 1) {
+    throw new Error("Expected dragging wire segment to create 1 control pin, got " + pinCountAfterDrag);
+  }
+  const pinScreenPt = vm.runInContext("(() => { const p = studioGraphState.wires[0].pins[0]; const z = editorCanvasState.zoom; return { x: Math.round(p.x * z + editorCanvasState.panX), y: Math.round(p.y * z + editorCanvasState.panY) }; })()", win);
+  canvas.dispatchEvent(makeEvent("dblclick", { button: 0, clientX: pinScreenPt.x, clientY: pinScreenPt.y, target: canvas }));
+  await waitForActions();
+  const pinCountAfterDblClick = vm.runInContext("studioGraphState.wires[0].pins ? studioGraphState.wires[0].pins.length : 0", win);
+  if (pinCountAfterDblClick !== 0) {
+    throw new Error("Expected double-clicking wire-pin to remove it, got " + pinCountAfterDblClick);
   }
 
   // 8. Double-click node card on WebGL canvas to open #modal-scene-text
@@ -3862,8 +4039,12 @@ function makeEvent(type, props) {
   doc.querySelector("#new-book-title").value = "Scenariusz Responsywny";
   await clickEl('form[action="CreateNewBook"] button[type="submit"]');
 
-  // Open Scene Text Modal in screenplay mode and click [data-insert-script-block="dialogue"] pill
-  await clickEl('#editor-context-form button[action="OpenSceneTextModal"]');
+  // Open Scene Text Modal in screenplay mode via edit-scene-btn icon on node card footer and click [data-insert-script-block="dialogue"] pill
+  const spEditBtnPt = vm.runInContext("(() => { const n = studioGraphState.nodes[0]; const z = editorCanvasState.zoom; return { x: Math.round((n.x + n.w - 20) * z + editorCanvasState.panX), y: Math.round((n.y + n.h - 20) * z + editorCanvasState.panY) }; })()", win);
+  const spCanvas0 = doc.querySelector("#studio-canvas");
+  spCanvas0.dispatchEvent(makeEvent("mousedown", { button: 0, clientX: spEditBtnPt.x, clientY: spEditBtnPt.y, target: spCanvas0 }));
+  spCanvas0.dispatchEvent(makeEvent("mouseup", { button: 0, clientX: spEditBtnPt.x, clientY: spEditBtnPt.y, target: spCanvas0 }));
+  await waitForActions();
   await clickEl('button[data-insert-script-block="dialogue"]');
   const spTaVal = doc.querySelector("#modal-scene-textarea").value;
   if (!spTaVal.includes("POSTAĆ")) {
@@ -3882,18 +4063,19 @@ function makeEvent(type, props) {
   spCanvas.dispatchEvent(makeEvent("mouseup", { button: 0, clientX: 5, clientY: 5, target: spCanvas }));
   await waitForActions();
   await clickEl('.breakdown-jump-btn[action="SelectStudioScene"]');
-  if (doc.querySelector("#editor-context-form").classList.contains("hidden")) {
-    throw new Error("Expected clicking .breakdown-jump-btn after canvas deselect to reveal #editor-context-form");
+  if (vm.runInContext("selectedNodeIds.size", win) !== 1) {
+    throw new Error("Expected clicking .breakdown-jump-btn after canvas deselect to select the target scene on canvas");
   }
 
-  // Submit Character Rename form and Location Rename form in Breakdown Panel via DOM submit button
+  // Auto-save Character Rename and Location Rename inputs in Breakdown Panel on change/blur
   const charRenameForm = doc.querySelector('form.breakdown-rename-form[action="RenameCharacter"]');
   if (!charRenameForm) {
     throw new Error("Expected form.breakdown-rename-form[action=RenameCharacter] in #editor-breakdown-panel");
   }
   const newCharInp = charRenameForm.querySelector('input[name="new_name"]');
   newCharInp.value = "DETEKTYW";
-  await clickEl(charRenameForm.querySelector('button[type="submit"]'));
+  newCharInp.dispatchEvent(makeEvent("change", { target: newCharInp }));
+  await waitForActions();
 
   const locRenameForm = doc.querySelector('form.breakdown-rename-form[action="RenameLocation"]');
   if (!locRenameForm) {
@@ -3901,7 +4083,8 @@ function makeEvent(type, props) {
   }
   const newLocInp = locRenameForm.querySelector('input[name="new_location"]');
   newLocInp.value = "PORT RZECZNY";
-  await clickEl(locRenameForm.querySelector('button[type="submit"]'));
+  newLocInp.dispatchEvent(makeEvent("blur", { target: newLocInp }));
+  await waitForActions();
 
   console.log("STATUS=OK");
   console.log("ACTIONS=" + actionLog.join(","));
@@ -3951,6 +4134,146 @@ function makeEvent(type, props) {
 		t.Fatalf("standalone player.js syntax check failed: %v\n%s", err, string(out))
 	}
 }
+
+func TestMultiChapterAutoIDAndCollisionOnConnectChoice(t *testing.T) {
+	dir := t.TempDir()
+	bookDir := filepath.Join(dir, "books", "rzeka-test")
+	if err := os.MkdirAll(bookDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bookDir, "data.txt"), []byte("title: Test Rzeki\nnarrated: false\nimageless: true\nstart: s_root\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// Note: w_gore_umierajacej_rzeki.txt sorts alphabetically BEFORE wioskowe_dziwadlo.txt,
+	// while wioskowe_dziwadlo.txt is Chapter 1 (root) in graph reachability order.
+	ch1Content := `chapter: Wioskowe dziwadło
+id: wioskowe_dziwadlo
+start: s_root
+
+scene: Patrol na przystani
+id: s_root
+Tekst startowy.
+
+Wybór 1 -> Nowa scena 119
+Wybór 2 -> chapter:w_gore_umierajacej_rzeki
+
+scene: Nowa scena 119
+next: s_end1
+Tekst sceny 119 bez jawnego id.
+
+scene: Koszary
+id: s_end1
+end: true
+Koniec 1.
+`
+	ch2Content := `chapter: W górę umierającej rzeki
+id: w_gore_umierajacej_rzeki
+start: b1_wejscie
+
+scene: Siedem kanu
+id: b1_wejscie
+Tekst kanu.
+
+Wybór 1 -> b1_nocleg
+Wybór 2 -> Nowa scena 120
+
+scene: Nocleg na korzeniach
+id: b1_nocleg
+end: true
+Tekst noclegu.
+
+scene: Nowa scena 120
+end: true
+Tekst sceny 120 bez jawnego id.
+`
+	editorContent := `# StoryTeller — Stan edytora węzłów (editor.txt)
+pan_x: 0
+pan_y: 0
+zoom: 1.00
+
+node: s_root -> 720, 96
+node: Nowa scena 119 -> 984, 288
+node: s_end1 -> 720, 480
+node: b1_wejscie -> 552, 1872
+node: b1_nocleg -> 552, 2712
+node: Nowa scena 120 -> 336, 2568
+`
+	if err := os.WriteFile(filepath.Join(bookDir, "wioskowe_dziwadlo.txt"), []byte(ch1Content), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bookDir, "w_gore_umierajacej_rzeki.txt"), []byte(ch2Content), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bookDir, "editor.txt"), []byte(editorContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	srv := NewServer(dir, storyteller.AppFS)
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	postForm := func(action string, vals url.Values) {
+		t.Helper()
+		vals.Set("action", action)
+		resp, err := http.PostForm(ts.URL+"/api/action", vals)
+		if err != nil {
+			t.Fatalf("POST %s failed: %v", action, err)
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
+			t.Fatalf("POST %s unexpected status %d", action, resp.StatusCode)
+		}
+	}
+
+	postForm("OpenBook", url.Values{"book": {"rzeka-test"}, "target_view": {"editor"}})
+
+	sc119 := srv.findScene("Nowa scena 119")
+	sc120 := srv.findScene("Nowa scena 120")
+	if sc119 == nil || sc120 == nil {
+		t.Fatalf("expected both Nowa scena 119 and Nowa scena 120 to exist")
+	}
+	if sc119.ID == sc120.ID {
+		t.Fatalf("expected distinct auto-IDs for scenes without ExplicitID, got %q", sc119.ID)
+	}
+
+	// Simulate dragging Nowa scena 120 to (384, 2616) and then connecting its next step to b1_nocleg
+	postForm("SaveEditorState", url.Values{
+		"positions": {sc120.ID + ":384,2616"},
+	})
+	postForm("ConnectChoice", url.Values{
+		"from_scene":  {sc120.ID},
+		"from_choice": {"-1"},
+		"to_scene":    {"b1_nocleg"},
+	})
+
+	sc119After := srv.findScene("Nowa scena 119")
+	sc120After := srv.findScene("Nowa scena 120")
+	if sc119After == nil || sc120After == nil {
+		t.Fatalf("expected scenes after ConnectChoice")
+	}
+	if sc119After.X != 984 || sc119After.Y != 288 {
+		t.Fatalf("Nowa scena 119 coordinates were corrupted after ConnectChoice: got (%d, %d), want (984, 288)", sc119After.X, sc119After.Y)
+	}
+	if sc120After.X != 384 || sc120After.Y != 2616 {
+		t.Fatalf("Nowa scena 120 coordinates were not preserved after ConnectChoice: got (%d, %d), want (384, 2616)", sc120After.X, sc120After.Y)
+	}
+
+	// Also verify CreateSceneAt near Chapter 1's bounding box for Chapter 2 nudges coordinates away from Chapter 1
+	postForm("CreateSceneAt", url.Values{
+		"chapter": {"W górę umierającej rzeki"},
+		"x":       {"720"},
+		"y":       {"288"},
+	})
+	scNew := srv.findScene("Nowa scena 7")
+	if scNew == nil {
+		t.Fatalf("expected newly created scene Nowa scena 7")
+	}
+	// Chapter 1 spans Y: 96-52=44 .. 480+120+44=644; new node in Chapter 2 must not overlap Chapter 1's frame
+	if scNew.X >= 720-36-192-24 && scNew.X <= 984+192+36+24 && scNew.Y-52 < 644+24 && scNew.Y+120+44 > 44-24 {
+		t.Fatalf("expected CreateSceneAt in Chapter 2 to avoid overlapping Chapter 1 frame, got (%d, %d)", scNew.X, scNew.Y)
+	}
+}
+
 
 
 

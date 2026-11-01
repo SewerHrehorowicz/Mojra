@@ -172,15 +172,19 @@
 .help-shortcuts-list
   display flex
   flex-direction column
-  border-top 1px solid --border-subtle
 
 .help-shortcut-row
-  display grid
-  grid-template-columns 220px 1fr
-  gap 14px
-  align-items baseline
+  display flex
+  flex-direction column
+  gap 4px
   padding 10px 0
   border-bottom 1px solid --border-subtle
+
+.help-shortcut-row:first-child
+  padding-top 0
+
+.help-shortcut-row:last-child
+  border-bottom none
 
 .help-shortcut-key
   font-family --font-sans
@@ -189,8 +193,8 @@
   color --text-primary
 
 .help-shortcut-desc
-  font-size 13px
-  line-height 1.5
+  font-size 12px
+  line-height 1.45
   color --text-secondary
 
 .modal-backdrop.scene-text-fullscreen-backdrop
@@ -313,24 +317,6 @@
 
 .scene-settings-toggle-btn:hover, .scene-settings-toggle-btn.active
   color --text-primary
-
-.scene-settings-toggle-btn.active::before, .scene-settings-toggle-btn.active::after
-  content ""
-  position absolute
-  left 0
-  right 0
-  height 6px
-  border-left 1px solid currentColor
-  border-right 1px solid currentColor
-  pointer-events none
-
-.scene-settings-toggle-btn.active::before
-  top 0
-  background linear-gradient(to right, currentColor 6px, transparent 6px, transparent calc(100% - 6px), currentColor calc(100% - 6px)) 0 0 / 100% 1px no-repeat
-
-.scene-settings-toggle-btn.active::after
-  bottom 0
-  background linear-gradient(to right, currentColor 6px, transparent 6px, transparent calc(100% - 6px), currentColor calc(100% - 6px)) 0 100% / 100% 1px no-repeat
 
 .scene-settings-icon
   width 16px
@@ -463,17 +449,19 @@
   display flex
   flex-direction column
   gap 8px
-  padding 10px 14px
-  background --bg-elevated
-  border 1px solid --border-subtle
+  padding 10px 0
+  background transparent
+  border none
+  border-bottom 1px solid --border-subtle
 
 .modal-screenplay-format-bar
   display flex
   flex-direction column
   gap 6px
-  padding 8px 14px
-  background --bg-obsidian
-  border 1px solid --border-subtle
+  padding 8px 0
+  background transparent
+  border none
+  border-bottom 1px solid --border-subtle
   margin-top -10px
 
 .modal-format-row
@@ -505,9 +493,12 @@
   font-size 13px
 
 .modal-choice-row
-  gap 12px
+  gap 10px
   padding 7px 4px
   cursor default
+
+.modal-choice-row.is-dragging-choice
+  background --bg-elevated
 
 .modal-choice-row input.choice-label-text
   font-family --font-sans

@@ -2,6 +2,7 @@ package tpl
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -114,6 +115,70 @@ func BundleCSSFiles(cssFiles []string, cssOutPath string) error {
 		return err
 	}
 	return os.WriteFile(cssOutPath, []byte(bundled), 0644)
+}
+
+// BundleCSSFromFS transpiles and bundles embedded app/styles/*.tss modules from fsys.
+func BundleCSSFromFS(fsys fs.FS, stripDev bool) (string, error) {
+	if fsys == nil {
+		return "", fmt.Errorf("nil fs")
+	}
+	switches := DefaultCSSSwitches()
+	var sb strings.Builder
+	for _, path := range CSSModuleFiles("app") {
+		slashPath := filepath.ToSlash(path)
+		raw, err := fs.ReadFile(fsys, slashPath)
+		if err != nil {
+			return "", fmt.Errorf("read %s: %w", slashPath, err)
+		}
+		src := string(raw)
+		if stripDev {
+			src = StripDevOnlyBlocks(src)
+		}
+		name := strings.TrimSuffix(strings.TrimSuffix(filepath.Base(slashPath), ".tss"), ".css")
+		rendered, err := transpileCSSWithSwitches(src, name, nil, switches, stripDev)
+		if err != nil {
+			return "", err
+		}
+		rendered = strings.TrimSpace(rendered)
+		if rendered == "" {
+			continue
+		}
+		if sb.Len() > 0 {
+			sb.WriteString("\n\n")
+		}
+		sb.WriteString(rendered)
+	}
+	if sb.Len() > 0 {
+		sb.WriteString("\n")
+	}
+	return sb.String(), nil
+}
+
+// BundleJSFromFS concatenates embedded app/js/*.js modules from fsys and prepends MSDF glyph metrics.
+func BundleJSFromFS(fsys fs.FS, stripDev bool) (string, error) {
+	if fsys == nil {
+		return "", fmt.Errorf("nil fs")
+	}
+	var sb strings.Builder
+	if _, metricsJS, err := BuildStudioMSDFAtlasFromFS(fsys); err == nil && metricsJS != "" {
+		sb.WriteString(metricsJS)
+	}
+	for i, path := range JSModuleFiles("app") {
+		slashPath := filepath.ToSlash(path)
+		raw, err := fs.ReadFile(fsys, slashPath)
+		if err != nil {
+			return "", fmt.Errorf("read %s: %w", slashPath, err)
+		}
+		content := string(raw)
+		if stripDev {
+			content = StripDevOnlyBlocks(content)
+		}
+		if i > 0 && len(content) > 0 && sb.Len() > 0 {
+			sb.WriteString("\n")
+		}
+		sb.WriteString(content)
+	}
+	return sb.String(), nil
 }
 
 // discoverComponentFiles returns sorted paths matching appDir/components/*/*<ext>.

@@ -24,16 +24,6 @@ section.view-panel#view-player
             .reader-global-meta#reader-global-meta
                 span.scene-chapter-pill#reader-global-meta-text {current_scene.header_meta}
 
-            {if has_book_warnings}
-                .book-warnings-box
-                    {if is_screenplay_mode}
-                        .book-warnings-title "⚠ Ostrzeżenia scenariusza ({book_warning_count}):"
-                    {else}
-                        .book-warnings-title "⚠ Ostrzeżenia książki ({book_warning_count}):"
-                    ul.book-warnings-list
-                        {for w in book_warnings}
-                            li {w.text}
-
             {if has_history}
                 .history-stack#history-stack
                     {for h in history_items}

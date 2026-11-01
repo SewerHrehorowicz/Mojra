@@ -100,10 +100,12 @@
   text-decoration none !important
 
 .top-action-btn
+  position relative
   display inline-flex
   align-items center
   justify-content center
-  padding 4px
+  gap 4px
+  padding 5px
   border none !important
   text-decoration none !important
   background transparent
@@ -111,7 +113,7 @@
   font-size 11px
   cursor pointer
 
-.top-action-btn:hover
+.top-action-btn:hover, .top-action-btn.active
   color --text-primary
   border none !important
   text-decoration none !important

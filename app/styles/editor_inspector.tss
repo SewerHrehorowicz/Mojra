@@ -1,18 +1,21 @@
-// Contextual Left Inspector Panel & Multi-Selection
+// Contextual Right Inspector Panel & Multi-Selection
 .editor-context-panel
-  order 1
-  width 288px
-  min-width 288px
-  max-width 288px
+  order 3
+  width 320px
+  min-width 320px
+  max-width 320px
   height 100%
   background --bg-obsidian
-  border-right 1px solid --border-subtle
+  border-left 1px solid --border-subtle
   overflow-y auto
   overflow-x hidden
   display flex
   flex-direction column
   flex-shrink 0
   z-index 35
+
+.editor-context-panel:not(:has(> :not(.hidden)))
+  display none
 
 body[data-android="true"] .editor-context-panel
   display none !important
@@ -30,12 +33,12 @@ body[data-android="true"] .editor-context-panel
   .editor-context-panel
     display none !important
 
-// Right-Side Version History & Breakdown Panels
-.editor-history-panel, .editor-breakdown-panel
+// Right-Side Breakdown, Version History & Help Panels
+.editor-history-panel, .editor-help-panel
   order 3
-  width 300px
-  min-width 300px
-  max-width 300px
+  width 320px
+  min-width 320px
+  max-width 320px
   height 100%
   background --bg-obsidian
   border-left 1px solid --border-subtle
@@ -46,13 +49,45 @@ body[data-android="true"] .editor-context-panel
   flex-shrink 0
   z-index 35
 
-.editor-history-panel
+.editor-history-panel, .editor-help-panel
   overflow hidden
 
+.help-panel-list
+  display flex
+  flex-direction column
+
 .editor-breakdown-panel
+  order 3
   width 320px
   min-width 320px
   max-width 320px
+  height 100%
+  background --bg-obsidian
+  border-left 1px solid --border-subtle
+  overflow-y auto
+  overflow-x hidden
+  display flex
+  flex-direction column
+  flex-shrink 0
+  z-index 35
+
+.node-meta-static-val
+  flex 1
+  font-family --font-sans
+  font-size 12px
+  color --text-primary
+  padding 4px 0
+  min-width 0
+  white-space nowrap
+  overflow hidden
+  text-overflow ellipsis
+
+.scene-text-delete-btn
+  color --danger
+  border-color --danger
+  display inline-flex
+  align-items center
+  gap 6px
 
 .canvas-script-summary
   font-family --font-sans
@@ -82,21 +117,28 @@ body[data-android="true"] .editor-context-panel
   gap 6px
   padding 10px 14px
   border-bottom 1px solid --border-subtle
-  background --bg-elevated
+  background --bg-obsidian
   flex-shrink 0
 
 .breakdown-metrics-grid
   display grid
   grid-template-columns 1fr 1fr
-  gap 6px
+  border-top 1px solid --border-subtle
 
-.breakdown-metric-card
+.breakdown-metric-cell
   display flex
   flex-direction column
-  gap 2px
-  padding 6px 8px
-  background --bg-elevated
-  border 1px solid --border-subtle
+  gap 3px
+  padding 8px 0
+  background transparent
+  border-bottom 1px solid --border-subtle
+
+.breakdown-metric-cell:nth-child(odd)
+  padding-right 12px
+  border-right 1px solid --border-subtle
+
+.breakdown-metric-cell:nth-child(even)
+  padding-left 12px
 
 .breakdown-metric-label
   font-family --font-sans
@@ -107,39 +149,139 @@ body[data-android="true"] .editor-context-panel
 
 .breakdown-metric-value
   font-family --font-sans
+  font-size 13px
+  font-weight 600
+  color --text-primary
+
+.breakdown-acts-bar
+  display flex
+  width 100%
+  height 3px
+  gap 2px
+  margin-bottom 2px
+
+.breakdown-act-segment
+  flex 1 1 0%
+  height 100%
+  background --text-secondary
+
+.breakdown-act-segment.is-dominant
+  background --text-primary
+
+.breakdown-acts-list
+  display flex
+  flex-direction column
+
+.breakdown-act-row
+  display flex
+  align-items center
+  justify-content space-between
+  gap 8px
+  padding 8px 0
+  border-bottom 1px solid --border-subtle
+
+.breakdown-act-left
+  display flex
+  align-items baseline
+  gap 8px
+  min-width 0
+
+.breakdown-act-name
+  font-family --font-sans
   font-size 12px
   font-weight 600
   color --text-primary
 
-.breakdown-item-card
+.breakdown-act-meta
+  font-family --font-sans
+  font-size 10px
+  color --text-muted
+  white-space nowrap
+  overflow hidden
+  text-overflow ellipsis
+
+.breakdown-act-pct
+  font-family --font-sans
+  font-size 11px
+  font-weight 600
+  color --text-primary
+  flex-shrink 0
+  min-width 28px
+  text-align right
+
+.breakdown-entities-list
+  display flex
+  flex-direction column
+  gap 12px
+
+.breakdown-entity-item
   display flex
   flex-direction column
   gap 5px
-  padding 8px 10px
-  background --bg-elevated
-  border 1px solid --border-subtle
 
-.breakdown-item-top
+.breakdown-rename-form, .breakdown-entity-line
+  display flex
+  align-items baseline
+  justify-content space-between
+  gap 6px
+  width 100%
+  padding-bottom 4px
+  border-bottom 1px solid --border-strong
+  transition border-color 0.15s ease
+
+.breakdown-rename-form:focus-within, .breakdown-entity-line:focus-within
+  border-bottom-color --text-primary
+
+.breakdown-name-input
+  flex 1
+  min-width 0
+  background transparent
+  border none !important
+  outline none
+  color --text-primary
+  font-family --font-sans
+  font-size 12px
+  font-weight 600
+  letter-spacing 0.2px
+  padding 0
+
+.breakdown-loc-prefix
+  font-family --font-sans
+  font-size 11px
+  font-weight 600
+  color --text-muted
+  flex-shrink 0
+
+.breakdown-entity-days
+  font-family --font-sans
+  font-size 10px
+  color --text-muted
+  white-space nowrap
+  flex-shrink 0
+
+.breakdown-jump-btn
   display flex
   align-items center
   justify-content space-between
   gap 6px
-
-.breakdown-jump-btn
   background transparent
   border none
   padding 0
   text-align left
   cursor pointer
-  color --text-primary
-  flex 1
+  color --text-secondary
+  width 100%
   min-width 0
 
-.breakdown-rename-form
-  display flex
-  align-items center
-  gap 4px
-  margin-top 2px
+.breakdown-jump-arrow
+  font-family --font-sans
+  font-size 11px
+  color --text-muted
+  flex-shrink 0
+  transition color 0.15s ease
+
+.breakdown-jump-btn:hover .history-version-time, .breakdown-jump-btn:hover .breakdown-jump-arrow
+  color --text-primary
 
 .node-slugline-input
   font-family --font-screenplay
@@ -148,12 +290,12 @@ body[data-android="true"] .editor-context-panel
 
 .node-script-length-badge
   font-family --font-sans
-  font-size 9px
+  font-size 10px
   font-weight 600
-  padding 1px 5px
-  border 1px solid --border-subtle
-  background --bg-elevated
-  color --text-secondary
+  padding 0
+  border none
+  background transparent
+  color --text-muted
   white-space nowrap
   flex-shrink 0
 
@@ -331,14 +473,14 @@ body[data-android="true"] .editor-context-panel
 
 .history-step-badge
   font-family --font-sans
-  font-size 9px
-  font-weight 700
+  font-size 10px
+  font-weight 600
   text-transform uppercase
   letter-spacing 0.5px
-  padding 1px 5px
-  border 1px solid --border-strong
-  color --text-secondary
-  background --bg-obsidian
+  padding 0
+  border none
+  color --text-muted
+  background transparent
   flex-shrink 0
 
 .history-step-meta
@@ -776,11 +918,18 @@ body[data-android="true"] .editor-context-panel
   background --bg-elevated
 
 
-.editor-context-form, .editor-chapter-form, .editor-book-form
+.editor-context-form
   display flex
   flex-direction column
   gap 12px
   padding 14px
+  min-height 100%
+
+.editor-chapter-form, .editor-book-form
+  display flex
+  flex-direction column
+  gap 0
+  padding 0
   min-height 100%
 
 .editor-multi-panel
@@ -793,18 +942,19 @@ body[data-android="true"] .editor-context-panel
 .context-multi-scene-list
   display flex
   flex-direction column
-  gap 6px
+  border-top 1px solid --border-subtle
 
 .context-multi-scene-item
   display flex
   align-items center
   gap 4px
-  background --bg-elevated
-  border 1px solid --border-subtle
-  padding 6px 8px
+  background transparent
+  border none
+  border-bottom 1px solid --border-subtle
+  padding 8px 0
 
 .context-multi-scene-item:hover
-  border-color --text-primary
+  border-bottom-color --text-primary
 
 .context-multi-scene-select-btn
   flex 1
@@ -865,6 +1015,29 @@ body[data-android="true"] .editor-context-panel
   padding 2px 0
   background transparent
   border none
+
+.context-choice-item.is-dragging-choice
+  background --bg-elevated
+
+.choice-drag-grip
+  display inline-flex
+  align-items center
+  justify-content center
+  width 16px
+  height 20px
+  flex-shrink 0
+  color --text-muted
+  cursor grab
+  user-select none
+
+.choice-drag-grip:hover,
+.is-dragging-choice .choice-drag-grip
+  color --text-primary
+
+.choice-grip-icon
+  width 14px
+  height 14px
+  pointer-events none
 
 .context-choice-item .node-choice-label
   flex 1
@@ -1069,9 +1242,10 @@ body[data-android="true"] .editor-context-panel
 
 .node-text-preview
   width 100%
-  background --bg-elevated
-  border 1px solid --border-subtle
-  padding 9px 11px
+  background transparent
+  border none
+  border-bottom 1px solid --border-subtle
+  padding 8px 0
   color --text-secondary
   font-family --font-sans
   font-weight 300
@@ -1084,7 +1258,7 @@ body[data-android="true"] .editor-context-panel
   transition border-color 0.15s ease, color 0.15s ease
 
 .node-text-preview:hover
-  border-color --border-strong
+  border-bottom-color --border-strong
   color --text-primary
 
 .node-text-snippet

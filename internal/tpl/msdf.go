@@ -7,6 +7,7 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"io/fs"
 	"math"
 	"os"
 	"path/filepath"
@@ -805,15 +806,41 @@ func BuildStudioMSDFAtlas(appDir string) ([]byte, string, error) {
 	return cachedMSDFPNG, cachedMSDFMetrics, cachedMSDFErr
 }
 
+// BuildStudioMSDFAtlasFromFS generates the dedicated 512x512 Font MTSDF Texture Atlas PNG and JS metric table from embedded app/fonts/*.ttf.
+func BuildStudioMSDFAtlasFromFS(fsys fs.FS) ([]byte, string, error) {
+	if fsys == nil {
+		return nil, "", fmt.Errorf("nil fs")
+	}
+	cachedMSDFOnce.Do(func() {
+		cachedMSDFPNG, cachedMSDFMetrics, cachedMSDFErr = generateStudioMSDFAtlasFromFS(fsys)
+	})
+	return cachedMSDFPNG, cachedMSDFMetrics, cachedMSDFErr
+}
+
 func generateStudioMSDFAtlasInternal(appDir string) ([]byte, string, error) {
 	fontFiles := []string{
 		filepath.Join(appDir, "fonts", "Aleo-Regular.ttf"),
 		filepath.Join(appDir, "fonts", "Lato-Regular.ttf"),
 		filepath.Join(appDir, "fonts", "Lato-Bold.ttf"),
 	}
+	return generateStudioMSDFAtlasWithReader(fontFiles, os.ReadFile)
+}
+
+func generateStudioMSDFAtlasFromFS(fsys fs.FS) ([]byte, string, error) {
+	fontFiles := []string{
+		"app/fonts/Aleo-Regular.ttf",
+		"app/fonts/Lato-Regular.ttf",
+		"app/fonts/Lato-Bold.ttf",
+	}
+	return generateStudioMSDFAtlasWithReader(fontFiles, func(p string) ([]byte, error) {
+		return fs.ReadFile(fsys, p)
+	})
+}
+
+func generateStudioMSDFAtlasWithReader(fontFiles []string, readFn func(string) ([]byte, error)) ([]byte, string, error) {
 	fonts := make([]*ttfFont, len(fontFiles))
 	for i, fp := range fontFiles {
-		raw, err := os.ReadFile(fp)
+		raw, err := readFn(fp)
 		if err != nil {
 			return nil, "", fmt.Errorf("read font %s: %w", fp, err)
 		}
