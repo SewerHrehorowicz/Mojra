@@ -208,7 +208,7 @@ func preserveDistRuntimeState(distDir string) {
 		copyDirRecursivePreserve(distSaves, repoSaves)
 		if entries, err := os.ReadDir(distBooks); err == nil {
 			for _, e := range entries {
-				if !e.IsDir() || strings.HasPrefix(e.Name(), ".") {
+				if !e.IsDir() || strings.HasPrefix(e.Name(), ".") || e.Name() == "nie-boj-sie-policji-rzecznej" {
 					continue
 				}
 				srcBookDir := filepath.Join(distBooks, e.Name())

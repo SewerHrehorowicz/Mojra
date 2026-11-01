@@ -41,8 +41,14 @@
   - Wrap device preview rules in `/* @dev-only-start */ ... /* @dev-only-end */` and template nodes in `{if dev_mode}` so production builds strip them completely.
   - Register any new `.tss` or `.js` module in `CSSModuleFiles` / `JSModuleFiles` (and `CSSPlayerModuleFiles` / `JSPlayerModuleFiles` if needed in standalone player mode) in `internal/tpl/bundle.go`.
 - **UI & Control Rules**:
+  - Store all graphic UI/UX design sheets and visual specifications in `designs/` (`designs/forms.png`, `designs/branch-graph.png`, etc.).
   - Keep `border-radius: 0 !important` globally (`base.tss`), except circular node ports, slider thumbs, and progress/notch pills.
   - Never use native `<select>` elements; always use `.custom-select`.
+  - **Minimalist Form Design System (`designs/forms.png`)**:
+    - **Input & Auto-Resizing Textarea**: Always display a `1px` bottom line (`border-bottom: 1px solid --border-strong` at rest, including placeholder fields like `id:`, and `--text-primary` on focus), with transparent background and zero box borders. All textareas auto-resize to fit content (`rows: 1`, `overflow: hidden !important`, `resize: none !important`, zero scrollbars).
+    - **Toggle**: No bottom underline (`border-bottom: none`) and no outer switch border; display the state label on the left and the contextual SVG icon + subtle borderless track (`22×10px`) with a `6×6px` square thumb on the right.
+    - **Radio**: No bottom underlines and no borders; render options with solid `8×8px` borderless squares (`--border-subtle` idle, `--border-strong` hover, `--text-primary` active).
+    - **Dropdown (`.custom-select`)**: Closed trigger has `border-bottom: 1px solid --border-strong` and right-aligned SVG chevron; when open, remove the trigger's bottom border so it merges into a single `1px solid --text-primary` top edge on `.custom-select-menu` (with `--border-strong` on left/right/bottom).
   - Encapsulate reusable UI primitives via `.tpl` `@component` definitions (`app/templates/components.tpl`) and avoid nested grouping boxes or redundant borders inside `#editor-context-panel`.
   - Place action icons (`expand/collapse`, `close`, `trash`) on the right side of headers, rows, and cards; use SVG icons (`app/icons/*.svg`) instead of text glyphs (`▾`, `×`, `−`), use `trash.svg` for all delete/remove actions, and reserve `close.svg` strictly for closing modals/popovers.
   - Never add `border-bottom` or `text-decoration: underline` to `.topbar-tab` or `.top-action-btn`.
@@ -79,6 +85,9 @@
 - Native OS windows (`internal/gui/window_*.go`) use Cocoa + `WKWebView` on macOS, Win32 + `EmbeddedBrowserWebView.dll` + COFF `.syso` resources on Windows, and Chromium/Edge `--app` mode with `zenity`/`kdialog` on Linux.
 - Never spawn a native window or OS file picker when `ST_NO_WINDOW=1` or running under `go test`.
 - `TestTopbarAlwaysVisibleIncludingSceneTextEditor` (`internal/gui/server_test.go`): Fails if `#topbar` is ever removed, hidden, or covered by `.modal-backdrop` / `.scene-text-fullscreen-backdrop`, or if switching views from `#topbar` fails to exit `#modal-scene-text`.
+- **Client JS, Action Contract & Overlay Responsiveness Gates (`internal/gui/server_test.go`)**:
+  - `TestClientServerActionAndOverlayContracts`: Every `action:` / `data-backdrop-action:` in `app/templates/*.tpl` and `sendServerAction` / `postServerActionSilent` in `app/js/*.js` must exist in `actionSpecs`; `{for}` loops must never reference out-of-scope loop variables; floating non-interactive overlays (`.modals-root`, `.toast`, `.ui-tooltip`, `.editor-perf-overlay`, `.player-bg-stage`, `.scroll-more-cue`) must keep `pointer-events: none` so they never block clicks.
+  - `TestClientJSRuntimeAndInteractiveResponsiveness`: Executes bundled `app.js` (prod/dev) in Node VM against live `httptest.Server` to verify real DOM clicks, form submissions, custom-selects, modal lifecycle, and WebGL canvas hit-testing/gestures. Extend this test whenever adding new interactive UI controls or canvas gestures; never test UI features solely via raw Go `http.PostForm` calls.
 - **Repository Hygiene & Post-Work Cleanup**:
   - Apply fixes directly without asking for permission or confirmation first; implement and verify immediately.
   - Keep all rules, configs, and edits strictly inside the repository root; never modify or touch files outside the repository root.

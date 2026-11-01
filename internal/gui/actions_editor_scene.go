@@ -655,7 +655,7 @@ func (s *Server) saveSceneFromFormWithMode(r *http.Request, isAutoSave bool) str
 		}
 	}
 	coalesceKey := ""
-	if isAutoSave && newID != "" {
+	if newID != "" {
 		coalesceKey = "autosave:" + newID
 	}
 	s.recordHistoryAfterMutation("Edycja sceny: "+targetLabel, "scene", coalesceKey)

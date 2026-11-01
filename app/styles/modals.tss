@@ -49,6 +49,10 @@
   align-items center
   text-align center
 
+.qr-modal-body .modal-meta-fields
+  text-align left
+  align-items stretch
+
 .settings-modal-actions
   display flex
   flex-wrap wrap
@@ -88,16 +92,45 @@
 
 .field-input
   width 100%
-  background --bg-elevated
-  border 1px solid --border-subtle
+  flex 1
+  min-width 0
+  background transparent
+  border none
+  border-bottom 1px solid --border-strong
   color --text-primary
   font-family --font-sans
-  font-size 14px
-  padding 8px 10px
+  font-size 13px
+  padding 5px 0
+  transition border-color 0.15s ease
+
+.field-input::placeholder
+  color --text-muted
+  font-weight 300
+  opacity 1
 
 .field-input:focus
   outline none
-  border-color --text-primary
+  border-bottom-color --text-primary
+
+.modal-meta-fields
+  gap 10px
+  width 100%
+
+.modal-meta-fields .node-meta-key
+  width 62px
+  font-size 12px
+
+.modal-meta-fields .node-meta-input, .modal-meta-fields .custom-select-trigger, .modal-meta-fields .book-setting-toggle-btn, .modal-meta-fields .form-toggle-btn, .modal-meta-fields .form-radio-option
+  font-size 13px
+  padding 4px 0
+
+.modal-meta-fields .custom-select-option
+  font-size 12px
+  padding 7px 10px
+
+.modal-meta-fields .node-meta-row
+  gap 10px
+  min-height 28px
 
 .checkbox-field .checkbox-label
   display flex
@@ -465,9 +498,10 @@
 
 .modal-field-select-trigger
   width 100%
-  background --bg-elevated
-  border 1px solid --border-subtle
-  padding 8px 10px
+  background transparent
+  border none
+  border-bottom 1px solid --border-strong
+  padding 5px 0
   font-size 13px
 
 .modal-choice-row

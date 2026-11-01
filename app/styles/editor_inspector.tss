@@ -247,16 +247,23 @@ body[data-android="true"] .editor-context-panel
 .history-version-input
   flex 1
   min-width 0
-  background --bg-elevated
-  border 1px solid --border-subtle
+  background transparent
+  border none
+  border-bottom 1px solid --border-strong
   color --text-primary
   font-family --font-sans
   font-size 11px
-  padding 5px 8px
+  padding 4px 0
+  transition border-color 0.15s ease
+
+.history-version-input::placeholder
+  color --text-muted
+  font-weight 300
+  opacity 1
 
 .history-version-input:focus
   outline none
-  border-color --text-primary
+  border-bottom-color --text-primary
 
 .history-version-save-btn
   flex-shrink 0
@@ -403,6 +410,37 @@ body[data-android="true"] .editor-context-panel
   border-bottom 1px solid --border-subtle
   background --bg-obsidian
   flex-shrink 0
+
+.history-branch-create-form
+  border-top 1px solid --border-subtle
+  border-bottom none
+
+.history-active-branch-bar
+  display flex
+  align-items center
+  gap 7px
+  padding 6px 12px
+  border-bottom 1px solid --border-subtle
+  background --bg-elevated
+  flex-shrink 0
+
+.history-active-branch-dot
+  width 6px
+  height 6px
+  border-radius 50% !important
+  background --text-primary
+  flex-shrink 0
+
+.history-active-branch-name
+  font-family --font-sans
+  font-size 10px
+  font-weight 700
+  letter-spacing 0.8px
+  text-transform uppercase
+  color --text-primary
+  overflow hidden
+  text-overflow ellipsis
+  white-space nowrap
 
 .history-graph-scroll
   position relative
@@ -824,20 +862,20 @@ body[data-android="true"] .editor-context-panel
   display flex
   align-items center
   gap 6px
-  padding 6px 8px
-  background --bg-elevated
-  border 1px solid --border-subtle
+  padding 2px 0
+  background transparent
+  border none
 
 .context-choice-item .node-choice-label
   flex 1
   min-width 0
   background transparent
   border none
-  border-bottom 1px solid transparent
-  padding 2px 4px
+  border-bottom 1px solid --border-strong
+  padding 3px 0
 
 .context-choice-item .node-choice-label:focus
-  border-bottom-color --border-subtle
+  border-bottom-color --text-primary
 
 .context-danger-zone
   margin-top auto
@@ -873,15 +911,15 @@ body[data-android="true"] .editor-context-panel
   display flex
   align-items center
   border none
-  border-bottom 1px solid transparent
+  border-bottom 1px solid --border-strong
   background transparent
   transition border-color 0.15s ease
 
-.node-chapter-input-wrap:hover
-  border-bottom-color --border-strong
-
-.node-chapter-input-wrap:focus-within, .node-chapter-select.open .node-chapter-input-wrap
+.node-chapter-input-wrap:hover, .node-chapter-input-wrap:focus-within
   border-bottom-color --text-primary
+
+.node-chapter-select.open .node-chapter-input-wrap
+  border-bottom-color transparent
 
 .node-inline-chapter
   flex 1
@@ -983,11 +1021,20 @@ body[data-android="true"] .editor-context-panel
 .node-meta-row-textarea .node-meta-key
   padding-top 4px
 
+.node-meta-row-radio
+  align-items flex-start
+
+.node-meta-row-radio .node-meta-key
+  padding-top 5px
+
 .node-meta-textarea
-  resize none
-  overflow hidden
-  min-height 44px
+  resize none !important
+  overflow hidden !important
+  overflow-y hidden !important
+  scrollbar-width none !important
+  min-height 24px
   line-height 1.45
+  display block
 
 .node-meta-key
   font-family --font-sans
@@ -1001,12 +1048,17 @@ body[data-android="true"] .editor-context-panel
   min-width 0
   background transparent
   border none
-  border-bottom 1px solid transparent
+  border-bottom 1px solid --border-strong
   color --text-primary
   font-family --font-sans
   font-size 11px
   padding 3px 0
   transition border-color 0.15s ease
+
+.node-meta-input::placeholder
+  color --text-muted
+  font-weight 300
+  opacity 1
 
 .node-meta-input:hover
   border-bottom-color --border-strong
@@ -1103,18 +1155,150 @@ body[data-android="true"] .editor-context-panel
 .choice-port-icon.port-filled
   background currentColor
 
-.book-setting-toggle-btn
+.book-setting-toggle-btn, .form-toggle-btn
   flex 1
   min-width 0
+  width 100%
+  display flex
+  align-items center
+  justify-content space-between
+  gap 8px
+  background transparent
+  border none !important
+  border-bottom none !important
+  color --text-secondary
+  font-family --font-sans
+  font-size 11px
+  padding 3px 0
+  cursor pointer
+  text-align left
+  transition color 0.15s ease
 
-.book-setting-toggle-btn .action-icon
+.book-setting-toggle-btn:hover, .book-setting-toggle-btn.active, .form-toggle-btn:hover, .form-toggle-btn.active
+  color --text-primary
+  border none !important
+  border-bottom none !important
+
+.toggle-right
+  display inline-flex
+  align-items center
+  gap 8px
+  flex-shrink 0
+  pointer-events none
+
+.book-setting-toggle-btn .action-icon, .form-toggle-btn .action-icon
   width 13px
   height 13px
   color --text-muted
   flex-shrink 0
+  pointer-events none
 
-.book-setting-toggle-btn:hover .action-icon, .book-setting-toggle-btn.active .action-icon
+.book-setting-toggle-btn:hover .action-icon, .book-setting-toggle-btn.active .action-icon, .form-toggle-btn:hover .action-icon, .form-toggle-btn.active .action-icon
   color --text-primary
+
+.toggle-switch
+  width 22px
+  height 10px
+  border none
+  background --toggle-track
+  position relative
+  flex-shrink 0
+  display inline-flex
+  align-items center
+  padding 2px
+  pointer-events none
+  transition background 0.15s ease
+
+.toggle-thumb
+  width 6px
+  height 6px
+  border none
+  background --toggle-thumb-off
+  transform translateX(0)
+  pointer-events none
+  transition transform 0.15s ease, background 0.15s ease
+
+.book-setting-toggle-btn:hover .toggle-thumb, .form-toggle-btn:hover .toggle-thumb
+  background --text-secondary
+
+.book-setting-toggle-btn.active .toggle-switch, .form-toggle-btn.active .toggle-switch
+  background --toggle-track-on
+
+.book-setting-toggle-btn.active .toggle-thumb, .form-toggle-btn.active .toggle-thumb
+  background --text-primary
+  transform translateX(12px)
+
+// Minimalist Radio Group (Borderless Solid Squares, No Underlines)
+.form-radio-group
+  flex 1
+  min-width 0
+  display flex
+  flex-direction column
+  gap 2px
+
+.form-radio-group.is-inline
+  flex-direction row
+  align-items center
+  justify-content space-between
+  gap 14px
+
+.form-radio-option
+  width 100%
+  display flex
+  align-items center
+  justify-content space-between
+  gap 8px
+  padding 3px 0
+  min-height 22px
+  background transparent
+  border none !important
+  color --text-muted
+  font-family --font-sans
+  font-size 11px
+  cursor pointer
+  text-align left
+  transition color 0.15s ease
+
+.form-radio-group.is-inline .form-radio-option
+  width auto
+  justify-content flex-start
+  gap 7px
+
+.form-radio-input
+  position absolute
+  opacity 0
+  width 0
+  height 0
+  pointer-events none
+
+.form-radio-label
+  flex 1
+  min-width 0
+  white-space nowrap
+  overflow hidden
+  text-overflow ellipsis
+  pointer-events none
+
+.form-radio-sq
+  width 8px
+  height 8px
+  border none
+  background --border-subtle
+  flex-shrink 0
+  pointer-events none
+  transition background 0.15s ease
+
+.form-radio-option:hover
+  color --text-secondary
+
+.form-radio-option:hover .form-radio-sq
+  background --border-strong
+
+.form-radio-option.active
+  color --text-primary
+
+.form-radio-option.active .form-radio-sq
+  background --text-primary
 
 .custom-select-trigger
   width 100%
@@ -1124,7 +1308,7 @@ body[data-android="true"] .editor-context-panel
   gap 6px
   background transparent
   border none
-  border-bottom 1px solid transparent
+  border-bottom 1px solid --border-strong
   color --text-primary
   font-family --font-sans
   font-size 11px
@@ -1136,12 +1320,19 @@ body[data-android="true"] .editor-context-panel
 .custom-select-trigger:hover
   border-bottom-color --border-strong
 
-.custom-select-trigger:focus, .custom-select-trigger:active, .custom-select.open .custom-select-trigger
+.custom-select-trigger:focus, .custom-select-trigger:active
   outline none
   border-bottom-color --text-primary
 
+.custom-select.open .custom-select-trigger
+  outline none
+  border-bottom-color transparent
+
 .custom-select-trigger:hover .custom-select-caret, .custom-select-trigger:focus .custom-select-caret, .custom-select.open .custom-select-trigger .custom-select-caret
   color --text-primary
+
+.custom-select.open .custom-select-caret
+  transform rotate(180deg)
 
 .custom-select-label
   flex 1
@@ -1152,21 +1343,28 @@ body[data-android="true"] .editor-context-panel
   pointer-events none
 
 .custom-select-caret
+  width 13px
+  height 13px
   font-size 9px
   color --text-muted
   flex-shrink 0
   pointer-events none
+  transition transform 0.15s ease, color 0.15s ease
 
 .custom-select-menu
   position absolute
-  top calc(100% + 2px)
+  top 100%
+  margin-top 0
   left 0
   right 0
   min-width 190px
   max-height 210px
   overflow-y auto
   background --bg-obsidian
-  border 1px solid --text-primary
+  border-top 1px solid --text-primary
+  border-left 1px solid --border-strong
+  border-right 1px solid --border-strong
+  border-bottom 1px solid --border-strong
   z-index 60
   display flex
   flex-direction column
@@ -1222,16 +1420,17 @@ body[data-android="true"] .editor-context-panel
 .node-choice-label
   flex 1
   min-width 0
-  background --bg-obsidian
-  border 1px solid --border-subtle
+  background transparent
+  border none
+  border-bottom 1px solid --border-strong
   color --text-primary
   font-family --font-sans
   font-size 11px
-  padding 4px 6px
+  padding 3px 0
 
 .node-choice-label:focus
   outline none
-  border-color --text-primary
+  border-bottom-color --text-primary
 
 .node-choice-arrow
   font-family --font-sans
@@ -1293,9 +1492,9 @@ body[data-ui-scale="large"]
     font-size 12px
     padding 5px 8px
 
-  .node-meta-input, .custom-select-trigger
+  .node-meta-input, .custom-select-trigger, .book-setting-toggle-btn, .form-toggle-btn, .form-radio-option
     font-size 12px
-    padding 6px 10px
+    padding 5px 0
 
   .custom-select-trigger.choice-port-trigger
     width 32px

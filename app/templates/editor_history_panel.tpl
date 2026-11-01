@@ -18,15 +18,9 @@ aside.editor-history-panel#editor-history-panel .hidden?: {!show_editor_history_
             disabled?: {is_history_preview}
             "Zapisz wersję"
 
-    form.history-compact-form
-        action: CreateHistoryBranch
-        input.history-version-input
-            type: text
-            name: branch_name
-            placeholder: "{default_next_branch_name}"
-        button.btn.btn-sm.history-version-save-btn
-            type: submit
-            "+ Wariant"
+    .history-active-branch-bar
+        span.history-active-branch-dot
+        span.history-active-branch-name {active_branch_name}
 
     .history-graph-scroll#history-graph-scroll
         .history-drop-preview-row.hidden#history-drop-preview-row
@@ -103,3 +97,13 @@ aside.editor-history-panel#editor-history-panel .hidden?: {!show_editor_history_
 
         .scroll-more-cue.hidden#history-scroll-more-cue
             span.scroll-more-dots "..."
+
+    form.history-compact-form.history-branch-create-form
+        action: PromptCreateHistoryBranch
+        input.history-version-input
+            type: text
+            name: branch_name
+            placeholder: "{default_next_branch_name}"
+        button.btn.btn-sm.history-version-save-btn
+            type: submit
+            "+ Wariant"

@@ -400,3 +400,97 @@ func TestCopyHistoryRevisionToBranchAndHoverSummaries(t *testing.T) {
 		t.Fatalf("unexpected hover summaries: branchHints=%+v revHints=%+v", branchHints, revHints)
 	}
 }
+
+func TestSmartCoalescingDeltaAndFiveMinuteCompaction(t *testing.T) {
+	booksDir := t.TempDir()
+	b, err := CreateNewBook(booksDir, "Test Scalania", "Autor", false)
+	if err != nil {
+		t.Fatalf("CreateNewBook failed: %v", err)
+	}
+	scID := b.Scenes[0].ID
+	if err := EnsureBookHistoryBaseline(b, scID); err != nil {
+		t.Fatalf("EnsureBookHistoryBaseline failed: %v", err)
+	}
+
+	// 1. Small multi-line edits on the same scene (even across autosave and textmodal keys) coalesce into 1 step
+	b.Scenes[0].Text = "Linia pierwsza.\nLinia druga."
+	FinalizeBook(b)
+	_ = SaveBookScenesToDisk(b)
+	_ = RecordBookHistoryStep(b, "Edycja sceny: Start", "scene", "autosave:"+scID, scID)
+
+	b.Scenes[0].Text = "Linia pierwsza.\nLinia druga.\nLinia trzecia."
+	FinalizeBook(b)
+	_ = SaveBookScenesToDisk(b)
+	_ = RecordBookHistoryStep(b, "Edycja treści sceny: Start", "text", "textmodal:"+scID, scID)
+
+	h, _ := LoadBookHistory(b)
+	if len(h.Revisions) != 2 {
+		t.Fatalf("expected small same-scene edits to coalesce into 1 unnamed revision (total 2), got %d", len(h.Revisions))
+	}
+
+	// 2. Large pasted block (>= 300 chars) must NOT coalesce into the small edit; must be preserved as its own step
+	largePaste := strings.Repeat("Wklejony duży akapit tekstu fabularnego o bardzo długiej treści. ", 6)
+	b.Scenes[0].Text = "Linia pierwsza.\nLinia druga.\nLinia trzecia.\n\n" + largePaste
+	FinalizeBook(b)
+	_ = SaveBookScenesToDisk(b)
+	_ = RecordBookHistoryStep(b, "Edycja sceny: Start", "scene", "autosave:"+scID, scID)
+
+	h, _ = LoadBookHistory(b)
+	if len(h.Revisions) != 3 {
+		t.Fatalf("expected large pasted block to create a separate revision (total 3), got %d", len(h.Revisions))
+	}
+
+	// 3. Subsequent small edits after the large paste must NOT overwrite the large paste revision, but coalesce together
+	b.Scenes[0].Text += "\nKrótki dopisek."
+	FinalizeBook(b)
+	_ = SaveBookScenesToDisk(b)
+	_ = RecordBookHistoryStep(b, "Edycja sceny: Start", "scene", "autosave:"+scID, scID)
+
+	b.Scenes[0].Text += " I jeszcze słowo."
+	FinalizeBook(b)
+	_ = SaveBookScenesToDisk(b)
+	_ = RecordBookHistoryStep(b, "Edycja sceny: Start", "scene", "autosave:"+scID, scID)
+
+	h, _ = LoadBookHistory(b)
+	if len(h.Revisions) != 4 {
+		t.Fatalf("expected post-paste small edits to start 4th revision and coalesce together (total 4), got %d", len(h.Revisions))
+	}
+
+	// 4. Consecutive node drags on different scenes coalesce into a single layout revision
+	b.Scenes[0].X = 120
+	b.Scenes[0].Y = 120
+	_ = SaveBookEditorStateToDisk(b)
+	_ = RecordBookHistoryStep(b, "Przesunięto węzeł: Start", "layout", "nodedrag:"+b.Scenes[0].ID, b.Scenes[0].ID)
+
+	b.Scenes[1].X = 360
+	b.Scenes[1].Y = 240
+	_ = SaveBookEditorStateToDisk(b)
+	_ = RecordBookHistoryStep(b, "Przesunięto węzeł: Druga", "layout", "nodedrag:"+b.Scenes[1].ID, b.Scenes[1].ID)
+
+	h, _ = LoadBookHistory(b)
+	if len(h.Revisions) != 5 || h.Revisions[len(h.Revisions)-1].Label != "Przesunięto węzły" {
+		t.Fatalf("expected consecutive node drags to coalesce into 5th revision 'Przesunięto węzły', got len=%d last=%+v",
+			len(h.Revisions), h.Revisions[len(h.Revisions)-1])
+	}
+
+	// 5. Simulate revisions older than 3 minutes in the same 5-minute bucket:
+	// Small edits and layout moves in that 5-minute bucket compact, while the large paste revision remains intact.
+	bucketBase := int64(1700000100) // all within [1700000100..1700000299] (same 300s bucket)
+	for i := 1; i < len(h.Revisions); i++ {
+		h.Revisions[i].TimeUnix = bucketBase + int64(i*20)
+	}
+	_ = SaveBookHistory(b, h)
+
+	// Reloading when now is 10 minutes later triggers 5-minute bucket compaction
+	compactedH, err := LoadBookHistory(b)
+	if err != nil {
+		t.Fatalf("LoadBookHistory after aging failed: %v", err)
+	}
+	// Expected remaining revisions:
+	// r1 (Named baseline), r2 (pre-paste small edit), r3 (large paste), and the merged post-paste+layout step!
+	if len(compactedH.Revisions) != 4 {
+		t.Fatalf("expected 5-minute bucket compaction to merge post-paste small edit and layout move while keeping pre-paste and large paste (total 4), got %d",
+			len(compactedH.Revisions))
+	}
+}
+

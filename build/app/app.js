@@ -402,6 +402,7 @@ async function sendServerAction(actionName, params) {
     actionName === "PreviewHistoryRevision" ||
     actionName === "PlayHistoryRevision" ||
     actionName === "SaveHistoryVersion" ||
+    actionName === "PromptCreateHistoryBranch" ||
     actionName === "CreateHistoryBranch" ||
     actionName === "SwitchHistoryBranch" ||
     actionName === "CopyHistoryRevisionToBranch" ||
@@ -657,6 +658,8 @@ async function sendServerAction(actionName, params) {
       if (typeof renderStudioCanvas === "function") {
         renderStudioCanvas();
       }
+    } else if (typeof autoResizeAllInspectorTextareas === "function") {
+      autoResizeAllInspectorTextareas(qs("#editor-context-panel") || document);
     }
     return;
   }
@@ -690,6 +693,9 @@ async function sendServerAction(actionName, params) {
     syncFullscreenButtonState();
     syncTopbarToggleIcons();
     syncEditorHistoryHeaders(resp);
+    if (typeof autoResizeAllInspectorTextareas === "function") {
+      autoResizeAllInspectorTextareas(targetEl);
+    }
     const nextEditorViewport = qs("#timeline-scroll-viewport");
     if (nextEditorViewport && prevEditorScrollTop !== null) {
       nextEditorViewport.scrollTop = prevEditorScrollTop;
@@ -954,6 +960,23 @@ function bindDeclarativeActionBridge() {
       }
     }
 
+    const warningsToggle = e.target.closest("[data-warnings-toggle]");
+    if (warningsToggle) {
+      e.preventDefault();
+      e.stopPropagation();
+      const listEl = qs("#editor-status-warnings-list");
+      const expandIcon = qs("#icon-warnings-expand", warningsToggle);
+      const collapseIcon = qs("#icon-warnings-collapse", warningsToggle);
+      if (listEl) {
+        const willOpen = listEl.classList.contains("hidden");
+        listEl.classList.toggle("hidden", !willOpen);
+        warningsToggle.classList.toggle("active", willOpen);
+        if (expandIcon) expandIcon.classList.toggle("hidden", willOpen);
+        if (collapseIcon) collapseIcon.classList.toggle("hidden", !willOpen);
+      }
+      return;
+    }
+
     const settingsToggle = e.target.closest("[data-scene-settings-toggle]");
     if (settingsToggle) {
       e.preventDefault();
@@ -1102,6 +1125,9 @@ function bindDeclarativeActionBridge() {
     if (typeof drawStudioWires === "function") {
       drawStudioWires();
     }
+    if (typeof autoResizeAllInspectorTextareas === "function") {
+      autoResizeAllInspectorTextareas(document);
+    }
   });
 
   if (typeof bindEditorCanvasEvents === "function") {
@@ -1109,6 +1135,9 @@ function bindDeclarativeActionBridge() {
   }
 
   syncTopbarToggleIcons();
+  if (typeof autoResizeAllInspectorTextareas === "function") {
+    autoResizeAllInspectorTextareas(document);
+  }
   if (typeof initPlayerScrollAndAudio === "function") {
     initPlayerScrollAndAudio(null);
   }
@@ -5000,13 +5029,15 @@ function syncBookTitleDOM(newTitle) {
       lbl.textContent = clean;
     }
   }
-  ["#editor-book-title-input", "#book-settings-title-input"].forEach((sel) => {
-    const inp = qs(sel);
-    if (inp && document.activeElement !== inp) {
-      inp.value = clean;
-      inp.setAttribute("data-old-title", clean);
-    }
-  });
+  const toolbarTitle = qs("#editor-book-title");
+  if (toolbarTitle) {
+    toolbarTitle.textContent = clean;
+  }
+  const inp = qs("#book-settings-title-input");
+  if (inp && document.activeElement !== inp) {
+    inp.value = clean;
+    inp.setAttribute("data-old-title", clean);
+  }
 }
 
 function commitBookTitleInput(inputEl) {
@@ -5540,6 +5571,7 @@ function syncNodeSelectionDOM() {
       }
     }
   }
+  autoResizeAllInspectorTextareas(panel || document);
 }
 
 function closeAllCustomSelects(exceptSelect) {
@@ -5570,10 +5602,16 @@ function autoResizeInspectorTextarea(ta) {
   if (!ta) return;
   ta.style.minHeight = "0px";
   ta.style.height = "0px";
-  const nextH = Math.max(44, (ta.scrollHeight || 0) + 4);
+  const nextH = Math.max(24, (ta.scrollHeight || 0) + 2);
   ta.style.height = nextH + "px";
   ta.style.minHeight = nextH + "px";
   ta.scrollTop = 0;
+}
+
+function autoResizeAllInspectorTextareas(root) {
+  qsa(".node-meta-textarea", root || document).forEach((ta) => {
+    autoResizeInspectorTextarea(ta);
+  });
 }
 
 function scheduleBookSettingsLiveSave(form) {
@@ -6219,6 +6257,74 @@ function handleEditorCanvasClick(e) {
     }
   }
 
+  const formToggleBtn = e.target.closest("[data-form-toggle]");
+  if (formToggleBtn) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (formToggleBtn.disabled || formToggleBtn.classList.contains("is-disabled")) return true;
+    const row = formToggleBtn.closest(".node-meta-row, .form-field") || formToggleBtn.parentElement;
+    const fieldName = formToggleBtn.getAttribute("data-form-toggle") || "";
+    const hiddenInput = row ? qs('input[type="hidden"][name="' + fieldName + '"]', row) : null;
+    const curVal = hiddenInput ? hiddenInput.value === "true" : formToggleBtn.classList.contains("active");
+    const nextVal = !curVal;
+    if (hiddenInput) {
+      hiddenInput.value = nextVal ? "true" : "false";
+    }
+    const activeWhen = formToggleBtn.getAttribute("data-active-when") || "true";
+    const isVisualActive = activeWhen === "false" ? !nextVal : nextVal;
+    formToggleBtn.classList.toggle("active", isVisualActive);
+    const lblSpan = qs(".custom-select-label", formToggleBtn);
+    if (lblSpan) {
+      const onLbl = formToggleBtn.getAttribute("data-label-on") || "";
+      const offLbl = formToggleBtn.getAttribute("data-label-off") || "";
+      lblSpan.textContent = isVisualActive ? onLbl : offLbl;
+    }
+    const iconOn = qs(".toggle-icon-on", formToggleBtn);
+    const iconOff = qs(".toggle-icon-off", formToggleBtn);
+    if (iconOn) iconOn.classList.toggle("hidden", !isVisualActive);
+    if (iconOff) iconOff.classList.toggle("hidden", isVisualActive);
+    return true;
+  }
+
+  const radioOpt = e.target.closest("label.form-radio-option");
+  if (radioOpt) {
+    if (radioOpt.classList.contains("is-disabled")) {
+      e.preventDefault();
+      return true;
+    }
+    const radioInp = qs("input.form-radio-input", radioOpt);
+    if (radioInp && !radioInp.disabled) {
+      e.preventDefault();
+      e.stopPropagation();
+      const group = radioOpt.closest(".form-radio-group");
+      if (group) {
+        qsa("label.form-radio-option", group).forEach((opt) => {
+          const inp = qs("input.form-radio-input", opt);
+          const isCurrent = opt === radioOpt;
+          opt.classList.toggle("active", isCurrent);
+          if (inp) {
+            inp.checked = isCurrent;
+            if (isCurrent) {
+              inp.setAttribute("checked", "checked");
+            } else {
+              inp.removeAttribute("checked");
+            }
+          }
+        });
+      }
+      const bookForm = radioOpt.closest("form.editor-book-form");
+      if (bookForm) {
+        const params = {};
+        const fd = new FormData(bookForm);
+        fd.forEach((v, k) => {
+          params[k] = v;
+        });
+        sendServerAction("SaveBookSettings", params);
+      }
+      return true;
+    }
+  }
+
   const selectToggle = e.target.closest("[data-select-toggle]");
   if (selectToggle) {
     e.preventDefault();
@@ -6339,7 +6445,7 @@ function handleEditorCanvasClick(e) {
         modalTitle.textContent = isScreenplay ? "Utwórz Nowy Scenariusz" : "Utwórz Nową Książkę";
       }
       if (titleLabel) {
-        titleLabel.textContent = isScreenplay ? "Tytuł scenariusza" : "Tytuł opowieści";
+        titleLabel.textContent = "tytuł:";
       }
       if (titleInp) {
         titleInp.setAttribute("placeholder", isScreenplay ? "np. Ostatni Rejs" : "np. Tajemnica Starego Młyna");
@@ -6546,7 +6652,7 @@ function bindEditorCanvasEvents() {
         e.target &&
         e.target.classList &&
         (e.target.classList.contains("chapter-group-title-input") ||
-          e.target.classList.contains("canvas-book-title-input"))
+          e.target.id === "book-settings-title-input")
       ) {
         e.preventDefault();
         if (e.target.id === "canvas-chapter-input") {
@@ -6572,7 +6678,7 @@ function bindEditorCanvasEvents() {
         hideFloatingChapterInput(true);
         return;
       }
-      if (e.target.classList.contains("canvas-book-title-input")) {
+      if (e.target.id === "book-settings-title-input") {
         e.preventDefault();
         commitBookTitleInput(e.target);
         e.target.blur();
@@ -7617,6 +7723,9 @@ function bindEditorCanvasEvents() {
   });
 
   document.addEventListener("input", (e) => {
+    if (e.target && e.target.classList && e.target.classList.contains("node-meta-textarea")) {
+      autoResizeInspectorTextarea(e.target);
+    }
     if (typeof isEditorHistoryPreview === "function" && isEditorHistoryPreview()) {
       return;
     }
@@ -7624,19 +7733,12 @@ function bindEditorCanvasEvents() {
       scheduleChapterLiveSave(e.target);
       return;
     }
-    if (
-      e.target &&
-      ((e.target.classList && e.target.classList.contains("canvas-book-title-input")) ||
-        e.target.id === "book-settings-title-input")
-    ) {
+    if (e.target && e.target.id === "book-settings-title-input") {
       scheduleBookTitleLiveSave(e.target);
       return;
     }
     const bookForm = e.target.closest("form.editor-book-form");
     if (bookForm) {
-      if (e.target && e.target.tagName && e.target.tagName.toLowerCase() === "textarea") {
-        autoResizeInspectorTextarea(e.target);
-      }
       scheduleBookSettingsLiveSave(bookForm);
       return;
     }
@@ -7679,11 +7781,7 @@ function bindEditorCanvasEvents() {
   document.addEventListener("change", (e) => {
     if (e.target && e.target.classList && e.target.classList.contains("chapter-group-title-input")) {
       commitChapterTitleInput(e.target);
-    } else if (
-      e.target &&
-      ((e.target.classList && e.target.classList.contains("canvas-book-title-input")) ||
-        e.target.id === "book-settings-title-input")
-    ) {
+    } else if (e.target && e.target.id === "book-settings-title-input") {
       commitBookTitleInput(e.target);
     }
   });
@@ -7697,11 +7795,7 @@ function bindEditorCanvasEvents() {
         } else {
           commitChapterTitleInput(e.target);
         }
-      } else if (
-        e.target &&
-        ((e.target.classList && e.target.classList.contains("canvas-book-title-input")) ||
-          e.target.id === "book-settings-title-input")
-      ) {
+      } else if (e.target && e.target.id === "book-settings-title-input") {
         commitBookTitleInput(e.target);
       }
     },

@@ -1025,11 +1025,11 @@ func buildHistoryGraphRows(
 					"hover_hint":          defHint,
 					"is_branch_rail":      true,
 					"is_other_branch":     false,
-					"has_rail_up":         true,
-					"has_rail_down":       true,
-					"is_active_rail_up":   true,
-					"is_active_rail_down": true,
-					"is_dashed_rail_up":   true,
+					"has_rail_up":         false,
+					"has_rail_down":       false,
+					"is_active_rail_up":   false,
+					"is_active_rail_down": false,
+					"is_dashed_rail_up":   false,
 					"is_dashed_rail_down": false,
 					"has_node":            true,
 					"is_fork_corner":      false,
@@ -1448,17 +1448,13 @@ func buildHistoryGraphRows(
 				cellHint = branchHints[cellBranch]
 				isOtherBranch = cellBranch != activeBranchName
 				if c < len(branchAtCol[r]) {
-					hasRailUp = (r > topRow[bIdx] || (r == topRow[bIdx] && cellBranch == activeBranchName)) && !compactInAtCol[c]
-					hasRailDown = (r >= topRow[bIdx] && r < botRow[bIdx]) || (bIdx == 0 && r == R-1)
-					isActiveRailUp = hasRailUp && r >= activeTopRow[bIdx]
+					hasRailUp = r > topRow[bIdx] && !compactInAtCol[c]
+					hasRailDown = r >= topRow[bIdx] && r < botRow[bIdx]
+					isActiveRailUp = hasRailUp && r > activeTopRow[bIdx]
 					isActiveRailDown = hasRailDown && r >= activeTopRow[bIdx]
-					if cellBranch == activeBranchName {
-						if r == topRow[bIdx] && !hasUnnamedOnActive {
-							isDashedRailUp = true
-						} else if hasUnnamedOnActive && firstNamedRowOnActive > 0 {
-							isDashedRailUp = hasRailUp && r <= firstNamedRowOnActive
-							isDashedRailDown = hasRailDown && r < firstNamedRowOnActive
-						}
+					if cellBranch == activeBranchName && hasUnnamedOnActive && firstNamedRowOnActive > 0 {
+						isDashedRailUp = hasRailUp && r <= firstNamedRowOnActive
+						isDashedRailDown = hasRailDown && r < firstNamedRowOnActive
 					}
 				}
 			}

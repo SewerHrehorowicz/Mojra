@@ -18,7 +18,11 @@ import (
 
 const (
 	MaxUnnamedHistoryRevisions = 100
-	HistoryCoalesceWindowSec   = 3
+	HistoryCoalesceWindowSec   = 180
+	HistoryLiveWindowSec       = 180
+	HistoryCompactionBucketSec = 300
+	HistoryLargeDeltaChars     = 300
+	HistoryLargeDeltaLines     = 6
 )
 
 var validHexHashRegexp = regexp.MustCompile(`^[a-f0-9]{64}$`)
@@ -503,7 +507,15 @@ func LoadBookHistory(b *Book) (*BookHistory, error) {
 		}
 		return &BookHistory{NextSeq: 1}, err
 	}
-	return ParseHistoryFile(string(raw)), nil
+	h := ParseHistoryFile(string(raw))
+	branchIdxs := h.ActiveBranchRevisions()
+	if curIdx := h.CursorIndex(); curIdx >= 0 && len(branchIdxs) > 0 && curIdx == branchIdxs[len(branchIdxs)-1] {
+		if compactHistoryRevisions(b.RootPath, h, time.Now().Unix(), nil) {
+			_ = SaveBookHistory(b, h)
+			PruneUnreferencedBlobs(b, h)
+		}
+	}
+	return h, nil
 }
 
 // SaveBookHistory writes books/<id>/.history/history.txt atomically.
@@ -803,6 +815,250 @@ func truncateAfterCursorPreservingNamed(h *BookHistory) {
 	h.Revisions = kept
 }
 
+func isCompactableHistoryKind(kind string) bool {
+	switch strings.ToLower(strings.TrimSpace(kind)) {
+	case "scene", "text", "layout", "meta", "edit", "":
+		return true
+	default:
+		return false
+	}
+}
+
+func normalizeCoalesceGroup(kind, coalesceKey, selectedSceneID string) string {
+	cleanKind := strings.ToLower(strings.TrimSpace(kind))
+	cleanKey := strings.TrimSpace(coalesceKey)
+	if cleanKind == "layout" {
+		if strings.HasPrefix(cleanKey, "nodedrag:") {
+			return "layout:drag"
+		}
+		return cleanKey
+	}
+	if cleanKind == "scene" || cleanKind == "text" {
+		for _, prefix := range []string{"autosave:", "textmodal:", "scene:"} {
+			if strings.HasPrefix(cleanKey, prefix) {
+				target := strings.TrimSpace(strings.TrimPrefix(cleanKey, prefix))
+				if target != "" {
+					return "scene:" + target
+				}
+			}
+		}
+		if cleanKey == "" && strings.TrimSpace(selectedSceneID) != "" {
+			return "scene:" + strings.TrimSpace(selectedSceneID)
+		}
+	}
+	return cleanKey
+}
+
+func countChangedLines(span []rune) int {
+	trimmed := strings.TrimSpace(string(span))
+	if trimmed == "" {
+		return 0
+	}
+	return strings.Count(trimmed, "\n") + 1
+}
+
+func computeTextSpanDelta(oldStr, newStr string) (int, int) {
+	if oldStr == newStr {
+		return 0, 0
+	}
+	oldRunes := []rune(oldStr)
+	newRunes := []rune(newStr)
+	prefix := 0
+	minLen := len(oldRunes)
+	if len(newRunes) < minLen {
+		minLen = len(newRunes)
+	}
+	for prefix < minLen && oldRunes[prefix] == newRunes[prefix] {
+		prefix++
+	}
+	suffix := 0
+	for suffix < (len(oldRunes)-prefix) && suffix < (len(newRunes)-prefix) &&
+		oldRunes[len(oldRunes)-1-suffix] == newRunes[len(newRunes)-1-suffix] {
+		suffix++
+	}
+	changedOld := oldRunes[prefix : len(oldRunes)-suffix]
+	changedNew := newRunes[prefix : len(newRunes)-suffix]
+	deltaRunes := len(changedOld)
+	if len(changedNew) > deltaRunes {
+		deltaRunes = len(changedNew)
+	}
+	oldLines := countChangedLines(changedOld)
+	newLines := countChangedLines(changedNew)
+	deltaLines := oldLines
+	if newLines > deltaLines {
+		deltaLines = newLines
+	}
+	return deltaRunes, deltaLines
+}
+
+func readHistoryBlobCached(bookRoot, hashHex string, cache map[string][]byte) ([]byte, error) {
+	key := strings.ToLower(strings.TrimSpace(hashHex))
+	if cache != nil {
+		if data, ok := cache[key]; ok {
+			return data, nil
+		}
+	}
+	data, err := readHistoryBlob(bookRoot, key)
+	if err == nil && cache != nil {
+		cache[key] = data
+	}
+	return data, err
+}
+
+func isMajorHistoryDeltaWithCache(bookRoot string, oldFiles, newFiles map[string]string, kind string, cache map[string][]byte) bool {
+	if !isCompactableHistoryKind(kind) {
+		return true
+	}
+	if strings.EqualFold(strings.TrimSpace(kind), "layout") {
+		return false
+	}
+	if len(oldFiles) != len(newFiles) {
+		return true
+	}
+	totalRunes := 0
+	totalLines := 0
+	for fileName, newHash := range newFiles {
+		oldHash, exists := oldFiles[fileName]
+		if !exists {
+			return true
+		}
+		if oldHash == newHash || strings.EqualFold(fileName, "editor.txt") {
+			continue
+		}
+		oldBytes, err1 := readHistoryBlobCached(bookRoot, oldHash, cache)
+		newBytes, err2 := readHistoryBlobCached(bookRoot, newHash, cache)
+		if err1 != nil || err2 != nil {
+			continue
+		}
+		dRunes, dLines := computeTextSpanDelta(string(oldBytes), string(newBytes))
+		totalRunes += dRunes
+		totalLines += dLines
+		if totalRunes >= HistoryLargeDeltaChars || totalLines > HistoryLargeDeltaLines {
+			return true
+		}
+	}
+	return false
+}
+
+// compactHistoryRevisions merges redundant unnamed small edits on the active branch:
+// 1. Same-scene / layout micro-saves within HistoryCoalesceWindowSec (3 minutes).
+// 2. Small edits older than HistoryLiveWindowSec (3 minutes) that fall into the same 5-minute time bucket.
+// Major text pastes (>= 300 chars or > 6 lines), structural graph/chapter actions, and named versions are always preserved.
+func compactHistoryRevisions(bookRoot string, h *BookHistory, now int64, cache map[string][]byte) bool {
+	if h == nil || len(h.Revisions) < 2 || strings.TrimSpace(bookRoot) == "" {
+		return false
+	}
+	if cache == nil {
+		cache = make(map[string][]byte)
+	}
+	activeBr := h.NormalizedActiveBranch()
+	curIdx := h.CursorIndex()
+	if curIdx < 0 {
+		return false
+	}
+	protectedIDs := make(map[string]bool)
+	for _, br := range h.Branches {
+		if br.Name != activeBr {
+			if br.HeadRevID != "" {
+				protectedIDs[br.HeadRevID] = true
+			}
+			if br.BaseRevID != "" {
+				protectedIDs[br.BaseRevID] = true
+			}
+		} else if br.BaseRevID != "" {
+			protectedIDs[br.BaseRevID] = true
+		}
+	}
+
+	compacted := false
+	for {
+		mergedInPass := false
+		branchIdxs := h.ActiveBranchRevisions()
+		curBranchPos := -1
+		for pos, idx := range branchIdxs {
+			if idx == h.CursorIndex() {
+				curBranchPos = pos
+				break
+			}
+		}
+		if curBranchPos < 1 {
+			break
+		}
+
+		for pos := 1; pos <= curBranchPos; pos++ {
+			prevIdx := branchIdxs[pos-1]
+			currIdx := branchIdxs[pos]
+			prev := &h.Revisions[prevIdx]
+			curr := &h.Revisions[currIdx]
+
+			if prev.Named || curr.Named || protectedIDs[prev.ID] || prev.ID == h.Cursor {
+				continue
+			}
+			if !isCompactableHistoryKind(prev.Kind) || !isCompactableHistoryKind(curr.Kind) {
+				continue
+			}
+
+			prevGroup := normalizeCoalesceGroup(prev.Kind, prev.CoalesceKey, prev.SelectedSceneID)
+			currGroup := normalizeCoalesceGroup(curr.Kind, curr.CoalesceKey, curr.SelectedSceneID)
+			dt := curr.TimeUnix - prev.TimeUnix
+			if dt < 0 {
+				dt = 0
+			}
+
+			sameTargetInWindow := prevGroup != "" && prevGroup == currGroup && dt <= HistoryCoalesceWindowSec
+			bothOlderInSameFiveMinBucket := (now-prev.TimeUnix) > HistoryLiveWindowSec &&
+				(now-curr.TimeUnix) > HistoryLiveWindowSec &&
+				(prev.TimeUnix/HistoryCompactionBucketSec) == (curr.TimeUnix/HistoryCompactionBucketSec)
+
+			if !sameTargetInWindow && !bothOlderInSameFiveMinBucket {
+				continue
+			}
+
+			if isMajorHistoryDeltaWithCache(bookRoot, prev.Files, curr.Files, curr.Kind, cache) {
+				continue
+			}
+			if pos >= 2 {
+				baseFiles := h.Revisions[branchIdxs[pos-2]].Files
+				if isMajorHistoryDeltaWithCache(bookRoot, baseFiles, prev.Files, prev.Kind, cache) {
+					continue
+				}
+				if isMajorHistoryDeltaWithCache(bookRoot, baseFiles, curr.Files, curr.Kind, cache) {
+					continue
+				}
+			}
+
+			removedID := prev.ID
+			curr.ParentID = prev.ParentID
+			if curr.Kind == "layout" && prev.Kind != "layout" {
+				curr.Kind = prev.Kind
+				curr.Label = prev.Label
+				if prev.SelectedSceneID != "" {
+					curr.SelectedSceneID = prev.SelectedSceneID
+				}
+			} else if curr.Kind == "layout" && prev.Kind == "layout" && prev.Label != curr.Label {
+				curr.Label = "Przesunięto węzły"
+				curr.CoalesceKey = "nodedrag:batch"
+			}
+			for k := range h.Revisions {
+				if h.Revisions[k].ParentID == removedID && k != currIdx {
+					h.Revisions[k].ParentID = curr.ID
+				}
+			}
+			h.Revisions = append(h.Revisions[:prevIdx], h.Revisions[prevIdx+1:]...)
+			compacted = true
+			mergedInPass = true
+			break
+		}
+		if !mergedInPass {
+			break
+		}
+	}
+	if compacted {
+		h.syncBranchesMetadata()
+	}
+	return compacted
+}
+
 // RecordBookHistoryStep records an unnamed edit step after a book mutation, coalescing rapid identical keys.
 func RecordBookHistoryStep(b *Book, label, kind, coalesceKey, selectedSceneID string) error {
 	if b == nil || b.IsPacked || strings.TrimSpace(b.RootPath) == "" {
@@ -829,10 +1085,13 @@ func RecordBookHistoryStep(b *Book, label, kind, coalesceKey, selectedSceneID st
 	}
 
 	truncateAfterCursorPreservingNamed(h)
+	now := time.Now().Unix()
+	blobCache := make(map[string][]byte)
+	compactHistoryRevisions(b.RootPath, h, now, blobCache)
+
 	curIdx = h.CursorIndex()
 	activeBr := h.NormalizedActiveBranch()
 
-	now := time.Now().Unix()
 	cleanLabel := SanitizePlainText(label)
 	if cleanLabel == "" {
 		cleanLabel = "Edycja książki"
@@ -852,18 +1111,39 @@ func RecordBookHistoryStep(b *Book, label, kind, coalesceKey, selectedSceneID st
 	branchIdxs := h.ActiveBranchRevisions()
 	if curIdx >= 0 && len(branchIdxs) > 0 && curIdx == branchIdxs[len(branchIdxs)-1] {
 		curRev := &h.Revisions[curIdx]
-		if !curRev.Named && cleanCoalesce != "" && curRev.CoalesceKey == cleanCoalesce && (now-curRev.TimeUnix) <= HistoryCoalesceWindowSec {
-			curRev.TimeUnix = now
-			curRev.Label = cleanLabel
-			curRev.Kind = cleanKind
-			curRev.SelectedSceneID = selectedSceneID
-			curRev.Files = filesMap
-			h.syncBranchesMetadata()
-			if err := SaveBookHistory(b, h); err != nil {
-				return err
+		stepMajor := isMajorHistoryDeltaWithCache(b.RootPath, curRev.Files, filesMap, cleanKind, blobCache)
+		if stepMajor {
+			cleanCoalesce = ""
+		} else if !curRev.Named && isCompactableHistoryKind(curRev.Kind) && isCompactableHistoryKind(cleanKind) {
+			curGroup := normalizeCoalesceGroup(curRev.Kind, curRev.CoalesceKey, curRev.SelectedSceneID)
+			newGroup := normalizeCoalesceGroup(cleanKind, cleanCoalesce, selectedSceneID)
+			cumulativeMajor := false
+			if len(branchIdxs) >= 2 {
+				baseFiles := h.Revisions[branchIdxs[len(branchIdxs)-2]].Files
+				if isMajorHistoryDeltaWithCache(b.RootPath, baseFiles, curRev.Files, curRev.Kind, blobCache) ||
+					isMajorHistoryDeltaWithCache(b.RootPath, baseFiles, filesMap, cleanKind, blobCache) {
+					cumulativeMajor = true
+				}
 			}
-			PruneUnreferencedBlobs(b, h)
-			return nil
+			if !cumulativeMajor && curRev.CoalesceKey != "" && cleanCoalesce != "" &&
+				curGroup != "" && curGroup == newGroup && (now-curRev.TimeUnix) <= HistoryCoalesceWindowSec {
+				if cleanKind == "layout" && curRev.Kind == "layout" && curRev.Label != cleanLabel {
+					cleanLabel = "Przesunięto węzły"
+					cleanCoalesce = "nodedrag:batch"
+				}
+				curRev.TimeUnix = now
+				curRev.Label = cleanLabel
+				curRev.Kind = cleanKind
+				curRev.SelectedSceneID = selectedSceneID
+				curRev.CoalesceKey = cleanCoalesce
+				curRev.Files = filesMap
+				h.syncBranchesMetadata()
+				if err := SaveBookHistory(b, h); err != nil {
+					return err
+				}
+				PruneUnreferencedBlobs(b, h)
+				return nil
+			}
 		}
 	}
 

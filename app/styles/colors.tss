@@ -29,6 +29,9 @@ body[data-theme="light"]
   --history-rail-inactive light-dark(#d0d0d0, #383838)
   --history-box-active-lineage light-dark(#777777, #6e6e6e)
   --history-box-unnamed light-dark(#b0b0b0, #484848)
+  --toggle-track light-dark(#ececec, #1a1a1a)
+  --toggle-track-on light-dark(#e0e0e0, #262626)
+  --toggle-thumb-off light-dark(#b0b0b0, #484848)
   --font-serif "Aleo"
   --font-sans "Lato"
   --font-screenplay "Courier Prime", "Courier New", Courier, monospace

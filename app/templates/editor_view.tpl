@@ -4,14 +4,7 @@ section.view-panel#view-editor .is-history-preview?: {is_history_preview}
         .canvas-toolbar
             .canvas-toolbar-left
                 {if has_active_book}
-                    input.canvas-legend.canvas-book-title-input#editor-book-title-input
-                        type: text
-                        name: title
-                        value: "{active_book_title}"
-                        data-old-title: "{active_book_title}"
-                        placeholder: "{editor_title_placeholder}"
-                        disabled?: {is_history_preview}
-                        readonly?: {is_history_preview}
+                    span.canvas-legend.canvas-book-title#editor-book-title {active_book_title}
                 {else}
                     span.canvas-legend "Brak aktywnego projektu"
                 button.top-action-btn
@@ -100,16 +93,6 @@ section.view-panel#view-editor .is-history-preview?: {is_history_preview}
                         action: ExitHistoryPreview
                         "Wróć do aktualnej wersji"
 
-        {if has_book_warnings}
-            .studio-warnings-banner
-                {if is_screenplay_mode}
-                    .book-warnings-title "⚠ Ostrzeżenia parsera i walidacji scenariusza ({book_warning_count}):"
-                {else}
-                    .book-warnings-title "⚠ Ostrzeżenia parsera i walidacji książki ({book_warning_count}):"
-                ul.book-warnings-list
-                    {for w in book_warnings}
-                        li {w.text}
-
         .editor-workspace-body#editor-workspace-body
             @editor_context_panel
             @editor_history_panel
@@ -117,7 +100,23 @@ section.view-panel#view-editor .is-history-preview?: {is_history_preview}
 
             .timeline-scroll-viewport#timeline-scroll-viewport
                 canvas.studio-canvas#studio-canvas
-                .editor-perf-overlay.hidden#editor-perf-overlay
+                .editor-status-bar#editor-status-bar
+                    {if has_book_warnings}
+                        .editor-status-warnings#editor-status-warnings
+                            ul.editor-status-warnings-list.hidden#editor-status-warnings-list
+                                {for w in book_warnings}
+                                    li {w.text}
+                            {if has_multiple_book_warnings}
+                                button.editor-status-warnings-bar#btn-toggle-status-warnings
+                                    type: button
+                                    data-warnings-toggle: "true"
+                                    span.editor-status-warnings-text "⚠ ({book_warning_count}) {first_book_warning}"
+                                    svg.editor-status-warnings-icon#icon-warnings-expand src: /icons/plus.svg
+                                    svg.editor-status-warnings-icon.hidden#icon-warnings-collapse src: /icons/minus.svg
+                            {else}
+                                .editor-status-warnings-bar.is-single
+                                    span.editor-status-warnings-text "⚠ {first_book_warning}"
+                    .editor-perf-overlay.hidden#editor-perf-overlay
                 pre.hidden#studio-graph-data {studio_graph_payload}
                 input.chapter-group-title-input.canvas-floating-chapter-input.hidden#canvas-chapter-input
                     type: text

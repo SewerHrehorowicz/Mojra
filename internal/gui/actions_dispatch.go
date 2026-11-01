@@ -146,9 +146,10 @@ var actionSpecs = map[string]ActionSpec{
 	"ToggleEditorHistoryPanel":    {StandaloneForbidden: true, Target: targetActiveWorkspace, Handler: (*Server).toggleEditorHistoryPanel},
 	"OpenEditorHistoryPanel":     {StandaloneForbidden: true, Target: targetActiveWorkspace, Handler: (*Server).openEditorHistoryPanel},
 	"CloseEditorHistoryPanel":    {StandaloneForbidden: true, Target: targetActiveWorkspace, Handler: (*Server).closeEditorHistoryPanel},
-	"SaveHistoryVersion":         {StandaloneForbidden: true, Target: targetActiveWorkspace, Handler: (*Server).saveHistoryVersion},
-	"CreateHistoryBranch":        {StandaloneForbidden: true, Target: targetActiveWorkspace, Handler: (*Server).createHistoryBranchAction},
-	"SwitchHistoryBranch":        {StandaloneForbidden: true, ResetCanvas: true, Target: targetAppShell, Handler: (*Server).switchHistoryBranchAction},
+	"SaveHistoryVersion":          {StandaloneForbidden: true, Target: targetActiveWorkspace, Handler: (*Server).saveHistoryVersion},
+	"PromptCreateHistoryBranch":   {StandaloneForbidden: true, KeepScroll: true, Target: targetModals, Handler: (*Server).promptCreateHistoryBranchAction},
+	"CreateHistoryBranch":         {StandaloneForbidden: true, Target: targetActiveWorkspace, Handler: (*Server).createHistoryBranchAction},
+	"SwitchHistoryBranch":         {StandaloneForbidden: true, ResetCanvas: true, Target: targetAppShell, Handler: (*Server).switchHistoryBranchAction},
 	"DeleteHistoryBranch":        {StandaloneForbidden: true, Target: targetActiveWorkspace, Handler: (*Server).deleteHistoryBranchAction},
 	"ToggleEditorBreakdownPanel": {StandaloneForbidden: true, Target: targetActiveWorkspace, Handler: (*Server).toggleEditorBreakdownPanel},
 	"OpenEditorBreakdownPanel":   {StandaloneForbidden: true, Target: targetActiveWorkspace, Handler: (*Server).openEditorBreakdownPanel},
@@ -484,6 +485,8 @@ func (s *Server) acceptConfirmModal() (toast, nativeCmd string) {
 		toast = s.deleteSceneByID(param)
 	case "DeleteScenes":
 		toast = s.deleteScenesByIDs(param)
+	case "CreateHistoryBranch":
+		toast = s.createHistoryBranchByName(param, "")
 	case "RemoveChoice":
 		if sep := strings.LastIndex(param, ":"); sep > 0 {
 			scID := param[:sep]

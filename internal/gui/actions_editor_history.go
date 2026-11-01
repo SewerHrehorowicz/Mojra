@@ -557,33 +557,96 @@ func (s *Server) copyHistoryRevisionToBranchAction(r *http.Request) string {
 	return ""
 }
 
+func (s *Server) promptCreateHistoryBranchAction(r *http.Request) string {
+	s.ensureActiveBookUnpackedForStudio()
+	if !s.isHistoryPreview() && r != nil && r.FormValue("scene_id") != "" {
+		_ = s.saveSceneFromForm(r)
+	}
+	if s.ActiveBook == nil || s.ActiveBook.IsPacked {
+		return ""
+	}
+	s.ensureHistoryBaselineBeforeMutation()
+	rawBranch := ""
+	if r != nil {
+		rawBranch = strings.TrimSpace(r.FormValue("branch_name"))
+		if rawBranch == "" {
+			rawBranch = strings.TrimSpace(r.FormValue("branch"))
+		}
+	}
+	cleanBranch := ""
+	if rawBranch != "" {
+		cleanBranch = book.SanitizeBookID(rawBranch)
+	}
+	h := s.loadActiveBookHistory()
+	if cleanBranch == "" || cleanBranch == "book" {
+		startSeq := 2
+		if h != nil {
+			startSeq = len(h.Branches) + 1
+		}
+		for seq := startSeq; ; seq++ {
+			cand := "wariant-" + strconv.Itoa(seq)
+			exists := false
+			if h != nil {
+				for _, br := range h.Branches {
+					if strings.EqualFold(br.Name, cand) {
+						exists = true
+						break
+					}
+				}
+			}
+			if !exists {
+				cleanBranch = cand
+				break
+			}
+		}
+	}
+	if h != nil {
+		for _, br := range h.Branches {
+			if strings.EqualFold(br.Name, cleanBranch) {
+				return "Gałąź „" + cleanBranch + "” już istnieje"
+			}
+		}
+	}
+	s.ConfirmTitle = "Utwórz nowy wariant"
+	s.ConfirmMessage = "Czy na pewno chcesz utworzyć nowy wariant „" + cleanBranch + "”? Nowy tor jest trwałą częścią historii projektu."
+	s.ConfirmPendingAction = "CreateHistoryBranch"
+	s.ConfirmPendingParam = cleanBranch
+	return ""
+}
+
+func (s *Server) createHistoryBranchByName(branchName, fromRev string) string {
+	s.ensureActiveBookUnpackedForStudio()
+	if s.ActiveBook == nil || s.ActiveBook.IsPacked {
+		return ""
+	}
+	if fromRev == "" && s.PreviewRevisionID != "" {
+		fromRev = s.PreviewRevisionID
+	}
+	if s.isHistoryPreview() {
+		s.exitHistoryPreview()
+	}
+	if br, err := book.CreateBookBranch(s.ActiveBook, branchName, fromRev); err == nil && br != nil {
+		s.invalidateHistoryCache()
+		s.reloadActiveBook()
+		s.EditorHistoryPanelOpen = true
+		return "Utworzono i przełączono na gałąź: " + br.Name
+	} else if err != nil {
+		return err.Error()
+	}
+	return ""
+}
+
 func (s *Server) createHistoryBranchAction(r *http.Request) string {
 	s.ensureActiveBookUnpackedForStudio()
 	if !s.isHistoryPreview() && r.FormValue("scene_id") != "" {
 		_ = s.saveSceneFromForm(r)
 	}
-	if s.ActiveBook != nil && !s.ActiveBook.IsPacked {
-		branchName := strings.TrimSpace(r.FormValue("branch_name"))
-		if branchName == "" {
-			branchName = strings.TrimSpace(r.FormValue("branch"))
-		}
-		fromRev := strings.TrimSpace(r.FormValue("from_revision"))
-		if fromRev == "" && s.PreviewRevisionID != "" {
-			fromRev = s.PreviewRevisionID
-		}
-		if s.isHistoryPreview() {
-			s.exitHistoryPreview()
-		}
-		if br, err := book.CreateBookBranch(s.ActiveBook, branchName, fromRev); err == nil && br != nil {
-			s.invalidateHistoryCache()
-			s.reloadActiveBook()
-			s.EditorHistoryPanelOpen = true
-			return "Utworzono i przełączono na gałąź: " + br.Name
-		} else if err != nil {
-			return err.Error()
-		}
+	branchName := strings.TrimSpace(r.FormValue("branch_name"))
+	if branchName == "" {
+		branchName = strings.TrimSpace(r.FormValue("branch"))
 	}
-	return ""
+	fromRev := strings.TrimSpace(r.FormValue("from_revision"))
+	return s.createHistoryBranchByName(branchName, fromRev)
 }
 
 func (s *Server) switchHistoryBranchAction(r *http.Request) string {

@@ -459,6 +459,74 @@ function handleEditorCanvasClick(e) {
     }
   }
 
+  const formToggleBtn = e.target.closest("[data-form-toggle]");
+  if (formToggleBtn) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (formToggleBtn.disabled || formToggleBtn.classList.contains("is-disabled")) return true;
+    const row = formToggleBtn.closest(".node-meta-row, .form-field") || formToggleBtn.parentElement;
+    const fieldName = formToggleBtn.getAttribute("data-form-toggle") || "";
+    const hiddenInput = row ? qs('input[type="hidden"][name="' + fieldName + '"]', row) : null;
+    const curVal = hiddenInput ? hiddenInput.value === "true" : formToggleBtn.classList.contains("active");
+    const nextVal = !curVal;
+    if (hiddenInput) {
+      hiddenInput.value = nextVal ? "true" : "false";
+    }
+    const activeWhen = formToggleBtn.getAttribute("data-active-when") || "true";
+    const isVisualActive = activeWhen === "false" ? !nextVal : nextVal;
+    formToggleBtn.classList.toggle("active", isVisualActive);
+    const lblSpan = qs(".custom-select-label", formToggleBtn);
+    if (lblSpan) {
+      const onLbl = formToggleBtn.getAttribute("data-label-on") || "";
+      const offLbl = formToggleBtn.getAttribute("data-label-off") || "";
+      lblSpan.textContent = isVisualActive ? onLbl : offLbl;
+    }
+    const iconOn = qs(".toggle-icon-on", formToggleBtn);
+    const iconOff = qs(".toggle-icon-off", formToggleBtn);
+    if (iconOn) iconOn.classList.toggle("hidden", !isVisualActive);
+    if (iconOff) iconOff.classList.toggle("hidden", isVisualActive);
+    return true;
+  }
+
+  const radioOpt = e.target.closest("label.form-radio-option");
+  if (radioOpt) {
+    if (radioOpt.classList.contains("is-disabled")) {
+      e.preventDefault();
+      return true;
+    }
+    const radioInp = qs("input.form-radio-input", radioOpt);
+    if (radioInp && !radioInp.disabled) {
+      e.preventDefault();
+      e.stopPropagation();
+      const group = radioOpt.closest(".form-radio-group");
+      if (group) {
+        qsa("label.form-radio-option", group).forEach((opt) => {
+          const inp = qs("input.form-radio-input", opt);
+          const isCurrent = opt === radioOpt;
+          opt.classList.toggle("active", isCurrent);
+          if (inp) {
+            inp.checked = isCurrent;
+            if (isCurrent) {
+              inp.setAttribute("checked", "checked");
+            } else {
+              inp.removeAttribute("checked");
+            }
+          }
+        });
+      }
+      const bookForm = radioOpt.closest("form.editor-book-form");
+      if (bookForm) {
+        const params = {};
+        const fd = new FormData(bookForm);
+        fd.forEach((v, k) => {
+          params[k] = v;
+        });
+        sendServerAction("SaveBookSettings", params);
+      }
+      return true;
+    }
+  }
+
   const selectToggle = e.target.closest("[data-select-toggle]");
   if (selectToggle) {
     e.preventDefault();
@@ -579,7 +647,7 @@ function handleEditorCanvasClick(e) {
         modalTitle.textContent = isScreenplay ? "Utwórz Nowy Scenariusz" : "Utwórz Nową Książkę";
       }
       if (titleLabel) {
-        titleLabel.textContent = isScreenplay ? "Tytuł scenariusza" : "Tytuł opowieści";
+        titleLabel.textContent = "tytuł:";
       }
       if (titleInp) {
         titleInp.setAttribute("placeholder", isScreenplay ? "np. Ostatni Rejs" : "np. Tajemnica Starego Młyna");
@@ -786,7 +854,7 @@ function bindEditorCanvasEvents() {
         e.target &&
         e.target.classList &&
         (e.target.classList.contains("chapter-group-title-input") ||
-          e.target.classList.contains("canvas-book-title-input"))
+          e.target.id === "book-settings-title-input")
       ) {
         e.preventDefault();
         if (e.target.id === "canvas-chapter-input") {
@@ -812,7 +880,7 @@ function bindEditorCanvasEvents() {
         hideFloatingChapterInput(true);
         return;
       }
-      if (e.target.classList.contains("canvas-book-title-input")) {
+      if (e.target.id === "book-settings-title-input") {
         e.preventDefault();
         commitBookTitleInput(e.target);
         e.target.blur();
@@ -1857,6 +1925,9 @@ function bindEditorCanvasEvents() {
   });
 
   document.addEventListener("input", (e) => {
+    if (e.target && e.target.classList && e.target.classList.contains("node-meta-textarea")) {
+      autoResizeInspectorTextarea(e.target);
+    }
     if (typeof isEditorHistoryPreview === "function" && isEditorHistoryPreview()) {
       return;
     }
@@ -1864,19 +1935,12 @@ function bindEditorCanvasEvents() {
       scheduleChapterLiveSave(e.target);
       return;
     }
-    if (
-      e.target &&
-      ((e.target.classList && e.target.classList.contains("canvas-book-title-input")) ||
-        e.target.id === "book-settings-title-input")
-    ) {
+    if (e.target && e.target.id === "book-settings-title-input") {
       scheduleBookTitleLiveSave(e.target);
       return;
     }
     const bookForm = e.target.closest("form.editor-book-form");
     if (bookForm) {
-      if (e.target && e.target.tagName && e.target.tagName.toLowerCase() === "textarea") {
-        autoResizeInspectorTextarea(e.target);
-      }
       scheduleBookSettingsLiveSave(bookForm);
       return;
     }
@@ -1919,11 +1983,7 @@ function bindEditorCanvasEvents() {
   document.addEventListener("change", (e) => {
     if (e.target && e.target.classList && e.target.classList.contains("chapter-group-title-input")) {
       commitChapterTitleInput(e.target);
-    } else if (
-      e.target &&
-      ((e.target.classList && e.target.classList.contains("canvas-book-title-input")) ||
-        e.target.id === "book-settings-title-input")
-    ) {
+    } else if (e.target && e.target.id === "book-settings-title-input") {
       commitBookTitleInput(e.target);
     }
   });
@@ -1937,11 +1997,7 @@ function bindEditorCanvasEvents() {
         } else {
           commitChapterTitleInput(e.target);
         }
-      } else if (
-        e.target &&
-        ((e.target.classList && e.target.classList.contains("canvas-book-title-input")) ||
-          e.target.id === "book-settings-title-input")
-      ) {
+      } else if (e.target && e.target.id === "book-settings-title-input") {
         commitBookTitleInput(e.target);
       }
     },

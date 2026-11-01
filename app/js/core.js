@@ -413,6 +413,7 @@ async function sendServerAction(actionName, params) {
     actionName === "PreviewHistoryRevision" ||
     actionName === "PlayHistoryRevision" ||
     actionName === "SaveHistoryVersion" ||
+    actionName === "PromptCreateHistoryBranch" ||
     actionName === "CreateHistoryBranch" ||
     actionName === "SwitchHistoryBranch" ||
     actionName === "CopyHistoryRevisionToBranch" ||
@@ -668,6 +669,8 @@ async function sendServerAction(actionName, params) {
       if (typeof renderStudioCanvas === "function") {
         renderStudioCanvas();
       }
+    } else if (typeof autoResizeAllInspectorTextareas === "function") {
+      autoResizeAllInspectorTextareas(qs("#editor-context-panel") || document);
     }
     return;
   }
@@ -701,6 +704,9 @@ async function sendServerAction(actionName, params) {
     syncFullscreenButtonState();
     syncTopbarToggleIcons();
     syncEditorHistoryHeaders(resp);
+    if (typeof autoResizeAllInspectorTextareas === "function") {
+      autoResizeAllInspectorTextareas(targetEl);
+    }
     const nextEditorViewport = qs("#timeline-scroll-viewport");
     if (nextEditorViewport && prevEditorScrollTop !== null) {
       nextEditorViewport.scrollTop = prevEditorScrollTop;
@@ -968,6 +974,23 @@ function bindDeclarativeActionBridge() {
       }
     }
 
+    const warningsToggle = e.target.closest("[data-warnings-toggle]");
+    if (warningsToggle) {
+      e.preventDefault();
+      e.stopPropagation();
+      const listEl = qs("#editor-status-warnings-list");
+      const expandIcon = qs("#icon-warnings-expand", warningsToggle);
+      const collapseIcon = qs("#icon-warnings-collapse", warningsToggle);
+      if (listEl) {
+        const willOpen = listEl.classList.contains("hidden");
+        listEl.classList.toggle("hidden", !willOpen);
+        warningsToggle.classList.toggle("active", willOpen);
+        if (expandIcon) expandIcon.classList.toggle("hidden", willOpen);
+        if (collapseIcon) collapseIcon.classList.toggle("hidden", !willOpen);
+      }
+      return;
+    }
+
     const settingsToggle = e.target.closest("[data-scene-settings-toggle]");
     if (settingsToggle) {
       e.preventDefault();
@@ -1116,6 +1139,9 @@ function bindDeclarativeActionBridge() {
     if (typeof drawStudioWires === "function") {
       drawStudioWires();
     }
+    if (typeof autoResizeAllInspectorTextareas === "function") {
+      autoResizeAllInspectorTextareas(document);
+    }
   });
 
   if (typeof bindEditorCanvasEvents === "function") {
@@ -1123,6 +1149,9 @@ function bindDeclarativeActionBridge() {
   }
 
   syncTopbarToggleIcons();
+  if (typeof autoResizeAllInspectorTextareas === "function") {
+    autoResizeAllInspectorTextareas(document);
+  }
   if (typeof initPlayerScrollAndAudio === "function") {
     initPlayerScrollAndAudio(null);
   }

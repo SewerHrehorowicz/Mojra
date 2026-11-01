@@ -85,7 +85,21 @@ func (s *Server) populateModalsContext(vars map[string]any) {
 	vars["new_book_title"] = s.NewBookDraftTitle
 	vars["new_book_author"] = s.NewBookDraftAuthor
 	vars["new_book_narrated"] = s.NewBookDraftNarrated
+	if s.NewBookDraftNarrated {
+		vars["new_book_narrated_val"] = "true"
+		vars["new_book_narrated_short_label"] = "Wymagana"
+	} else {
+		vars["new_book_narrated_val"] = "false"
+		vars["new_book_narrated_short_label"] = "Wyłączona"
+	}
 	vars["new_book_imageless"] = s.NewBookDraftImageless
+	if s.NewBookDraftImageless {
+		vars["new_book_imageless_val"] = "true"
+		vars["new_book_imageless_short_label"] = "Bez obrazów"
+	} else {
+		vars["new_book_imageless_val"] = "false"
+		vars["new_book_imageless_short_label"] = "Z obrazami"
+	}
 	vars["new_book_default_dir"] = s.defaultNewBookDir()
 	if draftMode == "screenplay" {
 		vars["new_book_title_placeholder"] = "np. Ostatni Rejs"

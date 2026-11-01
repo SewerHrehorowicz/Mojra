@@ -139,6 +139,12 @@ func (s *Server) BuildTargetedRenderContext(targetTpl string, books []*book.Book
 		}
 		vars["has_book_warnings"] = len(s.ActiveBook.Warnings) > 0
 		vars["book_warning_count"] = len(s.ActiveBook.Warnings)
+		vars["has_multiple_book_warnings"] = len(s.ActiveBook.Warnings) > 1
+		if len(s.ActiveBook.Warnings) > 0 {
+			vars["first_book_warning"] = s.ActiveBook.Warnings[0]
+		} else {
+			vars["first_book_warning"] = ""
+		}
 		vars["book_warnings"] = warnItems
 		isNarrated := !s.ActiveBook.IsScreenplay() && s.ActiveBook.Narrated
 		vars["book_narrated"] = isNarrated
@@ -169,6 +175,8 @@ func (s *Server) BuildTargetedRenderContext(targetTpl string, books []*book.Book
 	} else if needsEditorFull || needsEditorPanelOnly {
 		vars["has_book_warnings"] = false
 		vars["book_warning_count"] = 0
+		vars["has_multiple_book_warnings"] = false
+		vars["first_book_warning"] = ""
 		vars["book_narrated"] = false
 		vars["book_narrated_label"] = "Narracja książki: WYŁĄCZONA (narrated: false)"
 		vars["book_narrated_short_label"] = "Wyłączona"

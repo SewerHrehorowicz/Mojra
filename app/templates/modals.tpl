@@ -5,26 +5,49 @@
             .modal-header
                 h3.modal-title "Ustawienia"
             .modal-body.qr-modal-body
-                .settings-modal-actions
-                    button.btn.btn-sm
-                        type: button
-                        action: ToggleTheme
-                        "Motyw: {theme_toggle_label}"
-                    button.btn.btn-sm
-                        type: button
-                        action: ToggleImageless
-                        disabled?: {imageless_locked}
-                        "Obrazy: {imageless_toggle_label}"
-                    button.btn.btn-sm
-                        type: button
-                        action: SetUIScale
-                        data-scale: small
-                        "− Pomniejsz UI"
-                    button.btn.btn-sm
-                        type: button
-                        action: SetUIScale
-                        data-scale: large
-                        "+ Powiększ UI"
+                .node-meta-fields.modal-meta-fields
+                    .node-meta-row
+                        span.node-meta-key "motyw:"
+                        button.book-setting-toggle-btn.form-toggle-btn .active?: {is_dark}
+                            type: button
+                            action: ToggleTheme
+                            span.custom-select-label {theme_toggle_label}
+                            span.toggle-right
+                                {if is_dark}
+                                    svg.action-icon src: /icons/theme.svg
+                                {else}
+                                    svg.action-icon src: /icons/sun.svg
+                                span.toggle-switch
+                                    span.toggle-thumb
+                    .node-meta-row
+                        span.node-meta-key "obrazy:"
+                        button.book-setting-toggle-btn.form-toggle-btn .active?: {!imageless} .is-disabled?: {imageless_locked}
+                            type: button
+                            action: ToggleImageless
+                            disabled?: {imageless_locked}
+                            span.custom-select-label {imageless_toggle_label}
+                            span.toggle-right
+                                {if imageless}
+                                    svg.action-icon src: /icons/image-off.svg
+                                {else}
+                                    svg.action-icon src: /icons/image.svg
+                                span.toggle-switch
+                                    span.toggle-thumb
+                    .node-meta-row
+                        span.node-meta-key "skala:"
+                        .form-radio-group.is-inline
+                            button.form-radio-option .active?: {!is_large_ui}
+                                type: button
+                                action: SetUIScale
+                                data-scale: small
+                                span.form-radio-label "Domyślna"
+                                span.form-radio-sq
+                            button.form-radio-option .active?: {is_large_ui}
+                                type: button
+                                action: SetUIScale
+                                data-scale: large
+                                span.form-radio-label "Powiększona"
+                                span.form-radio-sq
                 {if dev_mode}
                     .settings-modal-actions
                         button.btn.btn-sm
@@ -54,89 +77,100 @@
                     h3.modal-title#new-book-modal-title "Utwórz Nową Książkę"
             form.modal-body#form-new-book
                 action: CreateNewBook
-                .form-field
-                    {if new_book_is_screenplay}
-                        label.field-label#new-book-title-label "Tytuł scenariusza"
-                    {else}
-                        label.field-label#new-book-title-label "Tytuł opowieści"
-                    input.field-input#new-book-title
-                        type: text
-                        name: title
-                        value: "{new_book_title}"
-                        placeholder: "{new_book_title_placeholder}"
-                .form-field
-                    label.field-label "Autor"
-                    input.field-input#new-book-author
-                        type: text
-                        name: author
-                        value: "{new_book_author}"
-                        placeholder: "Autor"
-                .form-field
-                    label.field-label "Tryb projektu"
-                    .custom-select.node-media-select.new-book-mode-select
-                        input.custom-select-input
-                            type: hidden
-                            name: mode
-                            value: "{new_book_mode}"
-                        button.custom-select-trigger.modal-field-select-trigger
-                            type: button
-                            data-select-toggle: "true"
-                            span.custom-select-label {new_book_mode_label}
-                            span.custom-select-caret "▾"
-                        .custom-select-menu.hidden
-                            {for md_opt in new_book_mode_options}
-                                button.custom-select-option .active?: {md_opt.is_active}
-                                    type: button
-                                    data-select-value: "{md_opt.value}"
-                                    data-select-label: "{md_opt.label}"
-                                    {md_opt.label}
-                .form-field#new-book-standard-field .hidden?: {!new_book_is_screenplay}
-                    label.field-label "Standard scenariusza"
-                    .custom-select.node-media-select
-                        input.custom-select-input
-                            type: hidden
-                            name: standard
-                            value: "{new_book_standard}"
-                        button.custom-select-trigger.modal-field-select-trigger
-                            type: button
-                            data-select-toggle: "true"
-                            span.custom-select-label {new_book_standard_label}
-                            span.custom-select-caret "▾"
-                        .custom-select-menu.hidden
-                            {for std_opt in new_book_standard_options}
-                                button.custom-select-option .active?: {std_opt.is_active}
-                                    type: button
-                                    data-select-value: "{std_opt.value}"
-                                    data-select-label: "{std_opt.label}"
-                                    {std_opt.label}
-                .form-field
-                    label.field-label#new-book-location-label "Lokalizacja zapisu na dysku"
-                    .add-book-input-row
-                        input.field-input#new-book-path
+                .node-meta-fields.modal-meta-fields
+                    .node-meta-row
+                        span.node-meta-key#new-book-title-label "tytuł:"
+                        input.node-meta-input.field-input#new-book-title
                             type: text
-                            name: save_path
-                            value: "{new_book_default_dir}"
-                            placeholder: "{new_book_default_dir}"
-                        button.btn.btn-sm
-                            type: button
-                            action: BrowseNewBookFolder
-                            "Wybierz folder..."
-                .form-field.checkbox-field#new-book-narrated-field .hidden?: {new_book_is_screenplay}
-                    label.checkbox-label
+                            name: title
+                            value: "{new_book_title}"
+                            placeholder: "{new_book_title_placeholder}"
+                    .node-meta-row
+                        span.node-meta-key "autor:"
+                        input.node-meta-input.field-input#new-book-author
+                            type: text
+                            name: author
+                            value: "{new_book_author}"
+                            placeholder: "Autor"
+                    .node-meta-row
+                        span.node-meta-key "tryb:"
+                        .custom-select.node-media-select.new-book-mode-select
+                            input.custom-select-input
+                                type: hidden
+                                name: mode
+                                value: "{new_book_mode}"
+                            button.custom-select-trigger.modal-field-select-trigger
+                                type: button
+                                data-select-toggle: "true"
+                                span.custom-select-label {new_book_mode_label}
+                                svg.custom-select-caret src: /icons/chevron-down.svg
+                            .custom-select-menu.hidden
+                                {for md_opt in new_book_mode_options}
+                                    button.custom-select-option .active?: {md_opt.is_active}
+                                        type: button
+                                        data-select-value: "{md_opt.value}"
+                                        data-select-label: "{md_opt.label}"
+                                        {md_opt.label}
+                    .node-meta-row.node-meta-row-radio#new-book-standard-field .hidden?: {!new_book_is_screenplay}
+                        span.node-meta-key "norma:"
+                        .form-radio-group
+                            {for std_opt in new_book_standard_options}
+                                label.form-radio-option .active?: {std_opt.is_active}
+                                    input.form-radio-input
+                                        type: radio
+                                        name: standard
+                                        value: "{std_opt.value}"
+                                        checked?: {std_opt.is_active}
+                                    span.form-radio-label {std_opt.label}
+                                    span.form-radio-sq
+                    .node-meta-row#new-book-narrated-field .hidden?: {new_book_is_screenplay}
+                        span.node-meta-key "narracja:"
                         input
-                            type: checkbox
+                            type: hidden
                             name: narrated
-                            value: true
-                            checked?: {new_book_narrated}
-                        span "Pełna narracja głosowa (narrated: true — wymaga nagrania voice dla każdej sceny)"
-                .form-field.checkbox-field#new-book-imageless-field .hidden?: {new_book_is_screenplay}
-                    label.checkbox-label
+                            value: "{new_book_narrated_val}"
+                        button.book-setting-toggle-btn.form-toggle-btn .active?: {new_book_narrated}
+                            type: button
+                            data-form-toggle: narrated
+                            data-active-when: "true"
+                            data-label-on: "Wymagana"
+                            data-label-off: "Wyłączona"
+                            span.custom-select-label {new_book_narrated_short_label}
+                            span.toggle-right
+                                svg.action-icon.toggle-icon-on .hidden?: {!new_book_narrated} src: /icons/mic.svg
+                                svg.action-icon.toggle-icon-off .hidden?: {new_book_narrated} src: /icons/mic-off.svg
+                                span.toggle-switch
+                                    span.toggle-thumb
+                    .node-meta-row#new-book-imageless-field .hidden?: {new_book_is_screenplay}
+                        span.node-meta-key "obrazy:"
                         input
-                            type: checkbox
+                            type: hidden
                             name: imageless
-                            value: true
-                            checked?: {new_book_imageless}
-                        span "Książka bez obrazów (imageless: true — wymusza tryb bez ilustracji)"
+                            value: "{new_book_imageless_val}"
+                        button.book-setting-toggle-btn.form-toggle-btn .active?: {!new_book_imageless}
+                            type: button
+                            data-form-toggle: imageless
+                            data-active-when: "false"
+                            data-label-on: "Z obrazami"
+                            data-label-off: "Bez obrazów"
+                            span.custom-select-label {new_book_imageless_short_label}
+                            span.toggle-right
+                                svg.action-icon.toggle-icon-on .hidden?: {new_book_imageless} src: /icons/image.svg
+                                svg.action-icon.toggle-icon-off .hidden?: {!new_book_imageless} src: /icons/image-off.svg
+                                span.toggle-switch
+                                    span.toggle-thumb
+                    .node-meta-row
+                        span.node-meta-key#new-book-location-label "folder:"
+                        .add-book-input-row
+                            input.node-meta-input.field-input#new-book-path
+                                type: text
+                                name: save_path
+                                value: "{new_book_default_dir}"
+                                placeholder: "{new_book_default_dir}"
+                            button.btn.btn-sm
+                                type: button
+                                action: BrowseNewBookFolder
+                                "Wybierz folder..."
                 .modal-actions
                     button.btn
                         type: button
@@ -291,7 +325,7 @@
                                                 data-select-toggle: "true"
                                                 disabled?: {is_history_preview}
                                                 span.custom-select-label {scene_text_modal_current_image_label}
-                                                span.custom-select-caret "▾"
+                                                svg.custom-select-caret src: /icons/chevron-down.svg
                                             .custom-select-menu.hidden
                                                 {for img_opt in scene_text_modal_image_options}
                                                     button.custom-select-option .active?: {img_opt.is_active}
@@ -319,7 +353,7 @@
                                                 data-select-toggle: "true"
                                                 disabled?: {is_history_preview}
                                                 span.custom-select-label {scene_text_modal_current_voice_label}
-                                                span.custom-select-caret "▾"
+                                                svg.custom-select-caret src: /icons/chevron-down.svg
                                             .custom-select-menu.hidden
                                                 {for voice_opt in scene_text_modal_voice_options}
                                                     button.custom-select-option .active?: {voice_opt.is_active}
@@ -369,15 +403,15 @@
                                                     data-scene: "{scene_text_modal_id}"
                                                     data-time: "{t.token}"
                                                     {t.token}
-                                    .modal-slugline-row
+                                    .modal-slugline-row.node-meta-row-textarea
                                         span.node-meta-key "OPIS:"
-                                        input.node-meta-input
-                                            type: text
+                                        textarea.node-meta-input.node-meta-textarea
                                             name: synopsis
-                                            value: "{scene_text_modal_synopsis}"
+                                            rows: 1
                                             placeholder: "Streszczenie sceny (1 zdanie)..."
                                             disabled?: {is_history_preview}
                                             readonly?: {is_history_preview}
+                                            {scene_text_modal_synopsis}
                                 {if not is_history_preview}
                                     .modal-screenplay-format-bar#modal-screenplay-format-bar
                                         .modal-format-row

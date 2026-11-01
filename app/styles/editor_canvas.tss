@@ -41,30 +41,15 @@
   overflow hidden
   text-overflow ellipsis
 
-.canvas-book-title-input
-  background transparent
-  border 1px solid transparent
-  border-bottom-color --border-subtle
+.canvas-book-title
   color --text-primary
   font-family --font-sans
   font-size 11px
   font-weight 600
   text-transform uppercase
   letter-spacing 0.8px
-  padding 2px 6px
-  min-width 140px
   max-width 320px
-  cursor text
-  transition border-color 0.15s ease, background 0.15s ease
-
-.canvas-book-title-input:hover
-  border-color --border-subtle
-  background --bg-elevated
-
-.canvas-book-title-input:focus
-  outline none
-  border-color --text-primary
-  background --bg-obsidian
+  user-select none
 
 .canvas-selection-badge
   font-family --font-sans

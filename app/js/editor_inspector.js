@@ -28,13 +28,15 @@ function syncBookTitleDOM(newTitle) {
       lbl.textContent = clean;
     }
   }
-  ["#editor-book-title-input", "#book-settings-title-input"].forEach((sel) => {
-    const inp = qs(sel);
-    if (inp && document.activeElement !== inp) {
-      inp.value = clean;
-      inp.setAttribute("data-old-title", clean);
-    }
-  });
+  const toolbarTitle = qs("#editor-book-title");
+  if (toolbarTitle) {
+    toolbarTitle.textContent = clean;
+  }
+  const inp = qs("#book-settings-title-input");
+  if (inp && document.activeElement !== inp) {
+    inp.value = clean;
+    inp.setAttribute("data-old-title", clean);
+  }
 }
 
 function commitBookTitleInput(inputEl) {
@@ -575,6 +577,7 @@ function syncNodeSelectionDOM() {
       }
     }
   }
+  autoResizeAllInspectorTextareas(panel || document);
 }
 
 function closeAllCustomSelects(exceptSelect) {
@@ -605,10 +608,16 @@ function autoResizeInspectorTextarea(ta) {
   if (!ta) return;
   ta.style.minHeight = "0px";
   ta.style.height = "0px";
-  const nextH = Math.max(44, (ta.scrollHeight || 0) + 4);
+  const nextH = Math.max(24, (ta.scrollHeight || 0) + 2);
   ta.style.height = nextH + "px";
   ta.style.minHeight = nextH + "px";
   ta.scrollTop = 0;
+}
+
+function autoResizeAllInspectorTextareas(root) {
+  qsa(".node-meta-textarea", root || document).forEach((ta) => {
+    autoResizeInspectorTextarea(ta);
+  });
 }
 
 function scheduleBookSettingsLiveSave(form) {

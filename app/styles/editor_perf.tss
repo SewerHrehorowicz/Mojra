@@ -1,8 +1,16 @@
-.editor-perf-overlay
+.editor-status-bar
   position absolute
   bottom 12px
   left 14px
+  right 14px
   z-index 45
+  display flex
+  flex-wrap wrap
+  align-items flex-end
+  gap 8px
+  pointer-events none
+
+.editor-perf-overlay
   display inline-flex
   align-items center
   gap 10px
@@ -17,6 +25,7 @@
   pointer-events none
   user-select none
   opacity 0.92
+  flex-shrink 0
 
 .editor-perf-overlay-val
   color --text-primary
@@ -24,3 +33,63 @@
 
 .editor-perf-overlay-sep
   color --border-strong
+
+.editor-status-warnings
+  position relative
+  display flex
+  flex-direction column
+  max-width 640px
+  min-width 0
+  pointer-events auto
+
+.editor-status-warnings-bar
+  display inline-flex
+  align-items center
+  justify-content space-between
+  gap 8px
+  padding 5px 10px
+  background --bg-obsidian
+  border 1px solid --accent-danger
+  color --accent-danger
+  font-family --font-sans
+  font-size 11px
+  line-height 1.3
+  text-align left
+  cursor pointer
+  max-width 100%
+
+.editor-status-warnings-bar.is-single
+  cursor default
+
+.editor-status-warnings-bar:hover
+  background --bg-elevated
+
+.editor-status-warnings-bar.is-single:hover
+  background --bg-obsidian
+
+.editor-status-warnings-text
+  overflow hidden
+  text-overflow ellipsis
+  white-space nowrap
+  min-width 0
+  flex 1
+
+.editor-status-warnings-icon
+  width 12px
+  height 12px
+  color currentColor
+  flex-shrink 0
+  pointer-events none
+
+.editor-status-warnings-list
+  margin 0 0 4px 0
+  padding 8px 12px 8px 24px
+  max-height 180px
+  overflow-y auto
+  background --bg-obsidian
+  border 1px solid --accent-danger
+  color --accent-danger
+  font-family --font-sans
+  font-size 11px
+  line-height 1.45
+  pointer-events auto

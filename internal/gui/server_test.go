@@ -1676,8 +1676,8 @@ func TestNodeEditorEmptyLibraryRenameFitAndRootScene(t *testing.T) {
 	createBytes, _ := io.ReadAll(rCreate.Body)
 	_ = rCreate.Body.Close()
 	createHTML := string(createBytes)
-	if !strings.Contains(createHTML, `id="editor-book-title-input"`) || !strings.Contains(createHTML, `value="Stara Kronika"`) {
-		t.Fatalf("expected editable #editor-book-title-input with 'Stara Kronika', got:\n%s", createHTML)
+	if !strings.Contains(createHTML, `id="editor-book-title"`) || !strings.Contains(createHTML, `id="book-settings-title-input"`) || !strings.Contains(createHTML, `value="Stara Kronika"`) {
+		t.Fatalf("expected non-editable #editor-book-title and editable #book-settings-title-input with 'Stara Kronika', got:\n%s", createHTML)
 	}
 	if !strings.Contains(createHTML, `data-canvas-zoom="fit"`) {
 		t.Fatalf("expected data-canvas-zoom=fit in editor toolbar, got:\n%s", createHTML)
@@ -2679,15 +2679,23 @@ func TestScreenplayModeEndToEndFlow(t *testing.T) {
 		"branch": {"wersja-rezysera"},
 	})
 
-	// 5b. CreateHistoryBranch with empty branch_name auto-names "wariant-2"
-	autoBrResp, _ := http.PostForm(ts.URL+"/api/action", url.Values{
-		"action":      {"CreateHistoryBranch"},
+	// 5b. PromptCreateHistoryBranch opens confirmation modal and ConfirmModalAccept creates auto-named "wariant-2"
+	promptBrResp, _ := http.PostForm(ts.URL+"/api/action", url.Values{
+		"action":      {"PromptCreateHistoryBranch"},
 		"branch_name": {""},
+	})
+	promptBrBytes, _ := io.ReadAll(promptBrResp.Body)
+	_ = promptBrResp.Body.Close()
+	if !strings.Contains(string(promptBrBytes), "Utwórz nowy wariant") || !strings.Contains(string(promptBrBytes), "wariant-2") {
+		t.Fatalf("expected confirmation modal for wariant-2, got: %s", string(promptBrBytes))
+	}
+	autoBrResp, _ := http.PostForm(ts.URL+"/api/action", url.Values{
+		"action": {"ConfirmModalAccept"},
 	})
 	autoBrBytes, _ := io.ReadAll(autoBrResp.Body)
 	_ = autoBrResp.Body.Close()
-	if !strings.Contains(string(autoBrBytes), "wariant-2") {
-		t.Fatalf("expected auto-named branch wariant-2 in history graph HTML")
+	if !strings.Contains(string(autoBrBytes), "wariant-2") || !strings.Contains(string(autoBrBytes), `class="history-active-branch-name"`) {
+		t.Fatalf("expected auto-named branch wariant-2 and active branch bar in history graph HTML")
 	}
 	_, _ = http.PostForm(ts.URL+"/api/action", url.Values{
 		"action": {"SwitchHistoryBranch"},
@@ -3838,10 +3846,18 @@ function makeEvent(type, props) {
   // 12. Switch to Editor, create a Screenplay project via custom-select mode picker, test Breakdown Panel forms & jump
   await clickEl('button.topbar-tab[data-view="editor"]');
   await clickEl('button[action="OpenNewBookModal"]');
+  await clickEl('button[data-form-toggle="narrated"]');
+  if (doc.querySelector('#new-book-narrated-field input[name="narrated"]').value !== "true") {
+    throw new Error("Expected clicking [data-form-toggle=narrated] to toggle hidden input value to true");
+  }
   await clickEl('.new-book-mode-select [data-select-toggle]');
   await clickEl('.new-book-mode-select .custom-select-option[data-select-value="screenplay"]');
   if (doc.querySelector("#new-book-standard-field").classList.contains("hidden")) {
     throw new Error("Expected selecting screenplay mode in custom-select to reveal #new-book-standard-field");
+  }
+  await clickEl('#new-book-standard-field label.form-radio-option input[value="eu"]');
+  if (!doc.querySelector('#new-book-standard-field input[value="eu"]').checked) {
+    throw new Error("Expected clicking .form-radio-option to check EU standard radio input");
   }
   doc.querySelector("#new-book-title").value = "Scenariusz Responsywny";
   await clickEl('form[action="CreateNewBook"] button[type="submit"]');

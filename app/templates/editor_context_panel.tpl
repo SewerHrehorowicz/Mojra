@@ -30,7 +30,7 @@ aside.editor-context-panel#editor-context-panel
                             button.node-chapter-caret-btn
                                 type: button
                                 data-select-toggle: "true"
-                                "▾"
+                                svg.custom-select-caret src: /icons/chevron-down.svg
                     .custom-select-menu.hidden
                         {for ch_opt in selected_node.chapter_options}
                             button.custom-select-option .active?: {ch_opt.is_active}
@@ -96,15 +96,15 @@ aside.editor-context-panel#editor-context-panel
                                         data-scene: "{selected_node.id}"
                                         data-time: "{t.token}"
                                         {t.token}
-                        .node-meta-row
+                        .node-meta-row.node-meta-row-textarea
                             span.node-meta-key "opis:"
-                            input.node-meta-input
-                                type: text
+                            textarea.node-meta-input.node-meta-textarea
                                 name: synopsis
-                                value: "{selected_node.synopsis}"
+                                rows: 1
                                 placeholder: "Streszczenie sceny (1 zdanie)..."
                                 disabled?: {is_history_preview}
                                 readonly?: {is_history_preview}
+                                {selected_node.synopsis}
                     {if not is_screenplay_mode}
                         .node-meta-row
                             span.node-meta-key "image:"
@@ -118,7 +118,7 @@ aside.editor-context-panel#editor-context-panel
                                     data-select-toggle: "true"
                                     disabled?: {is_history_preview}
                                     span.custom-select-label {selected_node.current_image_label}
-                                    span.custom-select-caret "▾"
+                                    svg.custom-select-caret src: /icons/chevron-down.svg
                                 .custom-select-menu.hidden
                                     {for img_opt in selected_node.image_options}
                                         button.custom-select-option .active?: {img_opt.is_active}
@@ -146,7 +146,7 @@ aside.editor-context-panel#editor-context-panel
                                     data-select-toggle: "true"
                                     disabled?: {is_history_preview}
                                     span.custom-select-label {selected_node.current_voice_label}
-                                    span.custom-select-caret "▾"
+                                    svg.custom-select-caret src: /icons/chevron-down.svg
                                 .custom-select-menu.hidden
                                     {for voice_opt in selected_node.voice_options}
                                         button.custom-select-option .active?: {voice_opt.is_active}
@@ -273,7 +273,7 @@ aside.editor-context-panel#editor-context-panel
                                 data-select-toggle: "true"
                                 disabled?: {is_history_preview}
                                 span.custom-select-label {selected_chapter.start_scene_label}
-                                span.custom-select-caret "▾"
+                                svg.custom-select-caret src: /icons/chevron-down.svg
                             .custom-select-menu.hidden
                                 {for ch_st_opt in selected_chapter.start_scene_options}
                                     button.custom-select-option .active?: {ch_st_opt.is_active}
@@ -297,26 +297,20 @@ aside.editor-context-panel#editor-context-panel
             .context-panel-section
                 .node-meta-fields
                     {if is_screenplay_mode}
-                        .node-meta-row
+                        .node-meta-row.node-meta-row-radio
                             span.node-meta-key "norma:"
-                            .custom-select.node-media-select.book-standard-select
-                                input.custom-select-input
-                                    type: hidden
-                                    name: standard
-                                    value: "{script_standard}"
-                                button.custom-select-trigger
-                                    type: button
-                                    data-select-toggle: "true"
-                                    disabled?: {is_history_preview}
-                                    span.custom-select-label {script_standard_label}
-                                    span.custom-select-caret "▾"
-                                .custom-select-menu.hidden
-                                    {for std_opt in script_standard_options}
-                                        button.custom-select-option .active?: {std_opt.is_active}
-                                            type: button
-                                            data-select-value: "{std_opt.value}"
-                                            data-select-label: "{std_opt.label}"
-                                            {std_opt.label}
+                            .form-radio-group
+                                {for std_opt in script_standard_options}
+                                    label.form-radio-option .active?: {std_opt.is_active} .is-disabled?: {is_history_preview}
+                                        data-hint: "{std_opt.label}"
+                                        input.form-radio-input
+                                            type: radio
+                                            name: standard
+                                            value: "{std_opt.value}"
+                                            checked?: {std_opt.is_active}
+                                            disabled?: {is_history_preview}
+                                        span.form-radio-label {std_opt.label}
+                                        span.form-radio-sq
                     .node-meta-row
                         {if is_screenplay_mode}
                             span.node-meta-key "akt:"
@@ -332,7 +326,7 @@ aside.editor-context-panel#editor-context-panel
                                 data-select-toggle: "true"
                                 disabled?: {is_history_preview}
                                 span.custom-select-label {book_start_chapter_name}
-                                span.custom-select-caret "▾"
+                                svg.custom-select-caret src: /icons/chevron-down.svg
                             .custom-select-menu.hidden
                                 {for bk_ch_opt in book_start_chapter_options}
                                     button.custom-select-option .active?: {bk_ch_opt.is_active}
@@ -352,7 +346,7 @@ aside.editor-context-panel#editor-context-panel
                                 data-select-toggle: "true"
                                 disabled?: {is_history_preview}
                                 span.custom-select-label {book_start_scene_label}
-                                span.custom-select-caret "▾"
+                                svg.custom-select-caret src: /icons/chevron-down.svg
                             .custom-select-menu.hidden
                                 {for bk_st_opt in book_start_scene_options}
                                     button.custom-select-option .active?: {bk_st_opt.is_active}
@@ -363,30 +357,36 @@ aside.editor-context-panel#editor-context-panel
                     {if not is_screenplay_mode}
                         .node-meta-row
                             span.node-meta-key "narracja:"
-                            button.custom-select-trigger.book-setting-toggle-btn .active?: {book_narrated} .is-disabled?: {is_history_preview}
+                            button.book-setting-toggle-btn .active?: {book_narrated} .is-disabled?: {is_history_preview}
                                 type: button
                                 action: ToggleBookNarrated
                                 data-hint: "{book_narrated_label}"
                                 disabled?: {is_history_preview}
                                 span.custom-select-label {book_narrated_short_label}
-                                {if book_narrated}
-                                    svg.action-icon src: /icons/mic.svg
-                                {else}
-                                    svg.action-icon src: /icons/mic-off.svg
+                                span.toggle-right
+                                    {if book_narrated}
+                                        svg.action-icon src: /icons/mic.svg
+                                    {else}
+                                        svg.action-icon src: /icons/mic-off.svg
+                                    span.toggle-switch
+                                        span.toggle-thumb
                         .node-meta-row
                             span.node-meta-key "obrazy:"
-                            button.custom-select-trigger.book-setting-toggle-btn .active?: {book_imageless} .is-disabled?: {is_history_preview}
+                            button.book-setting-toggle-btn .active?: {!book_imageless} .is-disabled?: {is_history_preview}
                                 type: button
                                 action: ToggleBookImageless
                                 data-hint: "{book_imageless_label}"
                                 disabled?: {is_history_preview}
                                 span.custom-select-label {book_imageless_short_label}
-                                {if book_imageless}
-                                    svg.action-icon src: /icons/image-off.svg
-                                {else}
-                                    svg.action-icon src: /icons/image.svg
+                                span.toggle-right
+                                    {if book_imageless}
+                                        svg.action-icon src: /icons/image-off.svg
+                                    {else}
+                                        svg.action-icon src: /icons/image.svg
+                                    span.toggle-switch
+                                        span.toggle-thumb
                     .node-meta-row
-                        span.node-meta-key "author:"
+                        span.node-meta-key "autor:"
                         input.node-meta-input
                             type: text
                             name: author
@@ -398,7 +398,7 @@ aside.editor-context-panel#editor-context-panel
                         span.node-meta-key "opis:"
                         textarea.node-meta-input.node-meta-textarea
                             name: description
-                            rows: 4
+                            rows: 1
                             placeholder: "{editor_description_placeholder}"
                             disabled?: {is_history_preview}
                             readonly?: {is_history_preview}
