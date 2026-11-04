@@ -209,7 +209,7 @@ func NewServer(rootDir string, embeddedFS fs.FS) *Server {
 }
 
 func NewStandaloneServer(rootDir string, embeddedFS fs.FS, standaloneBook *book.Book) *Server {
-	savesDir := filepath.Join(rootDir, "saves")
+	savesDir := book.ResolveSavesDir(rootDir)
 	_ = os.MkdirAll(savesDir, 0755)
 
 	settings := book.LoadAppSettings(savesDir)
@@ -239,14 +239,11 @@ func NewStandaloneServer(rootDir string, embeddedFS fs.FS, standaloneBook *book.
 
 func NewServerWithOptions(rootDir string, embeddedFS fs.FS, devMode bool) *Server {
 	booksDir := filepath.Join(rootDir, "books")
-	savesDir := filepath.Join(rootDir, "saves")
-	if strings.Contains(filepath.ToSlash(rootDir), ".app/Contents/Resources") {
-		if cfgDir, err := os.UserConfigDir(); err == nil && strings.TrimSpace(cfgDir) != "" {
-			savesDir = filepath.Join(cfgDir, "StoryTeller", "saves")
-		}
-	}
+	savesDir := book.ResolveSavesDir(rootDir)
 	appDir := filepath.Join(rootDir, "app")
-	_ = os.MkdirAll(booksDir, 0755)
+	if !book.IsInsideRepoDir(rootDir) || book.IsTempDir(rootDir) {
+		_ = os.MkdirAll(booksDir, 0755)
+	}
 	_ = os.MkdirAll(savesDir, 0755)
 
 	settings := book.LoadAppSettings(savesDir)
@@ -297,16 +294,25 @@ func (s *Server) defaultNewBookDir() string {
 			return expanded
 		}
 	}
-	if isRunningUnderGoTestBinary() {
+	if isRunningUnderGoTestBinary() && book.IsTempDir(s.RootDir) && !book.IsInsideRepoDir(s.RootDir) {
 		return s.BooksDir
 	}
 	return book.DefaultProjectsDir()
 }
 
 func (s *Server) defaultExportDir() string {
-	if s.ActiveBook != nil && strings.TrimSpace(s.ActiveBook.ExportDir) != "" {
-		if expanded, err := book.ExpandLocalPath(s.ActiveBook.ExportDir); err == nil && expanded != "" {
-			return expanded
+	if s.ActiveBook != nil {
+		if strings.TrimSpace(s.ActiveBook.ExportDir) != "" {
+			if expanded, err := book.ExpandLocalPath(s.ActiveBook.ExportDir); err == nil && expanded != "" {
+				return expanded
+			}
+		}
+		if s.Settings != nil {
+			if saved := strings.TrimSpace(s.Settings.GetBookExportDir(s.ActiveBook.ID)); saved != "" {
+				if expanded, err := book.ExpandLocalPath(saved); err == nil && expanded != "" {
+					return expanded
+				}
+			}
 		}
 	}
 	if s.Settings != nil && strings.TrimSpace(s.Settings.ExportDir) != "" {
@@ -314,10 +320,25 @@ func (s *Server) defaultExportDir() string {
 			return expanded
 		}
 	}
-	if isRunningUnderGoTestBinary() {
+	if isRunningUnderGoTestBinary() && book.IsTempDir(s.RootDir) && !book.IsInsideRepoDir(s.RootDir) {
 		return filepath.Join(s.SavesDir, "exports")
 	}
 	return book.DefaultExportDir()
+}
+
+func (s *Server) persistActiveBookExportDir(dir string) {
+	if s.ActiveBook != nil {
+		s.ActiveBook.ExportDir = dir
+	}
+	if s.Settings != nil {
+		if s.ActiveBook != nil {
+			s.Settings.SetBookExportDir(s.ActiveBook.ID, dir)
+		}
+		if dir != "" {
+			s.Settings.ExportDir = dir
+		}
+		_ = s.saveAppSettings()
+	}
 }
 
 func (s *Server) resolveOrPickBookExportDir(r *http.Request) (string, string, bool) {
@@ -330,14 +351,7 @@ func (s *Server) resolveOrPickBookExportDir(r *http.Request) (string, string, bo
 			if err != nil {
 				return "", err.Error(), false
 			}
-			s.ActiveBook.ExportDir = expanded
-			if !s.ActiveBook.IsPacked {
-				_ = book.SaveBookMetadataToDisk(s.ActiveBook)
-			}
-			if s.Settings != nil {
-				s.Settings.ExportDir = expanded
-				_ = s.saveAppSettings()
-			}
+			s.persistActiveBookExportDir(expanded)
 			return expanded, "", true
 		}
 	}
@@ -362,25 +376,11 @@ func (s *Server) resolveOrPickBookExportDir(r *http.Request) (string, string, bo
 		if expanded, err := book.ExpandLocalPath(picked); err == nil && expanded != "" {
 			picked = expanded
 		}
-		s.ActiveBook.ExportDir = picked
-		if !s.ActiveBook.IsPacked {
-			_ = book.SaveBookMetadataToDisk(s.ActiveBook)
-		}
-		if s.Settings != nil {
-			s.Settings.ExportDir = picked
-			_ = s.saveAppSettings()
-		}
+		s.persistActiveBookExportDir(picked)
 		return picked, "", true
 	}
 	defDir := s.defaultExportDir()
-	s.ActiveBook.ExportDir = defDir
-	if !s.ActiveBook.IsPacked {
-		_ = book.SaveBookMetadataToDisk(s.ActiveBook)
-	}
-	if s.Settings != nil {
-		s.Settings.ExportDir = defDir
-		_ = s.saveAppSettings()
-	}
+	s.persistActiveBookExportDir(defDir)
 	return defDir, "", true
 }
 
@@ -413,15 +413,7 @@ func (s *Server) saveAppSettings() error {
 	if s.Settings == nil {
 		return nil
 	}
-	err := book.SaveAppSettings(s.SavesDir, s.Settings)
-	cleanRoot := filepath.Clean(s.RootDir)
-	if filepath.Base(cleanRoot) == "dist" {
-		parent := filepath.Dir(cleanRoot)
-		if info, statErr := os.Stat(filepath.Join(parent, "go.mod")); statErr == nil && !info.IsDir() {
-			_ = book.SaveAppSettings(filepath.Join(parent, "saves"), s.Settings)
-		}
-	}
-	return err
+	return book.SaveAppSettings(s.SavesDir, s.Settings)
 }
 
 func (s *Server) setActiveBook(b *book.Book) {
@@ -430,6 +422,9 @@ func (s *Server) setActiveBook(b *book.Book) {
 	s.LiveBook = nil
 	s.LiveSave = nil
 	s.LiveSelectedSceneID = ""
+	if b != nil && s.Settings != nil && strings.TrimSpace(b.ExportDir) == "" {
+		b.ExportDir = s.Settings.GetBookExportDir(b.ID)
+	}
 	s.ActiveBook = b
 	s.invalidateHistoryCache()
 	s.Settings.ActiveBookID = b.ID

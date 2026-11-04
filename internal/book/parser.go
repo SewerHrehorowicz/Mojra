@@ -67,7 +67,7 @@ func ParseDataFile(content string, b *Book) {
 				b.ScriptStandard = NormalizeScriptStandard(val)
 			}
 		case "export_dir":
-			b.ExportDir = SanitizePlainText(val)
+			// Ignored in data.txt for security: export target paths are stored in local saves/settings.ini, never trusted from imported books.
 		default:
 			b.Warnings = append(b.Warnings, fmt.Sprintf("data.txt:%d: nieznany klucz „%s”", lineIdx+1, key))
 		}

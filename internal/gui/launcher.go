@@ -14,10 +14,12 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"storyteller/internal/book"
 )
 
 func pidFilePath(rootDir string) string {
-	savesDir := filepath.Join(rootDir, "saves")
+	savesDir := book.ResolveSavesDir(rootDir)
 	_ = os.MkdirAll(savesDir, 0755)
 	return filepath.Join(savesDir, ".storyteller.pid")
 }

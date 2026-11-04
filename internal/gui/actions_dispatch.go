@@ -395,7 +395,7 @@ func (s *Server) openExportModal(_ *http.Request) string {
 	if s.ActiveBook.IsScreenplay() {
 		s.ExportModalFormat = "pdf"
 	} else {
-		s.ExportModalFormat = "stbook"
+		s.ExportModalFormat = "playbook"
 	}
 	s.ExportModalDir = s.defaultExportDir()
 	return ""
@@ -552,7 +552,7 @@ func (s *Server) handleAction(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "forbidden cross-origin action", http.StatusForbidden)
 		return
 	}
-	_ = r.ParseForm()
+	ParseActionRequest(r)
 	action := strings.TrimSpace(r.FormValue("action"))
 
 	s.mu.Lock()

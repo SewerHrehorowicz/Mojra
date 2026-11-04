@@ -245,7 +245,7 @@
             .modal-body
                 .add-book-section
                     .field-label "1. Z dysku (bez kopiowania plików)"
-                    p.modal-desc "Wskaż istniejący folder książki lub archiwum .stbook / .zip na dysku. Książka pozostanie w oryginalnej lokalizacji."
+                    p.modal-desc "Wskaż istniejący folder książki lub archiwum .playbook / .zip na dysku. Książka pozostanie w oryginalnej lokalizacji."
                     .add-book-browse-row
                         button.btn.btn-sm
                             type: button
@@ -256,27 +256,27 @@
                             type: button
                             action: BrowseAddBookFromDisk
                             data-mode: file
-                            "Wybierz plik .stbook / .zip..."
+                            "Wybierz plik .playbook / .zip..."
                     form.add-book-inline-form
                         action: AddBookFromDisk
                         input.field-input
                             type: text
                             name: path
                             required: true
-                            placeholder: "/ścieżka/do/folderu-książki lub /ścieżka/do/pliku.stbook"
+                            placeholder: "/ścieżka/do/folderu-książki lub /ścieżka/do/pliku.playbook"
                         button.btn.btn-primary
                             type: submit
                             "Dodaj z dysku"
                 .add-book-section
-                    .field-label "2. Pobierz z adresu URL (.stbook / .zip)"
-                    p.modal-desc "Podaj bezpośredni link HTTP/HTTPS do paczki książki (.stbook lub .zip), aby pobrać ją do biblioteki."
+                    .field-label "2. Pobierz z adresu URL (.playbook / .zip)"
+                    p.modal-desc "Podaj bezpośredni link HTTP/HTTPS do paczki książki (.playbook lub .zip), aby pobrać ją do biblioteki."
                     form.add-book-inline-form
                         action: AddBookFromURL
                         input.field-input
                             type: url
                             name: url
                             required: true
-                            placeholder: "https://example.com/opowiesc.stbook lub .zip"
+                            placeholder: "https://example.com/opowiesc.playbook lub .zip"
                         button.btn.btn-primary
                             type: submit
                             "Pobierz z URL"
@@ -347,13 +347,6 @@
                                     {if scene_text_modal_is_start}
                                         span.node-start-indicator
                                             data-hint: "Ta scena jest punktem startowym (korzeniem) opowieści"
-                                            svg.scene-star-icon src: /icons/star.svg
-                                    {elif not is_history_preview}
-                                        button.node-start-btn
-                                            type: button
-                                            action: SetStartScene
-                                            data-scene: "{scene_text_modal_id}"
-                                            data-hint: "Ustaw jako scenę startową"
                                             svg.scene-star-icon src: /icons/star.svg
                                     input.scene-title.scene-title-present.node-inline-title
                                         type: text
@@ -665,7 +658,7 @@
         data-backdrop-action: CloseEditorHelpModal
         .modal-card.modal-card-lg
             .modal-header
-                h3.modal-title "Pomoc — Edytor Węzłów (Node Studio)"
+                h3.modal-title "Pomoc — Playbook Studio"
                 button.node-close-btn
                     type: button
                     action: CloseEditorHelpModal

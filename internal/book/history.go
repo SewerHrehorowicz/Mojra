@@ -86,7 +86,14 @@ type BookHistory struct {
 }
 
 func bookHistoryDir(bookRoot string) string {
-	return filepath.Join(bookRoot, ".history")
+	if IsTempDir(bookRoot) && !IsInsideRepoDir(bookRoot) {
+		return filepath.Join(bookRoot, ".history")
+	}
+	base := SanitizeBookID(filepath.Base(bookRoot))
+	if base == "" {
+		base = "book"
+	}
+	return filepath.Join(DefaultAppDataDir(), "history", base+"-"+shortPathHash(bookRoot))
 }
 
 func bookHistoryIndexPath(bookRoot string) string {

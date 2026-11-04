@@ -217,6 +217,9 @@ func TestServerActionLifecycleAndSecurity(t *testing.T) {
 	if !strings.Contains(string(navModalHTML), `value="s1"`) || !strings.Contains(string(navModalHTML), "Nowa scena 3") {
 		t.Fatalf("expected NavigateSceneTextModal to advance modal to s1 (Nowa scena 3), got:\n%s", string(navModalHTML))
 	}
+	if strings.Contains(string(navModalHTML), "node-start-btn") || strings.Contains(string(navModalHTML), `action="SetStartScene"`) {
+		t.Fatalf("did not expect star button in scene text editor modal, got:\n%s", string(navModalHTML))
+	}
 	if !strings.Contains(string(navModalHTML), "scene-incoming-list") || !strings.Contains(string(navModalHTML), `data-scene="poczatek"`) {
 		t.Fatalf("expected upward navigation (scene-incoming-list) pointing back to poczatek, got:\n%s", string(navModalHTML))
 	}
@@ -857,8 +860,8 @@ Dopiero kapitan Arvo wszystko mu wytłumaczył.
 	_ = r1.Body.Close()
 	libHTML := string(libHTMLBytes)
 
-	if !strings.Contains(libHTML, `<span class="brand-logo">StoryTeller</span>`) ||
-		!strings.Contains(libHTML, `<span class="brand-logo brand-logo-short">ST</span>`) ||
+	if !strings.Contains(libHTML, `<span class="brand-logo">Mojra</span>`) ||
+		!strings.Contains(libHTML, `<span class="brand-logo brand-logo-short">M</span>`) ||
 		!strings.Contains(libHTML, `data-view="library"`) ||
 		!strings.Contains(libHTML, `id="tab-player"`) ||
 		!strings.Contains(libHTML, `data-view="editor"`) ||
@@ -1149,7 +1152,7 @@ func TestStandaloneBookModeSecurity(t *testing.T) {
 	if !strings.Contains(html, `<span class="brand-logo">Samotna Wyspa</span>`) {
 		t.Fatalf("expected book title in .brand-logo in standalone mode, got:\n%s", html)
 	}
-	for _, forbidden := range []string{"id=\"tab-library\"", "id=\"tab-editor\"", "id=\"view-library\"", "id=\"view-editor\"", "Node Studio"} {
+	for _, forbidden := range []string{"id=\"tab-library\"", "id=\"tab-editor\"", "id=\"view-library\"", "id=\"view-editor\"", "Playbook Studio"} {
 		if strings.Contains(html, forbidden) {
 			t.Fatalf("expected %q to be absent in standalone mode HTML", forbidden)
 		}
@@ -2757,8 +2760,8 @@ func TestScreenplayModeEndToEndFlow(t *testing.T) {
 	openExpBytes, _ := io.ReadAll(openExpModalResp.Body)
 	_ = openExpModalResp.Body.Close()
 	openExpHTML := string(openExpBytes)
-	if !srv.ExportModalOpen || !strings.Contains(openExpHTML, `id="modal-export-project"`) || !strings.Contains(openExpHTML, `data-select-value="pdf"`) || !strings.Contains(openExpHTML, `data-select-value="fountain"`) || !strings.Contains(openExpHTML, `data-select-value="stbook"`) {
-		t.Fatalf("expected Export Modal with pdf/fountain/stbook dropdown options, got:\n%s", openExpHTML)
+	if !srv.ExportModalOpen || !strings.Contains(openExpHTML, `id="modal-export-project"`) || !strings.Contains(openExpHTML, `data-select-value="pdf"`) || !strings.Contains(openExpHTML, `data-select-value="fountain"`) || !strings.Contains(openExpHTML, `data-select-value="playbook"`) {
+		t.Fatalf("expected Export Modal with pdf/fountain/playbook dropdown options, got:\n%s", openExpHTML)
 	}
 
 	customExportDir := filepath.Join(rootDir, "custom-exports")
@@ -3753,9 +3756,13 @@ function makeEvent(type, props) {
       let bodyStr = "";
       if (opts && opts.body) {
         bodyStr = String(opts.body);
-        const sp = new URLSearchParams(bodyStr);
-        const act = sp.get("action");
-        if (act) actionLog.push(act + "(" + bodyStr + ")");
+        const ct = opts.headers && opts.headers["Content-Type"] ? String(opts.headers["Content-Type"]) : "";
+        if (!ct.includes("text/x-wfp")) {
+          throw new Error("Expected WFP Content-Type text/x-wfp, got: " + ct);
+        }
+        const parsed = typeof win.decodeWFP === "function" ? win.decodeWFP(bodyStr) : {};
+        const act = parsed.action;
+        if (act) actionLog.push(act + "(" + bodyStr.replace(/\n/g, "|") + ")");
       }
       const p = fetch(fullURL, opts);
       inFlight.add(p);
@@ -3862,6 +3869,14 @@ function makeEvent(type, props) {
   if (!nodeTitleInp || nodeTitleInp.classList.contains("hidden")) {
     throw new Error("Expected clicking node title on canvas to open #canvas-node-title-input");
   }
+  const expectedTitleFont = vm.runInContext("(13 * (editorCanvasState.zoom || 1)).toFixed(2) + 'px'", win);
+  if (nodeTitleInp.style.fontSize !== expectedTitleFont) {
+    throw new Error("Expected #canvas-node-title-input fontSize " + expectedTitleFont + ", got " + nodeTitleInp.style.fontSize);
+  }
+  const expectedTitleLeft = vm.runInContext("((studioGraphState.nodes[0].x + 28) * (editorCanvasState.zoom || 1) + (editorCanvasState.panX || 0)).toFixed(2) + 'px'", win);
+  if (nodeTitleInp.style.left !== expectedTitleLeft) {
+    throw new Error("Expected #canvas-node-title-input left " + expectedTitleLeft + ", got " + nodeTitleInp.style.left);
+  }
   nodeTitleInp.value = "Scena Startowa Inline";
   nodeTitleInp.dispatchEvent(makeEvent("keydown", { key: "Enter", target: nodeTitleInp }));
   await waitForActions();
@@ -3885,6 +3900,10 @@ function makeEvent(type, props) {
   const choiceInp = doc.querySelector("#canvas-choice-input");
   if (!choiceInp || choiceInp.classList.contains("hidden")) {
     throw new Error("Expected clicking choice label on canvas node to open #canvas-choice-input");
+  }
+  const expectedChoiceFont = vm.runInContext("(11 * (editorCanvasState.zoom || 1)).toFixed(2) + 'px'", win);
+  if (choiceInp.style.fontSize !== expectedChoiceFont) {
+    throw new Error("Expected #canvas-choice-input fontSize " + expectedChoiceFont + ", got " + choiceInp.style.fontSize);
   }
   choiceInp.value = "Wybór Inline 1";
   choiceInp.dispatchEvent(makeEvent("keydown", { key: "Enter", target: choiceInp }));
@@ -3930,22 +3949,30 @@ function makeEvent(type, props) {
     throw new Error("Expected right-branch choice wire to route as a clean 3-point L-wire without extra kinks, got pts.length=" + directRightForkPtsLen);
   }
 
-  // 7. Drag node grip on WebGL canvas (+48px X, +24px Y) and verify grid snap + SaveEditorState
+  // 7. Drag node grip on WebGL canvas (+48px X, -24px Y) and verify grid snap + SaveEditorState
   const startNodeX = vm.runInContext("studioGraphState.nodes[0].x", win);
   const updatedGripPt = vm.runInContext("(() => { const n = studioGraphState.nodes[0]; const z = editorCanvasState.zoom; return { x: Math.round((n.x + 12) * z + editorCanvasState.panX), y: Math.round((n.y + 16) * z + editorCanvasState.panY) }; })()", win);
   canvas.dispatchEvent(makeEvent("mousedown", { button: 0, clientX: updatedGripPt.x, clientY: updatedGripPt.y, target: canvas }));
-  canvas.dispatchEvent(makeEvent("mousemove", { button: 0, clientX: updatedGripPt.x + 48, clientY: updatedGripPt.y + 24, target: canvas }));
-  canvas.dispatchEvent(makeEvent("mouseup", { button: 0, clientX: updatedGripPt.x + 48, clientY: updatedGripPt.y + 24, target: canvas }));
+  canvas.dispatchEvent(makeEvent("mousemove", { button: 0, clientX: updatedGripPt.x + 48, clientY: updatedGripPt.y - 24, target: canvas }));
+  canvas.dispatchEvent(makeEvent("mouseup", { button: 0, clientX: updatedGripPt.x + 48, clientY: updatedGripPt.y - 24, target: canvas }));
   await waitForActions();
   const movedNodeX = vm.runInContext("studioGraphState.nodes[0].x", win);
   if (movedNodeX !== startNodeX + 48) {
     throw new Error("Expected node grip drag to snap +48px on 24px grid, got " + startNodeX + " -> " + movedNodeX);
   }
 
-  // 7a. Verify node-on-node collision prevention, frustum culling, and side chapter output ports
-  const collisionPrevented = vm.runInContext("(() => { const n0 = studioGraphState.nodes[0]; const n1 = studioGraphState.nodes[1]; const dx = n1.x - n0.x; const dy = n1.y - n0.y; const res = resolveValidNodeDragDelta([{ node: n0, sceneId: n0.id, startX: n0.x, startY: n0.y }], dx, dy, 0, 0); const nx = snapToEditorGrid(n0.x + res.dx); const ny = snapToEditorGrid(n0.y + res.dy); return !(nx < n1.right + 24 && nx + n0.w + 24 > n1.left && ny < n1.bottom + 24 && ny + n0.h + 24 > n1.top); })()", win);
+  // 7a. Verify node-on-node collision prevention (48px = 2 grid jumps), single-input socket color inheritance, and frustum culling
+  const collisionPrevented = vm.runInContext("(() => { const n0 = studioGraphState.nodes[0]; const n1 = studioGraphState.nodes[1]; const dx = n1.x - n0.x; const dy = n1.y - n0.y; const res = resolveValidNodeDragDelta([{ node: n0, sceneId: n0.id, startX: n0.x, startY: n0.y }], dx, dy, 0, 0); const nx = snapToEditorGrid(n0.x + res.dx); const ny = snapToEditorGrid(n0.y + res.dy); return !(nx < n1.right + 48 && nx + n0.w + 48 > n1.left && ny < n1.bottom + 48 && ny + n0.h + 48 > n1.top); })()", win);
   if (!collisionPrevented) {
-    throw new Error("Expected resolveValidNodeDragDelta to prevent overlapping two nodes");
+    throw new Error("Expected resolveValidNodeDragDelta to enforce 48px (2 grid jumps) spacing between nodes");
+  }
+  const singleInColoredOk = vm.runInContext("(() => { const w = studioGraphState.wires.find((it) => it.fromNode && it.fromNode.hasChoices && it.fromNode.ports && it.fromNode.ports.length >= 2 && it.toNode && studioGraphState.wires.filter((x) => x.toNode === it.toNode).length === 1); return Boolean(w && w.colorIdx >= 0 && w.toNode.inColorIdx === w.colorIdx); })()", win);
+  if (!singleInColoredOk) {
+    throw new Error("Expected single-input target node to inherit its incoming choice wire colorIdx on its input socket");
+  }
+  const multiInDistinctColorsOk = vm.runInContext("(() => { const byT = new Map(); for (const w of studioGraphState.wires) { if (!w.targetGroupKey) continue; const g = byT.get(w.targetGroupKey) || []; g.push(w); byT.set(w.targetGroupKey, g); } for (const g of byT.values()) { if (g.length >= 2 && g.length <= 8) { const s = new Set(g.map((w) => w.colorIdx)); if (s.size !== g.length) return false; } } return true; })()", win);
+  if (!multiInDistinctColorsOk) {
+    throw new Error("Expected all incoming wires to any multi-input target to have distinct colorIdx values");
   }
   const culledQuadCount = vm.runInContext("(() => { const savedPanX = editorCanvasState.panX; const savedPanY = editorCanvasState.panY; editorCanvasState.panX = 200000; editorCanvasState.panY = 200000; renderStudioCanvas(); const c = studioGL.staticInstCount; editorCanvasState.panX = savedPanX; editorCanvasState.panY = savedPanY; renderStudioCanvas(); return c; })()", win);
   if (culledQuadCount !== 1) {
@@ -3961,6 +3988,10 @@ function makeEvent(type, props) {
   const pinCountAfterDrag = vm.runInContext("studioGraphState.wires[0].pins ? studioGraphState.wires[0].pins.length : 0", win);
   if (pinCountAfterDrag !== 1) {
     throw new Error("Expected dragging wire segment to create 1 control pin, got " + pinCountAfterDrag);
+  }
+  const pinDirsOk = vm.runInContext("(() => { const mockWire = { pts: [{ x: 200, y: 200 }, { x: 200, y: 300 }, { x: 50, y: 300 }, { x: 50, y: 80 }, { x: 320, y: 80 }, { x: 320, y: 160 }] }; return resolveWirePinDirection(mockWire, { x: 200, y: 250 }) === 'down' && resolveWirePinDirection(mockWire, { x: 120, y: 300 }) === 'left' && resolveWirePinDirection(mockWire, { x: 50, y: 180 }) === 'up' && resolveWirePinDirection(mockWire, { x: 180, y: 80 }) === 'right'; })()", win);
+  if (!pinDirsOk) {
+    throw new Error("Expected resolveWirePinDirection to resolve down, left, up, and right along wire segments");
   }
   const pinScreenPt = vm.runInContext("(() => { const p = studioGraphState.wires[0].pins[0]; const z = editorCanvasState.zoom; return { x: Math.round(p.x * z + editorCanvasState.panX), y: Math.round(p.y * z + editorCanvasState.panY) }; })()", win);
   canvas.dispatchEvent(makeEvent("dblclick", { button: 0, clientX: pinScreenPt.x, clientY: pinScreenPt.y, target: canvas }));
@@ -4040,7 +4071,11 @@ function makeEvent(type, props) {
   await clickEl('form[action="CreateNewBook"] button[type="submit"]');
 
   // Open Scene Text Modal in screenplay mode via edit-scene-btn icon on node card footer and click [data-insert-script-block="dialogue"] pill
-  const spEditBtnPt = vm.runInContext("(() => { const n = studioGraphState.nodes[0]; const z = editorCanvasState.zoom; return { x: Math.round((n.x + n.w - 20) * z + editorCanvasState.panX), y: Math.round((n.y + n.h - 20) * z + editorCanvasState.panY) }; })()", win);
+  const spEditBtnPt = vm.runInContext("(() => { const n = studioGraphState.nodes[0]; const z = editorCanvasState.zoom; return { x: Math.round((n.x + n.w - 50) * z + editorCanvasState.panX), y: Math.round((n.y + n.h - 20) * z + editorCanvasState.panY) }; })()", win);
+  const spDelHitType = vm.runInContext("(() => { const n = studioGraphState.nodes[0]; const h = hitTestStudioCanvas(n.x + n.w - 20, n.y + n.h - 20); return h ? h.type : ''; })()", win);
+  if (spDelHitType !== "delete-scene-btn") {
+    throw new Error("Expected delete-scene-btn after edit-scene-btn on node card footer, got " + spDelHitType);
+  }
   const spCanvas0 = doc.querySelector("#studio-canvas");
   spCanvas0.dispatchEvent(makeEvent("mousedown", { button: 0, clientX: spEditBtnPt.x, clientY: spEditBtnPt.y, target: spCanvas0 }));
   spCanvas0.dispatchEvent(makeEvent("mouseup", { button: 0, clientX: spEditBtnPt.x, clientY: spEditBtnPt.y, target: spCanvas0 }));
@@ -4271,6 +4306,146 @@ node: Nowa scena 120 -> 336, 2568
 	// Chapter 1 spans Y: 96-52=44 .. 480+120+44=644; new node in Chapter 2 must not overlap Chapter 1's frame
 	if scNew.X >= 720-36-192-24 && scNew.X <= 984+192+36+24 && scNew.Y-52 < 644+24 && scNew.Y+120+44 > 44-24 {
 		t.Fatalf("expected CreateSceneAt in Chapter 2 to avoid overlapping Chapter 1 frame, got (%d, %d)", scNew.X, scNew.Y)
+	}
+}
+
+func TestWFPProtocolAndZeroRepoSavesOrAppState(t *testing.T) {
+	// 1. Verify WFP wire framing round-trip with Polish UTF-8 prose, multiline body, Windows paths, and literal \-> arrows
+	orig := url.Values{
+		"action":     {"SaveScene"},
+		"scene_id":   {"poczatek"},
+		"name":       {"Wstęp na przystani"},
+		"export_dir": {`C:\Users\Autor\StoryTeller\Exports`},
+		"author":     {""},
+		"text":       {"Pierwszy akapit z polskimi znakami: Zażółć gęślą jaźń.\n\nDrugi akapit ze strzałką \\-> w treści."},
+	}
+	wfpFrame := EncodeWFPForm(orig)
+	if !bytes.Contains(wfpFrame, []byte("_body=text\n")) || !bytes.Contains(wfpFrame, []byte("\n\nPierwszy akapit")) {
+		t.Fatalf("expected WFP frame to place multiline text in raw body after \\n\\n, got:\n%s", string(wfpFrame))
+	}
+	decoded := make(url.Values)
+	if !DecodeWFPFormBytes(wfpFrame, decoded) {
+		t.Fatalf("DecodeWFPFormBytes failed on valid frame:\n%s", string(wfpFrame))
+	}
+	for k := range orig {
+		if decoded.Get(k) != orig.Get(k) {
+			t.Fatalf("WFP round-trip mismatch for key %q: got %q, want %q", k, decoded.Get(k), orig.Get(k))
+		}
+		if _, exists := decoded[k]; !exists {
+			t.Fatalf("expected key %q (even when empty) to exist in decoded form", k)
+		}
+	}
+
+	// 2. Verify POST /api/action accepts WFP wire frames directly
+	rootDir := t.TempDir()
+	srv := NewServer(rootDir, storyteller.AppFS)
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	postWFP := func(vals url.Values) *http.Response {
+		req, err := http.NewRequest(http.MethodPost, ts.URL+"/api/action", bytes.NewReader(EncodeWFPForm(vals)))
+		if err != nil {
+			t.Fatalf("NewRequest failed: %v", err)
+		}
+		req.Header.Set("Content-Type", "text/x-wfp;charset=UTF-8")
+		req.Header.Set("X-Requested-With", "StoryTeller")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("POST /api/action WFP failed: %v", err)
+		}
+		_, _ = io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		return resp
+	}
+
+	postWFP(url.Values{
+		"action":   {"CreateNewBook"},
+		"title":    {"Kronika WFP"},
+		"author":   {"Jan Kowalski"},
+		"narrated": {"false"},
+	})
+	if srv.ActiveBook == nil || srv.ActiveBook.Title != "Kronika WFP" {
+		t.Fatalf("expected CreateNewBook via WFP to create active book Kronika WFP, got %+v", srv.ActiveBook)
+	}
+
+	postWFP(url.Values{
+		"action":   {"SaveScene"},
+		"scene_id": {"poczatek"},
+		"name":     {"Scena WFP"},
+		"text":     {"Linia pierwsza.\nLinia druga ze strzałką \\-> i polskimi znakami ąęćłńóśźż."},
+	})
+	sc := srv.findScene("poczatek")
+	if sc == nil || sc.Name != "Scena WFP" || !strings.Contains(sc.Text, "Linia druga") || !strings.Contains(sc.Text, "->") {
+		t.Fatalf("expected SaveScene via WFP to persist multiline text and arrow, got %+v", sc)
+	}
+
+	// 3. Verify that a repository directory (containing go.mod) NEVER receives saves/, settings.ini, .pid, or .history/
+	fakeRepo := t.TempDir()
+	if err := os.WriteFile(filepath.Join(fakeRepo, "go.mod"), []byte("module storyteller\n"), 0644); err != nil {
+		t.Fatalf("failed to write fake go.mod: %v", err)
+	}
+	repoBookDir := filepath.Join(fakeRepo, "books", "test-book")
+	if err := os.MkdirAll(repoBookDir, 0755); err != nil {
+		t.Fatalf("MkdirAll failed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repoBookDir, "data.txt"), []byte("title: Repo Book\nstart: s1\n"), 0644); err != nil {
+		t.Fatalf("WriteFile data.txt failed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repoBookDir, "story.txt"), []byte("scene: Scena 1\nid: s1\nend: true\nTekst.\n"), 0644); err != nil {
+		t.Fatalf("WriteFile story.txt failed: %v", err)
+	}
+
+	StopPreviousInstance(fakeRepo)
+	repoSrv := NewServerWithOptions(fakeRepo, storyteller.AppFS, true)
+	_ = repoSrv.saveAppSettings()
+	if repoSrv.ActiveBook != nil {
+		_ = book.EnsureBookHistoryBaseline(repoSrv.ActiveBook, "s1")
+	}
+
+	if _, err := os.Stat(filepath.Join(fakeRepo, "saves")); !os.IsNotExist(err) {
+		t.Fatalf("expected zero saves/ directory inside repository root %q", fakeRepo)
+	}
+	if _, err := os.Stat(filepath.Join(repoBookDir, ".history")); !os.IsNotExist(err) {
+		t.Fatalf("expected zero .history/ directory inside repository book %q", repoBookDir)
+	}
+	if filepath.Clean(repoSrv.SavesDir) != filepath.Clean(book.DefaultSavesDir()) {
+		t.Fatalf("expected repo server SavesDir to use DefaultSavesDir %q, got %q", book.DefaultSavesDir(), repoSrv.SavesDir)
+	}
+
+	// Also verify the real workspace repository has no saves/ or dist/saves/ directory
+	realRepoRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	if err == nil {
+		for _, forbiddenRel := range []string{
+			"saves",
+			filepath.Join("dist", "saves"),
+			filepath.Join("books", "nie-boj-sie-policji-rzecznej", ".history"),
+		} {
+			forbiddenPath := filepath.Join(realRepoRoot, forbiddenRel)
+			if _, statErr := os.Stat(forbiddenPath); !os.IsNotExist(statErr) {
+				t.Fatalf("forbidden generated state/saves directory found in repository: %s", forbiddenPath)
+			}
+		}
+	}
+}
+
+func BenchmarkParseActionRequestWFP(b *testing.B) {
+	payload := EncodeWFPForm(url.Values{
+		"action":    {"SaveEditorState"},
+		"scene_id":  {"poczatek"},
+		"pan_x":     {"120"},
+		"pan_y":     {"-48"},
+		"zoom":      {"1.25"},
+		"positions": {"poczatek:120,96;scena_2:408,96;scena_3:696,96"},
+	})
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		req := &http.Request{
+			Method: http.MethodPost,
+			Header: http.Header{"Content-Type": []string{"text/x-wfp"}},
+			Body:   io.NopCloser(bytes.NewReader(payload)),
+		}
+		ParseActionRequest(req)
 	}
 }
 

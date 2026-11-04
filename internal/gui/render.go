@@ -106,14 +106,14 @@ func (s *Server) BuildTargetedRenderContext(targetTpl string, books []*book.Book
 		vars["editor_author_placeholder"] = "Autor scenariusza..."
 		vars["editor_description_placeholder"] = "Krótki opis scenariusza / logline..."
 		vars["editor_chapter_title_placeholder"] = "Tytuł aktu..."
-		vars["editor_pack_hint"] = "Eksportuj pakiet scenariusza (.stbook)"
+		vars["editor_pack_hint"] = "Eksportuj pakiet scenariusza (.playbook)"
 		vars["editor_settings_hint"] = "Ustawienia scenariusza"
 	} else {
 		vars["editor_title_placeholder"] = "Tytuł książki..."
 		vars["editor_author_placeholder"] = "Autor książki..."
 		vars["editor_description_placeholder"] = "Krótki opis książki..."
 		vars["editor_chapter_title_placeholder"] = "Tytuł rozdziału..."
-		vars["editor_pack_hint"] = "Eksportuj książkę (.stbook)"
+		vars["editor_pack_hint"] = "Eksportuj książkę (.playbook)"
 		vars["editor_settings_hint"] = "Ustawienia książki"
 	}
 

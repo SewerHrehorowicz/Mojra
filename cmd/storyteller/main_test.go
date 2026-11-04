@@ -37,19 +37,21 @@ func TestAppIconsAndWindowsResourceSYSO(t *testing.T) {
 		t.Fatalf("unexpected icon dimensions: %v", img.Bounds())
 	}
 
-	// Verify key features of the StoryTeller audiobook icon (512px render):
-	// 1. Center equalizer bar at (256, 180)
-	// 2. Left & right headphone earcups at (118, 260) and (394, 260)
-	// 3. Open book center spine at (256, 300)
+	// Verify key features of the Mojra "M" loom icon (512px render):
+	// 1. Center destiny node dot at (256, 256)
+	// 2. Top-left & bottom-left solid nodes at (141, 135) and (141, 377)
+	// 3. Bottom-right solid node at (371, 377)
+	// 4. Center lower vertical stem at (256, 330)
 	icon512 := renderStoryTellerIcon(512)
 	for _, pt := range []struct {
 		name string
 		x, y int
 	}{
-		{"center equalizer bar", 256, 180},
-		{"left headphone earcup", 118, 260},
-		{"right headphone earcup", 394, 260},
-		{"open book spine", 256, 300},
+		{"center destiny node", 256, 256},
+		{"top-left node", 141, 135},
+		{"bottom-left node", 141, 377},
+		{"bottom-right node", 371, 377},
+		{"center lower stem", 256, 330},
 	} {
 		c := icon512.RGBAAt(pt.x, pt.y)
 		if c.R < 180 || c.G < 180 || c.B < 180 {

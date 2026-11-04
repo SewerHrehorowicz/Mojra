@@ -317,7 +317,8 @@ func TestScreenplayPDFAndFountainExport(t *testing.T) {
 		t.Fatalf("fountain export missing synopsis:\n%s", fountain)
 	}
 
-	// Verify parallel branching roles, primary path linearization, and export_dir persistence
+	// Verify export_dir is NOT persisted in data.txt (untrusted book metadata cannot hijack export paths)
+	// and is instead persisted per-book in saves/settings.ini
 	b.ExportDir = "/tmp/storyteller-exports-test"
 	if err := SaveBookMetadataToDisk(b); err != nil {
 		t.Fatalf("SaveBookMetadataToDisk failed: %v", err)
@@ -326,8 +327,18 @@ func TestScreenplayPDFAndFountainExport(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadBookFromPath failed: %v", err)
 	}
-	if reloaded.ExportDir != "/tmp/storyteller-exports-test" {
-		t.Fatalf("expected ExportDir persisted in data.txt, got %q", reloaded.ExportDir)
+	if reloaded.ExportDir != "" {
+		t.Fatalf("expected ExportDir not to be loaded from data.txt, got %q", reloaded.ExportDir)
+	}
+	savesDir := t.TempDir()
+	cfg := DefaultAppSettings()
+	cfg.SetBookExportDir(b.ID, "/tmp/storyteller-exports-test")
+	if err := SaveAppSettings(savesDir, cfg); err != nil {
+		t.Fatalf("SaveAppSettings failed: %v", err)
+	}
+	loadedCfg := LoadAppSettings(savesDir)
+	if got := loadedCfg.GetBookExportDir(b.ID); got != "/tmp/storyteller-exports-test" {
+		t.Fatalf("expected per-book ExportDir persisted in settings.ini, got %q", got)
 	}
 
 	// Add a parallel branch and an unlinked scene and verify LinearizeScreenplayScenes + ComputeBranchRoles + PromoteSceneToPrimaryPath

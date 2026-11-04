@@ -1,0 +1,310 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1200" viewBox="0 0 1200 1200">
+  <defs>
+    <style>
+      .bg-dark { fill: #000000; }
+      .bg-light { fill: #ffffff; }
+      .label-dark { fill: #ffffff; font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 11px; letter-spacing: 2px; font-weight: 600; }
+      .label-light { fill: #000000; font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 11px; letter-spacing: 2px; font-weight: 600; }
+      .sub-dark { fill: #888888; font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 10px; letter-spacing: 1.5px; }
+      .sub-light { fill: #666666; font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 10px; letter-spacing: 1.5px; }
+      .grid-tag-dark { fill: #666666; font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 8.5px; }
+      .grid-tag-light { fill: #888888; font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 8.5px; }
+      .topbar-logo-dark { fill: #ffffff; font-family: Georgia, "Times New Roman", serif; font-size: 15px; font-weight: 700; letter-spacing: 0.6px; }
+      .topbar-logo-light { fill: #000000; font-family: Georgia, "Times New Roman", serif; font-size: 15px; font-weight: 700; letter-spacing: 0.6px; }
+      .topbar-tab-dark { fill: #ffffff; font-family: -apple-system, BlinkMacSystemFont, sans-serif; font-size: 12px; font-weight: 500; }
+      .topbar-tab-muted-dark { fill: #888888; font-family: -apple-system, BlinkMacSystemFont, sans-serif; font-size: 12px; font-weight: 500; }
+      .topbar-tab-light { fill: #000000; font-family: -apple-system, BlinkMacSystemFont, sans-serif; font-size: 12px; font-weight: 500; }
+      .topbar-tab-muted-light { fill: #666666; font-family: -apple-system, BlinkMacSystemFont, sans-serif; font-size: 12px; font-weight: 500; }
+    </style>
+
+    <!-- 8px Modular Grid Pattern for Section 01 -->
+    <pattern id="mod-grid-dark" width="8" height="8" patternUnits="userSpaceOnUse">
+      <path d="M 8 0 L 0 0 0 8" fill="none" stroke="#151515" stroke-width="0.7" />
+    </pattern>
+    <pattern id="mod-grid-light" width="8" height="8" patternUnits="userSpaceOnUse">
+      <path d="M 8 0 L 0 0 0 8" fill="none" stroke="#efefef" stroke-width="0.7" />
+    </pattern>
+
+    <!-- =================================================================== -->
+    <!-- MODULAR SYMBOL "M" (1u = 8px):                                      -->
+    <!-- - Total bounding height = 16.0..96.0 (80px = 10u), matching         -->
+    <!--   cap-top of "M" (y=16.0) to baseline of ".PLAYBOOK STUDIO" (y=96.0)-->
+    <!-- - Top ball centers at y=22.4 (top tangent = 22.4 - 6.4 = 16.00!)    -->
+    <!-- - Bottom ball centers at y=89.6 (bottom tangent = 89.6 + 6.4 = 96.0)-->
+    <!-- - Center double-ring node ◉ at (48, 56.0) = exact vertical midpoint -->
+    <!-- - Stems at x=16 (2u), x=48 (6u), x=80 (10u)                         -->
+    <!-- - Stroke width = 3.3px (1/3 between v1 and v2), balls from v2       -->
+    <!-- =================================================================== -->
+    <g id="mojra-mark-v4-dark">
+      <line x1="16" y1="22.4" x2="16" y2="89.6" stroke="#ffffff" stroke-width="3.3" />
+      <line x1="80" y1="22.4" x2="80" y2="89.6" stroke="#ffffff" stroke-width="3.3" />
+      <path d="M 16 22.4 L 48 56.0 L 80 22.4" fill="none" stroke="#ffffff" stroke-width="3.3" stroke-linejoin="round" />
+      <line x1="48" y1="56.0" x2="48" y2="89.6" stroke="#ffffff" stroke-width="2.6" stroke-linecap="round" />
+
+      <circle cx="16" cy="22.4" r="6.4" fill="#ffffff" />
+      <circle cx="80" cy="22.4" r="6.4" fill="#000000" stroke="#ffffff" stroke-width="3.0" />
+      <circle cx="16" cy="89.6" r="6.4" fill="#ffffff" />
+      <circle cx="80" cy="89.6" r="6.4" fill="#ffffff" />
+
+      <circle cx="48" cy="56.0" r="9.8" fill="#000000" stroke="#ffffff" stroke-width="3.1" />
+      <circle cx="48" cy="56.0" r="3.8" fill="#ffffff" />
+    </g>
+
+    <g id="mojra-mark-v4-light">
+      <line x1="16" y1="22.4" x2="16" y2="89.6" stroke="#000000" stroke-width="3.3" />
+      <line x1="80" y1="22.4" x2="80" y2="89.6" stroke="#000000" stroke-width="3.3" />
+      <path d="M 16 22.4 L 48 56.0 L 80 22.4" fill="none" stroke="#000000" stroke-width="3.3" stroke-linejoin="round" />
+      <line x1="48" y1="56.0" x2="48" y2="89.6" stroke="#000000" stroke-width="2.6" stroke-linecap="round" />
+
+      <circle cx="16" cy="22.4" r="6.4" fill="#000000" />
+      <circle cx="80" cy="22.4" r="6.4" fill="#ffffff" stroke="#000000" stroke-width="3.0" />
+      <circle cx="16" cy="89.6" r="6.4" fill="#000000" />
+      <circle cx="80" cy="89.6" r="6.4" fill="#000000" />
+
+      <circle cx="48" cy="56.0" r="9.8" fill="#ffffff" stroke="#000000" stroke-width="3.1" />
+      <circle cx="48" cy="56.0" r="3.8" fill="#000000" />
+    </g>
+
+    <!-- =================================================================== -->
+    <!-- PURE VECTOR WORDMARK "Mojra" + ".PLAYBOOK STUDIO":                  -->
+    <!-- - 100% pure Bezier paths extracted from Georgia Bold (ZERO clipPath)-->
+    <!-- - Bottom serifs of M, r, a on y=64.00 are 100% UNTOUCHED            -->
+    <!-- - Bottom hook of "j" lifted cleanly along its vertical stem (y=74.0)-->
+    <!-- - Left serif of M starts at x=0.00; first vertical stem at x=8.19   -->
+    <!-- - Right edge of "a" ends at x=222.28                                -->
+    <!-- - In ".PLAYBOOK STUDIO":                                            -->
+    <!--   • "." sits at x=1.40..4.40 (under left serif of M, close to P)    -->
+    <!--   • "P" starts at x=8.19 (exact left vertical stem of M!)           -->
+    <!--   • "O" ends at x=222.28 (exact right edge of "a" in Mojra!)        -->
+    <!-- =================================================================== -->
+    <g id="mojra-wordmark-v4">
+      <!-- M (x=0.00..67.12, y=16.00..64.00, first stem at x=8.19) -->
+      <path d="M 67.12 64.00 L 41.10 64.00 L 41.10 61.36 Q 42.25 61.26 43.93 61.02 Q 45.60 60.79 46.21 60.52 Q 47.46 60.01 48.00 59.13 Q 48.55 58.25 48.55 56.90 L 48.55 21.04 L 32.04 63.22 L 27.78 63.22 Q 27.47 62.11 26.27 58.79 Q 25.07 55.48 24.33 53.48 L 12.18 20.50 L 12.18 49.69 Q 12.18 53.89 12.74 56.07 Q 13.30 58.25 14.55 59.26 Q 15.40 59.97 17.58 60.62 Q 19.76 61.26 20.64 61.36 L 20.64 64.00 L 0.00 64.00 L 0.00 61.36 Q 0.85 61.26 2.76 60.90 Q 4.67 60.55 5.89 59.67 Q 7.24 58.72 7.72 56.47 Q 8.19 54.22 8.19 50.06 L 8.19 26.28 Q 8.19 24.12 7.65 22.68 Q 7.11 21.24 6.03 20.40 Q 4.67 19.35 3.25 19.04 Q 1.83 18.74 0.38 18.64 L 0.38 16.00 L 22.46 16.00 L 34.30 47.70 L 44.28 21.95 Q 44.79 20.53 45.26 18.57 Q 45.74 16.61 45.77 16.00 L 67.05 16.00 L 67.05 18.64 Q 65.97 18.71 64.78 18.91 Q 63.60 19.11 62.52 19.45 Q 61.20 19.89 60.77 20.84 Q 60.35 21.78 60.35 22.93 L 60.35 56.93 Q 60.35 58.15 60.77 58.98 Q 61.20 59.81 62.52 60.41 Q 63.19 60.72 64.73 60.99 Q 66.27 61.26 67.12 61.36 Z" />
+      <!-- o (x=74.40..113.64, y=29.46..65.08) -->
+      <path d="M 108.50 34.44 Q 111.00 36.77 112.32 40.02 Q 113.64 43.26 113.64 47.05 Q 113.64 50.81 112.34 54.14 Q 111.04 57.47 108.53 59.84 Q 105.86 62.38 102.16 63.73 Q 98.45 65.08 93.68 65.08 Q 89.56 65.08 86.09 63.90 Q 82.62 62.71 79.95 60.35 Q 77.38 58.08 75.89 54.75 Q 74.40 51.42 74.40 47.29 Q 74.40 43.23 75.70 40.07 Q 77.01 36.90 79.61 34.44 Q 82.11 32.07 85.78 30.77 Q 89.45 29.46 93.99 29.46 Q 98.72 29.46 102.33 30.77 Q 105.93 32.07 108.50 34.44 Z M 99.84 57.88 Q 100.58 55.98 100.94 53.28 Q 101.29 50.57 101.29 46.99 Q 101.29 44.62 100.96 41.57 Q 100.62 38.53 99.94 36.77 Q 99.13 34.64 97.69 33.42 Q 96.25 32.20 94.05 32.20 Q 91.65 32.20 90.22 33.52 Q 88.78 34.84 88.00 36.94 Q 87.29 38.87 87.02 41.45 Q 86.75 44.04 86.75 46.85 Q 86.75 50.54 86.99 52.96 Q 87.22 55.37 88.14 57.81 Q 88.91 59.91 90.37 61.12 Q 91.82 62.34 94.05 62.34 Q 96.08 62.34 97.54 61.21 Q 98.99 60.08 99.84 57.88 Z" />
+      <!-- j (original Georgia Bold curve with straight vertical stem shortened by 5.0px, zero clipPath, zero glitches) -->
+      <path d="M 136.14 55.01 Q 136.14 58.49 134.95 62.04 Q 133.77 65.60 131.57 68.13 Q 129.17 70.91 125.75 72.46 Q 122.34 74.02 117.94 74.02 Q 113.85 74.02 111.63 72.45 Q 109.42 70.87 109.42 68.20 Q 109.42 67.25 109.64 66.44 Q 109.86 65.63 110.57 64.75 Q 111.11 64.01 112.24 63.48 Q 113.37 62.96 114.79 62.96 Q 117.60 62.96 119.12 64.97 Q 120.65 66.98 122.24 71.01 Q 123.62 70.23 124.28 67.69 Q 124.94 65.16 124.94 56.67 L 124.94 38.29 Q 124.94 37.11 124.43 36.21 Q 123.93 35.32 123.05 34.71 Q 122.40 34.27 121.00 33.88 Q 119.60 33.49 118.51 33.39 L 118.51 30.92 L 135.63 30.04 L 136.14 30.55 Z M 136.27 17.86 Q 136.27 20.43 134.29 22.24 Q 132.32 24.05 129.61 24.05 Q 126.87 24.05 124.89 22.24 Q 122.91 20.43 122.91 17.86 Q 122.91 15.29 124.89 13.46 Q 126.87 11.64 129.61 11.64 Q 132.35 11.64 134.31 13.46 Q 136.27 15.29 136.27 17.86 Z" />
+      <!-- r (x=144.99..179.15, y=29.67..64.00) -->
+      <path d="M 179.15 36.63 Q 179.15 39.21 177.56 41.15 Q 175.97 43.10 173.37 43.10 Q 170.90 43.10 169.19 41.84 Q 167.48 40.59 167.48 38.16 Q 167.48 36.97 167.65 36.31 Q 167.82 35.65 167.96 35.08 Q 166.40 35.15 164.68 36.16 Q 162.95 37.18 161.63 38.87 L 161.63 57.44 Q 161.63 58.62 162.00 59.40 Q 162.38 60.18 163.25 60.62 Q 164.00 60.99 165.67 61.24 Q 167.35 61.50 168.09 61.53 L 168.09 64.00 L 145.46 64.00 L 145.46 61.53 Q 146.31 61.46 147.17 61.34 Q 148.03 61.23 148.64 61.02 Q 149.72 60.65 150.13 59.87 Q 150.54 59.10 150.54 57.84 L 150.54 38.16 Q 150.54 36.94 149.96 35.97 Q 149.39 35.01 148.57 34.44 Q 147.97 34.03 147.03 33.76 Q 146.10 33.49 144.99 33.39 L 144.99 30.92 L 161.12 30.04 L 161.63 30.55 L 161.63 35.45 L 161.77 35.45 Q 164.10 32.74 166.72 31.21 Q 169.34 29.67 172.18 29.67 Q 175.33 29.67 177.24 31.61 Q 179.15 33.56 179.15 36.63 Z" />
+      <!-- a (x=184.32..222.28, y=29.46..65.05) -->
+      <path d="M 222.28 63.29 Q 220.79 63.93 218.76 64.47 Q 216.73 65.01 214.46 65.01 Q 210.30 65.01 208.34 63.78 Q 206.38 62.55 205.67 60.25 L 205.46 60.25 Q 204.31 61.40 203.25 62.21 Q 202.18 63.02 200.97 63.59 Q 199.38 64.34 197.90 64.69 Q 196.43 65.05 193.79 65.05 Q 189.87 65.05 187.10 62.73 Q 184.32 60.41 184.32 56.59 Q 184.32 54.39 184.93 52.85 Q 185.54 51.32 186.66 50.13 Q 187.67 49.05 189.01 48.34 Q 190.34 47.63 191.93 47.02 Q 194.98 45.90 199.24 44.70 Q 203.50 43.50 205.46 42.55 L 205.46 39.31 Q 205.46 38.46 205.33 37.07 Q 205.19 35.69 204.75 34.74 Q 204.28 33.66 203.27 32.91 Q 202.25 32.17 200.59 32.17 Q 199.10 32.17 198.11 32.59 Q 197.11 33.01 196.50 33.45 Q 196.60 34.13 197.07 35.52 Q 197.55 36.90 197.55 38.19 Q 197.55 38.77 197.24 39.63 Q 196.94 40.49 196.36 41.00 Q 195.59 41.67 194.62 42.05 Q 193.66 42.42 191.66 42.42 Q 188.82 42.42 187.37 41.05 Q 185.91 39.68 185.91 37.48 Q 185.91 35.59 187.42 34.08 Q 188.92 32.58 191.09 31.59 Q 193.22 30.58 195.99 30.02 Q 198.77 29.46 201.13 29.46 Q 204.42 29.46 207.16 29.85 Q 209.90 30.24 212.09 31.46 Q 214.19 32.64 215.43 34.89 Q 216.66 37.14 216.66 40.76 Q 216.66 44.58 216.51 49.83 Q 216.36 55.07 216.36 56.73 Q 216.36 58.25 216.81 59.13 Q 217.27 60.01 218.22 60.45 Q 218.79 60.72 220.03 60.77 Q 221.26 60.82 222.28 60.82 Z M 205.46 45.67 Q 203.57 46.31 201.71 47.14 Q 199.85 47.97 198.66 48.88 Q 197.41 49.83 196.70 51.30 Q 195.99 52.77 195.99 54.77 Q 195.99 57.40 197.19 58.59 Q 198.39 59.77 200.15 59.77 Q 202.01 59.77 203.21 59.01 Q 204.42 58.25 205.33 57.13 Z" />
+      <!-- .PLAYBOOK STUDIO (dot at x=1.40..4.40, P at x=8.19, O ends at x=222.28, baseline y=96.00) -->
+      <path d="M 1.40 96.00 L 4.40 96.00 L 4.40 93.00 L 1.40 93.00 Z M 10.67 90.03 L 10.67 86.65 L 12.60 86.65 Q 13.02 86.65 13.42 86.71 Q 13.81 86.77 14.12 86.95 Q 14.42 87.14 14.60 87.47 Q 14.78 87.80 14.78 88.34 Q 14.78 88.87 14.60 89.21 Q 14.42 89.54 14.12 89.72 Q 13.81 89.90 13.42 89.96 Q 13.02 90.03 12.60 90.03 Z M 8.19 84.72 L 8.19 96.00 L 10.67 96.00 L 10.67 91.96 L 13.28 91.96 Q 14.34 91.96 15.08 91.65 Q 15.82 91.34 16.29 90.83 Q 16.75 90.33 16.97 89.67 Q 17.18 89.02 17.18 88.34 Q 17.18 87.64 16.97 86.99 Q 16.75 86.35 16.29 85.84 Q 15.82 85.33 15.08 85.03 Q 14.34 84.72 13.28 84.72 Z M 23.29 84.72 L 23.29 96.00 L 31.27 96.00 L 31.27 93.91 L 25.77 93.91 L 25.77 84.72 Z M 40.07 91.64 L 41.54 87.50 L 41.57 87.50 L 42.99 91.64 Z M 40.31 84.72 L 36.04 96.00 L 38.54 96.00 L 39.42 93.49 L 43.64 93.49 L 44.49 96.00 L 47.07 96.00 L 42.85 84.72 Z M 54.37 91.61 L 54.37 96.00 L 56.85 96.00 L 56.85 91.67 L 61.03 84.72 L 58.27 84.72 L 55.65 89.17 L 53.01 84.72 L 50.23 84.72 Z M 69.03 89.28 L 69.03 86.65 L 71.35 86.65 Q 71.68 86.65 71.99 86.70 Q 72.30 86.76 72.53 86.90 Q 72.77 87.04 72.91 87.29 Q 73.06 87.55 73.06 87.94 Q 73.06 88.65 72.63 88.97 Q 72.20 89.28 71.54 89.28 Z M 66.55 84.72 L 66.55 96.00 L 72.01 96.00 Q 72.77 96.00 73.49 95.81 Q 74.21 95.62 74.77 95.23 Q 75.33 94.83 75.66 94.21 Q 75.99 93.58 75.99 92.73 Q 75.99 91.67 75.48 90.92 Q 74.97 90.17 73.92 89.87 Q 74.68 89.51 75.07 88.94 Q 75.46 88.37 75.46 87.52 Q 75.46 86.73 75.20 86.19 Q 74.94 85.65 74.46 85.33 Q 73.99 85.00 73.32 84.86 Q 72.66 84.72 71.85 84.72 Z M 69.03 94.07 L 69.03 90.98 L 71.73 90.98 Q 72.53 90.98 73.02 91.35 Q 73.51 91.72 73.51 92.59 Q 73.51 93.03 73.36 93.31 Q 73.21 93.60 72.96 93.76 Q 72.71 93.93 72.38 94.00 Q 72.04 94.07 71.68 94.07 Z M 84.22 90.41 Q 84.22 89.66 84.39 88.97 Q 84.56 88.27 84.92 87.73 Q 85.28 87.18 85.87 86.86 Q 86.45 86.54 87.29 86.54 Q 88.13 86.54 88.71 86.86 Q 89.30 87.18 89.66 87.73 Q 90.02 88.27 90.19 88.97 Q 90.35 89.66 90.35 90.41 Q 90.35 91.12 90.19 91.79 Q 90.02 92.46 89.66 93.00 Q 89.30 93.54 88.71 93.86 Q 88.13 94.18 87.29 94.18 Q 86.45 94.18 85.87 93.86 Q 85.28 93.54 84.92 93.00 Q 84.56 92.46 84.39 91.79 Q 84.22 91.12 84.22 90.41 Z M 81.74 90.41 Q 81.74 91.64 82.12 92.71 Q 82.50 93.77 83.21 94.56 Q 83.92 95.35 84.96 95.80 Q 85.99 96.25 87.29 96.25 Q 88.60 96.25 89.63 95.80 Q 90.65 95.35 91.37 94.56 Q 92.08 93.77 92.46 92.71 Q 92.84 91.64 92.84 90.41 Q 92.84 89.14 92.46 88.06 Q 92.08 86.98 91.37 86.17 Q 90.65 85.37 89.63 84.91 Q 88.60 84.45 87.29 84.45 Q 85.99 84.45 84.96 84.91 Q 83.92 85.37 83.21 86.17 Q 82.50 86.98 82.12 88.06 Q 81.74 89.14 81.74 90.41 Z M 101.08 90.41 Q 101.08 89.66 101.25 88.97 Q 101.41 88.27 101.78 87.73 Q 102.14 87.18 102.72 86.86 Q 103.31 86.54 104.15 86.54 Q 104.98 86.54 105.57 86.86 Q 106.15 87.18 106.52 87.73 Q 106.88 88.27 107.04 88.97 Q 107.21 89.66 107.21 90.41 Q 107.21 91.12 107.04 91.79 Q 106.88 92.46 106.52 93.00 Q 106.15 93.54 105.57 93.86 Q 104.98 94.18 104.15 94.18 Q 103.31 94.18 102.72 93.86 Q 102.14 93.54 101.78 93.00 Q 101.41 92.46 101.25 91.79 Q 101.08 91.12 101.08 90.41 Z M 98.60 90.41 Q 98.60 91.64 98.98 92.71 Q 99.36 93.77 100.07 94.56 Q 100.78 95.35 101.82 95.80 Q 102.85 96.25 104.15 96.25 Q 105.46 96.25 106.48 95.80 Q 107.51 95.35 108.22 94.56 Q 108.93 93.77 109.31 92.71 Q 109.69 91.64 109.69 90.41 Q 109.69 89.14 109.31 88.06 Q 108.93 86.98 108.22 86.17 Q 107.51 85.37 106.48 84.91 Q 105.46 84.45 104.15 84.45 Q 102.85 84.45 101.82 84.91 Q 100.78 85.37 100.07 86.17 Q 99.36 86.98 98.98 88.06 Q 98.60 89.14 98.60 90.41 Z M 115.95 84.72 L 115.95 96.00 L 118.43 96.00 L 118.43 92.37 L 119.85 90.93 L 123.25 96.00 L 126.36 96.00 L 121.52 89.17 L 125.93 84.72 L 122.83 84.72 L 118.43 89.40 L 118.43 84.72 Z M 142.56 92.26 L 140.16 92.26 Q 140.15 93.30 140.54 94.06 Q 140.94 94.81 141.61 95.30 Q 142.28 95.79 143.16 96.02 Q 144.03 96.25 144.97 96.25 Q 146.12 96.25 147.00 95.98 Q 147.87 95.72 148.47 95.23 Q 149.06 94.75 149.36 94.09 Q 149.66 93.42 149.66 92.65 Q 149.66 91.70 149.26 91.09 Q 148.85 90.49 148.30 90.12 Q 147.75 89.76 147.19 89.59 Q 146.63 89.43 146.31 89.36 Q 145.25 89.10 144.59 88.92 Q 143.94 88.75 143.57 88.57 Q 143.20 88.40 143.07 88.19 Q 142.94 87.99 142.94 87.66 Q 142.94 87.29 143.10 87.06 Q 143.26 86.82 143.50 86.66 Q 143.75 86.50 144.05 86.44 Q 144.35 86.38 144.65 86.38 Q 145.11 86.38 145.50 86.46 Q 145.88 86.54 146.18 86.73 Q 146.48 86.91 146.66 87.25 Q 146.85 87.58 146.88 88.08 L 149.28 88.08 Q 149.28 87.10 148.91 86.42 Q 148.54 85.73 147.90 85.29 Q 147.27 84.85 146.46 84.65 Q 145.65 84.45 144.76 84.45 Q 144.00 84.45 143.24 84.66 Q 142.49 84.86 141.89 85.29 Q 141.28 85.71 140.91 86.35 Q 140.54 86.99 140.54 87.86 Q 140.54 88.64 140.83 89.18 Q 141.13 89.73 141.60 90.09 Q 142.07 90.45 142.68 90.68 Q 143.28 90.91 143.91 91.07 Q 144.52 91.24 145.12 91.39 Q 145.72 91.53 146.20 91.72 Q 146.67 91.91 146.96 92.19 Q 147.26 92.48 147.26 92.93 Q 147.26 93.36 147.04 93.64 Q 146.81 93.91 146.48 94.07 Q 146.15 94.23 145.77 94.29 Q 145.39 94.34 145.06 94.34 Q 144.57 94.34 144.11 94.22 Q 143.65 94.10 143.31 93.86 Q 142.98 93.61 142.77 93.22 Q 142.56 92.82 142.56 92.26 Z M 158.19 86.80 L 158.19 96.00 L 160.67 96.00 L 160.67 86.80 L 164.05 86.80 L 164.05 84.72 L 154.81 84.72 L 154.81 86.80 Z M 179.48 91.73 L 179.48 84.72 L 177.00 84.72 L 177.00 91.73 Q 177.00 93.00 176.50 93.59 Q 175.99 94.18 174.67 94.18 Q 173.91 94.18 173.46 93.97 Q 173.01 93.76 172.75 93.42 Q 172.50 93.08 172.42 92.63 Q 172.34 92.19 172.34 91.73 L 172.34 84.72 L 169.86 84.72 L 169.86 91.73 Q 169.86 94.04 171.12 95.15 Q 172.37 96.25 174.67 96.25 Q 176.92 96.25 178.20 95.14 Q 179.48 94.03 179.48 91.73 Z M 188.66 93.91 L 188.66 86.80 L 190.43 86.80 Q 191.35 86.80 191.97 87.07 Q 192.60 87.33 192.98 87.82 Q 193.35 88.31 193.52 88.99 Q 193.69 89.68 193.69 90.53 Q 193.69 91.47 193.45 92.11 Q 193.21 92.76 192.82 93.16 Q 192.42 93.57 191.92 93.74 Q 191.41 93.91 190.87 93.91 Z M 186.18 84.72 L 186.18 96.00 L 191.05 96.00 Q 192.34 96.00 193.30 95.57 Q 194.26 95.13 194.90 94.37 Q 195.54 93.61 195.85 92.57 Q 196.17 91.53 196.17 90.30 Q 196.17 88.89 195.78 87.85 Q 195.39 86.80 194.71 86.11 Q 194.02 85.41 193.08 85.07 Q 192.14 84.72 191.05 84.72 Z M 202.45 84.72 L 202.45 96.00 L 204.93 96.00 L 204.93 84.72 Z M 213.67 90.41 Q 213.67 89.66 213.83 88.97 Q 214.00 88.27 214.36 87.73 Q 214.73 87.18 215.31 86.86 Q 215.90 86.54 216.73 86.54 Q 217.57 86.54 218.16 86.86 Q 218.74 87.18 219.10 87.73 Q 219.47 88.27 219.63 88.97 Q 219.80 89.66 219.80 90.41 Q 219.80 91.12 219.63 91.79 Q 219.47 92.46 219.10 93.00 Q 218.74 93.54 218.16 93.86 Q 217.57 94.18 216.73 94.18 Q 215.90 94.18 215.31 93.86 Q 214.73 93.54 214.36 93.00 Q 214.00 92.46 213.83 91.79 Q 213.67 91.12 213.67 90.41 Z M 211.19 90.41 Q 211.19 91.64 211.57 92.71 Q 211.95 93.77 212.66 94.56 Q 213.37 95.35 214.40 95.80 Q 215.44 96.25 216.73 96.25 Q 218.05 96.25 219.07 95.80 Q 220.10 95.35 220.81 94.56 Q 221.52 93.77 221.90 92.71 Q 222.28 91.64 222.28 90.41 Q 222.28 89.14 221.90 88.06 Q 221.52 86.98 220.81 86.17 Q 220.10 85.37 219.07 84.91 Q 218.05 84.45 216.73 84.45 Q 215.44 84.45 214.40 84.91 Q 213.37 85.37 212.66 86.17 Q 211.95 86.98 211.57 88.06 Q 211.19 89.14 211.19 90.41 Z" />
+    </g>
+  </defs>
+
+  <!-- LEFT HALF: DARK MODE (#000000) -->
+  <rect class="bg-dark" x="0" y="0" width="600" height="1200" />
+  <!-- RIGHT HALF: LIGHT MODE (#FFFFFF) -->
+  <rect class="bg-light" x="600" y="0" width="600" height="1200" />
+  <!-- CENTER DIVIDER -->
+  <line x1="600" y1="0" x2="600" y2="1200" stroke="#444444" stroke-width="1" />
+
+  <!-- HEADER -->
+  <text class="label-dark" x="56" y="54">MOJRA V4 — SIATKA MODULARNA 8PX (TRYB CIEMNY)</text>
+  <text class="label-light" x="656" y="54">MOJRA V4 — SIATKA MODULARNA 8PX (TRYB JASNY)</text>
+  <line x1="56" y1="74" x2="544" y2="74" stroke="#262626" stroke-width="1" />
+  <line x1="656" y1="74" x2="1144" y2="74" stroke="#d9d9d9" stroke-width="1" />
+
+  <!-- ===================================================================== -->
+  <!-- ROW 1: ROZKŁAD NA SIATCE MODULARNEJ 8PX (WSZYSTKIE OSIE WYRÓWNANE)     -->
+  <!-- ===================================================================== -->
+  <text class="sub-dark" x="56" y="118">01 / ROZKŁAD NA SIATCE MODULARNEJ (1 MODUŁ = 8PX)</text>
+  <text class="sub-light" x="656" y="118">01 / ROZKŁAD NA SIATCE MODULARNEJ (1 MODUŁ = 8PX)</text>
+
+  <!-- Dark Modular Grid View -->
+  <g transform="translate(56, 144)">
+    <!-- 8px Modular Grid Background (48x14 modules = 384x112px) -->
+    <rect x="0" y="0" width="384" height="112" fill="url(#mod-grid-dark)" stroke="#262626" stroke-width="1" />
+
+    <!-- Horizontal Key Grid Lines:
+         y=16 (2u): Cap-height top of M & top tangent of symbol M balls
+         y=30: x-height of o, j, r, a
+         y=56 (7u): Vertical center of symbol M (node ◉)
+         y=64 (8u): Baseline of Mojra (intact bottom serifs!)
+         y=74: Lifted bottom of j
+         y=84.7: Top of .PLAYBOOK STUDIO
+         y=96 (12u): Baseline of .PLAYBOOK STUDIO & bottom tangent of symbol M balls -->
+    <line x1="0" y1="16" x2="384" y2="16" stroke="#444444" stroke-width="1" stroke-dasharray="3 3" />
+    <line x1="0" y1="30" x2="384" y2="30" stroke="#2c2c2c" stroke-width="1" stroke-dasharray="2 4" />
+    <line x1="0" y1="56" x2="384" y2="56" stroke="#2c2c2c" stroke-width="1" stroke-dasharray="2 4" />
+    <line x1="0" y1="64" x2="384" y2="64" stroke="#444444" stroke-width="1" stroke-dasharray="3 3" />
+    <line x1="0" y1="74" x2="384" y2="74" stroke="#2c2c2c" stroke-width="1" stroke-dasharray="2 4" />
+    <line x1="0" y1="84.7" x2="384" y2="84.7" stroke="#2c2c2c" stroke-width="1" stroke-dasharray="2 4" />
+    <line x1="0" y1="96" x2="384" y2="96" stroke="#444444" stroke-width="1" stroke-dasharray="3 3" />
+
+    <!-- Vertical Key Grid Lines:
+         x=16 (2u), x=48 (6u), x=80 (10u): Symbol M stems
+         x=120 (15u): Left serif of M
+         x=128.19 (16u): First vertical stem of M & left edge of P in PLAYBOOK STUDIO
+         x=342.28: Right edge of 'a' in Mojra & right edge of 'O' in STUDIO -->
+    <line x1="16" y1="0" x2="16" y2="112" stroke="#333333" stroke-width="1" stroke-dasharray="2 3" />
+    <line x1="48" y1="0" x2="48" y2="112" stroke="#333333" stroke-width="1" stroke-dasharray="2 3" />
+    <line x1="80" y1="0" x2="80" y2="112" stroke="#333333" stroke-width="1" stroke-dasharray="2 3" />
+    <line x1="120" y1="0" x2="120" y2="112" stroke="#383838" stroke-width="1" stroke-dasharray="2 3" />
+    <line x1="128.19" y1="0" x2="128.19" y2="112" stroke="#666666" stroke-width="1" stroke-dasharray="3 2" />
+    <line x1="342.28" y1="0" x2="342.28" y2="112" stroke="#666666" stroke-width="1" stroke-dasharray="3 2" />
+
+    <!-- Grid Labels -->
+    <text class="grid-tag-dark" x="392" y="19">y=16 (2u) GÓRA M + KULKI</text>
+    <text class="grid-tag-dark" x="392" y="59">y=56 (7u) ŚRODEK WĘZŁA ◉</text>
+    <text class="grid-tag-dark" x="392" y="67">y=64 (8u) BAZA MOJRA</text>
+    <text class="grid-tag-dark" x="392" y="77">y=74 DÓŁ LITERY „J”</text>
+    <text class="grid-tag-dark" x="392" y="99">y=96 (12u) BAZA STUDIO</text>
+
+    <!-- Render Symbol + Pure Vector Wordmark on the Grid -->
+    <use href="#mojra-mark-v4-dark" x="0" y="0" />
+    <use href="#mojra-wordmark-v4" x="120" y="0" fill="#ffffff" />
+  </g>
+
+  <!-- Light Modular Grid View -->
+  <g transform="translate(656, 144)">
+    <rect x="0" y="0" width="384" height="112" fill="url(#mod-grid-light)" stroke="#d9d9d9" stroke-width="1" />
+
+    <line x1="0" y1="16" x2="384" y2="16" stroke="#aaaaaa" stroke-width="1" stroke-dasharray="3 3" />
+    <line x1="0" y1="30" x2="384" y2="30" stroke="#d5d5d5" stroke-width="1" stroke-dasharray="2 4" />
+    <line x1="0" y1="56" x2="384" y2="56" stroke="#d5d5d5" stroke-width="1" stroke-dasharray="2 4" />
+    <line x1="0" y1="64" x2="384" y2="64" stroke="#aaaaaa" stroke-width="1" stroke-dasharray="3 3" />
+    <line x1="0" y1="74" x2="384" y2="74" stroke="#d5d5d5" stroke-width="1" stroke-dasharray="2 4" />
+    <line x1="0" y1="84.7" x2="384" y2="84.7" stroke="#d5d5d5" stroke-width="1" stroke-dasharray="2 4" />
+    <line x1="0" y1="96" x2="384" y2="96" stroke="#aaaaaa" stroke-width="1" stroke-dasharray="3 3" />
+
+    <line x1="16" y1="0" x2="16" y2="112" stroke="#cccccc" stroke-width="1" stroke-dasharray="2 3" />
+    <line x1="48" y1="0" x2="48" y2="112" stroke="#cccccc" stroke-width="1" stroke-dasharray="2 3" />
+    <line x1="80" y1="0" x2="80" y2="112" stroke="#cccccc" stroke-width="1" stroke-dasharray="2 3" />
+    <line x1="120" y1="0" x2="120" y2="112" stroke="#cccccc" stroke-width="1" stroke-dasharray="2 3" />
+    <line x1="128.19" y1="0" x2="128.19" y2="112" stroke="#888888" stroke-width="1" stroke-dasharray="3 2" />
+    <line x1="342.28" y1="0" x2="342.28" y2="112" stroke="#888888" stroke-width="1" stroke-dasharray="3 2" />
+
+    <text class="grid-tag-light" x="392" y="19">y=16 (2u) GÓRA M + KULKI</text>
+    <text class="grid-tag-light" x="392" y="59">y=56 (7u) ŚRODEK WĘZŁA ◉</text>
+    <text class="grid-tag-light" x="392" y="67">y=64 (8u) BAZA MOJRA</text>
+    <text class="grid-tag-light" x="392" y="77">y=74 DÓŁ LITERY „J”</text>
+    <text class="grid-tag-light" x="392" y="99">y=96 (12u) BAZA STUDIO</text>
+
+    <use href="#mojra-mark-v4-light" x="0" y="0" />
+    <use href="#mojra-wordmark-v4" x="120" y="0" fill="#000000" />
+  </g>
+
+  <line x1="56" y1="308" x2="544" y2="308" stroke="#222222" stroke-width="1" />
+  <line x1="656" y1="308" x2="1144" y2="308" stroke="#e5e5e5" stroke-width="1" />
+
+  <!-- ===================================================================== -->
+  <!-- ROW 2: CZYSTY LOGOTYP POZIOMY (BEZ SIATKI)                            -->
+  <!-- ===================================================================== -->
+  <text class="sub-dark" x="56" y="356">02 / CZYSTY LOGOTYP GŁÓWNY (PO KOREKCIE NA SIATCE MODULARNEJ)</text>
+  <text class="sub-light" x="656" y="356">02 / CZYSTY LOGOTYP GŁÓWNY (PO KOREKCIE NA SIATCE MODULARNEJ)</text>
+
+  <!-- Dark Clean Horizontal -->
+  <g transform="translate(56, 388)">
+    <use href="#mojra-mark-v4-dark" x="0" y="0" />
+    <use href="#mojra-wordmark-v4" x="120" y="0" fill="#ffffff" />
+  </g>
+
+  <!-- Light Clean Horizontal -->
+  <g transform="translate(656, 388)">
+    <use href="#mojra-mark-v4-light" x="0" y="0" />
+    <use href="#mojra-wordmark-v4" x="120" y="0" fill="#000000" />
+  </g>
+
+  <line x1="56" y1="548" x2="544" y2="548" stroke="#222222" stroke-width="1" />
+  <line x1="656" y1="548" x2="1144" y2="548" stroke="#e5e5e5" stroke-width="1" />
+
+  <!-- ===================================================================== -->
+  <!-- ROW 3: POWIĘKSZENIE 1.35X (DETAL SZERYFÓW, LITERY „J” I WYRÓWNania)    -->
+  <!-- ===================================================================== -->
+  <text class="sub-dark" x="56" y="596">03 / POWIĘKSZENIE DETALU TYPOGRAFII (NIENARUSZONE SZERYFY + CZYSTE „J”)</text>
+  <text class="sub-light" x="656" y="596">03 / POWIĘKSZENIE DETALU TYPOGRAFII (NIENARUSZONE SZERYFY + CZYSTE „J”)</text>
+
+  <!-- Dark Zoomed Detail -->
+  <g transform="translate(56, 624) scale(1.32)">
+    <use href="#mojra-mark-v4-dark" x="0" y="0" />
+    <use href="#mojra-wordmark-v4" x="120" y="0" fill="#ffffff" />
+  </g>
+
+  <!-- Light Zoomed Detail -->
+  <g transform="translate(656, 624) scale(1.32)">
+    <use href="#mojra-mark-v4-light" x="0" y="0" />
+    <use href="#mojra-wordmark-v4" x="120" y="0" fill="#000000" />
+  </g>
+
+  <line x1="56" y1="840" x2="544" y2="840" stroke="#222222" stroke-width="1" />
+  <line x1="656" y1="840" x2="1144" y2="840" stroke="#e5e5e5" stroke-width="1" />
+
+  <!-- ===================================================================== -->
+  <!-- ROW 4: PASEK GÓRNY (#TOPBAR) + IKONA APLIKACJI                        -->
+  <!-- ===================================================================== -->
+  <text class="sub-dark" x="56" y="888">04 / PASEK GÓRNY APLIKACJI (#TOPBAR) + IKONA KWADRATOWA</text>
+  <text class="sub-light" x="656" y="888">04 / PASEK GÓRNY APLIKACJI (#TOPBAR) + IKONA KWADRATOWA</text>
+
+  <!-- Dark Topbar Preview -->
+  <g transform="translate(56, 920)">
+    <rect x="0" y="0" width="488" height="44" fill="#000000" stroke="#ffffff" stroke-width="1" />
+    <g transform="translate(14, 12)">
+      <line x1="3" y1="3" x2="3" y2="17" stroke="#ffffff" stroke-width="1.65" />
+      <line x1="17" y1="3" x2="17" y2="17" stroke="#ffffff" stroke-width="1.65" />
+      <path d="M 3 3 L 10 10.5 L 17 3" fill="none" stroke="#ffffff" stroke-width="1.65" stroke-linejoin="round" />
+      <line x1="10" y1="10.5" x2="10" y2="17" stroke="#ffffff" stroke-width="1.35" />
+      <circle cx="3" cy="3" r="2.1" fill="#ffffff" />
+      <circle cx="17" cy="3" r="2.1" fill="#000000" stroke="#ffffff" stroke-width="1.5" />
+      <circle cx="3" cy="17" r="2.1" fill="#ffffff" />
+      <circle cx="17" cy="17" r="2.1" fill="#ffffff" />
+      <circle cx="10" cy="10.5" r="3.0" fill="#000000" stroke="#ffffff" stroke-width="1.6" />
+      <circle cx="10" cy="10.5" r="1.15" fill="#ffffff" />
+    </g>
+    <text class="topbar-logo-dark" x="42" y="27">Mojra</text>
+    <text class="topbar-tab-muted-dark" x="108" y="26">Biblioteka</text>
+    <text class="topbar-tab-muted-dark" x="188" y="26">Kronika Ósmego Dnia</text>
+    <text class="topbar-tab-dark" x="338" y="26">Playbook Studio</text>
+    <text class="topbar-tab-dark" x="462" y="27">✕</text>
+
+    <!-- Framed App Icons below Topbar -->
+    <g transform="translate(0, 76)">
+      <rect x="0" y="0" width="96" height="96" fill="none" stroke="#ffffff" stroke-width="2" />
+      <g transform="translate(8, -4) scale(0.85)">
+        <use href="#mojra-mark-v4-dark" x="0" y="0" />
+      </g>
+    </g>
+    <g transform="translate(120, 76)">
+      <rect x="0" y="0" width="96" height="96" fill="#ffffff" />
+      <g transform="translate(8, -4) scale(0.85)">
+        <use href="#mojra-mark-v4-light" x="0" y="0" />
+      </g>
+    </g>
+  </g>
+
+  <!-- Light Topbar Preview -->
+  <g transform="translate(656, 920)">
+    <rect x="0" y="0" width="488" height="44" fill="#ffffff" stroke="#000000" stroke-width="1" />
+    <g transform="translate(14, 12)">
+      <line x1="3" y1="3" x2="3" y2="17" stroke="#000000" stroke-width="1.65" />
+      <line x1="17" y1="3" x2="17" y2="17" stroke="#000000" stroke-width="1.65" />
+      <path d="M 3 3 L 10 10.5 L 17 3" fill="none" stroke="#000000" stroke-width="1.65" stroke-linejoin="round" />
+      <line x1="10" y1="10.5" x2="10" y2="17" stroke="#000000" stroke-width="1.35" />
+      <circle cx="3" cy="3" r="2.1" fill="#000000" />
+      <circle cx="17" cy="3" r="2.1" fill="#ffffff" stroke="#000000" stroke-width="1.5" />
+      <circle cx="3" cy="17" r="2.1" fill="#000000" />
+      <circle cx="17" cy="17" r="2.1" fill="#000000" />
+      <circle cx="10" cy="10.5" r="3.0" fill="#ffffff" stroke="#000000" stroke-width="1.6" />
+      <circle cx="10" cy="10.5" r="1.15" fill="#000000" />
+    </g>
+    <text class="topbar-logo-light" x="42" y="27">Mojra</text>
+    <text class="topbar-tab-muted-light" x="108" y="26">Biblioteka</text>
+    <text class="topbar-tab-muted-light" x="188" y="26">Kronika Ósmego Dnia</text>
+    <text class="topbar-tab-light" x="338" y="26">Playbook Studio</text>
+    <text class="topbar-tab-light" x="462" y="27">✕</text>
+
+    <g transform="translate(0, 76)">
+      <rect x="0" y="0" width="96" height="96" fill="none" stroke="#000000" stroke-width="2" />
+      <g transform="translate(8, -4) scale(0.85)">
+        <use href="#mojra-mark-v4-light" x="0" y="0" />
+      </g>
+    </g>
+    <g transform="translate(120, 76)">
+      <rect x="0" y="0" width="96" height="96" fill="#000000" />
+      <g transform="translate(8, -4) scale(0.85)">
+        <use href="#mojra-mark-v4-dark" x="0" y="0" />
+      </g>
+    </g>
+  </g>
+</svg>

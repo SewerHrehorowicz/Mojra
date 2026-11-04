@@ -108,10 +108,10 @@ func SanitizeRelativeMediaPath(raw string) string {
 	if cleaned == "" {
 		return ""
 	}
-	slashed := filepath.ToSlash(cleaned)
+	slashed := filepath.ToSlash(strings.ReplaceAll(cleaned, "\\", "/"))
 	slashed = strings.TrimPrefix(slashed, "./")
 	slashed = strings.TrimLeft(slashed, "/")
-	if slashed == "" || strings.Contains(slashed, "..") {
+	if slashed == "" || strings.Contains(slashed, "..") || strings.Contains(slashed, ":") {
 		return ""
 	}
 	parts := strings.Split(slashed, "/")

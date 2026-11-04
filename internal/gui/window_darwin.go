@@ -54,103 +54,63 @@ static NSImage *createStoryTellerAppIcon(void) {
     // macOS squircle base
     NSRect cardRect = NSMakeRect(40, 40, 432, 432);
     NSBezierPath *squircle = [NSBezierPath bezierPathWithRoundedRect:cardRect xRadius:96 yRadius:96];
-    [[NSColor colorWithSRGBRed:0.07 green:0.07 blue:0.09 alpha:1.0] setFill];
+    [[NSColor colorWithSRGBRed:0.04 green:0.04 blue:0.05 alpha:1.0] setFill];
     [squircle fill];
 
     [squircle setLineWidth:4.0];
-    [[NSColor colorWithSRGBRed:0.28 green:0.28 blue:0.33 alpha:1.0] setStroke];
+    [[NSColor colorWithSRGBRed:0.30 green:0.30 blue:0.32 alpha:1.0] setStroke];
     [squircle stroke];
 
-    // 1. Open Book Spread (two curved pages side-by-side, x: 160..352)
-    NSBezierPath *bookFill = [NSBezierPath bezierPath];
-    for (int x = 160; x <= 352; x += 2) {
-        CGFloat ax = fabs((CGFloat)x - 256.0);
-        CGFloat arch = -14.0 * sin(M_PI * ax / 96.0);
-        CGPoint pt = NSMakePoint(x, 254.0 + arch);
-        if (x == 160) {
-            [bookFill moveToPoint:pt];
-        } else {
-            [bookFill lineToPoint:pt];
-        }
-    }
-    for (int x = 352; x >= 160; x -= 2) {
-        CGFloat ax = fabs((CGFloat)x - 256.0);
-        CGFloat arch = -14.0 * sin(M_PI * ax / 96.0);
-        [bookFill lineToPoint:NSMakePoint(x, 356.0 + arch)];
-    }
-    [bookFill closePath];
-    [[NSColor colorWithSRGBRed:0.13 green:0.13 blue:0.16 alpha:1.0] setFill];
-    [bookFill fill];
-    [bookFill setLineWidth:10.0];
-    [bookFill setLineJoinStyle:NSLineJoinStyleRound];
-    [[NSColor colorWithSRGBRed:0.95 green:0.95 blue:0.97 alpha:1.0] setStroke];
-    [bookFill stroke];
+    NSColor *fgWhite = [NSColor whiteColor];
+    NSColor *bgDark = [NSColor colorWithSRGBRed:0.04 green:0.04 blue:0.05 alpha:1.0];
 
-    // Stacked second page curve underneath
-    NSBezierPath *bottomSheets = [NSBezierPath bezierPath];
-    for (int x = 164; x <= 348; x += 2) {
-        CGFloat ax = fabs((CGFloat)x - 256.0);
-        CGFloat arch = -14.0 * sin(M_PI * ax / 96.0);
-        CGPoint pt = NSMakePoint(x, 374.0 + arch);
-        if (x == 164) {
-            [bottomSheets moveToPoint:pt];
-        } else {
-            [bottomSheets lineToPoint:pt];
-        }
-    }
-    [bottomSheets setLineWidth:8.0];
-    [bottomSheets setLineCapStyle:NSLineCapStyleRound];
-    [[NSColor colorWithSRGBRed:0.95 green:0.95 blue:0.97 alpha:1.0] setStroke];
-    [bottomSheets stroke];
+    // 1. Mojra "M" Loom Stems & Diagonals (centered at 256,256 with equal 72px top/bottom margins inside squircle)
+    NSBezierPath *mainLines = [NSBezierPath bezierPath];
+    [mainLines moveToPoint:NSMakePoint(141, 135)];
+    [mainLines lineToPoint:NSMakePoint(141, 377)];
+    [mainLines moveToPoint:NSMakePoint(371, 135)];
+    [mainLines lineToPoint:NSMakePoint(371, 377)];
+    [mainLines moveToPoint:NSMakePoint(141, 135)];
+    [mainLines lineToPoint:NSMakePoint(256, 256)];
+    [mainLines lineToPoint:NSMakePoint(371, 135)];
+    [mainLines setLineWidth:12.0];
+    [mainLines setLineCapStyle:NSLineCapStyleRound];
+    [mainLines setLineJoinStyle:NSLineJoinStyleRound];
+    [fgWhite setStroke];
+    [mainLines stroke];
 
-    // Center spine binding
-    NSBezierPath *spine = [NSBezierPath bezierPath];
-    [spine moveToPoint:NSMakePoint(256, 254)];
-    [spine lineToPoint:NSMakePoint(256, 360)];
-    [spine setLineWidth:9.0];
-    [spine setLineCapStyle:NSLineCapStyleRound];
-    [[NSColor colorWithSRGBRed:0.95 green:0.95 blue:0.97 alpha:1.0] setStroke];
-    [spine stroke];
+    NSBezierPath *midLine = [NSBezierPath bezierPath];
+    [midLine moveToPoint:NSMakePoint(256, 256)];
+    [midLine lineToPoint:NSMakePoint(256, 377)];
+    [midLine setLineWidth:9.6];
+    [midLine setLineCapStyle:NSLineCapStyleRound];
+    [fgWhite setStroke];
+    [midLine stroke];
 
-    // 2. Studio Headphones (top arch + cushioned earcups)
-    NSBezierPath *headband = [NSBezierPath bezierPath];
-    for (int i = 0; i <= 60; i++) {
-        double t = M_PI * (double)i / 60.0;
-        CGFloat hx = 256.0 - 138.0 * cos(t);
-        CGFloat hy = 244.0 - 138.0 * sin(t);
-        if (i == 0) {
-            [headband moveToPoint:NSMakePoint(hx, hy)];
-        } else {
-            [headband lineToPoint:NSMakePoint(hx, hy)];
-        }
-    }
-    [headband setLineWidth:14.0];
-    [headband setLineCapStyle:NSLineCapStyleRound];
-    [[NSColor colorWithSRGBRed:0.90 green:0.90 blue:0.93 alpha:1.0] setStroke];
-    [headband stroke];
+    // 2. Solid outer balls (top-left, bottom-left, bottom-right)
+    [fgWhite setFill];
+    [[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(141 - 23, 135 - 23, 46, 46)] fill];
+    [[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(141 - 23, 377 - 23, 46, 46)] fill];
+    [[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(371 - 23, 377 - 23, 46, 46)] fill];
 
-    NSBezierPath *leftCup = [NSBezierPath bezierPathWithRoundedRect:NSMakeRect(104.5, 220.5, 27.0, 89.0) xRadius:13.5 yRadius:13.5];
-    NSBezierPath *rightCup = [NSBezierPath bezierPathWithRoundedRect:NSMakeRect(380.5, 220.5, 27.0, 89.0) xRadius:13.5 yRadius:13.5];
-    [[NSColor colorWithSRGBRed:0.90 green:0.90 blue:0.93 alpha:1.0] setFill];
-    [leftCup fill];
-    [rightCup fill];
+    // 3. Top-right hollow ring ball at (371, 135)
+    NSBezierPath *trRing = [NSBezierPath bezierPathWithOvalInRect:NSMakeRect(371 - 17.6, 135 - 17.6, 35.2, 35.2)];
+    [bgDark setFill];
+    [trRing fill];
+    [trRing setLineWidth:10.8];
+    [fgWhite setStroke];
+    [trRing stroke];
 
-    // 3. 5-Bar Audio Equalizer above the open book
-    NSBezierPath *eqBars = [NSBezierPath bezierPath];
-    [eqBars moveToPoint:NSMakePoint(200, 188)];
-    [eqBars lineToPoint:NSMakePoint(200, 216)];
-    [eqBars moveToPoint:NSMakePoint(228, 170)];
-    [eqBars lineToPoint:NSMakePoint(228, 216)];
-    [eqBars moveToPoint:NSMakePoint(256, 152)];
-    [eqBars lineToPoint:NSMakePoint(256, 216)];
-    [eqBars moveToPoint:NSMakePoint(284, 170)];
-    [eqBars lineToPoint:NSMakePoint(284, 216)];
-    [eqBars moveToPoint:NSMakePoint(312, 188)];
-    [eqBars lineToPoint:NSMakePoint(312, 216)];
-    [eqBars setLineWidth:12.0];
-    [eqBars setLineCapStyle:NSLineCapStyleRound];
-    [[NSColor colorWithSRGBRed:0.76 green:0.76 blue:0.82 alpha:1.0] setStroke];
-    [eqBars stroke];
+    // 4. Center double-ring destiny node ◉ at (256, 256)
+    NSBezierPath *centerRing = [NSBezierPath bezierPathWithOvalInRect:NSMakeRect(256 - 29.7, 256 - 29.7, 59.4, 59.4)];
+    [bgDark setFill];
+    [centerRing fill];
+    [centerRing setLineWidth:11.6];
+    [fgWhite setStroke];
+    [centerRing stroke];
+
+    [fgWhite setFill];
+    [[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(256 - 13.6, 256 - 13.6, 27.2, 27.2)] fill];
 
     [NSGraphicsContext restoreGraphicsState];
     [img unlockFocus];
@@ -273,7 +233,7 @@ static NSImage *createStoryTellerAppIcon(void) {
                                               styleMask:style
                                                 backing:NSBackingStoreBuffered
                                                   defer:NO];
-    [self.window setTitle:@"StoryTeller"];
+    [self.window setTitle:@"Mojra"];
     [self.window setTitleVisibility:NSWindowTitleHidden];
     [self.window setTitlebarAppearsTransparent:YES];
     if ([self.window respondsToSelector:@selector(setTitlebarSeparatorStyle:)]) {
@@ -369,7 +329,7 @@ static char *pickNativeMacOSBookPath(int chooseDir) {
             } else {
                 [panel setCanChooseDirectories:YES];
                 [panel setCanChooseFiles:YES];
-                [panel setTitle:@"Wybierz książkę (.stbook / .zip lub folder)"];
+                [panel setTitle:@"Wybierz książkę (.playbook / .zip lub folder)"];
                 [panel setPrompt:@"Dodaj książkę"];
             }
             NSModalResponse resp = [panel runModal];
@@ -499,7 +459,7 @@ func PickNativeBookPath(chooseDir bool) string {
 		return ""
 	}
 	if osascript, err := exec.LookPath("osascript"); err == nil && osascript != "" {
-		script := `POSIX path of (choose file with prompt "Wybierz książkę (.stbook / .zip):")`
+		script := `POSIX path of (choose file with prompt "Wybierz książkę (.playbook / .zip):")`
 		if chooseDir {
 			script = `POSIX path of (choose folder with prompt "Wybierz folder książki z dysku:")`
 		}

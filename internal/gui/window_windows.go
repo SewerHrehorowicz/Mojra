@@ -699,7 +699,7 @@ func runNativeWin32WebView2Window(url, dllPath string, onWindowClosed func()) bo
 		posY = (screenH - winH) / 2
 	}
 
-	titleUTF16, _ := syscall.UTF16PtrFromString("StoryTeller")
+	titleUTF16, _ := syscall.UTF16PtrFromString("Mojra")
 	hwnd, _, _ := procCreateWindowExW.Call(
 		0,
 		uintptr(unsafe.Pointer(className)),
@@ -926,11 +926,11 @@ func PickNativeBookPath(chooseDir bool) string {
 
 	if !chooseDir {
 		var fileBuf [1024]uint16
-		title, _ := syscall.UTF16PtrFromString("Wybierz paczkę książki StoryTeller (.stbook / .zip)")
+		title, _ := syscall.UTF16PtrFromString("Wybierz książkę (.playbook / .zip)")
 		ofn := openFileNameW{
 			LStructSize: uint32(unsafe.Sizeof(openFileNameW{})),
 			HwndOwner:   owner,
-			LpstrFilter: makeUTF16Filter("Paczki książek (*.stbook;*.zip)", "*.stbook;*.zip", "Wszystkie pliki (*.*)", "*.*"),
+			LpstrFilter: makeUTF16Filter("Playbook (*.playbook;*.stbook;*.zip)", "*.playbook;*.stbook;*.zip", "Wszystkie pliki (*.*)", "*.*"),
 			LpstrFile:   &fileBuf[0],
 			NMaxFile:    uint32(len(fileBuf)),
 			LpstrTitle:  title,
@@ -944,7 +944,7 @@ func PickNativeBookPath(chooseDir bool) string {
 	}
 
 	var dispBuf [260]uint16
-	title, _ := syscall.UTF16PtrFromString("Wybierz folder książki StoryTeller (zawierający story.txt / data.txt)")
+	title, _ := syscall.UTF16PtrFromString("Wybierz folder książki (zawierający story.txt / data.txt)")
 	bi := browseInfoW{
 		HwndOwner:      owner,
 		PszDisplayName: &dispBuf[0],

@@ -1,0 +1,127 @@
+MOJRA — NARRACJA PREZENTACJI PRODUKTU (W STYLU KEYNOTE / STEVE JOBS)
+================================================================================
+Cel: Pokazanie samej magii produktu, doświadczenia czytelnika i twórcy podczas
+nagrania ekranu z aplikacją — zero tabelek finansowych i modelu biznesowego.
+
+
+--------------------------------------------------------------------------------
+1. PROBLEM: KSIĄŻKA ZATRZYMAŁA SIĘ W CZASIE (0:00 - 0:35)
+--------------------------------------------------------------------------------
+[EKRAN: Otwarta `Biblioteka` (`#view-library`) w aplikacji Mojra. Spokojny ruch
+kursorem po okładkach książek. Przełączenie motywu jasny/ciemny w `#topbar`.]
+
+"Od pięciuset lat każda książka działa dokładnie tak samo.
+Zaczynasz na pierwszej stronie, kończysz na ostatniej — i za każdym razem
+historia biegnie po jednej, z góry ustalonej nici.
+Nawet kiedy przenieśliśmy książki na ekrany czytników i zamieniliśmy je w
+audiobooki, zabraliśmy ze sobą ograniczenia papieru.
+
+A co, jeśli książka potrafi żyć?
+Co, jeśli możesz ją czytać wieczorem jak klasyczną powieść, słuchać jej w
+drodze jak słuchowiska z prawdziwymi aktorami, oglądać jak ilustrowany album —
+i w kluczowym momencie samemu zdecydować, dokąd potoczy się los bohaterów?
+
+Do tej pory, żeby stworzyć coś takiego, musiałeś budować grę komputerową.
+Dziś pokazujemy Wam **Mojrę** — i nowy format książki: **Playbook**."
+
+
+--------------------------------------------------------------------------------
+2. CZYTNIK: TRZY MEDIUM W JEDNYM (0:35 - 1:30)
+--------------------------------------------------------------------------------
+[EKRAN: Kliknięcie książki w Bibliotece. Otwiera się `#view-player` — widać
+ilustrację sceny, szeryfową typografię tekstu, przyciski wyborów na dole oraz
+odtwarzacz `#audio-deck` odtwarzający głos lektora.]
+
+"Spójrzcie, jak wygląda czytanie w Moirze.
+Całe dzieło — wszystkie rozdziały, rozgałęzione wątki, ilustracje i studyjne
+nagrania lektorskie — mieści się w jednym, eleganckim Playbooku.
+
+Otwierasz go i od pierwszej sekundy tekst, obraz oraz głos aktora płyną w
+pełnej synchronizacji.
+
+[EKRAN: Kliknij ikonę `ToggleImageless` w `#topbar` — ilustracje znikają,
+zostaje czysta, papierowa typografia. Kliknij `ToggleUIScale`, a potem przywróć
+ilustracje.]
+
+Chcesz wieczorem skupić się wyłącznie na słowie pisanym, jak na czytniku e-ink?
+Jedno kliknięcie wygasza warstwę wizualną i zostawia czystą, dopracowaną
+typografię.
+
+[EKRAN: Na dolnym panelu `#audio-deck` włącz przycisk `Auto-Choice`
+(`#btn-auto-choice-toggle`). Pozwól nagraniu dojść do końca sceny, by licznik
+sam wybrał ścieżkę i płynnie przeszedł do kolejnej sceny.]
+
+A co, kiedy wychodzisz z domu, zakładasz słuchawki i chowasz telefon do
+kieszeni?
+W zwykłej grze interaktywnej historia zatrzymałaby się, czekając aż dotkniesz
+ekranu. W Moirze włączasz Auto-Choice. Gdy lektor kończy scenę, aplikacja sama
+podejmuje decyzję według wybranej strategii i płynnie prowadzi Cię dalej —
+zapisując Twój postęp co do ułamka sekundy."
+
+
+--------------------------------------------------------------------------------
+3. KROSNO OPOWIEŚCI: TAM, GDZIE SPLATAJĄ SIĘ WĄTKI (1:30 - 2:20)
+--------------------------------------------------------------------------------
+[EKRAN: Kliknij zakładkę `Playbook Studio` w `#topbar` (`#view-editor`). Płynny
+zoom i przesunięcie po grafie scen w 120 klatkach na sekundę. Przeciągnięcie
+karty sceny po siatce i przepięcie połączenia wyboru do innego węzła.]
+
+"Ale prawdziwa magia dzieje się wtedy, gdy z czytelnika stajesz się twórcą.
+Bez wychodzenia z programu klikasz jedną zakładkę — i wchodzisz do **Playbook
+Studio**.
+
+Zbudowaliśmy własny silnik graficzny WebGL działający w 120 klatkach na sekundę.
+Nawet przy setkach scen i rozgałęzień płótno reaguje natychmiast. Widzisz całą
+architekturę swojej powieści lub słuchowiska jak na krośnie: przesuwasz sceny,
+przepinasz nici fabuły jednym ruchem ręki i od razu widzisz, dokąd prowadzi
+każdy wybór.
+
+[EKRAN: Kliknij węzeł sceny, pokaż panel boczny `#editor-context-panel`, a
+następnie otwórz pełnoekranowy edytor tekstu `#modal-scene-text`. Dopisz jedno
+zdanie dialogu.]
+
+A kiedy chcesz pisać — cały techniczny świat znika. Otwierasz czysty arkusz
+literacki i scenariuszowy, w którym liczy się tylko rytm zdań, dialog i emocje."
+
+
+--------------------------------------------------------------------------------
+4. WARIANTY HISTORII I RENTGEN PRODUKCYJNY (2:20 - 3:10)
+--------------------------------------------------------------------------------
+[EKRAN: Zamknij edytor tekstu. Kliknij ikonę `ToggleEditorHistoryPanel`, by
+otworzyć graf wariantów `#editor-history-panel`. Najedź kursorem na sąsiedni
+tor wariantu, pokazując czarny/biały dymek `.ui-tooltip` z różnicą scen i stron,
+i przełącz wariant jednym kliknięciem w tor.]
+
+"Każdy pisarz i reżyser zna ten moment: *'A co, jeśli zmienimy cały trzeci akt
+albo wytniemy tę postać?'*
+W zwykłym edytorze oznacza to kopiowanie plików z dopiskiem *'wersja_ostateczna_3'*.
+W Moirze jednym kliknięciem tworzysz nowy wariant na osi czasu. Możesz
+przepisać połowę historii, przełączać się między wariantami w ułamku sekundy, a
+po najechaniu kursorem natychmiast widzisz, o ile scen i stron różnią się obie
+wersje.
+
+[EKRAN: Kliknij ikonę `#btn-editor-breakdown`, otwierając panel `Raport
+produkcyjny i obsada` (`#editor-breakdown-panel`). Przewiń przez parametry,
+pasek balansu aktów, listę postaci i lokacji.]
+
+Co więcej — Mojra w czasie rzeczywistym analizuje każde słowo Twojego tekstu.
+Zanim wejdziesz z aktorami do studia nagraniowego albo na plan, aplikacja
+dokładnie wie, ile stron i minut trwa opowieść, jak rozkłada się balans między
+aktami, w ilu scenach pojawia się każda postać i ile dokładnie kwestii oraz
+słów ma do nagrania każdy aktor. Zmieniasz imię bohatera w jednym miejscu — i
+aktualizuje się ono w całej książce."
+
+
+--------------------------------------------------------------------------------
+5. FINAŁ: JEDNO KLIKNIĘCIE DO CZYTELNIKA (3:10 - 3:40)
+--------------------------------------------------------------------------------
+[EKRAN: Pokaż eksport scenariusza PDF oraz eksport pakietu `.playbook`, po czym
+wróć do widoku `#view-player`.]
+
+"Kiedy skończysz, jednym kliknięciem drukujesz klasyczny scenariusz PDF albo
+pakujesz całe dzieło do pojedynczego **Playbooka**, gotowego do wysłania światu.
+
+Książka, słuchowisko, obraz i studio twórcze — splecione w jedno narzędzie,
+które mieści się w jednym pliku i działa wszędzie.
+To jest **Mojra**."
+================================================================================

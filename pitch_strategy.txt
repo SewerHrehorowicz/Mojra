@@ -1,0 +1,142 @@
+MOJRA — PITCH RYNKOWY I MODEL BIZNESOWY (PL)
+================================================================================
+
+1. CZYM JEST MOJRA I FORMAT PLAYBOOK?
+--------------------------------------------------------------------------------
+Mojra to pierwszy wieloplatformowy Czytnik + Studio Twórcze dla interaktywnych
+e-booków i nieliniowych audiobooków („Interaktywny Synchrobook”), oparty na
+otwartym, samowystarczalnym formacie publikacji **Playbook (`.playbook`)**.
+
+Łączy w jednym natywnym programie dwie warstwy:
+  1. Uniwersalny Czytnik E-booków i Audiobooków (`#view-library` + `#view-player`):
+     - Typografia książkowa, tryb bez obrazów (`imageless` — czysty czytnik jak
+       Kindle) oraz opcjonalne ilustracje scen.
+     - Zsynchronizowany odtwarzacz lektorski (`#audio-deck`) z zapisem postępu
+       co do milisekundy (`saves/<book-id>.sav`).
+     - Tryb bezdotykowy `Auto-Choice` (automatyczny wybór ścieżki po zakończeniu
+       nagrania), pozwalający słuchać interaktywnego audiobooka na spacerze lub
+       w aucie.
+     - Dodawanie Playbooków z dysku lub bezpośrednio z linku URL.
+  2. Natywne Studio Twórcze 120fps (`#view-editor` / Playbook Studio):
+     - Silnik węzłów WebGL 120fps + pełnoekranowy edytor prozy i scenariusza.
+     - Wbudowany, bezchmurowy Git dla pisarzy (`history.go`): warianty fabularne
+       i natychmiastowe porównanie różnic produkcyjnych między wersjami.
+     - Raport produkcyjny na żywo (`#editor-breakdown-panel`): objętość w 1/8
+       strony, czas trwania, dni zdjęciowe/nagraniowe, balans aktów, liczba
+       kwestii i słów każdego aktora oraz lista lokacji (`WN./PL.`).
+     - Eksport do `.playbook`, Fountain oraz polskiego PDF scenariuszowego.
+
+
+2. SZCZERA ANALIZA KONKURENCJI (CZY COŚ TAKIEGO ISTNIEJE?)
+--------------------------------------------------------------------------------
+  • Celtx: Przeładowany chmurowy SaaS ($15-$55+/mies.) do liniowych filmów.
+    Działa na ciężkim DOM-ie w przeglądarce (użytkownicy narzekają na wyczuwalny
+    lag przy pisaniu i błędy synchronizacji), blokuje darmowe projekty już przy
+    20 sekwencjach (węzłach), a zaawansowane funkcje nieliniowe zamyka za planem
+    Enterprise; nie ma polskiego standardu (`WN./PL.`), czytnika książek/audio
+    ani formatu Playbook.
+  • Twine / Ink: Narzędzia dla programistów. Eksportują surowy HTML bez
+    biblioteki książek, bez odtwarzacza audio i z nietrwałym zapisem w cache
+    przeglądarki.
+  • ChoiceScript (Choice of Games): Zamknięty ekosystem wyłącznie tekstowy (zero
+    audio, zero ilustracji, zero grafu węzłów). Zabiera autorom aż 75% przychodu.
+  • Ren'Py: Silnik gier w Pythonie generujący 500 MB pliki wykonywalne — nie
+    nadaje się do czytania długiej prozy ani słuchania audiobooków.
+  • Fabella / Audory / Voctale: Zamknięte portale webowe oparte na syntezatorach
+    AI TTS. Brak otwartego formatu pliku i pełny vendor lock-in.
+  • Kindle / Legimi / Empik Go / Audioteka (EPUB / MP3): 100% liniowe.
+
+  WERDYKT:
+  Nie istnieje żaden inny natywny program łączący czytnik klasy Kindle/Audible,
+  otwarty format `.playbook` i studio produkcyjne 120fps w jednej aplikacji.
+
+
+3. TWARDE LICZBY RYNKOWE (2025-2026)
+--------------------------------------------------------------------------------
+A. Polska (Raport Instytutu Książki 2025/2026, Raport Pick a Voice 2025, PMR):
+   - 600–700 mln zł/rok: wartość polskiego rynku książki cyfrowej (16% rynku).
+   - 228–300 mln zł/rok (+14,7% r/r): sam rynek audiobooków w Polsce (prognoza
+     352 mln zł do 2030 r., wzrost ~9,1% rocznie; 3,7 mln słuchaczy).
+   - Trend „Synchrobook” (tekst + audio): W Empik Go konsumpcja dzieli się już
+     49% e-booki / 51% audiobooki (+60% płacących subskrybentów r/r).
+   - Boom na superprodukcje audio: Audioteka wydała 35 wieloobsadowych
+     superprodukcji w 2025 r. (+84% r/r), a studio Empik Go nagrało 516
+     audiobooków i 19 seriali oryginalnych w rok (+4 000 tytułów self-publishing).
+
+B. Świat (DataIntelo / GrowthMarketReports 2025/2026, Choice of Games, Steam):
+   - $1,85 mld – $6,4 mld: globalny rynek interactive fiction (CAGR 9,8%–13,2%).
+   - Samo Choice of Games wypłaciło autorom >$2 mln tantiem z czystego tekstu
+     (pojedyncze serie jak „Wayhaven” zarabiają >$220 000 na Steam/mobile).
+   - Ponad 25 000 gier i powieści interaktywnych na itch.io oraz Steam.
+
+
+4. MODEL BIZNESOWY: PŁATNE PLAYBOOKI (JAK KINDLE/STEAM) + LICENCJE B2B
+--------------------------------------------------------------------------------
+Kluczowe rozróżnienie — darmowa jest sama aplikacja Czytnika (jak aplikacja
+Kindle lub klient Steam), natomiast KSIĄŻKI `.playbook` SĄ PŁATNE (np. 35–59 zł):
+
+  1. Jak zarabia Twórca (Autor / Wydawca) i jak zarabiamy My:
+     • Wariant A — Katalog / Księgarnia Playbooków w aplikacji (Model Kindle KDP
+       / Steam / Audioteka):
+       Czytelnik pobiera aplikację Mojra za 0 zł, ale w zakładce `Biblioteka`
+       kupuje interaktywne książki i audiobooki `.playbook` (np. po 39,90 zł).
+       Twórca otrzymuje 80–85% ceny każdego egzemplarza (zamiast 25% w Choice of
+       Games lub ~30% w serwisach streamingowych), a Mojra pobiera 15–20%
+       prowizji od każdej sprzedanej książki.
+     • Wariant B — Sprzedaż bezpośrednia (Steam / itch.io / własny sklep autora):
+       Twórca opłaca roczną licencję Mojra Studio (jak pisarz płacący za Final
+       Draft lub montażysta za DaVinci Resolve Studio), eksportuje swojego
+       płatnego Playbooka lub samodzielną aplikację (`.exe`/`.app`) i sprzedaje
+       ją czytelnikom za 39–69 zł na Steamie, itch.io, Empik Self-Publishing czy
+       we własnym sklepie, zatrzymując 100% przychodu.
+  2. Zabezpieczenie płatnych książek (`.playbook` + klucz czytelnika offline):
+     - Darmowe książki/dema otwierają się od razu, a komercyjne, płatne pliki
+       `.playbook` mogą być podpisane/zaszyfrowane kluczem zakupu (`crypto/ed25519`
+       + `crypto/cipher`), dzięki czemu kupiona książka działa w 100% offline na
+       urządzeniu czytelnika bez piractwa „zwykłego ZIP-a”.
+  3. 99% marży na oprogramowaniu i 0 zł za chmurę edycyjną:
+     - Praca twórcza, pliki audio (`.flac`/`.ogg`) i historia wersji (`history.go`)
+       działają lokalnie na dysku twórcy. Koszt serwerów edycyjnych wynosi 0 zł,
+       a uczelnie i studia kupują roczne licencje B2B na zwykłą fakturę VAT bez
+       barier RODO.
+
+
+5. STRUMIENIE PRZYCHODÓW (4 PERSONY) I REALISTYCZNA PROGNOZA NA 3 LATA
+--------------------------------------------------------------------------------
+Dlaczego twórca płaci za licencję Mojra Studio?
+  - Wystarczy, że autor sprzeda zaledwie 6–15 egzemplarzy swojego Playbooka
+    rocznie (po 40 zł na Steamie, itch.io, Patronite, Empik Self-Publishing lub
+    w naszym katalogu), aby roczna licencja Studio (249 zł) zwróciła mu się w
+    100%. Wszystko powyżej to czysty zysk autora.
+
+Skąd płyną nasze pieniądze (od najłatwiejszych do najtrudniejszych):
+  1. Szkoły filmowe, game-dev i aktorskie — WSF, Łódź, Katowice, PJATK, UŚ, CDV
+     (7 500 zł/rok za licencję kampusową — 1 faktura VAT = równowartość sprzedaży
+     1 250 książek!).
+  2. Producenci słuchowisk, wydawnictwa i studia lektorskie (Mojra Studio Pro +
+     Eksporter samodzielnych aplikacji na Steam/mobile: 599 zł/rok).
+  3. Twórcy Indie / Autorzy gier paragrafowych, RPG i Visual Novel (249 zł/rok).
+  4. Prowizja 15% ze sprzedaży płatnych książek `.playbook` w katalogu aplikacji
+     (średnia cena: 40 zł -> 6 zł prowizji dla nas od sztuki; napędzane przez
+     społeczności samych autorów/podcasterów, bez przepalania budżetu na reklamy).
+     * Realia rynkowe: średni nakład książki w Polsce to 1 500–2 500 szt., więc
+       zakładamy ostrożnie tylko 5–15 aktywnych premier rocznie sprzedających
+       po kilkaset egzemplarzy swoim fanom.
+
+Realistyczna Prognoza Przychodów (Bootstrap, 2 founderów, 0 zł kosztu serwerów):
+  • Rok 1 (Start w Polsce):
+    - 4 Szkoły / Studia B2B (4 x 7 500 zł)                   =  30 000 PLN
+    - 80 Twórców Indie (249 zł) + 25 Studio Pro (599 zł)     =  34 895 PLN
+    - Katalog `.playbook` (1 200 sprzedanych szt. x 6 zł)    =   7 200 PLN
+    => RAZEM ROK 1: ~72 095 PLN (~$18k)
+  • Rok 2 (Polska + wyjście na itch.io / Steam / UE):
+    - 12 Szkół / Studiów B2B (12 x 7 500 zł)                 =  90 000 PLN
+    - 300 Twórców Indie (249 zł) + 90 Studio Pro (599 zł)    = 128 610 PLN
+    - Katalog `.playbook` (5 000 sprzedanych szt. x 6 zł)    =  30 000 PLN
+    => RAZEM ROK 2: ~248 610 PLN (~$62k)
+  • Rok 3 (Uznane niszowe narzędzie w Europie + katalog):
+    - 25 Szkół / Studiów B2B (25 x 7 500 zł)                 = 187 500 PLN
+    - 800 Twórców Indie (249 zł) + 250 Studio Pro (599 zł)   = 348 950 PLN
+    - Katalog `.playbook` (15 000 sprzedanych szt. x 6 zł)   =  90 000 PLN
+    => RAZEM ROK 3: ~626 450 PLN (~$156k czystego zysku bez kosztów chmury)
+================================================================================

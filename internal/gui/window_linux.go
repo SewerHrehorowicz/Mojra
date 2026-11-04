@@ -104,7 +104,7 @@ func PickNativeBookPath(chooseDir bool) string {
 		return ""
 	}
 	if zenity, err := exec.LookPath("zenity"); err == nil && zenity != "" {
-		args := []string{"--file-selection", "--title=Wybierz książkę StoryTeller"}
+		args := []string{"--file-selection", "--title=Wybierz książkę (.playbook / .zip)"}
 		if chooseDir {
 			args = append(args, "--directory")
 		}

@@ -235,7 +235,7 @@ func (s *Server) packActiveBook(r *http.Request) string {
 		if err := os.MkdirAll(exportDir, 0755); err != nil {
 			return err.Error()
 		}
-		outZip := filepath.Join(exportDir, s.ActiveBook.ID+".stbook")
+		outZip := filepath.Join(exportDir, s.ActiveBook.ID+".playbook")
 		if err := book.PackBookToZip(s.ActiveBook.RootPath, outZip); err == nil {
 			s.revealExportedFileInOS(outZip)
 			return "Spakowano archiwum: " + outZip
@@ -290,9 +290,16 @@ func (s *Server) addBookFromDiskPath(rawPath string) string {
 }
 
 func (s *Server) addBookFromURL(rawURL string) string {
-	downloaded, err := book.DownloadBookFromURL(s.BooksDir, rawURL)
+	targetBooksDir := s.BooksDir
+	if !book.IsTempDir(s.RootDir) || book.IsInsideRepoDir(s.RootDir) {
+		targetBooksDir = book.DefaultProjectsDir()
+	}
+	downloaded, err := book.DownloadBookFromURL(targetBooksDir, rawURL)
 	if err != nil {
 		return err.Error()
+	}
+	if filepath.Clean(filepath.Dir(downloaded.RootPath)) != filepath.Clean(s.BooksDir) {
+		s.Settings.AddExternalBook(downloaded.RootPath)
 	}
 	s.AddBookModalOpen = false
 	if reloaded, rErr := s.findBookByID(downloaded.ID); rErr == nil && reloaded != nil {
@@ -376,6 +383,7 @@ func (s *Server) removeBookByID(bookID string) string {
 		msg = "Usunięto pakiet książki: " + b.Title
 	} else {
 		_ = os.RemoveAll(b.RootPath)
+		_ = os.Remove(filepath.Join(s.BooksDir, b.ID+".playbook"))
 		_ = os.Remove(filepath.Join(s.BooksDir, b.ID+".stbook"))
 		msg = "Usunięto książkę: " + b.Title
 	}
@@ -400,8 +408,12 @@ func (s *Server) extractEmbeddedDefaultBook() string {
 		return "Wbudowana książka nie została znaleziona w binarium"
 	}
 
-	sampleDir := filepath.Join(s.BooksDir, "nie-boj-sie-policji-rzecznej")
-	_ = os.Remove(filepath.Join(s.BooksDir, "nie-boj-sie-policji-rzecznej.stbook"))
+	targetBooksDir := s.BooksDir
+	if !book.IsTempDir(s.RootDir) || book.IsInsideRepoDir(s.RootDir) {
+		targetBooksDir = book.DefaultProjectsDir()
+	}
+	sampleDir := filepath.Join(targetBooksDir, "nie-boj-sie-policji-rzecznej")
+	_ = os.Remove(filepath.Join(targetBooksDir, "nie-boj-sie-policji-rzecznej.stbook"))
 	_ = os.RemoveAll(sampleDir)
 
 	var extractErr error
@@ -438,6 +450,9 @@ func (s *Server) extractEmbeddedDefaultBook() string {
 		return "Błąd wypakowywania książki: " + extractErr.Error()
 	}
 
+	if filepath.Clean(targetBooksDir) != filepath.Clean(s.BooksDir) {
+		s.Settings.AddExternalBook(sampleDir)
+	}
 	s.QRModalOpen = false
 	if b, err := s.findBookByID("nie-boj-sie-policji-rzecznej"); err == nil && b != nil {
 		s.setActiveBook(b)

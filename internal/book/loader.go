@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -49,13 +50,13 @@ func LoadBooksFromDirectory(booksDir string) ([]*Book, error) {
 		order = append(order, b.ID)
 	}
 
-	// Second pass: packed .stbook or .zip files (only if not already loaded as an unpacked folder)
+	// Second pass: packed .playbook, .stbook, or .zip files (only if not already loaded as an unpacked folder)
 	for _, e := range entries {
 		if e.IsDir() || strings.HasPrefix(e.Name(), ".") {
 			continue
 		}
 		lower := strings.ToLower(e.Name())
-		if !strings.HasSuffix(lower, ".stbook") && !strings.HasSuffix(lower, ".zip") {
+		if !isPackedBookArchiveName(lower) {
 			continue
 		}
 		zipPath := filepath.Join(booksDir, e.Name())
@@ -114,7 +115,11 @@ func RebindBookID(b *Book, newID string) {
 	}
 }
 
-// LoadBookFromPath loads either an unpacked book directory or a packed .stbook/.zip archive from any path on disk.
+func isPackedBookArchiveName(lower string) bool {
+	return strings.HasSuffix(lower, ".playbook") || strings.HasSuffix(lower, ".stbook") || strings.HasSuffix(lower, ".zip")
+}
+
+// LoadBookFromPath loads either an unpacked book directory or a packed .playbook/.stbook/.zip archive from any path on disk.
 func LoadBookFromPath(bookPath string) (*Book, error) {
 	info, err := os.Stat(bookPath)
 	if err != nil {
@@ -124,7 +129,7 @@ func LoadBookFromPath(bookPath string) (*Book, error) {
 		return LoadBookFromDir(bookPath)
 	}
 	lower := strings.ToLower(info.Name())
-	if strings.HasSuffix(lower, ".stbook") || strings.HasSuffix(lower, ".zip") {
+	if isPackedBookArchiveName(lower) {
 		return LoadBookFromZip(bookPath)
 	}
 	return nil, fmt.Errorf("nieobsługiwany format książki: %s", bookPath)
@@ -145,6 +150,7 @@ func LoadLibraryBooks(booksDir string, externalPaths []string) ([]*Book, error) 
 		byID[b.ID] = b
 		seenRoots[canonicalPathKey(b.RootPath)] = true
 		if !b.IsPacked {
+			seenRoots[canonicalPathKey(filepath.Join(booksDir, b.ID+".playbook"))] = true
 			seenRoots[canonicalPathKey(filepath.Join(booksDir, b.ID+".stbook"))] = true
 			seenRoots[canonicalPathKey(filepath.Join(booksDir, b.ID+".zip"))] = true
 		}
@@ -219,7 +225,112 @@ func ExpandLocalPath(rawPath string) (string, error) {
 			}
 		}
 	}
-	return filepath.Abs(filepath.Clean(trimmed))
+	absPath, err := filepath.Abs(filepath.Clean(trimmed))
+	if err != nil {
+		return "", err
+	}
+	if err := validateSafeUserDiskPath(absPath); err != nil {
+		return "", err
+	}
+	return absPath, nil
+}
+
+var blockedSensitiveDotDirs = map[string]bool{
+	".ssh":    true,
+	".gnupg":  true,
+	".aws":    true,
+	".kube":   true,
+	".git":    true,
+	".hg":     true,
+	".svn":    true,
+	".docker": true,
+}
+
+func validateSafeUserDiskPath(absPath string) error {
+	clean := filepath.Clean(strings.TrimSpace(absPath))
+	if clean == "" || clean == "." {
+		return fmt.Errorf("pusta ścieżka na dysku")
+	}
+	base := filepath.Base(clean)
+	if strings.HasPrefix(base, ".") && base != "." {
+		return fmt.Errorf("niedozwolona ścieżka ukryta lub systemowa: %s", absPath)
+	}
+	for _, seg := range strings.Split(filepath.ToSlash(clean), "/") {
+		if blockedSensitiveDotDirs[strings.ToLower(seg)] {
+			return fmt.Errorf("niedozwolony katalog systemowy w ścieżce: %s", seg)
+		}
+	}
+	return nil
+}
+
+// IsSafePathInsideRoot verifies that targetPath is lexically and (after symlink resolution) strictly inside rootDir,
+// and that targetPath itself is not a symbolic link.
+func IsSafePathInsideRoot(rootDir, targetPath string) bool {
+	cleanRoot := filepath.Clean(strings.TrimSpace(rootDir))
+	cleanTarget := filepath.Clean(strings.TrimSpace(targetPath))
+	if cleanRoot == "" || cleanTarget == "" || cleanRoot == "." || cleanTarget == "." {
+		return false
+	}
+	rel, err := filepath.Rel(cleanRoot, cleanTarget)
+	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+		return false
+	}
+	if linfo, err := os.Lstat(cleanTarget); err == nil {
+		if linfo.Mode()&os.ModeSymlink != 0 {
+			return false
+		}
+	}
+	realRoot := canonicalPathKey(cleanRoot)
+	if realTarget, err := filepath.EvalSymlinks(cleanTarget); err == nil && realTarget != "" {
+		cleanRealTarget := filepath.Clean(realTarget)
+		return strings.HasPrefix(cleanRealTarget, realRoot+string(os.PathSeparator))
+	}
+	realParent := canonicalPathKey(filepath.Dir(cleanTarget))
+	return realParent == realRoot || strings.HasPrefix(realParent, realRoot+string(os.PathSeparator))
+}
+
+const (
+	MaxZipEntries                = 4096
+	MaxZipTotalUncompressedBytes = 500 * 1024 * 1024
+	MaxZipSingleTextBytes        = 4 * 1024 * 1024
+	MaxZipTotalTextBytes         = 32 * 1024 * 1024
+)
+
+func validateZipArchiveLimits(files []*zip.File) error {
+	if len(files) > MaxZipEntries {
+		return fmt.Errorf("archiwum ZIP przekracza dopuszczalny limit liczby plików (%d)", MaxZipEntries)
+	}
+	var totalUncompressed uint64
+	for _, f := range files {
+		if f.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("archiwum ZIP zawiera niedozwolone dowiązanie symboliczne (symlink): %s", f.Name)
+		}
+		if f.UncompressedSize64 > uint64(MaxZipTotalUncompressedBytes) || totalUncompressed > uint64(MaxZipTotalUncompressedBytes)-f.UncompressedSize64 {
+			return fmt.Errorf("archiwum ZIP przekracza dopuszczalny limit rozmiaru po rozpakowaniu (500 MB)")
+		}
+		totalUncompressed += f.UncompressedSize64
+	}
+	return nil
+}
+
+func readSafeBookTextFile(bookDir, relName string) (string, error) {
+	fullPath := filepath.Join(bookDir, relName)
+	if !IsSafePathInsideRoot(bookDir, fullPath) {
+		return "", fmt.Errorf("niedozwolona ścieżka pliku poza katalogiem książki: %s", relName)
+	}
+	f, err := os.Open(fullPath)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	data, err := io.ReadAll(io.LimitReader(f, MaxZipSingleTextBytes+1))
+	if err != nil {
+		return "", err
+	}
+	if len(data) > MaxZipSingleTextBytes {
+		return "", fmt.Errorf("plik tekstowy %s przekracza limit rozmiaru (4 MB)", relName)
+	}
+	return string(data), nil
 }
 
 func fileLooksLikeBookStory(path string) bool {
@@ -266,6 +377,10 @@ func ValidateBookZip(zipPath string) error {
 	}
 	defer zr.Close()
 
+	if err := validateZipArchiveLimits(zr.File); err != nil {
+		return err
+	}
+
 	commonPrefix := detectZipCommonPrefix(zr.File)
 	for _, f := range zr.File {
 		if f.FileInfo().IsDir() {
@@ -303,7 +418,7 @@ func ResolveDiskBookPaths(rawPath string) ([]string, error) {
 
 	if !info.IsDir() {
 		lower := strings.ToLower(info.Name())
-		if strings.HasSuffix(lower, ".stbook") || strings.HasSuffix(lower, ".zip") {
+		if isPackedBookArchiveName(lower) {
 			if err := ValidateBookZip(absPath); err != nil {
 				return nil, err
 			}
@@ -315,14 +430,14 @@ func ResolveDiskBookPaths(rawPath string) ([]string, error) {
 				return []string{parentDir}, nil
 			}
 		}
-		return nil, fmt.Errorf("nieobsługiwany plik „%s” (wskaż folder książki lub archiwum .stbook / .zip)", info.Name())
+		return nil, fmt.Errorf("nieobsługiwany plik „%s” (wskaż folder książki lub archiwum .playbook / .zip)", info.Name())
 	}
 
 	if HasBookFilesInDir(absPath) {
 		return []string{absPath}, nil
 	}
 
-	// Check if the chosen folder is a parent directory containing multiple book folders or .stbook/.zip files
+	// Check if the chosen folder is a parent directory containing multiple book folders or .playbook/.stbook/.zip files
 	entries, err := os.ReadDir(absPath)
 	if err != nil {
 		return nil, err
@@ -340,7 +455,7 @@ func ResolveDiskBookPaths(rawPath string) ([]string, error) {
 			continue
 		}
 		lower := strings.ToLower(e.Name())
-		if strings.HasSuffix(lower, ".stbook") || strings.HasSuffix(lower, ".zip") {
+		if isPackedBookArchiveName(lower) {
 			if ValidateBookZip(childPath) == nil {
 				found = append(found, childPath)
 			}
@@ -350,7 +465,7 @@ func ResolveDiskBookPaths(rawPath string) ([]string, error) {
 		sort.Strings(found)
 		return found, nil
 	}
-	return nil, fmt.Errorf("w katalogu „%s” nie znaleziono książki StoryTeller (brak story.txt / data.txt ani archiwów .stbook / .zip)", filepath.Base(absPath))
+	return nil, fmt.Errorf("w katalogu „%s” nie znaleziono książki (brak story.txt / data.txt ani archiwów .playbook / .zip)", filepath.Base(absPath))
 }
 
 const maxBookDownloadBytes = 250 * 1024 * 1024
@@ -510,7 +625,11 @@ func DownloadBookFromURL(booksDir, rawURL string) (*Book, error) {
 		bookID = fmt.Sprintf("%s-%s", bookID, shortPathHash(trimmedURL))
 	}
 
-	finalZipPath := filepath.Join(booksDir, bookID+".stbook")
+	outExt := ".stbook"
+	if urlExt == ".playbook" {
+		outExt = ".playbook"
+	}
+	finalZipPath := filepath.Join(booksDir, bookID+outExt)
 	_ = os.Remove(finalZipPath)
 	if err := os.Rename(tmpPath, finalZipPath); err != nil {
 		return nil, fmt.Errorf("błąd zapisu książki w bibliotece: %w", err)
@@ -564,13 +683,14 @@ func chooseDownloadedBookID(urlStem, urlExt string, preview *Book) string {
 		"release":  true,
 		"zip":      true,
 		"stbook":   true,
+		"playbook": true,
 	}
 	if preview != nil && preview.Title != "" {
 		titleID := SanitizeBookID(preview.Title)
 		if genericStems[cleanStem] && titleID != "" && titleID != "book" {
 			return titleID
 		}
-		if urlExt != ".stbook" && urlExt != ".zip" && titleID != "" && titleID != "book" {
+		if urlExt != ".playbook" && urlExt != ".stbook" && urlExt != ".zip" && titleID != "" && titleID != "book" {
 			return titleID
 		}
 	}
@@ -644,7 +764,7 @@ func LoadBookFromDir(bookDir string) (*Book, error) {
 	var imageFiles []string
 
 	for _, e := range entries {
-		if e.IsDir() || strings.HasPrefix(e.Name(), ".") {
+		if e.IsDir() || e.Type()&os.ModeSymlink != 0 || strings.HasPrefix(e.Name(), ".") {
 			continue
 		}
 		name := e.Name()
@@ -652,19 +772,19 @@ func LoadBookFromDir(bookDir string) (*Book, error) {
 
 		switch {
 		case lower == "data.txt":
-			raw, err := os.ReadFile(filepath.Join(bookDir, name))
+			raw, err := readSafeBookTextFile(bookDir, name)
 			if err == nil {
-				ParseDataFile(string(raw), b)
+				ParseDataFile(raw, b)
 			}
 		case lower == "editor.txt" || lower == "nodes.txt":
-			raw, err := os.ReadFile(filepath.Join(bookDir, name))
+			raw, err := readSafeBookTextFile(bookDir, name)
 			if err == nil {
-				ParseEditorFile(string(raw), b)
+				ParseEditorFile(raw, b)
 			}
 		case strings.HasSuffix(lower, ".txt"):
 			if lower == "story.txt" {
 				storyFiles = append(storyFiles, name)
-			} else if raw, err := os.ReadFile(filepath.Join(bookDir, name)); err == nil && looksLikePlainTextStory(string(raw)) {
+			} else if raw, err := readSafeBookTextFile(bookDir, name); err == nil && looksLikePlainTextStory(raw) {
 				storyFiles = append(storyFiles, name)
 			}
 		}
@@ -675,13 +795,19 @@ func LoadBookFromDir(bookDir string) (*Book, error) {
 		if walkErr != nil {
 			return nil
 		}
+		if d.Type()&os.ModeSymlink != 0 {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
 		if d.IsDir() {
 			if path != bookDir && strings.HasPrefix(d.Name(), ".") {
 				return filepath.SkipDir
 			}
 			return nil
 		}
-		if strings.HasPrefix(d.Name(), ".") {
+		if strings.HasPrefix(d.Name(), ".") || !IsSafePathInsideRoot(bookDir, path) {
 			return nil
 		}
 		rel, err := filepath.Rel(bookDir, path)
@@ -701,13 +827,19 @@ func LoadBookFromDir(bookDir string) (*Book, error) {
 	sortStoryFiles(storyFiles)
 	b.TextFiles = storyFiles
 
+	var totalDirTextBytes int
 	for _, sf := range storyFiles {
-		raw, err := os.ReadFile(filepath.Join(bookDir, sf))
+		raw, err := readSafeBookTextFile(bookDir, sf)
 		if err != nil {
 			b.Warnings = append(b.Warnings, fmt.Sprintf("Nie można odczytać pliku %s: %v", sf, err))
 			continue
 		}
-		ParseStoryFile(string(raw), sf, b)
+		if totalDirTextBytes+len(raw) > MaxZipTotalTextBytes {
+			b.Warnings = append(b.Warnings, fmt.Sprintf("Pominięto plik %s: przekroczono łączny limit rozmiaru tekstu (32 MB)", sf))
+			break
+		}
+		totalDirTextBytes += len(raw)
+		ParseStoryFile(raw, sf, b)
 	}
 
 	if len(b.Scenes) == 0 {
@@ -739,6 +871,10 @@ func LoadBookFromZip(zipPath string) (*Book, error) {
 	}
 	defer zr.Close()
 
+	if err := validateZipArchiveLimits(zr.File); err != nil {
+		return nil, err
+	}
+
 	base := filepath.Base(zipPath)
 	ext := filepath.Ext(base)
 	stem := strings.TrimSuffix(base, ext)
@@ -760,12 +896,13 @@ func LoadBookFromZip(zipPath string) (*Book, error) {
 	var storyFiles []string
 	var audioFiles []string
 	var imageFiles []string
+	var totalTextBytes int
 
 	// Detect optional common top-level prefix inside zip if every entry shares one folder
 	commonPrefix := detectZipCommonPrefix(zr.File)
 
 	for _, f := range zr.File {
-		if f.FileInfo().IsDir() {
+		if f.FileInfo().IsDir() || f.Mode()&os.ModeSymlink != 0 {
 			continue
 		}
 		relSlash := filepath.ToSlash(f.Name)
@@ -783,18 +920,36 @@ func LoadBookFromZip(zipPath string) (*Book, error) {
 
 		switch {
 		case lower == "data.txt":
-			if content, err := readZipEntryText(f); err == nil {
-				ParseDataFile(content, b)
+			content, err := readZipEntryText(f)
+			if err != nil {
+				return nil, err
 			}
+			totalTextBytes += len(content)
+			if totalTextBytes > MaxZipTotalTextBytes {
+				return nil, fmt.Errorf("archiwum ZIP przekracza łączny limit rozmiaru plików tekstowych (32 MB)")
+			}
+			ParseDataFile(content, b)
 		case lower == "editor.txt" || lower == "nodes.txt":
-			if content, err := readZipEntryText(f); err == nil {
-				ParseEditorFile(content, b)
+			content, err := readZipEntryText(f)
+			if err != nil {
+				return nil, err
 			}
+			totalTextBytes += len(content)
+			if totalTextBytes > MaxZipTotalTextBytes {
+				return nil, fmt.Errorf("archiwum ZIP przekracza łączny limit rozmiaru plików tekstowych (32 MB)")
+			}
+			ParseEditorFile(content, b)
 		case !strings.Contains(relSlash, "/") && strings.HasSuffix(lower, ".txt"):
-			if content, err := readZipEntryText(f); err == nil {
-				textMap[relSlash] = content
-				storyFiles = append(storyFiles, relSlash)
+			content, err := readZipEntryText(f)
+			if err != nil {
+				return nil, err
 			}
+			totalTextBytes += len(content)
+			if totalTextBytes > MaxZipTotalTextBytes {
+				return nil, fmt.Errorf("archiwum ZIP przekracza łączny limit rozmiaru plików tekstowych (32 MB)")
+			}
+			textMap[relSlash] = content
+			storyFiles = append(storyFiles, relSlash)
 		case isAudioFilename(relSlash):
 			audioFiles = append(audioFiles, relSlash)
 			b.PackedMedia[strings.ToLower(relSlash)] = indexPackedMediaEntry(f, relSlash)
@@ -839,13 +994,18 @@ func UnpackBookZip(zipPath, targetDir string) error {
 	}
 	defer zr.Close()
 
+	if err := validateZipArchiveLimits(zr.File); err != nil {
+		return err
+	}
+
 	if err := os.MkdirAll(targetDir, 0755); err != nil {
 		return err
 	}
 
+	var totalExtractedBytes int64
 	commonPrefix := detectZipCommonPrefix(zr.File)
 	for _, f := range zr.File {
-		if f.FileInfo().IsDir() {
+		if f.FileInfo().IsDir() || f.Mode()&os.ModeSymlink != 0 {
 			continue
 		}
 		relSlash := filepath.ToSlash(f.Name)
@@ -859,18 +1019,40 @@ func UnpackBookZip(zipPath, targetDir string) error {
 		if relSlash == "" || strings.HasPrefix(filepath.Base(relSlash), ".") {
 			continue
 		}
+		lower := strings.ToLower(relSlash)
+		isRootTxt := !strings.Contains(relSlash, "/") && strings.HasSuffix(lower, ".txt")
+		if !isRootTxt && !isAudioFilename(relSlash) && !isRasterImageFilename(relSlash) {
+			continue
+		}
 		dstPath := filepath.Join(targetDir, filepath.FromSlash(relSlash))
 		if err := os.MkdirAll(filepath.Dir(dstPath), 0755); err != nil {
 			return err
+		}
+		if !IsSafePathInsideRoot(targetDir, dstPath) {
+			return fmt.Errorf("niedozwolona ścieżka wypakowania poza katalogiem docelowym: %s", relSlash)
+		}
+		maxEntryCap := int64(MaxSingleMediaBytes)
+		if isRootTxt {
+			maxEntryCap = int64(MaxZipSingleTextBytes)
 		}
 		rc, err := f.Open()
 		if err != nil {
 			return err
 		}
-		data, readErr := io.ReadAll(io.LimitReader(rc, MaxSingleMediaBytes+1024))
+		data, readErr := io.ReadAll(io.LimitReader(rc, maxEntryCap+1))
 		_ = rc.Close()
 		if readErr != nil {
 			return readErr
+		}
+		if int64(len(data)) > maxEntryCap {
+			return fmt.Errorf("plik %s w archiwum przekracza dopuszczalny limit rozmiaru", relSlash)
+		}
+		totalExtractedBytes += int64(len(data))
+		if totalExtractedBytes > MaxZipTotalUncompressedBytes {
+			return fmt.Errorf("archiwum ZIP przekracza dopuszczalny limit rozmiaru po rozpakowaniu (500 MB)")
+		}
+		if (isAudioFilename(relSlash) || isRasterImageFilename(relSlash)) && !validateMediaHeader(relSlash, data) {
+			return fmt.Errorf("nieprawidłowy lub zamaskowany nagłówek pliku multimedialnego: %s", relSlash)
 		}
 		if err := os.WriteFile(dstPath, data, 0644); err != nil {
 			return err
@@ -947,14 +1129,20 @@ func indexPackedMediaEntry(f *zip.File, relSlash string) PackedMediaEntry {
 }
 
 func readZipEntryText(f *zip.File) (string, error) {
+	if f.UncompressedSize64 > MaxZipSingleTextBytes {
+		return "", fmt.Errorf("plik tekstowy %s w archiwum przekracza limit rozmiaru (4 MB)", f.Name)
+	}
 	rc, err := f.Open()
 	if err != nil {
 		return "", err
 	}
 	defer rc.Close()
-	data, err := io.ReadAll(io.LimitReader(rc, 4*1024*1024))
+	data, err := io.ReadAll(io.LimitReader(rc, MaxZipSingleTextBytes+1))
 	if err != nil {
 		return "", err
+	}
+	if len(data) > MaxZipSingleTextBytes {
+		return "", fmt.Errorf("plik tekstowy %s w archiwum przekracza limit rozmiaru (4 MB)", f.Name)
 	}
 	return string(data), nil
 }
@@ -973,16 +1161,101 @@ func sortStoryFiles(files []string) {
 	})
 }
 
+var (
+	defaultTestAppDataOnce sync.Once
+	defaultTestAppDataDir  string
+)
+
+// IsTempDir reports whether p is inside the OS temporary directory.
+func IsTempDir(p string) bool {
+	if p == "" {
+		return false
+	}
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		abs = p
+	}
+	clean := filepath.ToSlash(filepath.Clean(abs))
+	if strings.HasPrefix(clean, "/tmp/") || strings.HasPrefix(clean, "/private/tmp/") ||
+		strings.HasPrefix(clean, "/var/folders/") || strings.HasPrefix(clean, "/private/var/folders/") {
+		return true
+	}
+	if td := os.TempDir(); td != "" {
+		tdClean := filepath.ToSlash(filepath.Clean(td))
+		if strings.HasPrefix(clean, tdClean+"/") || clean == tdClean {
+			return true
+		}
+		if resolved, err := filepath.EvalSymlinks(td); err == nil && resolved != "" {
+			resClean := filepath.ToSlash(filepath.Clean(resolved))
+			if strings.HasPrefix(clean, resClean+"/") || clean == resClean {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// IsInsideRepoDir reports whether p is located inside a Go source repository (a directory containing go.mod).
+func IsInsideRepoDir(p string) bool {
+	if p == "" {
+		return false
+	}
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		abs = p
+	}
+	cur := filepath.Clean(abs)
+	for {
+		if info, err := os.Stat(filepath.Join(cur, "go.mod")); err == nil && !info.IsDir() {
+			return true
+		}
+		parent := filepath.Dir(cur)
+		if parent == cur {
+			break
+		}
+		cur = parent
+	}
+	return false
+}
+
 // DefaultAppDataDir returns the standard OS application data directory for StoryTeller
 // (e.g. ~/Library/Application Support/StoryTeller on macOS, %AppData%\StoryTeller on Windows, ~/.config/StoryTeller on Linux).
+// During `go test`, it returns an isolated temporary directory so tests never touch user or repository state.
 func DefaultAppDataDir() string {
+	if envDir := strings.TrimSpace(os.Getenv("STORYTELLER_DATA_DIR")); envDir != "" {
+		return filepath.Clean(envDir)
+	}
+	if isRunningUnderGoTest() {
+		defaultTestAppDataOnce.Do(func() {
+			if td, err := os.MkdirTemp("", "storyteller-test-appdata-*"); err == nil && td != "" {
+				defaultTestAppDataDir = td
+				return
+			}
+			defaultTestAppDataDir = filepath.Join(os.TempDir(), "storyteller-test-appdata")
+		})
+		return defaultTestAppDataDir
+	}
 	if cfgDir, err := os.UserConfigDir(); err == nil && strings.TrimSpace(cfgDir) != "" {
 		return filepath.Join(cfgDir, "StoryTeller")
 	}
 	if home, err := os.UserHomeDir(); err == nil && strings.TrimSpace(home) != "" {
-		return filepath.Join(home, ".storyteller")
+		return filepath.Join(home, ".config", "StoryTeller")
 	}
 	return filepath.Join(os.TempDir(), "StoryTeller")
+}
+
+// DefaultSavesDir returns the standard application saves/state directory inside DefaultAppDataDir.
+func DefaultSavesDir() string {
+	return filepath.Join(DefaultAppDataDir(), "saves")
+}
+
+// ResolveSavesDir returns the saves directory for rootDir.
+// It always uses DefaultSavesDir() in standard OS application data except when rootDir is an isolated non-repo test temp directory.
+func ResolveSavesDir(rootDir string) string {
+	if IsTempDir(rootDir) && !IsInsideRepoDir(rootDir) && filepath.Clean(rootDir) != filepath.Clean(DefaultAppDataDir()) {
+		return filepath.Join(rootDir, "saves")
+	}
+	return DefaultSavesDir()
 }
 
 // DefaultExportDir returns the default export directory inside standard application data.

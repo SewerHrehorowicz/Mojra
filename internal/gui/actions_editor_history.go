@@ -102,9 +102,14 @@ func (s *Server) reloadActiveBook() {
 	}
 	prevID := s.ActiveBook.ID
 	prevExt := s.ActiveBook.IsExternal
+	prevExportDir := s.ActiveBook.ExportDir
+	if prevExportDir == "" && s.Settings != nil {
+		prevExportDir = s.Settings.GetBookExportDir(prevID)
+	}
 	if s.ActiveBook.RootPath != "" {
 		if reloaded, err := book.LoadBookFromPath(s.ActiveBook.RootPath); err == nil && reloaded != nil {
 			reloaded.IsExternal = prevExt
+			reloaded.ExportDir = prevExportDir
 			if prevID != "" && reloaded.ID != prevID {
 				book.RebindBookID(reloaded, prevID)
 			}
@@ -113,6 +118,7 @@ func (s *Server) reloadActiveBook() {
 		}
 	}
 	if reloaded, err := s.findBookByID(prevID); err == nil && reloaded != nil {
+		reloaded.ExportDir = prevExportDir
 		s.ActiveBook = reloaded
 	}
 }

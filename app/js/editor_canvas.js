@@ -184,14 +184,37 @@ function recomputeChapterPortPositions(ch) {
               }
             } else {
               const stubRank = Math.max(0, portList.length - 1 - k);
-              candX = nd.x + pt.ox + 16 + stubRank * 14;
+              const rightLaneX = nd.x + pt.ox + 16 + stubRank * 14;
+              const nodeCenterX = nd.x + (nd.inOx || NODE_CARD_WIDTH * 0.5);
+              if (toCh && toCh.inX <= nd.x + nd.w && portList.length > 1) {
+                const desiredUnderNodeX = Math.max(nd.x + 24, Math.min(nd.x + nd.w - 24, toCh.inX || nodeCenterX));
+                if (
+                  typeof linecastVertical !== "function" ||
+                  !linecastVertical(desiredUnderNodeX, nd.y + nd.h + 4, ch.y + ch.h, chNodes, nd, null, 10)
+                ) {
+                  candX = desiredUnderNodeX;
+                } else {
+                  candX = rightLaneX;
+                }
+              } else {
+                candX = rightLaneX;
+              }
               if (typeof linecastVertical === "function") {
-                if (linecastVertical(candX, sy + 6, ch.y + ch.h, chNodes, nd, null, 10)) {
+                if (linecastVertical(candX, (candX <= nd.x + nd.w ? nd.y + nd.h : sy) + 6, ch.y + ch.h, chNodes, nd, null, 10)) {
                   hasBlockedDropToBottom = true;
                 }
               }
               if (typeof resolveClearX === "function") {
-                candX = resolveClearX(candX, sy, ch.y + ch.h, chNodes, nd, null, 1, 14);
+                candX = resolveClearX(
+                  candX,
+                  candX <= nd.x + nd.w ? nd.y + nd.h + 4 : sy,
+                  ch.y + ch.h,
+                  chNodes,
+                  nd,
+                  null,
+                  1,
+                  14
+                );
               }
             }
             sumX += candX;
@@ -260,13 +283,17 @@ function recomputeChapterPortPositions(ch) {
   }
 
   const minGap = 24;
-  const minBottomPortGap = 14;
+  const minBottomPortGap = 24;
   if (bottomPorts.length > 1) {
+    const sortedIdealSlots = bottomPorts.map((p) => p._idealX).sort((a, b) => a - b);
     bottomPorts.sort((a, b) => {
+      if (Math.abs(a._targetX - b._targetX) > 12) return a._targetX - b._targetX;
       if (Math.abs(a._idealX - b._idealX) > 6) return a._idealX - b._idealX;
-      if (Math.abs(a._targetX - b._targetX) > 1) return a._targetX - b._targetX;
       return (a.idx || 0) - (b.idx || 0);
     });
+    for (let i = 0; i < bottomPorts.length; i++) {
+      bottomPorts[i]._idealX = sortedIdealSlots[i];
+    }
   }
   for (let i = 0; i < bottomPorts.length; i++) {
     bottomPorts[i].x = bottomPorts[i]._idealX;
@@ -341,6 +368,7 @@ function parseStudioGraphPayload(rawText) {
   studioGraphState.wires = [];
   studioGraphState.wirePins.clear();
   studioGraphState.bundleOverlays = [];
+  studioGraphState.collectorBars = [];
   studioGraphState.hoveredItem = null;
   studioGraphState.staticBatchDirty = true;
   studioGraphState.overlayBatchDirty = true;
@@ -488,10 +516,10 @@ function buildSpatialGridForNodes(nodeList) {
 
 function insertNodeIntoSpatialGrid(grid, nd) {
   if (!grid || !nd || nd.hidden) return;
-  const gx0 = (nd.left - 24) >> SPATIAL_CELL_SHIFT;
-  const gx1 = (nd.right + 24) >> SPATIAL_CELL_SHIFT;
-  const gy0 = (nd.top - 24) >> SPATIAL_CELL_SHIFT;
-  const gy1 = (nd.bottom + 24) >> SPATIAL_CELL_SHIFT;
+  const gx0 = (nd.left - 48) >> SPATIAL_CELL_SHIFT;
+  const gx1 = (nd.right + 48) >> SPATIAL_CELL_SHIFT;
+  const gy0 = (nd.top - 48) >> SPATIAL_CELL_SHIFT;
+  const gy1 = (nd.bottom + 48) >> SPATIAL_CELL_SHIFT;
   nd._gx0 = gx0;
   nd._gx1 = gx1;
   nd._gy0 = gy0;
@@ -545,10 +573,10 @@ function hasSpatialNodeOverlap(grid, nodesFallback, nx, ny, nw, nh) {
   const nr = nx + nw;
   const nb = ny + nh;
   if (grid && grid.size > 0) {
-    const gx0 = (nx - 24) >> SPATIAL_CELL_SHIFT;
-    const gx1 = (nr + 24) >> SPATIAL_CELL_SHIFT;
-    const gy0 = (ny - 24) >> SPATIAL_CELL_SHIFT;
-    const gy1 = (nb + 24) >> SPATIAL_CELL_SHIFT;
+    const gx0 = (nx - 48) >> SPATIAL_CELL_SHIFT;
+    const gx1 = (nr + 48) >> SPATIAL_CELL_SHIFT;
+    const gy0 = (ny - 48) >> SPATIAL_CELL_SHIFT;
+    const gy1 = (nb + 48) >> SPATIAL_CELL_SHIFT;
     for (let gy = gy0; gy <= gy1; gy++) {
       const rowMask = (gy & 0xffff) << 16;
       for (let gx = gx0; gx <= gx1; gx++) {
@@ -558,10 +586,10 @@ function hasSpatialNodeOverlap(grid, nodesFallback, nx, ny, nw, nh) {
           const other = cell[i];
           if (other._isDragging) continue;
           if (
-            nx < other.right + 24 &&
-            nr + 24 > other.left &&
-            ny < other.bottom + 24 &&
-            nb + 24 > other.top
+            nx < other.right + 48 &&
+            nr + 48 > other.left &&
+            ny < other.bottom + 48 &&
+            nb + 48 > other.top
           ) {
             return true;
           }
@@ -574,10 +602,10 @@ function hasSpatialNodeOverlap(grid, nodesFallback, nx, ny, nw, nh) {
     const other = nodesFallback[i];
     if (other._isDragging) continue;
     if (
-      nx < other.right + 24 &&
-      nr + 24 > other.left &&
-      ny < other.bottom + 24 &&
-      nb + 24 > other.top
+      nx < other.right + 48 &&
+      nr + 48 > other.left &&
+      ny < other.bottom + 48 &&
+      nb + 48 > other.top
     ) {
       return true;
     }
@@ -623,10 +651,10 @@ function resolveNonOverlappingNodeCoords(baseX, baseY, chapterName, nodeW, nodeH
     for (let i = 0; i < nodes.length; i++) {
       const other = nodes[i];
       if (
-        cx < other.right + 24 &&
-        cx + w + 24 > other.left &&
-        cy < other.bottom + 24 &&
-        cy + h + 24 > other.top
+        cx < other.right + 48 &&
+        cx + w + 48 > other.left &&
+        cy < other.bottom + 48 &&
+        cy + h + 48 > other.top
       ) {
         return true;
       }
@@ -931,6 +959,8 @@ function createSceneNodeAtWorldCoords(worldX, worldY, chapterName) {
   }
   closeCanvasContextMenu();
   hideFloatingChapterInput(false);
+  hideFloatingNodeTitleInput(false);
+  hideFloatingChoiceInput(false);
   editorSelectionCleared = false;
   selectedNodeIds.clear();
   const baseX = snapToEditorGrid(worldX);
@@ -1096,19 +1126,23 @@ function positionFloatingChapterInput() {
   const z = editorCanvasState.zoom || 1.0;
   const px = editorCanvasState.panX || 0;
   const py = editorCanvasState.panY || 0;
-  const left = (ch.x + 26) * z + px;
-  const top = (ch.y + 2) * z + py;
-  const width = Math.max(80, (ch.w - 34) * z);
-  const height = Math.max(20, 24 * z);
-  inp.style.left = Math.round(left) + "px";
-  inp.style.top = Math.round(top) + "px";
-  inp.style.width = Math.round(width) + "px";
-  inp.style.height = Math.round(height) + "px";
+  const left = (ch.x + 28) * z + px;
+  const top = (ch.y + 4.703) * z + 0.5 + py;
+  const width = Math.max(24, (ch.w - 38) * z);
+  const height = Math.max(4, 20 * z);
+  inp.style.left = left.toFixed(2) + "px";
+  inp.style.top = top.toFixed(2) + "px";
+  inp.style.width = width.toFixed(2) + "px";
+  inp.style.height = height.toFixed(2) + "px";
+  inp.style.fontSize = (11 * z).toFixed(2) + "px";
+  inp.style.letterSpacing = (0.65 * z).toFixed(2) + "px";
 }
 
 function openFloatingChapterInput(ch) {
   const inp = qs("#canvas-chapter-input");
   if (!inp || !ch) return;
+  hideFloatingNodeTitleInput(true);
+  hideFloatingChoiceInput(true);
   studioGraphState.editingChapter = ch;
   studioGraphState.staticBatchDirty = true;
   inp.value = ch.name;
@@ -1139,15 +1173,17 @@ function positionFloatingNodeTitleInput() {
   const z = editorCanvasState.zoom || 1.0;
   const px = editorCanvasState.panX || 0;
   const py = editorCanvasState.panY || 0;
-  const badgeReserve = nd.isStart || nd.isEntry ? 52 : 8;
+  const radioReserve = nd.branchRole === "primary" || nd.branchRole === "secondary" ? 16 : 0;
+  const badgeReserve = (nd.isStart || nd.isEntry ? 50 : 8) + radioReserve;
   const left = (nd.x + 28) * z + px;
-  const top = (nd.y + 6) * z + py;
-  const width = Math.max(64, (nd.w - 30 - badgeReserve) * z);
-  const height = Math.max(18, 22 * z);
-  inp.style.left = Math.round(left) + "px";
-  inp.style.top = Math.round(top) + "px";
-  inp.style.width = Math.round(width) + "px";
-  inp.style.height = Math.round(height) + "px";
+  const top = (nd.y + 6.715) * z + 0.5 + py;
+  const width = Math.max(24, (nd.w - 28 - badgeReserve) * z);
+  const height = Math.max(4, 22 * z);
+  inp.style.left = left.toFixed(2) + "px";
+  inp.style.top = top.toFixed(2) + "px";
+  inp.style.width = width.toFixed(2) + "px";
+  inp.style.height = height.toFixed(2) + "px";
+  inp.style.fontSize = (13 * z).toFixed(2) + "px";
 }
 
 function commitNodeTitleInput(inp) {
@@ -1204,13 +1240,14 @@ function positionFloatingChoiceInput() {
   const py = editorCanvasState.panY || 0;
   const rowY = nd.y + NODE_HEADER_HEIGHT + idx * NODE_CHOICE_ROW_HEIGHT;
   const left = (nd.x + 21) * z + px;
-  const top = (rowY + 3) * z + py;
-  const width = Math.max(60, (nd.w - 47) * z);
-  const height = Math.max(16, (NODE_CHOICE_ROW_HEIGHT - 6) * z);
-  inp.style.left = Math.round(left) + "px";
-  inp.style.top = Math.round(top) + "px";
-  inp.style.width = Math.round(width) + "px";
-  inp.style.height = Math.round(height) + "px";
+  const top = (rowY + 2.703) * z + 0.5 + py;
+  const width = Math.max(24, (nd.w - 47) * z);
+  const height = Math.max(4, (NODE_CHOICE_ROW_HEIGHT - 6) * z);
+  inp.style.left = left.toFixed(2) + "px";
+  inp.style.top = top.toFixed(2) + "px";
+  inp.style.width = width.toFixed(2) + "px";
+  inp.style.height = height.toFixed(2) + "px";
+  inp.style.fontSize = (11 * z).toFixed(2) + "px";
 }
 
 function commitChoiceInput(inp) {
@@ -1493,6 +1530,8 @@ function initNodeEditorCanvas() {
   bindStudioViewportResizeObserver(viewport, canvas);
   invalidateStudioThemeCache();
   hideFloatingChapterInput(false);
+  hideFloatingNodeTitleInput(false);
+  hideFloatingChoiceInput(false);
 
   const dataPre = qs("#studio-graph-data", viewport);
   const rawPayload = dataPre ? dataPre.textContent || "" : "";

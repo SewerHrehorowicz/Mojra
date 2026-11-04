@@ -45,7 +45,36 @@ func DefaultAppSettings() *AppSettings {
 		PlaybackSpeed:      1.0,
 		AutoChoice:         false,
 		AutoChoiceStrategy: "first",
+		BookExportDirs:     make(map[string]string),
 	}
+}
+
+// SetBookExportDir stores or clears the remembered export directory for a specific book ID in settings.ini.
+func (cfg *AppSettings) SetBookExportDir(bookID, rawDir string) {
+	if cfg == nil {
+		return
+	}
+	safeID := SanitizeBookID(bookID)
+	if safeID == "" {
+		return
+	}
+	if cfg.BookExportDirs == nil {
+		cfg.BookExportDirs = make(map[string]string)
+	}
+	cleanDir := filepath.Clean(strings.TrimSpace(rawDir))
+	if cleanDir == "" || cleanDir == "." {
+		delete(cfg.BookExportDirs, safeID)
+		return
+	}
+	cfg.BookExportDirs[safeID] = cleanDir
+}
+
+// GetBookExportDir returns the remembered export directory for a specific book ID from settings.ini.
+func (cfg *AppSettings) GetBookExportDir(bookID string) string {
+	if cfg == nil || len(cfg.BookExportDirs) == 0 {
+		return ""
+	}
+	return cfg.BookExportDirs[SanitizeBookID(bookID)]
 }
 
 // LoadAppSettings parses saves/settings.ini.
@@ -125,6 +154,11 @@ func LoadAppSettings(savesDir string) *AppSettings {
 			if cleanDir != "" && cleanDir != "." {
 				cfg.ExportDir = cleanDir
 			}
+		default:
+			if strings.HasPrefix(key, "book_export.") {
+				bID := strings.TrimPrefix(key, "book_export.")
+				cfg.SetBookExportDir(bID, val)
+			}
 		}
 	}
 	return cfg
@@ -181,7 +215,7 @@ func SaveAppSettings(savesDir string, cfg *AppSettings) error {
 	if cfg.UIScale != "large" {
 		cfg.UIScale = "small"
 	}
-	if cfg.PlaybackSpeed < 0.5 || cfg.PlaybackSpeed > 3.0 {
+	if math.IsNaN(cfg.PlaybackSpeed) || math.IsInf(cfg.PlaybackSpeed, 0) || cfg.PlaybackSpeed < 0.5 || cfg.PlaybackSpeed > 3.0 {
 		cfg.PlaybackSpeed = 1.0
 	}
 	if cfg.AutoChoiceStrategy != "random" {
@@ -211,13 +245,27 @@ func SaveAppSettings(savesDir string, cfg *AppSettings) error {
 	if cleanExportDir == "." {
 		cleanExportDir = ""
 	}
-	if len(cfg.ExternalBooks) > 0 || cleanNewBookDir != "" || cleanExportDir != "" {
+	if len(cfg.ExternalBooks) > 0 || cleanNewBookDir != "" || cleanExportDir != "" || len(cfg.BookExportDirs) > 0 {
 		sb.WriteString("\n[library]\n")
 		if cleanNewBookDir != "" {
 			fmt.Fprintf(&sb, "new_book_dir = %s\n", cleanNewBookDir)
 		}
 		if cleanExportDir != "" {
 			fmt.Fprintf(&sb, "export_dir = %s\n", cleanExportDir)
+		}
+		if len(cfg.BookExportDirs) > 0 {
+			expKeys := make([]string, 0, len(cfg.BookExportDirs))
+			for k, v := range cfg.BookExportDirs {
+				cleanK := SanitizeBookID(k)
+				cleanV := filepath.Clean(strings.TrimSpace(v))
+				if cleanK != "" && cleanV != "" && cleanV != "." {
+					expKeys = append(expKeys, cleanK)
+				}
+			}
+			sort.Strings(expKeys)
+			for _, k := range expKeys {
+				fmt.Fprintf(&sb, "book_export.%s = %s\n", k, filepath.Clean(strings.TrimSpace(cfg.BookExportDirs[k])))
+			}
 		}
 		seen := make(map[string]bool, len(cfg.ExternalBooks))
 		for _, p := range cfg.ExternalBooks {
@@ -271,6 +319,9 @@ func LoadSaveState(savesDir, bookID string, defaultStartSceneID string) *SaveSta
 		return st
 	}
 	st.AudioTime = math.Float64frombits(audioBits)
+	if math.IsNaN(st.AudioTime) || math.IsInf(st.AudioTime, 0) || st.AudioTime < 0 {
+		st.AudioTime = 0
+	}
 
 	if err := binary.Read(r, binary.LittleEndian, &st.UpdatedAtUnix); err != nil {
 		return st
@@ -281,7 +332,7 @@ func LoadSaveState(savesDir, bookID string, defaultStartSceneID string) *SaveSta
 		return st
 	}
 	st.PlaybackSpeed = math.Float64frombits(speedBits)
-	if st.PlaybackSpeed < 0.5 || st.PlaybackSpeed > 3.0 {
+	if math.IsNaN(st.PlaybackSpeed) || math.IsInf(st.PlaybackSpeed, 0) || st.PlaybackSpeed < 0.5 || st.PlaybackSpeed > 3.0 {
 		st.PlaybackSpeed = 1.0
 	}
 
@@ -337,7 +388,10 @@ func WriteSaveState(savesDir string, state *SaveState) error {
 	}
 	state.BookID = SanitizeBookID(state.BookID)
 	state.CurrentSceneID = SanitizePlainText(state.CurrentSceneID)
-	if state.PlaybackSpeed < 0.5 || state.PlaybackSpeed > 3.0 {
+	if math.IsNaN(state.AudioTime) || math.IsInf(state.AudioTime, 0) || state.AudioTime < 0 {
+		state.AudioTime = 0
+	}
+	if math.IsNaN(state.PlaybackSpeed) || math.IsInf(state.PlaybackSpeed, 0) || state.PlaybackSpeed < 0.5 || state.PlaybackSpeed > 3.0 {
 		state.PlaybackSpeed = 1.0
 	}
 	if state.AutoChoiceStrategy != "random" {
@@ -385,6 +439,9 @@ func WriteSaveState(savesDir string, state *SaveState) error {
 // UpdateSaveAudioTimeInPlace updates only the 8-byte float64 AudioTime and 8-byte UpdatedAt timestamp
 // at fixed offset 5 inside saves/<book-id>.sav without rewriting the entire file.
 func UpdateSaveAudioTimeInPlace(savesDir, bookID string, audioTime float64, defaultStartSceneID string) error {
+	if math.IsNaN(audioTime) || math.IsInf(audioTime, 0) || audioTime < 0 {
+		audioTime = 0
+	}
 	path := saveFilePath(savesDir, bookID)
 	f, err := os.OpenFile(path, os.O_RDWR, 0644)
 	if err != nil {

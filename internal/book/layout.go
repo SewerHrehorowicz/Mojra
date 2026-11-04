@@ -195,10 +195,24 @@ func canonicalizeAutoSceneIDsAfterReorder(b *Book, sceneMap map[string]*Scene) {
 	}
 }
 
-const EditorGridSize = 24
+const (
+	EditorGridSize = 24
+	maxCanvasCoord = 1_000_000
+)
+
+func clampCanvasCoord(v int) int {
+	if v > maxCanvasCoord {
+		return maxCanvasCoord
+	}
+	if v < -maxCanvasCoord {
+		return -maxCanvasCoord
+	}
+	return v
+}
 
 // SnapToGrid rounds an integer coordinate to the nearest multiple of EditorGridSize (24px).
 func SnapToGrid(v int) int {
+	v = clampCanvasCoord(v)
 	if v >= 0 {
 		return ((v + EditorGridSize/2) / EditorGridSize) * EditorGridSize
 	}
@@ -494,6 +508,13 @@ func ComputeTimelineLayout(b *Book) {
 			if maxWarnings > 0 {
 				rowStep += 24
 			}
+			maxSceneH := 74
+			if maxChoices >= 2 {
+				maxSceneH = 74 + maxChoices*26
+			}
+			if minStep := ((maxSceneH + 48 + 23) / 24) * 24; rowStep < minStep {
+				rowStep = minStep
+			}
 			localY += rowStep
 		}
 
@@ -764,9 +785,9 @@ func sceneCanvasHeight(sc *Scene) int {
 		return 74
 	}
 	if len(sc.Choices) >= 2 {
-		return 58 + len(sc.Choices)*20
+		return 74 + len(sc.Choices)*26
 	}
-	return 58
+	return 74
 }
 
 func nodesOverlapWithMargin(ax, ay, ah, bx, by, bh, margin int) bool {
@@ -783,7 +804,7 @@ func resolveNodeAndChapterOverlaps(b *Book, chapterOrder []string, sceneMap map[
 	}
 	const (
 		nodeW      = 192
-		nodeMargin = 24
+		nodeMargin = 48
 		chGap      = 48
 	)
 
@@ -1119,12 +1140,12 @@ func ParseEditorFile(raw string, b *Book) {
 		switch key {
 		case "pan_x":
 			if v, err := strconv.Atoi(val); err == nil {
-				b.EditorPanX = v
+				b.EditorPanX = clampCanvasCoord(v)
 				b.HasEditorView = true
 			}
 		case "pan_y":
 			if v, err := strconv.Atoi(val); err == nil {
-				b.EditorPanY = v
+				b.EditorPanY = clampCanvasCoord(v)
 				b.HasEditorView = true
 			}
 		case "zoom":
@@ -1146,7 +1167,7 @@ func ParseEditorFile(raw string, b *Book) {
 			x, errX := strconv.Atoi(strings.TrimSpace(parts[0]))
 			y, errY := strconv.Atoi(strings.TrimSpace(parts[1]))
 			if errX == nil && errY == nil {
-				pos := NodePosition{X: x, Y: y, HasXY: true}
+				pos := NodePosition{X: clampCanvasCoord(x), Y: clampCanvasCoord(y), HasXY: true}
 				b.Layout[nodeKey] = pos
 				b.Layout[strings.ToLower(nodeKey)] = pos
 				b.Layout[NormalizeLookupKey(nodeKey)] = pos
@@ -1184,7 +1205,7 @@ func ParseWirePinList(raw string) []WirePin {
 		x, errX := strconv.Atoi(strings.TrimSpace(parts[0]))
 		y, errY := strconv.Atoi(strings.TrimSpace(parts[1]))
 		if errX == nil && errY == nil {
-			pins = append(pins, WirePin{X: x, Y: y})
+			pins = append(pins, WirePin{X: clampCanvasCoord(x), Y: clampCanvasCoord(y)})
 		}
 	}
 	return pins

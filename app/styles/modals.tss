@@ -388,31 +388,6 @@
   height 30px
   padding 0
 
-.scene-start-star-btn
-  width 30px
-  height 30px
-  padding 0
-  display inline-flex
-  align-items center
-  justify-content center
-  background --bg-obsidian
-  border 1px solid --border-strong
-  color --text-primary
-  cursor pointer
-  flex-shrink 0
-  transition color 0.15s ease, border-color 0.15s ease, background 0.15s ease
-
-.scene-start-star-btn:hover
-  border-color --text-primary
-  background --bg-elevated
-  color --text-primary
-
-.scene-start-star-btn.active
-  border-color --text-primary
-  background --bg-elevated
-  color --text-primary
-  cursor default
-
 .scene-star-icon, .scene-settings-row .media-plus-icon, .modal-add-choice-btn .media-plus-icon
   width 15px
   height 15px
@@ -595,7 +570,7 @@ body[data-ui-scale="large"]
   .scene-text-editor-card .scene-title-row
     padding 13px 36px
 
-  .modal-choice-nav-btn, .scene-settings-toggle-btn, .scene-start-star-btn, .scene-settings-row .node-media-add-btn, .modal-add-choice-btn
+  .modal-choice-nav-btn, .scene-settings-toggle-btn, .scene-settings-row .node-media-add-btn, .modal-add-choice-btn
     width 34px
     height 34px
 

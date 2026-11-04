@@ -106,7 +106,10 @@
   align-items flex-end
   justify-content center
   padding-bottom 6px
-  background linear-gradient(to bottom, transparent 0%, --bg-obsidian 80%)
+  background
+    linear-gradient(to bottom)
+      transparent 0%
+      --bg-obsidian 80%
 
 .scroll-more-dots
   font-family --font-serif
@@ -589,7 +592,12 @@
   width 0
   min-width 48px
   border-radius 999px !important
-  background linear-gradient(to right, --text-secondary 0%, --text-secondary --seek-pct(0%), --border-subtle --seek-pct(0%), --border-subtle 100%)
+  background
+    linear-gradient(to right)
+      --text-secondary 0%
+      --text-secondary --seek-pct(0%)
+      --border-subtle --seek-pct(0%)
+      --border-subtle 100%
   cursor pointer
   height 4px
   outline none

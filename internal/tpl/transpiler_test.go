@@ -444,6 +444,83 @@ body[data-theme="light"]
 	}
 }
 
+func TestTranspileTSSMultilinePropertiesAndFunctions(t *testing.T) {
+	src := `
+.btn
+  transition
+    border-color 0.15s ease
+    background 0.15s ease
+    color 0.15s ease
+    opacity 0.15s ease
+  background
+    linear-gradient(to right)
+      currentColor 5px
+      transparent 5px
+      transparent calc(100% - 5px)
+      currentColor calc(100% - 5px)
+    0 0 / 100% 1px no-repeat
+  box-shadow
+    inset 0 0 0 2px --bg-obsidian
+    inset 0 0 0 4px --text-primary
+  transform
+    translate3d(0, -2px, 0)
+    scale(1.02)
+  filter
+    blur(8px)
+    brightness(0.9)
+  clip-path
+    polygon()
+      0% 0%
+      100% 0%
+      100% 100%
+  grid-template-areas
+    "topbar topbar"
+    "canvas inspector"
+
+.multi-grad
+  background
+    radial-gradient(circle at 50% 0%)
+      --accent-glow 0%
+      transparent 70%
+    linear-gradient(180deg)
+      --bg-elevated 0%
+      --bg-obsidian 100%
+  mask-image linear-gradient(to bottom)
+    transparent 0%
+    black 100%
+  box-shadow switch(theme)
+    dark
+      0 6px 18px rgba(0, 0, 0, 0.45)
+      0 2px 6px rgba(0, 0, 0, 0.3)
+    light
+      0 2px 8px rgba(0, 0, 0, 0.06)
+`
+	css, err := TranspileCSSString(src, "multiline_props_test", nil)
+	if err != nil {
+		t.Fatalf("TranspileCSSString failed: %v", err)
+	}
+
+	checks := []string{
+		"transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease, opacity 0.15s ease;",
+		"background: linear-gradient(to right, currentColor 5px, transparent 5px, transparent calc(100% - 5px), currentColor calc(100% - 5px)) 0 0 / 100% 1px no-repeat;",
+		"box-shadow: inset 0 0 0 2px var(--bg-obsidian), inset 0 0 0 4px var(--text-primary);",
+		"transform: translate3d(0, -2px, 0) scale(1.02);",
+		"filter: blur(8px) brightness(0.9);",
+		"clip-path: polygon(0% 0%, 100% 0%, 100% 100%);",
+		"grid-template-areas: \"topbar topbar\" \"canvas inspector\";",
+		"background: radial-gradient(circle at 50% 0%, var(--accent-glow) 0%, transparent 70%), linear-gradient(180deg, var(--bg-elevated) 0%, var(--bg-obsidian) 100%);",
+		"mask-image: linear-gradient(to bottom, transparent 0%, black 100%);",
+		"box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.3);",
+		"box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);",
+	}
+
+	for _, want := range checks {
+		if !strings.Contains(css, want) {
+			t.Fatalf("expected CSS output to contain:\n%s\n\ngot full CSS:\n%s", want, css)
+		}
+	}
+}
+
 func TestNoSecondaryInterpolationOnDynamicContextValues(t *testing.T) {
 	src := `
 div.card

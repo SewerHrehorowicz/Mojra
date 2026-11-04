@@ -822,6 +822,183 @@ func BenchmarkSaveMultiChapterBookDirtyOnly(b *testing.B) {
 	}
 }
 
+func TestSecurityZipBombSymlinkExportDirAndDotDirs(t *testing.T) {
+	dir := t.TempDir()
+
+	// 1. Zip bomb: entry count > MaxZipEntries must be rejected by ValidateBookZip, LoadBookFromZip, and UnpackBookZip
+	manyFilesZip := filepath.Join(dir, "many.stbook")
+	var manyBuf bytes.Buffer
+	mzw := zip.NewWriter(&manyBuf)
+	dw, _ := mzw.Create("story.txt")
+	_, _ = dw.Write([]byte("scene: S1\nid: s1\nend: true\nTekst.\n"))
+	for i := 0; i <= MaxZipEntries; i++ {
+		_, _ = mzw.CreateHeader(&zip.FileHeader{
+			Name:   "images/f_" + string(rune('a'+(i%26))) + "_" + filepath.Base(SanitizeBookID(string(rune('0'+(i%10))))) + ".png",
+			Method: zip.Store,
+		})
+	}
+	_ = mzw.Close()
+	_ = os.WriteFile(manyFilesZip, manyBuf.Bytes(), 0644)
+
+	if err := ValidateBookZip(manyFilesZip); err == nil {
+		t.Fatalf("expected ValidateBookZip to reject archive exceeding MaxZipEntries")
+	}
+	if _, err := LoadBookFromZip(manyFilesZip); err == nil {
+		t.Fatalf("expected LoadBookFromZip to reject archive exceeding MaxZipEntries")
+	}
+	if err := UnpackBookZip(manyFilesZip, filepath.Join(dir, "unpacked-many")); err == nil {
+		t.Fatalf("expected UnpackBookZip to reject archive exceeding MaxZipEntries")
+	}
+
+	// 2. Zip bomb: declared UncompressedSize64 exceeding MaxZipTotalUncompressedBytes
+	fakeFiles := []*zip.File{
+		{FileHeader: zip.FileHeader{Name: "a.png", UncompressedSize64: uint64(MaxZipTotalUncompressedBytes) - 10}},
+		{FileHeader: zip.FileHeader{Name: "b.png", UncompressedSize64: 20}},
+	}
+	if err := validateZipArchiveLimits(fakeFiles); err == nil {
+		t.Fatalf("expected validateZipArchiveLimits to reject cumulative size > MaxZipTotalUncompressedBytes")
+	}
+
+	// 3. Symlink traversal inside unpacked book directory: must be ignored on load, rejected by ServeBookMedia, and skipped by PackBookToZip
+	secretFile := filepath.Join(dir, "outside_secret.png")
+	validPNG := append([]byte("\x89PNG\r\n\x1a\n"), bytes.Repeat([]byte("S"), 64)...)
+	_ = os.WriteFile(secretFile, validPNG, 0644)
+
+	bookDir := filepath.Join(dir, "symlink-book")
+	_ = os.MkdirAll(filepath.Join(bookDir, "images"), 0755)
+	_ = os.WriteFile(filepath.Join(bookDir, "data.txt"), []byte("title: Symlink Test\nexport_dir: /tmp/evil-hijack\n"), 0644)
+	_ = os.WriteFile(filepath.Join(bookDir, "story.txt"), []byte("scene: S1\nid: s1\nimage: images/leak.png\nend: true\nTekst.\n"), 0644)
+
+	symlinkPath := filepath.Join(bookDir, "images", "leak.png")
+	if err := os.Symlink(secretFile, symlinkPath); err == nil {
+		b, err := LoadBookFromDir(bookDir)
+		if err != nil {
+			t.Fatalf("LoadBookFromDir failed: %v", err)
+		}
+		if b.ExportDir != "" {
+			t.Fatalf("expected untrusted export_dir in data.txt to be ignored, got %q", b.ExportDir)
+		}
+		if len(b.ImageFiles) != 0 || b.Scenes[0].ImageFile != "" {
+			t.Fatalf("expected symlinked image outside root to be ignored during LoadBookFromDir, got ImageFiles=%v", b.ImageFiles)
+		}
+
+		// Direct ServeBookMedia request for symlinked file must return 404 NotFound
+		req := httptest.NewRequest(http.MethodGet, "/api/books/symlink-book/media/images/leak.png", nil)
+		rec := httptest.NewRecorder()
+		ServeBookMedia(rec, req, b, "images/leak.png")
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("expected 404 NotFound for symlinked media file outside book root, got %d", rec.Code)
+		}
+
+		// PackBookToZip must not include the symlink target
+		packedPath := filepath.Join(dir, "packed.stbook")
+		if err := PackBookToZip(bookDir, packedPath); err != nil {
+			t.Fatalf("PackBookToZip failed: %v", err)
+		}
+		zr, err := zip.OpenReader(packedPath)
+		if err != nil {
+			t.Fatalf("zip.OpenReader failed: %v", err)
+		}
+		for _, f := range zr.File {
+			if strings.Contains(f.Name, "leak.png") {
+				_ = zr.Close()
+				t.Fatalf("expected symlinked file leak.png to be excluded from packed .stbook")
+			}
+		}
+		_ = zr.Close()
+	}
+
+	// 4. ExpandLocalPath must allow normal user directories anywhere on disk while blocking sensitive/hidden dot-directories
+	safeCustomDir := filepath.Join(dir, "MojeEksporty")
+	if expanded, err := ExpandLocalPath(safeCustomDir); err != nil || expanded != filepath.Clean(safeCustomDir) {
+		t.Fatalf("expected normal user directory %q to be allowed, got %q (err=%v)", safeCustomDir, expanded, err)
+	}
+	for _, blocked := range []string{
+		filepath.Join(dir, ".ssh"),
+		filepath.Join(dir, ".ssh", "authorized_keys"),
+		filepath.Join(dir, ".git", "hooks"),
+		filepath.Join(dir, ".gnupg"),
+		filepath.Join(dir, ".hidden_target"),
+	} {
+		if _, err := ExpandLocalPath(blocked); err == nil {
+			t.Fatalf("expected sensitive/dot path %q to be rejected by ExpandLocalPath", blocked)
+		}
+	}
+}
+
+func assertOnlyAllowedProseTags(t *testing.T, html string) {
+	t.Helper()
+	stripped := html
+	for _, allowed := range []string{
+		"<p>", "</p>",
+		"<br />",
+		"<strong>", "</strong>",
+		"<em>", "</em>",
+		"<blockquote>", "</blockquote>",
+		`<hr class="scene-divider" />`,
+	} {
+		stripped = strings.ReplaceAll(stripped, allowed, "")
+	}
+	if strings.ContainsAny(stripped, "<>") {
+		t.Fatalf("unexpected raw HTML angle bracket in RenderSafeProseHTML output: %q (remaining: %q)", html, stripped)
+	}
+}
+
+func FuzzParseStoryFileAndFinalize(f *testing.F) {
+	f.Add("chapter: Rozdział 1\nid: r1\n\nscene: Start\nid: s1\nTekst **pogrubiony** i *kursywa* \\-> strzałka.\nWybór A -> s2\nWybór B -> END\n\nscene: Druga\nid: s2\nend: true\nKoniec.\n")
+	f.Add("scene: <script>alert(1)</script>\nid: ../etc/passwd\nimage: ../../secret.png\nvoice: /etc/shadow\n> Cytat\n---\nDalej -> chapter:r2\n")
+	f.Fuzz(func(t *testing.T, raw string) {
+		b := &Book{ID: "fuzz", Title: "Fuzz"}
+		ParseStoryFile(raw, "story.txt", b)
+		FinalizeBook(b)
+		for _, sc := range b.Scenes {
+			assertOnlyAllowedProseTags(t, sc.EnsureHTML())
+		}
+	})
+}
+
+func FuzzParseDataAndEditorFile(f *testing.F) {
+	f.Add("title: Test\nauthor: Autor\nnarrated: true\nimageless: false\nmode: screenplay\nstandard: pl\ncover: ../evil.svg\nexport_dir: /etc\n", "pan_x: 999999999999999999\npan_y: -999999999999999999\nzoom: 1.5\nnode: s1 -> 120, -240\nwire: s1|0|s2 -> 10,20;30,40\n")
+	f.Fuzz(func(t *testing.T, dataTxt, editorTxt string) {
+		b := &Book{ID: "fuzz", Title: "Fuzz", Layout: make(map[string]NodePosition)}
+		ParseDataFile(dataTxt, b)
+		if b.ExportDir != "" {
+			t.Fatalf("ParseDataFile must never populate ExportDir from untrusted data.txt")
+		}
+		if strings.Contains(b.CoverFile, "..") {
+			t.Fatalf("unsafe CoverFile path: %q", b.CoverFile)
+		}
+		ParseEditorFile(editorTxt, b)
+		_ = SerializeDataFile(b)
+		_ = SerializeEditorFile(b)
+	})
+}
+
+func FuzzRenderSafeProseHTMLAndSanitizePaths(f *testing.F) {
+	f.Add("<img src=x onerror=alert(1)> **bold** *italic*\n> quote\n---\n../../etc/passwd")
+	f.Fuzz(func(t *testing.T, input string) {
+		assertOnlyAllowedProseTags(t, RenderSafeProseHTML(input))
+		rel := SanitizeRelativeMediaPath(input)
+		if strings.Contains(rel, "..") || strings.HasPrefix(rel, "/") || strings.Contains(rel, "\\") {
+			t.Fatalf("unsafe relative media path %q from input %q", rel, input)
+		}
+	})
+}
+
+func FuzzDecodeLayoutAndSaveState(f *testing.F) {
+	f.Add([]byte("STSV\x01\x00\x00\x00\x00\x00\x00\xf8\x7f\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xf8\x7f\x03\x02\x00s1\x01\x00\x00\x00"))
+	f.Add([]byte("STLY\x01\x01\x00\x00\x00\x02\x00s1\x01\x00\x00\x00\x02\x00\x00\x00"))
+	f.Fuzz(func(t *testing.T, data []byte) {
+		_ = DecodeLayoutBinary(data)
+		dir := t.TempDir()
+		_ = os.WriteFile(filepath.Join(dir, "fuzz.sav"), data, 0644)
+		st := LoadSaveState(dir, "fuzz", "s1")
+		if st.AudioTime < 0 || st.PlaybackSpeed < 0.5 || st.PlaybackSpeed > 3.0 {
+			t.Fatalf("out-of-range float in LoadSaveState: audio=%v speed=%v", st.AudioTime, st.PlaybackSpeed)
+		}
+	})
+}
+
 
 
 

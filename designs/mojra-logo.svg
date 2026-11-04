@@ -1,0 +1,247 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1200" viewBox="0 0 1200 1200">
+  <defs>
+    <style>
+      .bg-dark { fill: #000000; }
+      .bg-light { fill: #ffffff; }
+      .label-dark { fill: #ffffff; font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 11px; letter-spacing: 2px; font-weight: 600; }
+      .label-light { fill: #000000; font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 11px; letter-spacing: 2px; font-weight: 600; }
+      .sub-dark { fill: #888888; font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 10px; letter-spacing: 1.5px; }
+      .sub-light { fill: #666666; font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 10px; letter-spacing: 1.5px; }
+      .wordmark-serif-dark { fill: #ffffff; font-family: Georgia, "Times New Roman", serif; font-size: 54px; font-weight: 700; letter-spacing: 3.5px; }
+      .wordmark-serif-light { fill: #000000; font-family: Georgia, "Times New Roman", serif; font-size: 54px; font-weight: 700; letter-spacing: 3.5px; }
+      .submark-dark { fill: #ffffff; font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 11px; font-weight: 600; }
+      .submark-light { fill: #000000; font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 11px; font-weight: 600; }
+      .topbar-logo-dark { fill: #ffffff; font-family: Georgia, "Times New Roman", serif; font-size: 15px; font-weight: 700; letter-spacing: 1px; }
+      .topbar-logo-light { fill: #000000; font-family: Georgia, "Times New Roman", serif; font-size: 15px; font-weight: 700; letter-spacing: 1px; }
+      .topbar-tab-dark { fill: #ffffff; font-family: -apple-system, BlinkMacSystemFont, sans-serif; font-size: 12px; font-weight: 500; }
+      .topbar-tab-muted-dark { fill: #888888; font-family: -apple-system, BlinkMacSystemFont, sans-serif; font-size: 12px; font-weight: 500; }
+      .topbar-tab-light { fill: #000000; font-family: -apple-system, BlinkMacSystemFont, sans-serif; font-size: 12px; font-weight: 500; }
+      .topbar-tab-muted-light { fill: #666666; font-family: -apple-system, BlinkMacSystemFont, sans-serif; font-size: 12px; font-weight: 500; }
+    </style>
+  </defs>
+
+  <!-- LEFT HALF: DARK MODE (#000000) -->
+  <rect class="bg-dark" x="0" y="0" width="600" height="1200" />
+  <!-- RIGHT HALF: LIGHT MODE (#FFFFFF) -->
+  <rect class="bg-light" x="600" y="0" width="600" height="1200" />
+  <!-- CENTER DIVIDER -->
+  <line x1="600" y1="0" x2="600" y2="1200" stroke="#444444" stroke-width="1" />
+
+  <!-- HEADER -->
+  <text class="label-dark" x="56" y="56">MOJRA — POŁĄCZONY PROJEKT (TRYB CIEMNY)</text>
+  <text class="label-light" x="656" y="56">MOJRA — POŁĄCZONY PROJEKT (TRYB JASNY)</text>
+  <line x1="56" y1="76" x2="544" y2="76" stroke="#262626" stroke-width="1" />
+  <line x1="656" y1="76" x2="1144" y2="76" stroke="#d9d9d9" stroke-width="1" />
+
+  <!-- ===================================================================== -->
+  <!-- ROW 1: WARIANT RAMKI 1 (NAROŻNIKI)                                    -->
+  <!-- ===================================================================== -->
+  <text class="sub-dark" x="56" y="126">01 / RAMKA Z WARIANTU 1 (NAROŻNIKI)</text>
+  <text class="sub-light" x="656" y="126">01 / RAMKA Z WARIANTU 1 (NAROŻNIKI)</text>
+
+  <!-- Dark Row 1 (Corner Brackets) -->
+  <g transform="translate(56, 158)">
+    <!-- 4-Corner Brackets from Variant 1 -->
+    <path d="M 0 18 L 0 0 L 18 0" fill="none" stroke="#ffffff" stroke-width="2" />
+    <path d="M 118 0 L 136 0 L 136 18" fill="none" stroke="#ffffff" stroke-width="2" />
+    <path d="M 0 118 L 0 136 L 18 136" fill="none" stroke="#ffffff" stroke-width="2" />
+    <path d="M 118 136 L 136 136 L 136 118" fill="none" stroke="#ffffff" stroke-width="2" />
+
+    <!-- Merged "M": Proportions & balls of 2, NO protruding lines, center double-ring of 1 -->
+    <line x1="40" y1="34" x2="40" y2="102" stroke="#ffffff" stroke-width="2.8" />
+    <line x1="96" y1="34" x2="96" y2="102" stroke="#ffffff" stroke-width="2.8" />
+    <path d="M 40 34 L 68 64 L 96 34" fill="none" stroke="#ffffff" stroke-width="2.8" stroke-linejoin="miter" />
+    <line x1="68" y1="64" x2="68" y2="102" stroke="#ffffff" stroke-width="2.2" />
+
+    <!-- Balls from Variant 2 -->
+    <circle cx="40" cy="34" r="5" fill="#ffffff" />
+    <circle cx="96" cy="34" r="5" fill="#000000" stroke="#ffffff" stroke-width="2.4" />
+    <circle cx="40" cy="102" r="5" fill="#ffffff" />
+    <circle cx="96" cy="102" r="5" fill="#ffffff" />
+
+    <!-- Center Ball from Variant 1 (Double-Ring ◉) -->
+    <circle cx="68" cy="64" r="8" fill="#000000" stroke="#ffffff" stroke-width="2.5" />
+    <circle cx="68" cy="64" r="3" fill="#ffffff" />
+
+    <!-- Typography from 1 with slightly more letter spacing, no underline, .PLAYBOOK STUDIO full width -->
+    <text class="wordmark-serif-dark" x="172" y="72" textLength="194" lengthAdjust="spacing">Mojra</text>
+    <text class="submark-dark" x="172" y="102" textLength="194" lengthAdjust="spacing">.PLAYBOOK STUDIO</text>
+  </g>
+
+  <!-- Light Row 1 (Corner Brackets) -->
+  <g transform="translate(656, 158)">
+    <path d="M 0 18 L 0 0 L 18 0" fill="none" stroke="#000000" stroke-width="2" />
+    <path d="M 118 0 L 136 0 L 136 18" fill="none" stroke="#000000" stroke-width="2" />
+    <path d="M 0 118 L 0 136 L 18 136" fill="none" stroke="#000000" stroke-width="2" />
+    <path d="M 118 136 L 136 136 L 136 118" fill="none" stroke="#000000" stroke-width="2" />
+
+    <line x1="40" y1="34" x2="40" y2="102" stroke="#000000" stroke-width="2.8" />
+    <line x1="96" y1="34" x2="96" y2="102" stroke="#000000" stroke-width="2.8" />
+    <path d="M 40 34 L 68 64 L 96 34" fill="none" stroke="#000000" stroke-width="2.8" stroke-linejoin="miter" />
+    <line x1="68" y1="64" x2="68" y2="102" stroke="#000000" stroke-width="2.2" />
+
+    <circle cx="40" cy="34" r="5" fill="#000000" />
+    <circle cx="96" cy="34" r="5" fill="#ffffff" stroke="#000000" stroke-width="2.4" />
+    <circle cx="40" cy="102" r="5" fill="#000000" />
+    <circle cx="96" cy="102" r="5" fill="#000000" />
+
+    <circle cx="68" cy="64" r="8" fill="#ffffff" stroke="#000000" stroke-width="2.5" />
+    <circle cx="68" cy="64" r="3" fill="#000000" />
+
+    <text class="wordmark-serif-light" x="172" y="72" textLength="194" lengthAdjust="spacing">Mojra</text>
+    <text class="submark-light" x="172" y="102" textLength="194" lengthAdjust="spacing">.PLAYBOOK STUDIO</text>
+  </g>
+
+  <line x1="56" y1="352" x2="544" y2="352" stroke="#222222" stroke-width="1" />
+  <line x1="656" y1="352" x2="1144" y2="352" stroke="#e5e5e5" stroke-width="1" />
+
+  <!-- ===================================================================== -->
+  <!-- ROW 2: WARIANT RAMKI 2 (PEŁNY KWADRAT)                                -->
+  <!-- ===================================================================== -->
+  <text class="sub-dark" x="56" y="402">02 / RAMKA Z WARIANTU 2 (PEŁNY KWADRAT)</text>
+  <text class="sub-light" x="656" y="402">02 / RAMKA Z WARIANTU 2 (PEŁNY KWADRAT)</text>
+
+  <!-- Dark Row 2 (Full Square Frame) -->
+  <g transform="translate(56, 434)">
+    <rect x="0" y="0" width="136" height="136" fill="none" stroke="#ffffff" stroke-width="2" />
+
+    <line x1="40" y1="34" x2="40" y2="102" stroke="#ffffff" stroke-width="2.8" />
+    <line x1="96" y1="34" x2="96" y2="102" stroke="#ffffff" stroke-width="2.8" />
+    <path d="M 40 34 L 68 64 L 96 34" fill="none" stroke="#ffffff" stroke-width="2.8" stroke-linejoin="miter" />
+    <line x1="68" y1="64" x2="68" y2="102" stroke="#ffffff" stroke-width="2.2" />
+
+    <circle cx="40" cy="34" r="5" fill="#ffffff" />
+    <circle cx="96" cy="34" r="5" fill="#000000" stroke="#ffffff" stroke-width="2.4" />
+    <circle cx="40" cy="102" r="5" fill="#ffffff" />
+    <circle cx="96" cy="102" r="5" fill="#ffffff" />
+
+    <circle cx="68" cy="64" r="8" fill="#000000" stroke="#ffffff" stroke-width="2.5" />
+    <circle cx="68" cy="64" r="3" fill="#ffffff" />
+
+    <text class="wordmark-serif-dark" x="172" y="72" textLength="194" lengthAdjust="spacing">Mojra</text>
+    <text class="submark-dark" x="172" y="102" textLength="194" lengthAdjust="spacing">.PLAYBOOK STUDIO</text>
+  </g>
+
+  <!-- Light Row 2 (Full Square Frame) -->
+  <g transform="translate(656, 434)">
+    <rect x="0" y="0" width="136" height="136" fill="none" stroke="#000000" stroke-width="2" />
+
+    <line x1="40" y1="34" x2="40" y2="102" stroke="#000000" stroke-width="2.8" />
+    <line x1="96" y1="34" x2="96" y2="102" stroke="#000000" stroke-width="2.8" />
+    <path d="M 40 34 L 68 64 L 96 34" fill="none" stroke="#000000" stroke-width="2.8" stroke-linejoin="miter" />
+    <line x1="68" y1="64" x2="68" y2="102" stroke="#000000" stroke-width="2.2" />
+
+    <circle cx="40" cy="34" r="5" fill="#000000" />
+    <circle cx="96" cy="34" r="5" fill="#ffffff" stroke="#000000" stroke-width="2.4" />
+    <circle cx="40" cy="102" r="5" fill="#000000" />
+    <circle cx="96" cy="102" r="5" fill="#000000" />
+
+    <circle cx="68" cy="64" r="8" fill="#ffffff" stroke="#000000" stroke-width="2.5" />
+    <circle cx="68" cy="64" r="3" fill="#000000" />
+
+    <text class="wordmark-serif-light" x="172" y="72" textLength="194" lengthAdjust="spacing">Mojra</text>
+    <text class="submark-light" x="172" y="102" textLength="194" lengthAdjust="spacing">.PLAYBOOK STUDIO</text>
+  </g>
+
+  <line x1="56" y1="628" x2="544" y2="628" stroke="#222222" stroke-width="1" />
+  <line x1="656" y1="628" x2="1144" y2="628" stroke="#e5e5e5" stroke-width="1" />
+
+  <!-- ===================================================================== -->
+  <!-- ROW 3: WARIANT BEZ RAMKI (SAMO "M")                                   -->
+  <!-- ===================================================================== -->
+  <text class="sub-dark" x="56" y="678">03 / BEZ RAMKI (SAMO „M”)</text>
+  <text class="sub-light" x="656" y="678">03 / BEZ RAMKI (SAMO „M”)</text>
+
+  <!-- Dark Row 3 (Frameless M) -->
+  <g transform="translate(56, 710)">
+    <g transform="translate(-20, 0)">
+      <line x1="40" y1="34" x2="40" y2="102" stroke="#ffffff" stroke-width="2.8" />
+      <line x1="96" y1="34" x2="96" y2="102" stroke="#ffffff" stroke-width="2.8" />
+      <path d="M 40 34 L 68 64 L 96 34" fill="none" stroke="#ffffff" stroke-width="2.8" stroke-linejoin="miter" />
+      <line x1="68" y1="64" x2="68" y2="102" stroke="#ffffff" stroke-width="2.2" />
+
+      <circle cx="40" cy="34" r="5" fill="#ffffff" />
+      <circle cx="96" cy="34" r="5" fill="#000000" stroke="#ffffff" stroke-width="2.4" />
+      <circle cx="40" cy="102" r="5" fill="#ffffff" />
+      <circle cx="96" cy="102" r="5" fill="#ffffff" />
+
+      <circle cx="68" cy="64" r="8" fill="#000000" stroke="#ffffff" stroke-width="2.5" />
+      <circle cx="68" cy="64" r="3" fill="#ffffff" />
+    </g>
+
+    <text class="wordmark-serif-dark" x="116" y="72" textLength="194" lengthAdjust="spacing">Mojra</text>
+    <text class="submark-dark" x="116" y="102" textLength="194" lengthAdjust="spacing">.PLAYBOOK STUDIO</text>
+  </g>
+
+  <!-- Light Row 3 (Frameless M) -->
+  <g transform="translate(656, 710)">
+    <g transform="translate(-20, 0)">
+      <line x1="40" y1="34" x2="40" y2="102" stroke="#000000" stroke-width="2.8" />
+      <line x1="96" y1="34" x2="96" y2="102" stroke="#000000" stroke-width="2.8" />
+      <path d="M 40 34 L 68 64 L 96 34" fill="none" stroke="#000000" stroke-width="2.8" stroke-linejoin="miter" />
+      <line x1="68" y1="64" x2="68" y2="102" stroke="#000000" stroke-width="2.2" />
+
+      <circle cx="40" cy="34" r="5" fill="#000000" />
+      <circle cx="96" cy="34" r="5" fill="#ffffff" stroke="#000000" stroke-width="2.4" />
+      <circle cx="40" cy="102" r="5" fill="#000000" />
+      <circle cx="96" cy="102" r="5" fill="#000000" />
+
+      <circle cx="68" cy="64" r="8" fill="#ffffff" stroke="#000000" stroke-width="2.5" />
+      <circle cx="68" cy="64" r="3" fill="#000000" />
+    </g>
+
+    <text class="wordmark-serif-light" x="116" y="72" textLength="194" lengthAdjust="spacing">Mojra</text>
+    <text class="submark-light" x="116" y="102" textLength="194" lengthAdjust="spacing">.PLAYBOOK STUDIO</text>
+  </g>
+
+  <line x1="56" y1="904" x2="544" y2="904" stroke="#222222" stroke-width="1" />
+  <line x1="656" y1="904" x2="1144" y2="904" stroke="#e5e5e5" stroke-width="1" />
+
+  <!-- ===================================================================== -->
+  <!-- ROW 4: PODGLĄD W PASKU GÓRNYM (#TOPBAR)                               -->
+  <!-- ===================================================================== -->
+  <text class="sub-dark" x="56" y="956">04 / PODGLĄD W PASKU GÓRNYM (#TOPBAR)</text>
+  <text class="sub-light" x="656" y="956">04 / PODGLĄD W PASKU GÓRNYM (#TOPBAR)</text>
+
+  <!-- Dark Topbar Preview -->
+  <g transform="translate(56, 988)">
+    <rect x="0" y="0" width="488" height="44" fill="#000000" stroke="#ffffff" stroke-width="1" />
+    <g transform="translate(14, 12)">
+      <line x1="3" y1="3" x2="3" y2="17" stroke="#ffffff" stroke-width="1.8" />
+      <line x1="17" y1="3" x2="17" y2="17" stroke="#ffffff" stroke-width="1.8" />
+      <path d="M 3 3 L 10 10 L 17 3" fill="none" stroke="#ffffff" stroke-width="1.8" />
+      <line x1="10" y1="10" x2="10" y2="17" stroke="#ffffff" stroke-width="1.4" />
+      <circle cx="3" cy="3" r="1.8" fill="#ffffff" />
+      <circle cx="17" cy="3" r="1.8" fill="#000000" stroke="#ffffff" stroke-width="1.4" />
+      <circle cx="3" cy="17" r="1.8" fill="#ffffff" />
+      <circle cx="17" cy="17" r="1.8" fill="#ffffff" />
+      <circle cx="10" cy="10" r="2.6" fill="#000000" stroke="#ffffff" stroke-width="1.5" />
+    </g>
+    <text class="topbar-logo-dark" x="42" y="27">Mojra</text>
+    <text class="topbar-tab-muted-dark" x="114" y="26">Biblioteka</text>
+    <text class="topbar-tab-muted-dark" x="198" y="26">Kronika Ósmego Dnia</text>
+    <text class="topbar-tab-dark" x="354" y="26">Node Studio</text>
+    <text class="topbar-tab-dark" x="462" y="27">✕</text>
+  </g>
+
+  <!-- Light Topbar Preview -->
+  <g transform="translate(656, 988)">
+    <rect x="0" y="0" width="488" height="44" fill="#ffffff" stroke="#000000" stroke-width="1" />
+    <g transform="translate(14, 12)">
+      <line x1="3" y1="3" x2="3" y2="17" stroke="#000000" stroke-width="1.8" />
+      <line x1="17" y1="3" x2="17" y2="17" stroke="#000000" stroke-width="1.8" />
+      <path d="M 3 3 L 10 10 L 17 3" fill="none" stroke="#000000" stroke-width="1.8" />
+      <line x1="10" y1="10" x2="10" y2="17" stroke="#000000" stroke-width="1.4" />
+      <circle cx="3" cy="3" r="1.8" fill="#000000" />
+      <circle cx="17" cy="3" r="1.8" fill="#ffffff" stroke="#000000" stroke-width="1.4" />
+      <circle cx="3" cy="17" r="1.8" fill="#000000" />
+      <circle cx="17" cy="17" r="1.8" fill="#000000" />
+      <circle cx="10" cy="10" r="2.6" fill="#ffffff" stroke="#000000" stroke-width="1.5" />
+    </g>
+    <text class="topbar-logo-light" x="42" y="27">Mojra</text>
+    <text class="topbar-tab-muted-light" x="114" y="26">Biblioteka</text>
+    <text class="topbar-tab-muted-light" x="198" y="26">Kronika Ósmego Dnia</text>
+    <text class="topbar-tab-light" x="354" y="26">Node Studio</text>
+    <text class="topbar-tab-light" x="462" y="27">✕</text>
+  </g>
+</svg>

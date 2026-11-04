@@ -91,7 +91,7 @@ section.view-panel#view-editor .is-history-preview?: {is_history_preview}
             @editor_history_panel
             aside.editor-help-panel#editor-help-panel .hidden?: {!show_editor_help_panel}
                 .history-panel-header
-                    span.history-panel-title "Pomoc — Node Studio"
+                    span.history-panel-title "Pomoc — Playbook Studio"
                     button.node-close-btn
                         type: button
                         action: CloseEditorHelpModal

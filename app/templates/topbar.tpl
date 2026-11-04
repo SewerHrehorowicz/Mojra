@@ -3,8 +3,9 @@ header.topbar#topbar
         {if standalone_mode}
             span.brand-logo {active_book_title}
         {else}
-            span.brand-logo "StoryTeller"
-            span.brand-logo.brand-logo-short "ST"
+            svg.brand-mark src: /icons/mojra.svg
+            span.brand-logo "Mojra"
+            span.brand-logo.brand-logo-short "M"
             button.topbar-tab .active?: {is_view_library}
                 type: button
                 action: SwitchView
@@ -23,7 +24,7 @@ header.topbar#topbar
                 action: SwitchView
                 data-view: editor
                 svg.tab-icon src: /icons/nodes.svg
-                span.tab-label "Node Studio"
+                span.tab-label "Playbook Studio"
 
     .topbar-right#topbar-right
         button.top-action-btn.topbar-hamburger-btn#btn-topbar-menu

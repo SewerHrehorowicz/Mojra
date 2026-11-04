@@ -267,7 +267,8 @@ type AppSettings struct {
 	PlaybackSpeed      float64
 	AutoChoice         bool
 	AutoChoiceStrategy string
-	NewBookDir    string
-	ExportDir     string
-	ExternalBooks []string
+	NewBookDir     string
+	ExportDir      string
+	BookExportDirs map[string]string
+	ExternalBooks  []string
 }

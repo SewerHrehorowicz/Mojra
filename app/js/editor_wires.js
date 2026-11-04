@@ -1,5 +1,12 @@
 "use strict";
 
+const WIRE_GRID = 24;
+const WIRE_LANE_STEP = 6;
+
+function snapToWireGrid(v) {
+  return Math.round(v / WIRE_GRID) * WIRE_GRID;
+}
+
 function simplifyOrthogonalPoints(points) {
   if (!points || points.length === 0) return [];
   const pts = [{ x: points[0].x, y: points[0].y }];
@@ -159,52 +166,76 @@ function linecastHorizontal(y, xA, xB, obstacles, ignore1, ignore2, pad) {
   return null;
 }
 
+function resolveClearXInDir(x, yA, yB, obstacles, ignoreId1, ignoreId2, dir, p) {
+  let curX = x;
+  for (let iter = 0; iter < 12; iter++) {
+    const hit = linecastVertical(curX, yA, yB, obstacles, ignoreId1, ignoreId2, p - 2);
+    if (!hit) return { x: curX, clear: true };
+    curX = dir < 0 ? hit.left - p : hit.right + p;
+  }
+  return {
+    x: curX,
+    clear: !linecastVertical(curX, yA, yB, obstacles, ignoreId1, ignoreId2, p - 2)
+  };
+}
+
 function resolveClearX(x, yA, yB, obstacles, ignoreId1, ignoreId2, preferDir, pad) {
   const p = pad !== undefined ? pad : 14;
-  let curX = x;
-  let dir = preferDir || 0;
-  for (let iter = 0; iter < 4; iter++) {
-    const hit = linecastVertical(curX, yA, yB, obstacles, ignoreId1, ignoreId2, p - 2);
-    if (!hit) return curX;
-    const leftCand = hit.left - p;
-    const rightCand = hit.right + p;
-    if (dir < 0) {
-      curX = leftCand;
-    } else if (dir > 0) {
-      curX = rightCand;
-    } else if (Math.abs(curX - leftCand) <= Math.abs(rightCand - curX)) {
-      curX = leftCand;
-      dir = -1;
-    } else {
-      curX = rightCand;
-      dir = 1;
-    }
+  if (!linecastVertical(x, yA, yB, obstacles, ignoreId1, ignoreId2, p - 2)) {
+    return x;
   }
-  return curX;
+  const dir = preferDir || 0;
+  if (dir !== 0) {
+    const primary = resolveClearXInDir(x, yA, yB, obstacles, ignoreId1, ignoreId2, dir, p);
+    if (primary.clear) return primary.x;
+    const fallback = resolveClearXInDir(x, yA, yB, obstacles, ignoreId1, ignoreId2, -dir, p);
+    if (fallback.clear) return fallback.x;
+    return primary.x;
+  }
+  const leftRes = resolveClearXInDir(x, yA, yB, obstacles, ignoreId1, ignoreId2, -1, p);
+  const rightRes = resolveClearXInDir(x, yA, yB, obstacles, ignoreId1, ignoreId2, 1, p);
+  if (leftRes.clear && rightRes.clear) {
+    return Math.abs(leftRes.x - x) <= Math.abs(rightRes.x - x) ? leftRes.x : rightRes.x;
+  }
+  if (leftRes.clear) return leftRes.x;
+  if (rightRes.clear) return rightRes.x;
+  return Math.abs(leftRes.x - x) <= Math.abs(rightRes.x - x) ? leftRes.x : rightRes.x;
+}
+
+function resolveClearYInDir(y, xA, xB, obstacles, ignoreId1, ignoreId2, dir, p) {
+  let curY = y;
+  for (let iter = 0; iter < 12; iter++) {
+    const hit = linecastHorizontal(curY, xA, xB, obstacles, ignoreId1, ignoreId2, p - 2);
+    if (!hit) return { y: curY, clear: true };
+    curY = dir < 0 ? hit.top - p : hit.bottom + p;
+  }
+  return {
+    y: curY,
+    clear: !linecastHorizontal(curY, xA, xB, obstacles, ignoreId1, ignoreId2, p - 2)
+  };
 }
 
 function resolveClearY(y, xA, xB, obstacles, ignoreId1, ignoreId2, preferDir, pad) {
   const p = pad !== undefined ? pad : 14;
-  let curY = y;
-  let dir = preferDir || 0;
-  for (let iter = 0; iter < 4; iter++) {
-    const hit = linecastHorizontal(curY, xA, xB, obstacles, ignoreId1, ignoreId2, p - 2);
-    if (!hit) return curY;
-    const topCand = hit.top - p;
-    const botCand = hit.bottom + p;
-    if (dir < 0) {
-      curY = topCand;
-    } else if (dir > 0) {
-      curY = botCand;
-    } else if (Math.abs(curY - topCand) <= Math.abs(botCand - curY)) {
-      curY = topCand;
-      dir = -1;
-    } else {
-      curY = botCand;
-      dir = 1;
-    }
+  if (!linecastHorizontal(y, xA, xB, obstacles, ignoreId1, ignoreId2, p - 2)) {
+    return y;
   }
-  return curY;
+  const dir = preferDir || 0;
+  if (dir !== 0) {
+    const primary = resolveClearYInDir(y, xA, xB, obstacles, ignoreId1, ignoreId2, dir, p);
+    if (primary.clear) return primary.y;
+    const fallback = resolveClearYInDir(y, xA, xB, obstacles, ignoreId1, ignoreId2, -dir, p);
+    if (fallback.clear) return fallback.y;
+    return primary.y;
+  }
+  const topRes = resolveClearYInDir(y, xA, xB, obstacles, ignoreId1, ignoreId2, -1, p);
+  const botRes = resolveClearYInDir(y, xA, xB, obstacles, ignoreId1, ignoreId2, 1, p);
+  if (topRes.clear && botRes.clear) {
+    return Math.abs(topRes.y - y) <= Math.abs(botRes.y - y) ? topRes.y : botRes.y;
+  }
+  if (topRes.clear) return topRes.y;
+  if (botRes.clear) return botRes.y;
+  return Math.abs(topRes.y - y) <= Math.abs(botRes.y - y) ? topRes.y : botRes.y;
 }
 
 function buildWireWaypoints(
@@ -260,11 +291,12 @@ function buildWireWaypoints(
         ];
       }
 
-      const baseMidY =
+      const rawMidY =
         fromBottom !== null && fromBottom !== undefined && fromBottom > y1 && fromBottom < y2 - 24
           ? (fromBottom + y2) * 0.5
           : (y1 + y2) * 0.5;
-      let midY = resolveClearY(baseMidY, x1, x2, obs, fromId, toId, 1, 14);
+      const snappedMidY = Math.max(y1 + 16, Math.min(y2 - 16, snapToWireGrid(rawMidY)));
+      let midY = resolveClearY(snappedMidY, x1, x2, obs, fromId, toId, 1, 14);
       midY = Math.max(y1 + 12, Math.min(y2 - 12, midY));
       const hitV1 = linecastVertical(x1, y1 + 4, midY, obs, fromId, toId, 10);
       const hitV2 = linecastVertical(x2, midY, y2 - 4, obs, fromId, toId, 10);
@@ -276,9 +308,9 @@ function buildWireWaypoints(
           { x: x2, y: y2 }
         ];
       }
-      const stepOutY = resolveClearY(y1 + 16, x1, x2, obs, fromId, toId, 1, 14);
-      const stepInY = resolveClearY(y2 - 16, x1, x2, obs, fromId, toId, -1, 14);
-      const midChannelX = resolveClearX((x1 + x2) * 0.5, stepOutY, stepInY, obs, fromId, toId, 0, 16);
+      const stepOutY = resolveClearY(Math.max(y1 + 18, snapToWireGrid(y1 + 24)), x1, x2, obs, fromId, toId, 1, 14);
+      const stepInY = resolveClearY(Math.min(y2 - 18, snapToWireGrid(y2 - 24)), x1, x2, obs, fromId, toId, -1, 14);
+      const midChannelX = resolveClearX(snapToWireGrid((x1 + x2) * 0.5), stepOutY, stepInY, obs, fromId, toId, 0, 16);
       return [
         { x: x1, y: y1 },
         { x: x1, y: stepOutY },
@@ -289,21 +321,31 @@ function buildWireWaypoints(
       ];
     }
 
-    let channelX = (x1 + x2) * 0.5;
+    let channelX = snapToWireGrid((x1 + x2) * 0.5);
     if (toLeft !== undefined && toLeft !== null && toRight !== undefined && toRight !== null) {
       const fromRight = x1 + 96;
       const fromLeft = x1 - 96;
       if (toLeft > fromRight + 20) {
-        channelX = (fromRight + toLeft) * 0.5;
+        channelX = snapToWireGrid((fromRight + toLeft) * 0.5);
       } else if (toRight < fromLeft - 20) {
-        channelX = (fromLeft + toRight) * 0.5;
+        channelX = snapToWireGrid((fromLeft + toRight) * 0.5);
       } else {
-        channelX = Math.max(fromRight, toRight) + 28;
+        channelX = snapToWireGrid(Math.max(fromRight, toRight) + 24);
       }
     }
-    const outY = resolveClearY(y1 + 24, x1, channelX, obs, fromId, toId, 1, 14);
-    const inYBottom = resolveClearY(y2 - 24, channelX, x2, obs, fromId, toId, -1, 14);
-    channelX = resolveClearX(channelX, outY, inYBottom, obs, fromId, toId, 0, 16);
+    const baseOutY = Math.max(y1 + 18, snapToWireGrid(y1 + 24));
+    const outY = resolveClearY(baseOutY, x1, channelX, obs, fromId, toId, 1, 14);
+    const baseInY = Math.min(y2 - 18, snapToWireGrid(y2 - 24));
+    const hitInH = linecastHorizontal(baseInY, channelX, x2, obs, fromId, toId, 12);
+    const inPreferDir = hitInH && hitInH.bottom + 16 <= y2 - 12 ? 1 : -1;
+    const inYBottom = resolveClearY(baseInY, channelX, x2, obs, fromId, toId, inPreferDir, 14);
+    if (linecastVertical(channelX, outY, inYBottom, obs, fromId, toId, 14)) {
+      channelX = resolveClearX(x1, outY, inYBottom, obs, fromId, toId, 0, 18);
+      const snappedChX = snapToWireGrid(channelX);
+      if (!linecastVertical(snappedChX, outY, inYBottom, obs, fromId, toId, 14)) {
+        channelX = snappedChX;
+      }
+    }
     return [
       { x: x1, y: y1 },
       { x: x1, y: outY },
@@ -317,8 +359,8 @@ function buildWireWaypoints(
   // Side choice port: nest exitStub by turn direction so same-direction ports never cross
   const goesDown = fromBottom !== null && fromBottom !== undefined ? y2 > fromBottom + 4 : y2 > y1 + 16;
   const stubRank = goesDown ? Math.max(0, pCount - 1 - idx) : idx;
-  const exitStub = 16 + stubRank * 14;
-  const entryStub = 20;
+  const exitStub = WIRE_GRID + stubRank * WIRE_LANE_STEP;
+  const entryStub = WIRE_GRID;
   let outX = typeof preferredOutX === "number" && !isNaN(preferredOutX) ? preferredOutX : x1 + exitStub;
   let inY = y2 - entryStub;
 
@@ -330,7 +372,7 @@ function buildWireWaypoints(
         { x: x2, y: y2 }
       ];
     }
-    const midY = y2 >= y1 + 32 ? (y1 + y2) * 0.5 : inY;
+    const midY = y2 >= y1 + 32 ? snapToWireGrid((y1 + y2) * 0.5) : inY;
     return [
       { x: x1, y: y1 },
       { x: outX, y: y1 },
@@ -340,7 +382,7 @@ function buildWireWaypoints(
     ];
   }
 
-  // Target input port is below source node's bottom edge (including tight vertical gaps like 18px)
+  // Target input port is below source node's bottom edge
   if (y2 >= fromBottom + 6) {
     if (
       Math.abs(outX - x2) <= 1.5 &&
@@ -354,11 +396,13 @@ function buildWireWaypoints(
       ];
     }
     const gap = y2 - fromBottom;
-    const minClear = Math.min(14, Math.max(7, Math.floor(gap * 0.42)));
+    const minClear = Math.min(16, Math.max(8, Math.floor(gap * 0.35)));
     const minMidY = fromBottom + minClear;
     const maxMidY = Math.max(minMidY, y2 - minClear);
-    const laneShift = pCount > 1 && maxMidY - minMidY >= 8 ? (stubRank - (pCount - 1) * 0.5) * 8 : 0;
-    let midY = Math.max(minMidY, Math.min(maxMidY, (fromBottom + y2) * 0.5 + laneShift));
+    const turnRank = x2 > outX ? pCount - 1 - stubRank : stubRank;
+    const baseCorridorY = Math.max(minMidY, Math.min(maxMidY, snapToWireGrid((fromBottom + y2) * 0.5)));
+    const laneShift = pCount > 1 && maxMidY - minMidY >= 6 ? Math.round((turnRank - (pCount - 1) * 0.5) * WIRE_LANE_STEP) : 0;
+    let midY = Math.max(minMidY, Math.min(maxMidY, baseCorridorY + laneShift));
     outX = resolveClearX(outX, y1, midY, obs, fromId, toId, 1, 14);
     if (
       Math.abs(outX - x2) <= 1.5 &&
@@ -372,8 +416,8 @@ function buildWireWaypoints(
       ];
     }
     midY = resolveClearY(midY, outX, x2, obs, fromId, toId, 1, 12);
-    if (x2 < x1 + 4 && midY < fromBottom + 7) {
-      midY = Math.max(fromBottom + 8, (fromBottom + y2) * 0.5);
+    if (x2 < x1 + 4 && midY < fromBottom + 8) {
+      midY = Math.max(fromBottom + 10, snapToWireGrid((fromBottom + y2) * 0.5));
     }
 
     const hitDrop = linecastVertical(x2, midY, y2 - 4, obs, fromId, toId, 10);
@@ -463,68 +507,177 @@ function buildWireWaypoints(
   ];
 }
 
-function buildPinnedWireWaypoints(w) {
+function buildPinnedWireWaypoints(w, autoPtsInput) {
   const pins = w.pins;
-  const pts = [{ x: w.x1, y: w.y1 }];
-  let curX = w.x1;
-  let curY = w.y1;
-  let lastDir = w.isBottomPort ? "V" : "H";
-
-  if (!w.isBottomPort && pins.length > 0 && pins[0].x < w.x1 + 12) {
-    const outX = w.x1 + 20;
-    pts.push({ x: outX, y: curY });
-    curX = outX;
-    lastDir = "H";
-  } else if (w.isBottomPort && pins.length > 0 && pins[0].y < w.y1 + 10) {
-    const outY = w.y1 + 16;
-    pts.push({ x: curX, y: outY });
-    curY = outY;
-    lastDir = "V";
+  let pts =
+    autoPtsInput && autoPtsInput.length >= 2
+      ? autoPtsInput.map((pt) => ({ x: pt.x, y: pt.y }))
+      : [
+          { x: w.x1, y: w.y1 },
+          { x: w.x2, y: w.y2 }
+        ];
+  if (!pins || pins.length === 0) {
+    return simplifyOrthogonalPoints(pts);
   }
 
   for (let i = 0; i < pins.length; i++) {
     const p = pins[i];
-    const dx = Math.abs(p.x - curX);
-    const dy = Math.abs(p.y - curY);
-    if (dx < 1 && dy < 1) continue;
-    if (dx < 1) {
-      pts.push({ x: p.x, y: p.y });
-      curX = p.x;
-      curY = p.y;
-      lastDir = "V";
-    } else if (dy < 1) {
-      pts.push({ x: p.x, y: p.y });
-      curX = p.x;
-      curY = p.y;
-      lastDir = "H";
-    } else if (lastDir === "H") {
-      pts.push({ x: p.x, y: curY });
-      pts.push({ x: p.x, y: p.y });
-      curX = p.x;
-      curY = p.y;
-      lastDir = "V";
+    if (!p || pts.length < 2) continue;
+
+    let s = -1;
+    if (typeof p.segIdx === "number" && p.segIdx >= 0 && p.segIdx < pts.length - 1) {
+      const a0 = pts[p.segIdx];
+      const b0 = pts[p.segIdx + 1];
+      const segAxis = Math.abs(a0.y - b0.y) <= Math.abs(a0.x - b0.x) ? "H" : "V";
+      if (!p.axis || p.axis === segAxis) {
+        s = p.segIdx;
+      }
+    }
+
+    if (s < 0) {
+      let bestScore = Infinity;
+      for (let k = 0; k < pts.length - 1; k++) {
+        const a0 = pts[k];
+        const b0 = pts[k + 1];
+        const dx = b0.x - a0.x;
+        const dy = b0.y - a0.y;
+        const len = Math.hypot(dx, dy);
+        if (len < 2) continue;
+        const isH = Math.abs(dy) <= Math.abs(dx);
+        if (p.axis && ((p.axis === "H" && !isH) || (p.axis === "V" && isH))) continue;
+        let t = ((p.x - a0.x) * dx + (p.y - a0.y) * dy) / (len * len);
+        const inSpan = t >= -0.05 && t <= 1.05;
+        t = Math.max(0, Math.min(1, t));
+        const d = Math.hypot(p.x - (a0.x + t * dx), p.y - (a0.y + t * dy));
+        const isStub = (k === 0 || k === pts.length - 2) && pts.length > 3;
+        const score = d + (inSpan ? 0 : 80) + (isStub ? 40 : 0);
+        if (score < bestScore) {
+          bestScore = score;
+          s = k;
+        }
+      }
+    }
+    if (s < 0) s = 0;
+
+    const a = pts[s];
+    const b = pts[s + 1];
+    const isHoriz = Math.abs(a.y - b.y) <= Math.abs(a.x - b.x);
+
+    if (isHoriz) {
+      const targetY = p.y;
+      if (s > 0 && s < pts.length - 2) {
+        pts[s].y = targetY;
+        pts[s + 1].y = targetY;
+        p.x = Math.round((pts[s].x + pts[s + 1].x) * 0.5);
+        p.y = targetY;
+        p.axis = "H";
+        p.segIdx = s;
+      } else if (s === 0 && s === pts.length - 2) {
+        const dirX = w.x2 >= w.x1 ? 1 : -1;
+        const stubLen = Math.min(24, Math.max(8, Math.abs(w.x2 - w.x1) * 0.25));
+        const xA = w.x1 + dirX * stubLen;
+        const xB = w.x2 - dirX * stubLen;
+        pts = [
+          { x: w.x1, y: w.y1 },
+          { x: xA, y: w.y1 },
+          { x: xA, y: targetY },
+          { x: xB, y: targetY },
+          { x: xB, y: w.y2 },
+          { x: w.x2, y: w.y2 }
+        ];
+        p.x = Math.round((xA + xB) * 0.5);
+        p.y = targetY;
+        p.axis = "H";
+        p.segIdx = 2;
+      } else if (s === 0) {
+        if (pts.length === 3) {
+          const stubX = w.x1 + (w.x2 >= w.x1 ? 24 : -24);
+          pts = [
+            { x: w.x1, y: w.y1 },
+            { x: stubX, y: w.y1 },
+            { x: stubX, y: targetY },
+            { x: w.x2, y: targetY },
+            { x: w.x2, y: w.y2 }
+          ];
+          p.x = Math.round((stubX + w.x2) * 0.5);
+          p.y = targetY;
+          p.axis = "H";
+          p.segIdx = 2;
+        } else if (pts.length >= 4) {
+          pts[2].y = targetY;
+          pts[3].y = targetY;
+          p.x = Math.round((pts[2].x + pts[3].x) * 0.5);
+          p.y = targetY;
+          p.axis = "H";
+          p.segIdx = 2;
+        }
+      } else {
+        const stubX = w.x2 + (pts[s].x >= w.x2 ? 18 : -18);
+        pts[s].y = targetY;
+        pts.splice(s + 1, 1, { x: stubX, y: targetY }, { x: stubX, y: w.y2 }, { x: w.x2, y: w.y2 });
+        p.x = Math.round((pts[s].x + stubX) * 0.5);
+        p.y = targetY;
+        p.axis = "H";
+        p.segIdx = s;
+      }
     } else {
-      pts.push({ x: curX, y: p.y });
-      pts.push({ x: p.x, y: p.y });
-      curX = p.x;
-      curY = p.y;
-      lastDir = "H";
+      let targetX = p.x;
+      if (!w.isBottomPort && s <= 1) {
+        targetX = Math.max(w.x1 + 12, targetX);
+      }
+      if (s > 0 && s < pts.length - 2) {
+        pts[s].x = targetX;
+        pts[s + 1].x = targetX;
+        p.x = targetX;
+        p.y = Math.round((pts[s].y + pts[s + 1].y) * 0.5);
+        p.axis = "V";
+        p.segIdx = s;
+      } else if (s === 0 && s === pts.length - 2) {
+        const dirY = w.y2 >= w.y1 ? 1 : -1;
+        const stubLen = Math.min(18, Math.max(8, Math.abs(w.y2 - w.y1) * 0.25));
+        const yA = w.y1 + dirY * stubLen;
+        const yB = w.y2 - dirY * stubLen;
+        pts = [
+          { x: w.x1, y: w.y1 },
+          { x: w.x1, y: yA },
+          { x: targetX, y: yA },
+          { x: targetX, y: yB },
+          { x: w.x2, y: yB },
+          { x: w.x2, y: w.y2 }
+        ];
+        p.x = targetX;
+        p.y = Math.round((yA + yB) * 0.5);
+        p.axis = "V";
+        p.segIdx = 2;
+      } else if (s === 0) {
+        const nextY = pts[1].y;
+        const yA = w.y1 + (nextY >= w.y1 ? 18 : -18);
+        pts.splice(
+          0,
+          2,
+          { x: w.x1, y: w.y1 },
+          { x: w.x1, y: yA },
+          { x: targetX, y: yA },
+          { x: targetX, y: nextY }
+        );
+        p.x = targetX;
+        p.y = Math.round((yA + nextY) * 0.5);
+        p.axis = "V";
+        p.segIdx = 2;
+      } else {
+        const topY = pts[s].y;
+        const yB = w.y2 - (w.y2 >= topY ? 18 : -18);
+        pts[s].x = targetX;
+        pts.splice(s + 1, 1, { x: targetX, y: yB }, { x: w.x2, y: yB }, { x: w.x2, y: w.y2 });
+        p.x = targetX;
+        p.y = Math.round((topY + yB) * 0.5);
+        p.axis = "V";
+        p.segIdx = s;
+      }
     }
   }
 
-  if (Math.abs(w.x2 - curX) < 1) {
-    pts.push({ x: w.x2, y: w.y2 });
-  } else if (curY <= w.y2 - 8) {
-    pts.push({ x: w.x2, y: curY });
-    pts.push({ x: w.x2, y: w.y2 });
-  } else {
-    const entryY = w.y2 - 16;
-    pts.push({ x: curX, y: entryY });
-    pts.push({ x: w.x2, y: entryY });
-    pts.push({ x: w.x2, y: w.y2 });
-  }
-
-  return simplifyOrthogonalPoints(pts);
+  return pts;
 }
 
 function syncUnreachableNodesMemory() {
@@ -817,27 +970,26 @@ function computeNodeChoiceExitLanes(fromNode, obs) {
   }
 
   let prevDownOutX = x1;
-  let prevWasLeftTurn = false;
   for (let i = n - 1; i >= 0; i--) {
     const pt = ports[i];
     const y1 = fromNode.y + pt.oy;
     const t = targets[i];
     if (!t) {
       const rank = n - 1 - i;
-      lanes[i] = x1 + 16 + rank * 14;
+      lanes[i] = x1 + WIRE_GRID + rank * WIRE_LANE_STEP;
       continue;
     }
     const goesDown = t.y2 > fromBottom + 4;
     if (!goesDown) {
-      lanes[i] = x1 + 16 + i * 14;
+      lanes[i] = x1 + WIRE_GRID + i * WIRE_LANE_STEP;
       continue;
     }
 
-    const minGap = prevDownOutX === x1 ? (t.x2 < x1 ? 12 : 16) : prevWasLeftTurn ? 12 : 14;
+    const minGap = prevDownOutX === x1 ? WIRE_GRID : WIRE_LANE_STEP;
     const minLaneX = prevDownOutX + minGap;
 
     let blocksUpperDirectDrop = false;
-    if (t.x2 > minLaneX + 14) {
+    if (t.x2 > minLaneX + 12) {
       for (let k = 0; k < i; k++) {
         const tk = targets[k];
         if (tk && tk.y2 > fromBottom + 4 && tk.x2 >= minLaneX && tk.x2 <= t.x2) {
@@ -856,7 +1008,9 @@ function computeNodeChoiceExitLanes(fromNode, obs) {
 
     if (canDirectDrop) {
       lanes[i] = t.x2;
-      prevWasLeftTurn = false;
+      if (t.x2 <= x1 + 36) {
+        prevDownOutX = t.x2;
+      }
     } else {
       const checkToY = Math.max(fromBottom + 16, Math.min(t.y2, fromBottom + 32));
       let candLane = resolveClearX(minLaneX, y1, checkToY, obs, fromNode, t.toObj, 1, 14);
@@ -864,9 +1018,8 @@ function computeNodeChoiceExitLanes(fromNode, obs) {
         candLane = minLaneX;
       }
       lanes[i] = candLane;
-      prevWasLeftTurn = t.x2 < x1;
+      prevDownOutX = candLane;
     }
-    prevDownOutX = lanes[i];
   }
 
   return lanes;
@@ -888,11 +1041,10 @@ function routeSingleWireBasePts(w, nodeObstacles, chapterObstacles) {
     w.x2 = outPort.x;
     w.y2 = outPort.y;
     w.unreachable = fromNode.unreachable;
-    if (w.pins && w.pins.length > 0) {
-      w.basePts = buildPinnedWireWaypoints(w);
-    } else if (outSide === "left" || outSide === "right") {
-      const totalPorts = fromNode.hasChoices && fromNode.ports ? fromNode.ports.length : 1;
-      const rawPts = buildSideArrivalWaypoints(
+    const totalPorts = fromNode.hasChoices && fromNode.ports ? fromNode.ports.length : 1;
+    let rawPts;
+    if (outSide === "left" || outSide === "right") {
+      rawPts = buildSideArrivalWaypoints(
         w.x1,
         w.y1,
         w.x2,
@@ -906,10 +1058,8 @@ function routeSingleWireBasePts(w, nodeObstacles, chapterObstacles) {
         totalPorts,
         preferredOutX
       );
-      w.basePts = simplifyOrthogonalPoints(rawPts);
     } else {
-      const totalPorts = fromNode.hasChoices && fromNode.ports ? fromNode.ports.length : 1;
-      const rawPts = buildWireWaypoints(
+      rawPts = buildWireWaypoints(
         w.x1,
         w.y1,
         w.x2,
@@ -925,8 +1075,9 @@ function routeSingleWireBasePts(w, nodeObstacles, chapterObstacles) {
         totalPorts,
         preferredOutX
       );
-      w.basePts = simplifyOrthogonalPoints(rawPts);
     }
+    const autoPts = simplifyOrthogonalPoints(rawPts);
+    w.basePts = w.pins && w.pins.length > 0 ? buildPinnedWireWaypoints(w, autoPts) : autoPts;
   } else if (w.kind === "scene-to-scene") {
     const fromNode = w.fromNode;
     const toNode = w.toNode;
@@ -939,28 +1090,25 @@ function routeSingleWireBasePts(w, nodeObstacles, chapterObstacles) {
     w.x2 = toNode.x + toNode.inOx;
     w.y2 = toNode.y + toNode.inOy;
     w.unreachable = fromNode.unreachable;
-    if (w.pins && w.pins.length > 0) {
-      w.basePts = buildPinnedWireWaypoints(w);
-    } else {
-      const totalPorts = fromNode.hasChoices && fromNode.ports ? fromNode.ports.length : 1;
-      const rawPts = buildWireWaypoints(
-        w.x1,
-        w.y1,
-        w.x2,
-        w.y2,
-        fromNode.y + fromNode.h,
-        w.portIdx,
-        toNode.x,
-        toNode.x + toNode.w,
-        w.isBottomPort,
-        localNodes,
-        fromNode,
-        toNode,
-        totalPorts,
-        preferredOutX
-      );
-      w.basePts = simplifyOrthogonalPoints(rawPts);
-    }
+    const totalPorts = fromNode.hasChoices && fromNode.ports ? fromNode.ports.length : 1;
+    const rawPts = buildWireWaypoints(
+      w.x1,
+      w.y1,
+      w.x2,
+      w.y2,
+      fromNode.y + fromNode.h,
+      w.portIdx,
+      toNode.x,
+      toNode.x + toNode.w,
+      w.isBottomPort,
+      localNodes,
+      fromNode,
+      toNode,
+      totalPorts,
+      preferredOutX
+    );
+    const autoPts = simplifyOrthogonalPoints(rawPts);
+    w.basePts = w.pins && w.pins.length > 0 ? buildPinnedWireWaypoints(w, autoPts) : autoPts;
   } else if (w.kind === "chapter-to-chapter") {
     const fromCh = w.fromChapterObj;
     const toCh = w.toChapterObj;
@@ -973,10 +1121,9 @@ function routeSingleWireBasePts(w, nodeObstacles, chapterObstacles) {
     w.x2 = toCh.inX;
     w.y2 = toCh.inY;
     w.unreachable = false;
-    if (w.pins && w.pins.length > 0) {
-      w.basePts = buildPinnedWireWaypoints(w);
-    } else if (fromSide === "left" || fromSide === "right") {
-      const rawPts = buildSideChapterToChapterWaypoints(
+    let rawPts;
+    if (fromSide === "left" || fromSide === "right") {
+      rawPts = buildSideChapterToChapterWaypoints(
         w.x1,
         w.y1,
         w.x2,
@@ -987,10 +1134,9 @@ function routeSingleWireBasePts(w, nodeObstacles, chapterObstacles) {
         toCh,
         w.portIdx
       );
-      w.basePts = simplifyOrthogonalPoints(rawPts);
     } else {
       const corridorTop = Math.max(w.y1, w.y2 - 120);
-      const rawPts = buildWireWaypoints(
+      rawPts = buildWireWaypoints(
         w.x1,
         w.y1,
         w.x2,
@@ -1005,8 +1151,9 @@ function routeSingleWireBasePts(w, nodeObstacles, chapterObstacles) {
         toCh,
         fromCh.outPorts ? fromCh.outPorts.length : 1
       );
-      w.basePts = simplifyOrthogonalPoints(rawPts);
     }
+    const autoPts = simplifyOrthogonalPoints(rawPts);
+    w.basePts = w.pins && w.pins.length > 0 ? buildPinnedWireWaypoints(w, autoPts) : autoPts;
   } else if (w.kind === "chapter-in-to-entry") {
     const ch = w.toChapterObj;
     const toNode = w.toNode;
@@ -1016,26 +1163,23 @@ function routeSingleWireBasePts(w, nodeObstacles, chapterObstacles) {
     w.x2 = toNode.x + toNode.inOx;
     w.y2 = toNode.y + toNode.inOy;
     w.unreachable = toNode.unreachable;
-    if (w.pins && w.pins.length > 0) {
-      w.basePts = buildPinnedWireWaypoints(w);
-    } else {
-      const rawPts = buildWireWaypoints(
-        w.x1,
-        w.y1,
-        w.x2,
-        w.y2,
-        ch.y + 28,
-        0,
-        toNode.x,
-        toNode.x + toNode.w,
-        true,
-        localNodes,
-        null,
-        toNode,
-        1
-      );
-      w.basePts = simplifyOrthogonalPoints(rawPts);
-    }
+    const rawPts = buildWireWaypoints(
+      w.x1,
+      w.y1,
+      w.x2,
+      w.y2,
+      ch.y + 28,
+      0,
+      toNode.x,
+      toNode.x + toNode.w,
+      true,
+      localNodes,
+      null,
+      toNode,
+      1
+    );
+    const autoPts = simplifyOrthogonalPoints(rawPts);
+    w.basePts = w.pins && w.pins.length > 0 ? buildPinnedWireWaypoints(w, autoPts) : autoPts;
   }
   updateWireBounds(w, w.basePts);
 }
@@ -1090,7 +1234,7 @@ function buildWireCatalogFromMemory() {
         wires.push({
           kind: "scene-to-chapter-out",
           wireKey: wKey,
-          pins: savedPins ? savedPins.map((p) => ({ x: p.x, y: p.y })) : [],
+          pins: savedPins ? savedPins.map((p) => ({ x: p.x, y: p.y, axis: p.axis, segIdx: p.segIdx })) : [],
           fromNode: fromNode,
           toNode: null,
           fromChapterObj: fromCh,
@@ -1184,7 +1328,7 @@ function buildWireCatalogFromMemory() {
         wires.push({
           kind: "chapter-in-to-entry",
           wireKey: wKey,
-          pins: savedPins ? savedPins.map((p) => ({ x: p.x, y: p.y })) : [],
+          pins: savedPins ? savedPins.map((p) => ({ x: p.x, y: p.y, axis: p.axis, segIdx: p.segIdx })) : [],
           fromNode: null,
           toNode: entryNode,
           fromChapterObj: fromCh,
@@ -1280,136 +1424,10 @@ function copyBasePtsToPts(w) {
 
 function restoreWirePtsWithParallelOffset(w) {
   copyBasePtsToPts(w);
-  const dx = w._parallelDx || 0;
-  const n = w.pts.length;
-  if (Math.abs(dx) >= 0.1 && n >= 3 && !(w.toSide && w.toSide !== "bottom")) {
-    w.pts[n - 2].x = w.x2 + dx;
-    w.pts[n - 1] = { x: w.x2 + dx, y: w.y2 - 3 };
-    w.pts.push({ x: w.x2, y: w.y2 });
-  }
 }
 
-function applyParallelOffsetsAndBundles(wires, dirtyGroupKeys, localRerouteBbox) {
-  const byTarget = new Map();
-  for (let i = 0; i < wires.length; i++) {
-    const w = wires[i];
-    if (dirtyGroupKeys && !dirtyGroupKeys.has(w.targetGroupKey)) continue;
-    let g = byTarget.get(w.targetGroupKey);
-    if (!g) {
-      g = [];
-      byTarget.set(w.targetGroupKey, g);
-    }
-    g.push(w);
-  }
-
-  if (!dirtyGroupKeys) {
-    studioGraphState.bundleOverlays = [];
-  } else {
-    studioGraphState.bundleOverlays = studioGraphState.bundleOverlays.filter(
-      (b) => !dirtyGroupKeys.has(b.targetGroupKey)
-    );
-  }
-
-  byTarget.forEach((group, groupKey) => {
-    for (let i = 0; i < group.length; i++) {
-      group[i]._parallelDx = 0;
-      copyBasePtsToPts(group[i]);
-    }
-    if (group.length < 2) {
-      if (group.length === 1) {
-        updateWireBounds(group[0], group[0].pts);
-        if (localRerouteBbox) {
-          if (group[0].minX < localRerouteBbox.minX) localRerouteBbox.minX = group[0].minX;
-          if (group[0].minY < localRerouteBbox.minY) localRerouteBbox.minY = group[0].minY;
-          if (group[0].maxX > localRerouteBbox.maxX) localRerouteBbox.maxX = group[0].maxX;
-          if (group[0].maxY > localRerouteBbox.maxY) localRerouteBbox.maxY = group[0].maxY;
-        }
-      }
-      return;
-    }
-
-    const getApproachX = (it) => (it.pts.length >= 3 ? it.pts[it.pts.length - 3].x : it.x1);
-    group.sort((a, b) => {
-      const ax = getApproachX(a);
-      const bx = getApproachX(b);
-      if (Math.abs(ax - bx) > 1) return ax - bx;
-      if (Math.abs(a.y1 - b.y1) > 1) return a.y1 - b.y1;
-      return (a.portIdx || 0) - (b.portIdx || 0);
-    });
-
-    if (group.length <= 3) {
-      for (let idx = 0; idx < group.length; idx++) {
-        const it = group[idx];
-        it._parallelDx = 0;
-        updateWireBounds(it, it.pts);
-        if (localRerouteBbox) {
-          if (it.minX < localRerouteBbox.minX) localRerouteBbox.minX = it.minX;
-          if (it.minY < localRerouteBbox.minY) localRerouteBbox.minY = it.minY;
-          if (it.maxX > localRerouteBbox.maxX) localRerouteBbox.maxX = it.maxX;
-          if (it.maxY > localRerouteBbox.maxY) localRerouteBbox.maxY = it.maxY;
-        }
-      }
-    } else {
-      const tx = group[0].x2;
-      const ty2 = group[0].y2;
-      let ty1 = ty2 - 36;
-      for (let idx = 0; idx < group.length; idx++) {
-        const it = group[idx];
-        it._parallelDx = 0;
-        const n = it.pts.length;
-        if (n >= 2) {
-          const candY = it.pts[n - 2].y;
-          if (candY < ty2 - 16 && candY > ty1) {
-            ty1 = candY;
-          }
-        }
-        updateWireBounds(it, it.pts);
-        if (localRerouteBbox) {
-          if (it.minX < localRerouteBbox.minX) localRerouteBbox.minX = it.minX;
-          if (it.minY < localRerouteBbox.minY) localRerouteBbox.minY = it.minY;
-          if (it.maxX > localRerouteBbox.maxX) localRerouteBbox.maxX = it.maxX;
-          if (it.maxY > localRerouteBbox.maxY) localRerouteBbox.maxY = it.maxY;
-        }
-      }
-      if (ty2 - ty1 < 24) {
-        ty1 = ty2 - 28;
-      }
-      studioGraphState.bundleOverlays.push({
-        targetGroupKey: groupKey,
-        x1: tx,
-        y1: ty1,
-        x2: tx,
-        y2: ty2,
-        count: group.length
-      });
-    }
-  });
-
-  if (localRerouteBbox) {
-    const padMinX = localRerouteBbox.minX - 16;
-    const padMinY = localRerouteBbox.minY - 16;
-    const padMaxX = localRerouteBbox.maxX + 16;
-    const padMaxY = localRerouteBbox.maxY + 16;
-    const scopedWires = [];
-    for (let i = 0; i < wires.length; i++) {
-      const w = wires[i];
-      if (w.maxX >= padMinX && w.minX <= padMaxX && w.maxY >= padMinY && w.minY <= padMaxY) {
-        if (dirtyGroupKeys && !dirtyGroupKeys.has(w.targetGroupKey)) {
-          restoreWirePtsWithParallelOffset(w);
-        }
-        scopedWires.push(w);
-      }
-    }
-    separateOverlappingWireSegments(scopedWires);
-    computeWireCrossingBridges(scopedWires);
-  } else {
-    separateOverlappingWireSegments(wires);
-    computeWireCrossingBridges(wires);
-  }
-}
-
-function separateOverlappingWireSegments(wires) {
-  const hSegs = [];
+function separateOverlappingVerticalSegments(wires) {
+  const vSegs = [];
   for (let i = 0; i < wires.length; i++) {
     const w = wires[i];
     if (w.pins && w.pins.length > 0) continue;
@@ -1418,15 +1436,108 @@ function separateOverlappingWireSegments(wires) {
     for (let j = 1; j < pts.length - 2; j++) {
       const p0 = pts[j];
       const p1 = pts[j + 1];
-      if (Math.abs(p0.y - p1.y) < 0.5 && Math.abs(p1.x - p0.x) > 12) {
+      if (Math.abs(p0.x - p1.x) < 0.5 && Math.abs(p1.y - p0.y) > 12) {
+        const yA = p0.y;
+        const yB = p1.y;
+        vSegs.push({
+          wire: w,
+          segIdx: j,
+          x: p0.x,
+          startY: yA,
+          endY: yB,
+          dirY: yB >= yA ? 1 : -1,
+          minY: yA < yB ? yA : yB,
+          maxY: yA > yB ? yA : yB
+        });
+      }
+    }
+  }
+  if (vSegs.length < 2) return;
+
+  vSegs.sort((a, b) => a.x - b.x);
+  const visited = new Uint8Array(vSegs.length);
+  for (let i = 0; i < vSegs.length; i++) {
+    if (visited[i]) continue;
+    const sA = vSegs[i];
+    let cluster = null;
+    for (let j = i + 1; j < vSegs.length; j++) {
+      const sB = vSegs[j];
+      if (sB.x - sA.x >= 8) break;
+      if (visited[j] || sB.wire === sA.wire || sB.wire.chapterScope !== sA.wire.chapterScope) {
+        continue;
+      }
+      const overlapY = (sA.maxY < sB.maxY ? sA.maxY : sB.maxY) - (sA.minY > sB.minY ? sA.minY : sB.minY);
+      if (overlapY > 8) {
+        if (!cluster) {
+          cluster = [sA];
+          visited[i] = 1;
+        }
+        cluster.push(sB);
+        visited[j] = 1;
+      }
+    }
+    if (cluster && cluster.length >= 2) {
+      const baseX = cluster[0].x;
+      const isLeftPerimeter = cluster.every((it) => baseX < it.wire.x1 - 24);
+      cluster.sort((a, b) => {
+        if (isLeftPerimeter) {
+          if (Math.abs(a.wire.x1 - b.wire.x1) > 1) return a.wire.x1 - b.wire.x1;
+        }
+        if (Math.abs(a.wire.y1 - b.wire.y1) > 1) return b.wire.y1 - a.wire.y1;
+        return (a.wire.portIdx || 0) - (b.wire.portIdx || 0);
+      });
+      for (let k = 0; k < cluster.length; k++) {
+        const dx = isLeftPerimeter
+          ? -(cluster.length - 1 - k) * WIRE_LANE_STEP
+          : k * WIRE_LANE_STEP;
+        const item = cluster[k];
+        const pts = item.wire.pts;
+        const nextX = baseX + dx;
+        pts[item.segIdx].x = nextX;
+        pts[item.segIdx + 1].x = nextX;
+      }
+    }
+  }
+}
+
+function classifyHorizontalSegmentRank(pts, segIdx, y) {
+  const prevY = pts[segIdx - 1].y;
+  const hasNext = segIdx + 2 < pts.length;
+  const nextY = hasNext ? pts[segIdx + 2].y : y + 24;
+  const goDownStart = prevY > y;
+  const goDownEnd = nextY > y;
+  if (!goDownStart && goDownEnd) return 0; // Top-to-bottom Z-step (or side-wall exit)
+  if (goDownStart && goDownEnd) return 1; // Inverted U-arch into top input
+  if (!goDownStart && !goDownEnd) return 2; // U-trough below bottom output
+  return 3; // Bottom-to-top Z-step
+}
+
+function separateOverlappingWireSegments(wires) {
+  const hSegs = [];
+  for (let i = 0; i < wires.length; i++) {
+    const w = wires[i];
+    if (w.pins && w.pins.length > 0) continue;
+    const pts = w.pts;
+    if (!pts || pts.length < 3) continue;
+    const isSideTerminal = w.toSide === "left" || w.toSide === "right";
+    const maxSegIdx = isSideTerminal ? pts.length - 2 : pts.length - 3;
+    for (let j = 1; j <= maxSegIdx; j++) {
+      const p0 = pts[j];
+      const p1 = pts[j + 1];
+      if (Math.abs(p0.y - p1.y) < 0.5 && Math.abs(p1.x - p0.x) > 10) {
         const xA = p0.x;
         const xB = p1.x;
         hSegs.push({
           wire: w,
           segIdx: j,
+          isTerminalSide: isSideTerminal && j === pts.length - 2,
           y: p0.y,
+          startX: xA,
+          endX: xB,
+          dirX: xB >= xA ? 1 : -1,
           minX: xA < xB ? xA : xB,
-          maxX: xA > xB ? xA : xB
+          maxX: xA > xB ? xA : xB,
+          typeRank: classifyHorizontalSegmentRank(pts, j, p0.y)
         });
       }
     }
@@ -1442,17 +1553,12 @@ function separateOverlappingWireSegments(wires) {
     let cluster = null;
     for (let j = i + 1; j < hSegs.length; j++) {
       const sB = hSegs[j];
-      if (sB.y - sA.y >= 5) break;
-      if (
-        visited[j] ||
-        sB.wire === sA.wire ||
-        sB.wire.chapterScope !== sA.wire.chapterScope ||
-        sB.wire.targetGroupKey === sA.wire.targetGroupKey
-      ) {
+      if (sB.y - sA.y > 20) break;
+      if (visited[j] || sB.wire === sA.wire || sB.wire.chapterScope !== sA.wire.chapterScope) {
         continue;
       }
       const overlapX = (sA.maxX < sB.maxX ? sA.maxX : sB.maxX) - (sA.minX > sB.minX ? sA.minX : sB.minX);
-      if (overlapX > 10) {
+      if (overlapX > 6) {
         if (!cluster) {
           cluster = [sA];
           visited[i] = 1;
@@ -1462,16 +1568,456 @@ function separateOverlappingWireSegments(wires) {
       }
     }
     if (cluster && cluster.length >= 2) {
-      cluster.sort((a, b) => a.y - b.y || a.wire.x1 - b.wire.x1 || a.wire.y1 - b.wire.y1);
+      cluster.sort((a, b) => {
+        if (a.typeRank !== b.typeRank) return a.typeRank - b.typeRank;
+        if (a.typeRank === 0) {
+          const keyA = a.dirX < 0 ? a.startX : -a.startX;
+          const keyB = b.dirX < 0 ? b.startX : -b.startX;
+          if (Math.abs(keyA - keyB) > 1) return keyA - keyB;
+        } else if (a.typeRank === 1) {
+          const keyA = a.dirX > 0 ? a.startX : -a.startX;
+          const keyB = b.dirX > 0 ? b.startX : -b.startX;
+          if (Math.abs(keyA - keyB) > 1) return keyA - keyB;
+        } else if (a.typeRank === 2) {
+          const keyA = a.dirX < 0 ? -a.endX : a.endX;
+          const keyB = b.dirX < 0 ? -b.endX : b.endX;
+          if (Math.abs(keyA - keyB) > 1) return keyA - keyB;
+        } else {
+          const keyA = a.dirX < 0 ? -a.startX : a.startX;
+          const keyB = b.dirX < 0 ? -b.startX : b.startX;
+          if (Math.abs(keyA - keyB) > 1) return keyA - keyB;
+        }
+        return a.y - b.y || a.wire.y1 - b.wire.y1;
+      });
+
+      let baseClusterY = snapToWireGrid(cluster[0].y);
+      let minAllowedY = -Infinity;
+      let maxAllowedY = Infinity;
       for (let k = 0; k < cluster.length; k++) {
-        const dy = (k - (cluster.length - 1) * 0.5) * 6;
+        const it = cluster[k];
+        const pts = it.wire.pts;
+        const prevY = pts[it.segIdx - 1].y;
+        const hasNext = it.segIdx + 2 < pts.length;
+        const nextY = hasNext ? pts[it.segIdx + 2].y : Infinity;
+        if (prevY < it.y && prevY + 12 > minAllowedY) minAllowedY = prevY + 12;
+        if (hasNext && nextY < it.y && nextY + 12 > minAllowedY) minAllowedY = nextY + 12;
+        if (prevY > it.y && prevY - 12 < maxAllowedY) maxAllowedY = prevY - 12;
+        if (hasNext && nextY > it.y) {
+          const isFinalDrop = it.segIdx + 2 === pts.length - 1;
+          const clearBot = isFinalDrop && it.wire.toNode ? nextY - 24 : nextY - 12;
+          if (clearBot < maxAllowedY) maxAllowedY = clearBot;
+        } else if (it.isTerminalSide && it.wire.fromChapterObj) {
+          const chBot = it.wire.fromChapterObj.y + it.wire.fromChapterObj.h - 12;
+          if (chBot < maxAllowedY) maxAllowedY = chBot;
+        }
+      }
+      const totalSpan = (cluster.length - 1) * WIRE_LANE_STEP;
+      let startY = Math.round(baseClusterY - totalSpan * 0.5);
+      if (startY + totalSpan > maxAllowedY) {
+        startY = maxAllowedY - totalSpan;
+      }
+      if (startY < minAllowedY) {
+        startY = minAllowedY;
+      }
+      for (let k = 0; k < cluster.length; k++) {
+        if (cluster[k].isTerminalSide) {
+          startY = cluster[k].y - k * WIRE_LANE_STEP;
+          break;
+        }
+      }
+
+      for (let k = 0; k < cluster.length; k++) {
         const item = cluster[k];
+        if (item.isTerminalSide) continue;
         const pts = item.wire.pts;
-        pts[item.segIdx].y += dy;
-        pts[item.segIdx + 1].y += dy;
+        const nextY = startY + k * WIRE_LANE_STEP;
+        pts[item.segIdx].y = nextY;
+        pts[item.segIdx + 1].y = nextY;
       }
     }
   }
+}
+
+function assignTargetCollectorBarsAndSubLanes(wires) {
+  studioGraphState.bundleOverlays = [];
+  studioGraphState.collectorBars = [];
+
+  const byTarget = new Map();
+  for (let i = 0; i < wires.length; i++) {
+    const w = wires[i];
+    const key = w.targetGroupKey || "";
+    if (!key) continue;
+    let g = byTarget.get(key);
+    if (!g) {
+      g = [];
+      byTarget.set(key, g);
+    }
+    g.push(w);
+  }
+
+  byTarget.forEach((group, groupKey) => {
+    if (group.length < 2) return;
+    if (group[0].toSide && group[0].toSide !== "bottom") return;
+
+    const tx = group[0].x2;
+    const ty = group[0].y2;
+    const barY = ty - 12;
+    const n = group.length;
+
+    const meta = group.map((w) => {
+      const pts = w.pts;
+      const len = pts.length;
+      const fromX = len >= 3 ? pts[len - 3].x : w.x1;
+      const turnY = len >= 3 ? pts[len - 2].y : w.y1;
+      let side = 0;
+      if (len >= 3 && fromX < tx - 2) side = -1;
+      else if (len >= 3 && fromX > tx + 2) side = 1;
+      return { wire: w, side, fromX, turnY };
+    });
+
+    meta.sort((a, b) => {
+      if (a.side !== b.side) return a.side - b.side;
+      if (a.side === -1) {
+        // Left-approaching: lowest horizontal track (largest turnY) gets leftmost slot -> 0 corner crossings
+        if (Math.abs(a.turnY - b.turnY) > 1) return b.turnY - a.turnY;
+        return b.fromX - a.fromX;
+      }
+      if (a.side === 1) {
+        // Right-approaching: highest horizontal track (smallest turnY) gets leftmost of right slots -> 0 corner crossings
+        if (Math.abs(a.turnY - b.turnY) > 1) return a.turnY - b.turnY;
+        return b.fromX - a.fromX;
+      }
+      if (Math.abs(a.wire.x1 - b.wire.x1) > 1) return a.wire.x1 - b.wire.x1;
+      return (a.wire.portIdx || 0) - (b.wire.portIdx || 0);
+    });
+
+    let minHorizontalTurnY = barY - 12;
+    for (let i = 0; i < meta.length; i++) {
+      if (meta[i].side !== 0 && meta[i].turnY < minHorizontalTurnY) {
+        minHorizontalTurnY = meta[i].turnY;
+      }
+    }
+
+    for (let k = 0; k < n; k++) {
+      const item = meta[k];
+      const w = item.wire;
+      const dx = Math.round((k - (n - 1) * 0.5) * WIRE_LANE_STEP);
+      const slotX = tx + dx;
+      w._parallelDx = dx;
+      const pts = w.pts;
+
+      if (pts.length >= 3) {
+        const oldDropX = pts[pts.length - 2].x;
+        pts[pts.length - 2].x = slotX;
+        pts[pts.length - 1] = { x: slotX, y: barY };
+        // If this was a 3-point L-wire from a choice port, keep sibling choice exit lanes >= 6px clear
+        if (pts.length === 3 && w.fromNode && slotX > oldDropX) {
+          for (let s = 0; s < wires.length; s++) {
+            const sw = wires[s];
+            if (sw !== w && sw.fromNode === w.fromNode && sw.pts && sw.pts.length >= 4) {
+              if (Math.abs(sw.pts[1].x - sw.pts[2].x) < 0.5 && sw.pts[1].x > oldDropX - 1 && sw.pts[1].x < slotX + WIRE_LANE_STEP) {
+                const shiftedX = slotX + WIRE_LANE_STEP;
+                sw.pts[1].x = shiftedX;
+                sw.pts[2].x = shiftedX;
+              }
+            }
+          }
+        }
+      } else if (pts.length === 2) {
+        if (Math.abs(dx) < 0.5) {
+          pts[1] = { x: slotX, y: barY };
+        } else {
+          const stepY = Math.max(w.y1 + 12, minHorizontalTurnY - WIRE_LANE_STEP);
+          w.pts = [
+            { x: w.x1, y: w.y1 },
+            { x: w.x1, y: stepY },
+            { x: slotX, y: stepY },
+            { x: slotX, y: barY }
+          ];
+        }
+      }
+    }
+
+    const minDx = Math.round((-(n - 1) * 0.5) * WIRE_LANE_STEP);
+    const maxDx = Math.round(((n - 1) * 0.5) * WIRE_LANE_STEP);
+    studioGraphState.collectorBars.push({
+      targetGroupKey: groupKey,
+      x: tx,
+      portY: ty,
+      barY: barY,
+      minX: tx + minDx,
+      maxX: tx + maxDx,
+      count: n,
+      unreachable: group.every((it) => it.unreachable)
+    });
+  });
+}
+
+function hashWireColorSeed(str) {
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  return h >>> 0;
+}
+
+function computeWireAndPortColors(wires) {
+  const PALETTE_SIZE = 8;
+  const nodes = studioGraphState.nodes || [];
+  const chapters = studioGraphState.chapters || [];
+  for (let i = 0; i < nodes.length; i++) {
+    const nd = nodes[i];
+    nd.inColorIdx = -1;
+    if (nd.ports) {
+      for (let j = 0; j < nd.ports.length; j++) {
+        nd.ports[j].colorIdx = -1;
+      }
+    }
+    if (nd.implicitPort) {
+      nd.implicitPort.colorIdx = -1;
+    }
+  }
+  for (let i = 0; i < chapters.length; i++) {
+    const ch = chapters[i];
+    ch.inColorIdx = -1;
+    if (ch.outPorts) {
+      for (let j = 0; j < ch.outPorts.length; j++) {
+        ch.outPorts[j].colorIdx = -1;
+      }
+    }
+  }
+
+  const byTarget = new Map();
+  for (let i = 0; i < wires.length; i++) {
+    const w = wires[i];
+    w.colorIdx = -1;
+    const key = w.targetGroupKey || "";
+    if (!key) continue;
+    let g = byTarget.get(key);
+    if (!g) {
+      g = [];
+      byTarget.set(key, g);
+    }
+    g.push(w);
+  }
+
+  const usedAtSource = new Map();
+  const usedAtTarget = new Map();
+
+  // Pass A: Color scene-to-scene and scene-to-chapter-out wires first
+  for (let i = 0; i < wires.length; i++) {
+    const w = wires[i];
+    if (w.kind === "chapter-to-chapter" || w.kind === "chapter-in-to-entry") {
+      continue;
+    }
+    const fromMultiNode = Boolean(w.fromNode && w.fromNode.hasChoices && w.fromNode.ports && w.fromNode.ports.length >= 2);
+    const targetGroup = w.targetGroupKey ? byTarget.get(w.targetGroupKey) : null;
+    const toMultiTarget = Boolean(targetGroup && targetGroup.length >= 2);
+    const destChGroup = w.kind === "scene-to-chapter-out" && w.targetChapterLower ? byTarget.get("ch_in:" + w.targetChapterLower) : null;
+    const toMultiDestCh = Boolean(destChGroup && destChGroup.length >= 2);
+
+    if (!fromMultiNode && !toMultiTarget && !toMultiDestCh) {
+      continue;
+    }
+
+    const srcKey = w.fromNode ? "node:" + w.fromNode.id : "wire:" + i;
+    const tgtKey = w.targetGroupKey || "tgt:" + i;
+    const destChKey = w.kind === "scene-to-chapter-out" && w.targetChapterLower ? "ch_in:" + w.targetChapterLower : "";
+
+    let srcSet = usedAtSource.get(srcKey);
+    if (!srcSet) {
+      srcSet = new Set();
+      usedAtSource.set(srcKey, srcSet);
+    }
+    let tgtSet = usedAtTarget.get(tgtKey);
+    if (!tgtSet) {
+      tgtSet = new Set();
+      usedAtTarget.set(tgtKey, tgtSet);
+    }
+    let destChSet = null;
+    if (destChKey) {
+      destChSet = usedAtTarget.get(destChKey);
+      if (!destChSet) {
+        destChSet = new Set();
+        usedAtTarget.set(destChKey, destChSet);
+      }
+    }
+
+    let parentInColor = -1;
+    if (w.fromNode) {
+      const parentInGroup = byTarget.get("scene:" + w.fromNode.id);
+      if (parentInGroup && parentInGroup.length === 1 && parentInGroup[0].colorIdx >= 0) {
+        parentInColor = parentInGroup[0].colorIdx;
+      }
+    }
+
+    const seed = (hashWireColorSeed(srcKey) + (w.portIdx || 0) * 3) % PALETTE_SIZE;
+    let chosen = -1;
+
+    // Pass 1: distinct at target, destination chapter, source, and parent's incoming wire
+    for (let step = 0; step < PALETTE_SIZE; step++) {
+      const cand = (seed + step) % PALETTE_SIZE;
+      if (!tgtSet.has(cand) && (!destChSet || !destChSet.has(cand)) && !srcSet.has(cand) && cand !== parentInColor) {
+        chosen = cand;
+        break;
+      }
+    }
+    // Pass 2: distinct at target, destination chapter, and source
+    if (chosen < 0) {
+      for (let step = 0; step < PALETTE_SIZE; step++) {
+        const cand = (seed + step) % PALETTE_SIZE;
+        if (!tgtSet.has(cand) && (!destChSet || !destChSet.has(cand)) && !srcSet.has(cand)) {
+          chosen = cand;
+          break;
+        }
+      }
+    }
+    // Pass 3: distinct at target and destination chapter
+    if (chosen < 0) {
+      for (let step = 0; step < PALETTE_SIZE; step++) {
+        const cand = (seed + step) % PALETTE_SIZE;
+        if (!tgtSet.has(cand) && (!destChSet || !destChSet.has(cand))) {
+          chosen = cand;
+          break;
+        }
+      }
+    }
+    if (chosen < 0) {
+      chosen = seed % PALETTE_SIZE;
+    }
+
+    w.colorIdx = chosen;
+    srcSet.add(chosen);
+    tgtSet.add(chosen);
+    if (destChSet && (!targetGroup || targetGroup.length === 1)) {
+      destChSet.add(chosen);
+    }
+  }
+
+  // Propagate scene-to-chapter-out colors to chapter output ports
+  byTarget.forEach((group) => {
+    if (group.length === 1) {
+      const w = group[0];
+      if (w.toNode) {
+        w.toNode.inColorIdx = w.colorIdx;
+      } else if (w.toChapterOutPort) {
+        w.toChapterOutPort.inColorIdx = w.colorIdx;
+        w.toChapterOutPort.colorIdx = w.colorIdx;
+      }
+    } else {
+      for (let k = 0; k < group.length; k++) {
+        const w = group[k];
+        if (w.toNode) w.toNode.inColorIdx = -1;
+        if (w.toChapterOutPort) {
+          w.toChapterOutPort.inColorIdx = -1;
+          w.toChapterOutPort.colorIdx = -1;
+        }
+      }
+    }
+  });
+
+  // Pass B: Chapter-to-chapter wires inherit single incoming scene-to-chapter-out wire color, or resolve conflict-free
+  for (let i = 0; i < wires.length; i++) {
+    const w = wires[i];
+    if (w.kind !== "chapter-to-chapter") continue;
+    const op = w.fromChapterOutPort;
+    const tgtKey = w.targetGroupKey || "tgt:" + i;
+    let tgtSet = usedAtTarget.get(tgtKey);
+    if (!tgtSet) {
+      tgtSet = new Set();
+      usedAtTarget.set(tgtKey, tgtSet);
+    }
+
+    if (op && op.inColorIdx >= 0) {
+      w.colorIdx = op.inColorIdx;
+      op.colorIdx = w.colorIdx;
+      tgtSet.add(w.colorIdx);
+      continue;
+    }
+
+    const fromMultiCh = Boolean(w.fromChapterObj && w.fromChapterObj.outPorts && w.fromChapterObj.outPorts.length >= 2);
+    const targetGroup = w.targetGroupKey ? byTarget.get(w.targetGroupKey) : null;
+    const toMultiTarget = Boolean(targetGroup && targetGroup.length >= 2);
+    if (!fromMultiCh && !toMultiTarget) {
+      continue;
+    }
+
+    const srcKey = w.fromChapterObj ? "ch:" + w.fromChapterObj.nameLower : "wire:" + i;
+    let srcSet = usedAtSource.get(srcKey);
+    if (!srcSet) {
+      srcSet = new Set();
+      usedAtSource.set(srcKey, srcSet);
+    }
+    const seed = (hashWireColorSeed(srcKey) + (w.portIdx || 0) * 3) % PALETTE_SIZE;
+    let chosen = -1;
+    for (let step = 0; step < PALETTE_SIZE; step++) {
+      const cand = (seed + step) % PALETTE_SIZE;
+      if (!tgtSet.has(cand) && !srcSet.has(cand)) {
+        chosen = cand;
+        break;
+      }
+    }
+    if (chosen < 0) {
+      for (let step = 0; step < PALETTE_SIZE; step++) {
+        const cand = (seed + step) % PALETTE_SIZE;
+        if (!tgtSet.has(cand)) {
+          chosen = cand;
+          break;
+        }
+      }
+    }
+    if (chosen < 0) chosen = seed % PALETTE_SIZE;
+    w.colorIdx = chosen;
+    if (op) op.colorIdx = chosen;
+    srcSet.add(chosen);
+    tgtSet.add(chosen);
+  }
+
+  // Propagate chapter-to-chapter colors to destination chapter input socket and chapter-in-to-entry wire
+  byTarget.forEach((group) => {
+    if (group.length === 1 && group[0].kind === "chapter-to-chapter") {
+      const w = group[0];
+      if (w.toChapterObj) {
+        w.toChapterObj.inColorIdx = w.colorIdx;
+      }
+    } else if (group.length >= 2 && group[0].kind === "chapter-to-chapter") {
+      for (let k = 0; k < group.length; k++) {
+        if (group[k].toChapterObj) group[k].toChapterObj.inColorIdx = -1;
+      }
+    }
+  });
+
+  for (let i = 0; i < wires.length; i++) {
+    const w = wires[i];
+    if (w.kind === "chapter-in-to-entry" && w.fromChapterObj) {
+      w.colorIdx = w.fromChapterObj.inColorIdx !== undefined ? w.fromChapterObj.inColorIdx : -1;
+      const entryGroup = w.targetGroupKey ? byTarget.get(w.targetGroupKey) : null;
+      if (entryGroup && entryGroup.length === 1 && w.toNode) {
+        w.toNode.inColorIdx = w.colorIdx;
+      }
+    }
+  }
+
+  // Propagate wire colors to source output ports (●)
+  for (let i = 0; i < wires.length; i++) {
+    const w = wires[i];
+    if (w.portRef) {
+      w.portRef.colorIdx = w.colorIdx;
+    }
+  }
+}
+
+function applyParallelOffsetsAndBundles(wires, dirtyGroupKeys, localRerouteBbox) {
+  for (let i = 0; i < wires.length; i++) {
+    wires[i]._parallelDx = 0;
+    copyBasePtsToPts(wires[i]);
+  }
+  separateOverlappingVerticalSegments(wires);
+  separateOverlappingWireSegments(wires);
+  assignTargetCollectorBarsAndSubLanes(wires);
+  computeWireAndPortColors(wires);
+  computeWireCrossingBridges(wires);
 }
 
 function computeWireCrossingBridges(wires) {
@@ -1484,7 +2030,7 @@ function computeWireCrossingBridges(wires) {
     for (let j = 0; j < pts.length - 1; j++) {
       const p0 = pts[j];
       const p1 = pts[j + 1];
-      if (Math.abs(p1.x - p0.x) < 0.5 && Math.abs(p1.y - p0.y) > 14) {
+      if (Math.abs(p1.x - p0.x) < 0.5 && Math.abs(p1.y - p0.y) > 4) {
         const yA = p0.y;
         const yB = p1.y;
         vSegs.push({
@@ -1518,13 +2064,12 @@ function computeWireCrossingBridges(wires) {
     for (let j = 0; j < pts.length - 1; j++) {
       const p0 = pts[j];
       const p1 = pts[j + 1];
-      if (Math.abs(p1.y - p0.y) >= 0.5 || Math.abs(p1.x - p0.x) <= 18) continue;
+      if (Math.abs(p1.y - p0.y) >= 0.5 || Math.abs(p1.x - p0.x) <= 8) continue;
       const y = p0.y;
-      const minX = (p0.x < p1.x ? p0.x : p1.x) + 9;
-      const maxX = (p0.x > p1.x ? p0.x : p1.x) - 9;
+      const minX = (p0.x < p1.x ? p0.x : p1.x) + 3.5;
+      const maxX = (p0.x > p1.x ? p0.x : p1.x) - 3.5;
       if (minX > maxX) continue;
 
-      // Binary search first vertical segment with x >= minX
       let lo = 0;
       let hi = vLen - 1;
       let startIdx = vLen;
@@ -1543,10 +2088,9 @@ function computeWireCrossingBridges(wires) {
       for (let k = startIdx; k < vLen; k++) {
         const vs = vSegs[k];
         if (vs.x > maxX) break;
-        if (vs.wire === w || vs.wire.chapterScope !== w.chapterScope) continue;
-        if (vs.wire.targetGroupKey === w.targetGroupKey && Math.abs(vs.x - w.x2) < 8) continue;
-        if (y > vs.minY + 9 && y < vs.maxY - 9) {
-          if (vs.x - lastBridgeX >= 11) {
+        if (vs.wire === w) continue;
+        if (y > vs.minY + 2.5 && y < vs.maxY - 2.5) {
+          if (vs.x - lastBridgeX >= 1.5) {
             if (!deduped) deduped = [];
             deduped.push(vs.x);
             lastBridgeX = vs.x;

@@ -122,11 +122,7 @@ func (s *Server) saveBookSettings(r *http.Request) string {
 				}
 			}
 			if newExpDir != s.ActiveBook.ExportDir {
-				s.ActiveBook.ExportDir = newExpDir
-				if s.Settings != nil && newExpDir != "" {
-					s.Settings.ExportDir = newExpDir
-					_ = s.saveAppSettings()
-				}
+				s.persistActiveBookExportDir(newExpDir)
 				changed = true
 			}
 		}
@@ -945,16 +941,7 @@ func (s *Server) browseExportModalFolder(r *http.Request) string {
 			picked = expanded
 		}
 		s.ExportModalDir = picked
-		if s.ActiveBook != nil {
-			s.ActiveBook.ExportDir = picked
-			if !s.ActiveBook.IsPacked {
-				_ = book.SaveBookMetadataToDisk(s.ActiveBook)
-			}
-		}
-		if s.Settings != nil {
-			s.Settings.ExportDir = picked
-			_ = s.saveAppSettings()
-		}
+		s.persistActiveBookExportDir(picked)
 	}
 	return ""
 }
@@ -971,7 +958,7 @@ func (s *Server) exportProjectAction(r *http.Request) string {
 		if s.ActiveBook.IsScreenplay() {
 			format = "pdf"
 		} else {
-			format = "stbook"
+			format = "playbook"
 		}
 	}
 	rawDir := strings.TrimSpace(r.FormValue("export_dir"))
@@ -1020,14 +1007,7 @@ func (s *Server) browseBookExportFolder(r *http.Request) string {
 		return err.Error()
 	}
 	s.ensureHistoryBaselineBeforeMutation()
-	s.ActiveBook.ExportDir = expanded
-	if err := book.SaveBookMetadataToDisk(s.ActiveBook); err != nil {
-		return err.Error()
-	}
-	if s.Settings != nil {
-		s.Settings.ExportDir = expanded
-		_ = s.saveAppSettings()
-	}
+	s.persistActiveBookExportDir(expanded)
 	s.reloadActiveBook()
 	toast := "Ustawiono katalog eksportu: " + expanded
 	s.recordHistoryAfterMutation(toast, "meta", "exportdir")

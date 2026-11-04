@@ -57,6 +57,7 @@ const studioGraphState = {
   wires: [],
   wirePins: new Map(),
   bundleOverlays: [],
+  collectorBars: [],
   hoveredItem: null,
   editingChapter: null,
   editingNodeTitle: null,
@@ -142,15 +143,18 @@ const studioGL = {
     smallPortFill: { u0: 16 / UI_ATLAS_W, v0: 36 / UI_ATLAS_H, u1: 40 / UI_ATLAS_W, v1: 60 / UI_ATLAS_H, size: 16 },
     smallPortRing: { u0: 52 / UI_ATLAS_W, v0: 36 / UI_ATLAS_H, u1: 76 / UI_ATLAS_W, v1: 60 / UI_ATLAS_H, size: 16 },
     smallPortHover: { u0: 88 / UI_ATLAS_W, v0: 36 / UI_ATLAS_H, u1: 112 / UI_ATLAS_W, v1: 60 / UI_ATLAS_H, size: 16 },
-    bridgeArc: { u0: 188 / UI_ATLAS_W, v0: 2 / UI_ATLAS_H, u1: 220 / UI_ATLAS_W, v1: 22 / UI_ATLAS_H, w: 16, h: 10 },
+    chevronH: { u0: 188 / UI_ATLAS_W, v0: 2 / UI_ATLAS_H, u1: 204 / UI_ATLAS_W, v1: 18 / UI_ATLAS_H, size: 10 },
+    chevronV: { u0: 204 / UI_ATLAS_W, v0: 2 / UI_ATLAS_H, u1: 220 / UI_ATLAS_W, v1: 18 / UI_ATLAS_H, size: 10 },
     grip: { u0: 124 / UI_ATLAS_W, v0: 2 / UI_ATLAS_H, u1: 144 / UI_ATLAS_W, v1: 24 / UI_ATLAS_H, w: 20, h: 22 },
     branchPlus: { u0: 120 / UI_ATLAS_W, v0: 34 / UI_ATLAS_H, u1: 148 / UI_ATLAS_W, v1: 62 / UI_ATLAS_H, size: 15 },
     editPen: { u0: 152 / UI_ATLAS_W, v0: 34 / UI_ATLAS_H, u1: 180 / UI_ATLAS_W, v1: 62 / UI_ATLAS_H, size: 15 },
-    trashIcon: { u0: 184 / UI_ATLAS_W, v0: 34 / UI_ATLAS_H, u1: 212 / UI_ATLAS_W, v1: 62 / UI_ATLAS_H, size: 12 },
+    trashIcon: { u0: 184 / UI_ATLAS_W, v0: 34 / UI_ATLAS_H, u1: 212 / UI_ATLAS_W, v1: 62 / UI_ATLAS_H, size: 15 },
     cornerTL: { u0: 152 / UI_ATLAS_W, v0: 2 / UI_ATLAS_H, u1: 168 / UI_ATLAS_W, v1: 18 / UI_ATLAS_H },
     cornerTR: { u0: 168 / UI_ATLAS_W, v0: 2 / UI_ATLAS_H, u1: 184 / UI_ATLAS_W, v1: 18 / UI_ATLAS_H },
     cornerBL: { u0: 152 / UI_ATLAS_W, v0: 18 / UI_ATLAS_H, u1: 168 / UI_ATLAS_W, v1: 34 / UI_ATLAS_H },
-    cornerBR: { u0: 168 / UI_ATLAS_W, v0: 18 / UI_ATLAS_H, u1: 184 / UI_ATLAS_W, v1: 34 / UI_ATLAS_H }
+    cornerBR: { u0: 168 / UI_ATLAS_W, v0: 18 / UI_ATLAS_H, u1: 184 / UI_ATLAS_W, v1: 34 / UI_ATLAS_H },
+    pinArrowH: { u0: 224 / UI_ATLAS_W, v0: 2 / UI_ATLAS_H, u1: 252 / UI_ATLAS_W, v1: 30 / UI_ATLAS_H, size: 16 },
+    pinArrowV: { u0: 224 / UI_ATLAS_W, v0: 34 / UI_ATLAS_H, u1: 252 / UI_ATLAS_W, v1: 62 / UI_ATLAS_H, size: 16 }
   }
 };
 
@@ -219,18 +223,6 @@ function buildUISpriteTextureBytes() {
     }
   }
 
-  // 2c. Analytic Semicircular Wire Crossing Bridge (R = 5.5px) at (188..220, 2..22)
-  const bridgeR = 5.5;
-  for (let y = 0; y < 20; y++) {
-    for (let x = 0; x < 32; x++) {
-      const wx = (x + 0.5 - 16.0) * (16.0 / 32.0);
-      const wy = (y + 0.5 - 16.0) * (10.0 / 20.0);
-      const d = wy <= 0.0 ? Math.abs(Math.hypot(wx, wy) - bridgeR) : Math.hypot(Math.abs(wx) - bridgeR, wy);
-      const bArc = distToByte(1.0 - d);
-      setPixel(188 + x, 2 + y, bArc, bArc, bArc, bArc);
-    }
-  }
-
   // 3. Grip 2x3 dots at (124, 2, 20, 22)
   for (let row = 0; row < 3; row++) {
     const cy = 2 + 5 + row * 5;
@@ -242,7 +234,7 @@ function buildUISpriteTextureBytes() {
     }
   }
 
-  // 4. Analytic SDF Vector Icons (branchPlus at 120,34; editPen at 152,34; trashIcon at 184,34)
+  // 4. Analytic SDF Vector Icons (branchPlus at 120,34; editPen at 152,34; trashIcon at 184,34) & Chevrons
   const ptSegDist = (px, py, x1, y1, x2, y2) => {
     const dx = x2 - x1;
     const dy = y2 - y1;
@@ -253,6 +245,26 @@ function buildUISpriteTextureBytes() {
     else if (t > 1) t = 1;
     return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
   };
+  // Open 4px directional chevrons: chevronH at (188,2,16x16), chevronV at (204,2,16x16)
+  const chScale = 16.0 / 10.0;
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 16; x++) {
+      const wx = (x + 0.5 - 8.0) / chScale;
+      const wy = (y + 0.5 - 8.0) / chScale;
+      const dH = Math.min(
+        ptSegDist(wx, wy, -2.0, -3.0, 1.5, 0.0),
+        ptSegDist(wx, wy, -2.0, 3.0, 1.5, 0.0)
+      );
+      const bH = distToByte(0.85 - dH);
+      setPixel(188 + x, 2 + y, bH, bH, bH, bH);
+      const dV = Math.min(
+        ptSegDist(wx, wy, -3.0, -2.0, 0.0, 1.5),
+        ptSegDist(wx, wy, 3.0, -2.0, 0.0, 1.5)
+      );
+      const bV = distToByte(0.85 - dV);
+      setPixel(204 + x, 2 + y, bV, bV, bV, bV);
+    }
+  }
   const rasterizeSDFIcon = (ox, oy, segs, halfStroke) => {
     const sc = 28.0 / 24.0;
     for (let y = 0; y < 28; y++) {
@@ -302,15 +314,50 @@ function buildUISpriteTextureBytes() {
     34,
     [
       [3, 6, 21, 6],
-      [8, 6, 8, 4],
-      [8, 4, 16, 4],
-      [16, 4, 16, 6],
-      [6, 6, 7, 20],
-      [7, 20, 17, 20],
-      [17, 20, 18, 6]
+      [5, 6, 6, 19],
+      [6, 19, 7.5, 20.5],
+      [7.5, 20.5, 16.5, 20.5],
+      [16.5, 20.5, 18, 19],
+      [18, 19, 19, 6],
+      [10, 11, 10, 17],
+      [14, 11, 14, 17]
     ],
     0.95
   );
+
+  // 5. Analytic SDF Directional Arrowheads for User Wire Control Pins (pinArrowH at 224,2; pinArrowV at 224,34)
+  const pinScale = 28.0 / 16.0;
+  const xBase = -3.85;
+  const xTip = 4.65;
+  const yHalf = 4.25;
+  const dxEdge = xTip - xBase;
+  const edgeLen = Math.hypot(dxEdge, yHalf);
+  const nx = yHalf / edgeLen;
+  const ny = dxEdge / edgeLen;
+  const sdPinArrow = (along, perp) => {
+    const ay = Math.abs(perp);
+    const dBase = along - xBase;
+    const dSlant = -((along - xTip) * nx + ay * ny);
+    const dCore =
+      dBase >= 0.0 && dSlant >= 0.0
+        ? Math.min(dBase, dSlant)
+        : -Math.min(
+            ptSegDist(along, ay, xBase, 0.0, xBase, yHalf),
+            ptSegDist(along, ay, xBase, yHalf, xTip, 0.0)
+          );
+    return dCore + 0.35;
+  };
+  for (let y = 0; y < 28; y++) {
+    for (let x = 0; x < 28; x++) {
+      const wx = (x + 0.5 - 14.0) / pinScale;
+      const wy = (y + 0.5 - 14.0) / pinScale;
+      const bH = distToByte(sdPinArrow(wx, wy));
+      setPixel(224 + x, 2 + y, bH, bH, bH, bH);
+      const bV = distToByte(sdPinArrow(wy, wx));
+      setPixel(224 + x, 34 + y, bV, bV, bV, bV);
+    }
+  }
+
   return data;
 }
 
@@ -386,14 +433,26 @@ function resolveStudioThemeColors() {
     ? {
         isLight: true,
         bgObsidianRgb: [1.0, 1.0, 1.0],
-        gridDotRgb: [0.74, 0.74, 0.74],
+        gridDotRgb: [0.875, 0.875, 0.865],
         bgObsidian: packRGBA(1.0, 1.0, 1.0, 1.0),
         bgElevated: packRGBA(0.957, 0.957, 0.957, 1.0),
         borderSubtle: packRGBA(0.886, 0.886, 0.886, 1.0),
-        borderStrong: packRGBA(0.6, 0.6, 0.6, 1.0),
+        borderStrong: packRGBA(0.549, 0.549, 0.549, 1.0),
+        wireDefault: packRGBA(0.549, 0.549, 0.549, 1.0),
+        wirePalette: [
+          packRGBA(0.31, 0.447, 0.588, 1.0),
+          packRGBA(0.239, 0.51, 0.451, 1.0),
+          packRGBA(0.612, 0.463, 0.22, 1.0),
+          packRGBA(0.62, 0.314, 0.282, 1.0),
+          packRGBA(0.451, 0.345, 0.565, 1.0),
+          packRGBA(0.392, 0.49, 0.235, 1.0),
+          packRGBA(0.569, 0.314, 0.439, 1.0),
+          packRGBA(0.235, 0.471, 0.557, 1.0)
+        ],
         textPrimary: packRGBA(0.0, 0.0, 0.0, 1.0),
         textSecondary: packRGBA(0.2, 0.2, 0.2, 1.0),
         textMuted: packRGBA(0.4, 0.4, 0.4, 1.0),
+        accentDanger: packRGBA(0.788, 0.188, 0.173, 1.0),
         chapterFill: packRGBA(0.0, 0.0, 0.0, 0.018),
         marqueeFill: packRGBA(0.0, 0.0, 0.0, 0.07),
         unreachCardBg: packRGBA(0.957, 0.957, 0.957, 0.55),
@@ -404,14 +463,26 @@ function resolveStudioThemeColors() {
     : {
         isLight: false,
         bgObsidianRgb: [0.0, 0.0, 0.0],
-        gridDotRgb: [0.16, 0.16, 0.16],
+        gridDotRgb: [0.118, 0.118, 0.118],
         bgObsidian: packRGBA(0.0, 0.0, 0.0, 1.0),
         bgElevated: packRGBA(0.047, 0.047, 0.047, 1.0),
         borderSubtle: packRGBA(0.141, 0.141, 0.141, 1.0),
-        borderStrong: packRGBA(0.322, 0.322, 0.322, 1.0),
+        borderStrong: packRGBA(0.431, 0.431, 0.431, 1.0),
+        wireDefault: packRGBA(0.431, 0.431, 0.431, 1.0),
+        wirePalette: [
+          packRGBA(0.42, 0.549, 0.682, 1.0),
+          packRGBA(0.361, 0.62, 0.561, 1.0),
+          packRGBA(0.71, 0.573, 0.341, 1.0),
+          packRGBA(0.702, 0.42, 0.392, 1.0),
+          packRGBA(0.553, 0.455, 0.659, 1.0),
+          packRGBA(0.518, 0.612, 0.361, 1.0),
+          packRGBA(0.678, 0.431, 0.549, 1.0),
+          packRGBA(0.361, 0.596, 0.678, 1.0)
+        ],
         textPrimary: packRGBA(1.0, 1.0, 1.0, 1.0),
         textSecondary: packRGBA(0.784, 0.784, 0.784, 1.0),
         textMuted: packRGBA(0.58, 0.58, 0.58, 1.0),
+        accentDanger: packRGBA(0.878, 0.322, 0.322, 1.0),
         chapterFill: packRGBA(0.5, 0.5, 0.5, 0.03),
         marqueeFill: packRGBA(0.62, 0.62, 0.62, 0.09),
         unreachCardBg: packRGBA(0.047, 0.047, 0.047, 0.55),
@@ -420,6 +491,13 @@ function resolveStudioThemeColors() {
         unreachWire: packRGBA(0.22, 0.22, 0.22, 0.55)
       };
   return studioGraphState.themeColors;
+}
+
+function resolveWireColor(colorIdx, theme) {
+  if (typeof colorIdx === "number" && colorIdx >= 0 && theme.wirePalette) {
+    return theme.wirePalette[colorIdx % theme.wirePalette.length];
+  }
+  return theme.wireDefault || theme.borderStrong;
 }
 
 function lookupMSDFGlyph(ttfId, ch) {
@@ -859,6 +937,17 @@ function pushDashedRectQuads(x, y, w, h, thickness, period, packedColor) {
   pushQuadInstance(x + w - t, y + t, t, innerH, 0, negPeriod, spanH, negPeriod, packedColor);
 }
 
+function pushWireChevronQuad(x, y, dir, packedColor) {
+  const isHoriz = dir === "right" || dir === "left";
+  const sp = isHoriz ? studioGL.uv.chevronH : studioGL.uv.chevronV;
+  const hs = sp.size * 0.5;
+  const u0 = dir === "left" ? sp.u1 : sp.u0;
+  const u1 = dir === "left" ? sp.u0 : sp.u1;
+  const v0 = dir === "up" ? sp.v1 : sp.v0;
+  const v1 = dir === "up" ? sp.v0 : sp.v1;
+  pushQuadInstance(x - hs, y - hs, sp.size, sp.size, u0, v0, u1, v1, packedColor);
+}
+
 function pushHorizontalWireSegmentWithBridges(xA, xB, y, thickness, packedColor, segBridges) {
   const halfT = thickness * 0.5;
   const minX = xA < xB ? xA : xB;
@@ -868,16 +957,18 @@ function pushHorizontalWireSegmentWithBridges(xA, xB, y, thickness, packedColor,
     pushSolidQuad(minX, y - halfT, maxX - minX, thickness, packedColor);
     return;
   }
-  const gapR = 5.0;
+  const gapR = 2.7;
   let curX = minX;
   for (let k = 0; k < segBridges.length; k++) {
     const bx = segBridges[k];
-    if (bx - gapR <= curX + 1.0 || bx + gapR >= maxX - 1.0) continue;
+    if (bx - gapR < minX + 1.0 || bx + gapR > maxX - 1.0) continue;
     const leftLen = bx - gapR - curX;
     if (leftLen > 0.5) {
       pushSolidQuad(curX, y - halfT, leftLen, thickness, packedColor);
     }
-    curX = bx + gapR;
+    if (bx + gapR > curX) {
+      curX = bx + gapR;
+    }
   }
   if (maxX - curX > 0.5) {
     pushSolidQuad(curX, y - halfT, maxX - curX, thickness, packedColor);
@@ -907,19 +998,40 @@ function pushWirePolylineQuads(pts, thickness, isDashed, packedColor, bridgesByS
       if (i < lastSeg) {
         xB += dx >= 0 ? halfT : -halfT;
       }
+      const segBridges = bridgesBySeg ? bridgesBySeg[i] : null;
       pushHorizontalWireSegmentWithBridges(
         xA,
         xB,
         p0.y,
         thickness,
         packedColor,
-        bridgesBySeg ? bridgesBySeg[i] : null
+        segBridges
       );
+      const lenX = Math.abs(dx);
+      if (lenX >= 72) {
+        const mx = (p0.x + p1.x) * 0.5;
+        let nearGap = false;
+        if (segBridges) {
+          for (let g = 0; g < segBridges.length; g++) {
+            if (Math.abs(segBridges[g] - mx) < 10) {
+              nearGap = true;
+              break;
+            }
+          }
+        }
+        if (!nearGap) {
+          pushWireChevronQuad(mx, p0.y, dx >= 0 ? "right" : "left", packedColor);
+        }
+      }
     } else {
       const minY = p0.y < p1.y ? p0.y : p1.y;
       const maxY = p0.y > p1.y ? p0.y : p1.y;
-      if (maxY - minY >= 0.5) {
-        pushSolidQuad(p0.x - halfT, minY, thickness, maxY - minY, packedColor);
+      const lenY = maxY - minY;
+      if (lenY >= 0.5) {
+        pushSolidQuad(p0.x - halfT, minY, thickness, lenY, packedColor);
+      }
+      if ((i === lastSeg && lenY >= 18) || lenY >= 72) {
+        pushWireChevronQuad(p0.x, (p0.y + p1.y) * 0.5, dy >= 0 ? "down" : "up", packedColor);
       }
     }
   }
@@ -954,10 +1066,26 @@ function pushPortQuads(x, y, isConnected, isHoveredOrActive, theme, isUnreachabl
         ? theme.textPrimary
         : isUnreachable
           ? theme.unreachWire
-          : theme.borderStrong;
+          : theme.wireDefault;
   pushQuadInstance(x - hs, y - hs, fillSp.size, fillSp.size, fillSp.u0, fillSp.v0, fillSp.u1, fillSp.v1, theme.bgObsidian);
   const sp = isConnected ? studioGL.uv.portHover : studioGL.uv.portRing;
   pushQuadInstance(x - hs, y - hs, sp.size, sp.size, sp.u0, sp.v0, sp.u1, sp.v1, portColor);
+}
+
+function pushInputSocketQuads(x, y, isHoveredOrActive, theme, isUnreachable, colorIdx) {
+  const fillSp = studioGL.uv.portFill;
+  const hs = fillSp.size * 0.5;
+  const portColor =
+    typeof isHoveredOrActive === "number"
+      ? isHoveredOrActive
+      : isHoveredOrActive
+        ? theme.textPrimary
+        : isUnreachable
+          ? theme.unreachWire
+          : resolveWireColor(colorIdx, theme);
+  pushQuadInstance(x - hs, y - hs, fillSp.size, fillSp.size, fillSp.u0, fillSp.v0, fillSp.u1, fillSp.v1, theme.bgObsidian);
+  const ringSp = studioGL.uv.portRing;
+  pushQuadInstance(x - hs, y - hs, ringSp.size, ringSp.size, ringSp.u0, ringSp.v0, ringSp.u1, ringSp.v1, portColor);
 }
 
 function pushSmallPortQuads(x, y, isConnected, isHoveredOrActive, theme, isUnreachable) {
@@ -970,10 +1098,167 @@ function pushSmallPortQuads(x, y, isConnected, isHoveredOrActive, theme, isUnrea
         ? theme.textPrimary
         : isUnreachable
           ? theme.unreachWire
-          : theme.borderStrong;
+          : theme.wireDefault;
   pushQuadInstance(x - hs, y - hs, fillSp.size, fillSp.size, fillSp.u0, fillSp.v0, fillSp.u1, fillSp.v1, theme.bgObsidian);
   const sp = isConnected ? studioGL.uv.smallPortHover : studioGL.uv.smallPortRing;
   pushQuadInstance(x - hs, y - hs, sp.size, sp.size, sp.u0, sp.v0, sp.u1, sp.v1, portColor);
+}
+
+function pushSmallInputSocketQuads(x, y, isHoveredOrActive, theme, isUnreachable, colorIdx) {
+  const fillSp = studioGL.uv.smallPortFill;
+  const hs = fillSp.size * 0.5;
+  const portColor =
+    typeof isHoveredOrActive === "number"
+      ? isHoveredOrActive
+      : isHoveredOrActive
+        ? theme.textPrimary
+        : isUnreachable
+          ? theme.unreachWire
+          : resolveWireColor(colorIdx, theme);
+  pushQuadInstance(x - hs, y - hs, fillSp.size, fillSp.size, fillSp.u0, fillSp.v0, fillSp.u1, fillSp.v1, theme.bgObsidian);
+  const ringSp = studioGL.uv.smallPortRing;
+  pushQuadInstance(x - hs, y - hs, ringSp.size, ringSp.size, ringSp.u0, ringSp.v0, ringSp.u1, ringSp.v1, portColor);
+}
+
+function resolveWirePinDirection(wire, pin) {
+  const pts = wire && (wire.pts && wire.pts.length >= 2 ? wire.pts : wire.basePts);
+  if (!pts || pts.length < 2 || !pin) return "down";
+  const px = pin.x;
+  const py = pin.y;
+  let bestSeg = 0;
+  let bestDistSq = Infinity;
+  let bestLenSq = 0;
+  for (let s = 0; s < pts.length - 1; s++) {
+    const p0 = pts[s];
+    const p1 = pts[s + 1];
+    const dx = p1.x - p0.x;
+    const dy = p1.y - p0.y;
+    const lenSq = dx * dx + dy * dy;
+    if (lenSq < 1.0) continue;
+    let t = ((px - p0.x) * dx + (py - p0.y) * dy) / lenSq;
+    if (t < 0.0) t = 0.0;
+    else if (t > 1.0) t = 1.0;
+    const ex = px - (p0.x + t * dx);
+    const ey = py - (p0.y + t * dy);
+    const dSq = ex * ex + ey * ey;
+    if (
+      dSq < bestDistSq - 0.5 ||
+      (dSq <= bestDistSq + 0.5 && (lenSq >= 64.0 || lenSq > bestLenSq))
+    ) {
+      bestDistSq = dSq;
+      bestSeg = s;
+      bestLenSq = lenSq;
+    }
+  }
+  const a = pts[bestSeg];
+  const b = pts[bestSeg + 1];
+  const sdx = b.x - a.x;
+  const sdy = b.y - a.y;
+  if (Math.abs(sdx) >= Math.abs(sdy)) {
+    return sdx >= 0 ? "right" : "left";
+  }
+  return sdy >= 0 ? "down" : "up";
+}
+
+function computeWirePinSegmentBar(wire, pin) {
+  const pts = wire && (wire.pts && wire.pts.length >= 2 ? wire.pts : wire.basePts);
+  if (!pts || pts.length < 2 || !pin) return null;
+  let bestSeg = -1;
+  if (typeof pin.segIdx === "number" && pin.segIdx >= 0 && pin.segIdx < pts.length - 1) {
+    bestSeg = pin.segIdx;
+  } else {
+    const px = pin.x;
+    const py = pin.y;
+    let bestDistSq = Infinity;
+    let bestLenSq = 0;
+    for (let s = 0; s < pts.length - 1; s++) {
+      const p0 = pts[s];
+      const p1 = pts[s + 1];
+      const dx = p1.x - p0.x;
+      const dy = p1.y - p0.y;
+      const lenSq = dx * dx + dy * dy;
+      if (lenSq < 1.0) continue;
+      let t = ((px - p0.x) * dx + (py - p0.y) * dy) / lenSq;
+      if (t < 0.0) t = 0.0;
+      else if (t > 1.0) t = 1.0;
+      const ex = px - (p0.x + t * dx);
+      const ey = py - (p0.y + t * dy);
+      const dSq = ex * ex + ey * ey;
+      if (
+        dSq < bestDistSq - 0.5 ||
+        (dSq <= bestDistSq + 0.5 && (lenSq >= 64.0 || lenSq > bestLenSq))
+      ) {
+        bestDistSq = dSq;
+        bestSeg = s;
+        bestLenSq = lenSq;
+      }
+    }
+  }
+  if (bestSeg < 0 || bestSeg >= pts.length - 1) return null;
+  const a = pts[bestSeg];
+  const b = pts[bestSeg + 1];
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const isHoriz = Math.abs(dx) >= Math.abs(dy);
+  const segLen = isHoriz ? Math.abs(dx) : Math.abs(dy);
+  if (segLen < 4) return null;
+  // Max length = 3 grid segments (3 * 24px = 72px), leaving 8px corner clearance on each end when possible
+  const maxBarLen = 72;
+  const availLen = segLen > 20 ? segLen - 16 : Math.max(6, segLen - 4);
+  const barLen = Math.min(maxBarLen, availLen);
+  const cx = (a.x + b.x) * 0.5;
+  const cy = (a.y + b.y) * 0.5;
+  if (isHoriz) {
+    return {
+      isHoriz: true,
+      segIdx: bestSeg,
+      x1: cx - barLen * 0.5,
+      y1: a.y,
+      x2: cx + barLen * 0.5,
+      y2: a.y,
+      x: cx - barLen * 0.5,
+      y: a.y,
+      w: barLen,
+      cx: cx,
+      cy: a.y
+    };
+  }
+  return {
+    isHoriz: false,
+    segIdx: bestSeg,
+    x1: a.x,
+    y1: cy - barLen * 0.5,
+    x2: a.x,
+    y2: cy + barLen * 0.5,
+    x: a.x,
+    y: cy - barLen * 0.5,
+    h: barLen,
+    cx: a.x,
+    cy: cy
+  };
+}
+
+function pushWirePinArrowQuads(wire, pinIdx, isHoveredOrActive, theme, isUnreachable) {
+  if (!wire || !wire.pins || !wire.pins[pinIdx]) return;
+  const pin = wire.pins[pinIdx];
+  const bar = computeWirePinSegmentBar(wire, pin);
+  if (!bar) return;
+  const isHighlighted = isHoveredOrActive === true;
+  const thick = isHighlighted ? 6 : 5;
+  const halfT = thick * 0.5;
+  const pinColor =
+    typeof isHoveredOrActive === "number"
+      ? isHoveredOrActive
+      : isHighlighted
+        ? theme.textPrimary
+        : isUnreachable
+          ? theme.unreachWire
+          : resolveWireColor(wire.colorIdx, theme);
+  if (bar.isHoriz) {
+    pushSolidQuad(bar.x, bar.y - halfT, bar.w, thick, pinColor);
+  } else {
+    pushSolidQuad(bar.x - halfT, bar.y, thick, bar.h, pinColor);
+  }
 }
 
 function isHoveredPortItemConnected(hovered) {
@@ -1019,7 +1304,7 @@ function compileStaticSceneQuads(theme) {
 
   const chapters = studioGraphState.chapters;
   const wires = studioGraphState.wires;
-  const bundles = studioGraphState.bundleOverlays;
+  const collectors = studioGraphState.collectorBars || [];
   const nodes = studioGraphState.nodes;
   const gripSp = studioGL.uv.grip;
 
@@ -1056,37 +1341,33 @@ function compileStaticSceneQuads(theme) {
     }
   }
 
-  // 2. Static Wires + Bundle Trunks + Bundle Count Badges (frustum-culled)
+  // 2. Static Wires + Multi-Input Collector Bars (frustum-culled)
   for (let i = 0; i < wires.length; i++) {
     const w = wires[i];
     if (w.maxX < fMinX || w.minX > fMaxX || w.maxY < fMinY || w.minY > fMaxY) {
       continue;
     }
+    const wColor = resolveWireColor(w.colorIdx, theme);
     if (w.unreachable) {
       pushWirePolylineQuads(w.pts, 2, true, theme.unreachWire, null);
     } else {
-      pushWirePolylineQuads(w.pts, 2, false, theme.borderStrong, w.bridges);
+      pushWirePolylineQuads(w.pts, 2, false, wColor, w.bridges);
     }
     if (w.pins && w.pins.length > 0) {
       for (let p = 0; p < w.pins.length; p++) {
-        pushSmallPortQuads(w.pins[p].x, w.pins[p].y, true, false, theme, w.unreachable);
+        pushWirePinArrowQuads(w, p, w.unreachable ? false : wColor, theme, w.unreachable);
       }
     }
   }
 
-  for (let i = 0; i < bundles.length; i++) {
-    const b = bundles[i];
-    const bMinY = b.y1 < b.y2 ? b.y1 : b.y2;
-    const bMaxY = b.y1 > b.y2 ? b.y1 : b.y2;
-    if (b.x2 + 12 < fMinX || b.x1 - 12 > fMaxX || bMaxY + 12 < fMinY || bMinY - 12 > fMaxY) {
+  for (let i = 0; i < collectors.length; i++) {
+    const c = collectors[i];
+    if (c.maxX + 12 < fMinX || c.minX - 12 > fMaxX || c.portY + 12 < fMinY || c.barY - 12 > fMaxY) {
       continue;
     }
-    pushSolidQuad(b.x1 - 2.25, bMinY, 4.5, bMaxY - bMinY, theme.borderStrong);
-    const mx = (b.x1 + b.x2) * 0.5;
-    const my = (b.y1 + b.y2) * 0.5;
-    pushBorderedBoxQuads(mx - 9, my - 8, 18, 16, 1.5, theme.textPrimary, theme.bgObsidian);
-    const shapedNum = shapeTextGlyphs(FONT_BADGE, String(b.count), 16);
-    pushShapedTextQuads(shapedNum, mx - shapedNum.totalW * 0.5, my, theme.textPrimary);
+    const colColor = c.unreachable ? theme.unreachWire : theme.wireDefault;
+    pushSolidQuad(c.minX - 1, c.barY - 1, c.maxX - c.minX + 2, 2, colColor);
+    pushSolidQuad(c.x - 1, c.barY, 2, c.portY - c.barY, colColor);
   }
 
   // 3. Scene Node Cards (frustum-culled)
@@ -1212,7 +1493,7 @@ function compileStaticSceneQuads(theme) {
           );
         }
         if (!isHistoryPreview) {
-          const tx = nd.x + nd.w - 23;
+          const tx = nd.x + nd.w - 24;
           const ty = rowY + (NODE_CHOICE_ROW_HEIGHT - trashSp.size) * 0.5;
           pushQuadInstance(
             tx,
@@ -1223,7 +1504,7 @@ function compileStaticSceneQuads(theme) {
             trashSp.v0,
             trashSp.u1,
             trashSp.v1,
-            theme.textMuted
+            textSec
           );
         }
       }
@@ -1234,7 +1515,6 @@ function compileStaticSceneQuads(theme) {
     const btnY = footerTop + 8;
     if (!isHistoryPreview) {
       const btnX = nd.x + 8;
-      pushBorderedBoxQuads(btnX, btnY, footerIconBtnSize, footerIconBtnSize, 1, theme.borderStrong, cardBg);
       pushQuadInstance(
         btnX + (footerIconBtnSize - branchPlusSp.size) * 0.5,
         btnY + (footerIconBtnSize - branchPlusSp.size) * 0.5,
@@ -1244,11 +1524,24 @@ function compileStaticSceneQuads(theme) {
         branchPlusSp.v0,
         branchPlusSp.u1,
         branchPlusSp.v1,
-        textPri
+        textSec
+      );
+      const delX = nd.x + nd.w - 8 - footerIconBtnSize;
+      pushQuadInstance(
+        delX + (footerIconBtnSize - trashSp.size) * 0.5,
+        btnY + (footerIconBtnSize - trashSp.size) * 0.5,
+        trashSp.size,
+        trashSp.size,
+        trashSp.u0,
+        trashSp.v0,
+        trashSp.u1,
+        trashSp.v1,
+        textSec
       );
     }
-    const editX = nd.x + nd.w - 8 - footerIconBtnSize;
-    pushBorderedBoxQuads(editX, btnY, footerIconBtnSize, footerIconBtnSize, 1, theme.borderStrong, cardBg);
+    const editX = isHistoryPreview
+      ? nd.x + nd.w - 8 - footerIconBtnSize
+      : nd.x + nd.w - 8 - footerIconBtnSize * 2 - 6;
     pushQuadInstance(
       editX + (footerIconBtnSize - editPenSp.size) * 0.5,
       btnY + (footerIconBtnSize - editPenSp.size) * 0.5,
@@ -1258,11 +1551,11 @@ function compileStaticSceneQuads(theme) {
       editPenSp.v0,
       editPenSp.u1,
       editPenSp.v1,
-      textPri
+      textSec
     );
   }
 
-  // 4. Default Circular Ports (frustum-culled)
+  // 4. Differentiated Input Sockets (○) & Output Plugs (●) (frustum-culled)
   for (let i = 0; i < chapters.length; i++) {
     const ch = chapters[i];
     if (ch.hidden) continue;
@@ -1275,11 +1568,12 @@ function compileStaticSceneQuads(theme) {
       continue;
     }
     if (!ch.isRoot) {
-      pushSmallPortQuads(ch.inX, ch.inY, Boolean(ch.inConnected), false, theme, false);
+      pushSmallInputSocketQuads(ch.inX, ch.inY, false, theme, false, ch.inColorIdx);
     }
     for (let j = 0; j < ch.outPorts.length; j++) {
       const op = ch.outPorts[j];
-      pushSmallPortQuads(op.x, op.y, Boolean(op.connected), false, theme, false);
+      const opColor = op.connected ? resolveWireColor(op.colorIdx !== undefined ? op.colorIdx : op.inColorIdx, theme) : false;
+      pushSmallPortQuads(op.x, op.y, Boolean(op.connected), opColor, theme, false);
     }
   }
 
@@ -1294,19 +1588,22 @@ function compileStaticSceneQuads(theme) {
       continue;
     }
     if (nd.hasInputPort) {
-      pushPortQuads(nd.x + nd.inOx, nd.y + nd.inOy, Boolean(nd.inConnected), false, theme, nd.unreachable);
+      pushInputSocketQuads(nd.x + nd.inOx, nd.y + nd.inOy, false, theme, nd.unreachable, nd.inColorIdx);
     }
     if (nd.hasChoices && nd.ports.length > 0) {
       for (let j = 0; j < nd.ports.length; j++) {
         const pt = nd.ports[j];
-        pushPortQuads(nd.x + pt.ox, nd.y + pt.oy, Boolean(pt.connected), false, theme, nd.unreachable);
+        const ptColor = pt.connected && !nd.unreachable ? resolveWireColor(pt.colorIdx, theme) : false;
+        pushPortQuads(nd.x + pt.ox, nd.y + pt.oy, Boolean(pt.connected), ptColor, theme, nd.unreachable);
       }
     } else if (nd.implicitPort) {
+      const impColor =
+        nd.implicitPort.connected && !nd.unreachable ? resolveWireColor(nd.implicitPort.colorIdx, theme) : false;
       pushPortQuads(
         nd.x + nd.implicitPort.ox,
         nd.y + nd.implicitPort.oy,
         Boolean(nd.implicitPort.connected),
-        false,
+        impColor,
         theme,
         nd.unreachable
       );
@@ -1413,11 +1710,12 @@ function appendDynamicOverlayQuads(theme) {
   const renderChapterPortsOverlay = (ch) => {
     if (!ch || ch.hidden) return;
     if (!ch.isRoot) {
-      pushSmallPortQuads(ch.inX, ch.inY, Boolean(ch.inConnected), false, theme, false);
+      pushSmallInputSocketQuads(ch.inX, ch.inY, false, theme, false, ch.inColorIdx);
     }
     for (let j = 0; j < ch.outPorts.length; j++) {
       const op = ch.outPorts[j];
-      pushSmallPortQuads(op.x, op.y, Boolean(op.connected), false, theme, false);
+      const opColor = op.connected ? resolveWireColor(op.colorIdx !== undefined ? op.colorIdx : op.inColorIdx, theme) : false;
+      pushSmallPortQuads(op.x, op.y, Boolean(op.connected), opColor, theme, false);
     }
   };
 
@@ -1440,19 +1738,22 @@ function appendDynamicOverlayQuads(theme) {
     if (!nd) return;
     pushSolidBorderQuads(nd.x, nd.y, nd.w, nd.h, 1, nodeHighlightColor);
     if (nd.hasInputPort) {
-      pushPortQuads(nd.x + nd.inOx, nd.y + nd.inOy, Boolean(nd.inConnected), false, theme, nd.unreachable);
+      pushInputSocketQuads(nd.x + nd.inOx, nd.y + nd.inOy, false, theme, nd.unreachable, nd.inColorIdx);
     }
     if (nd.hasChoices && nd.ports.length > 0) {
       for (let j = 0; j < nd.ports.length; j++) {
         const pt = nd.ports[j];
-        pushPortQuads(nd.x + pt.ox, nd.y + pt.oy, Boolean(pt.connected), false, theme, nd.unreachable);
+        const ptColor = pt.connected && !nd.unreachable ? resolveWireColor(pt.colorIdx, theme) : false;
+        pushPortQuads(nd.x + pt.ox, nd.y + pt.oy, Boolean(pt.connected), ptColor, theme, nd.unreachable);
       }
     } else if (nd.implicitPort) {
+      const impColor =
+        nd.implicitPort.connected && !nd.unreachable ? resolveWireColor(nd.implicitPort.colorIdx, theme) : false;
       pushPortQuads(
         nd.x + nd.implicitPort.ox,
         nd.y + nd.implicitPort.oy,
         Boolean(nd.implicitPort.connected),
-        false,
+        impColor,
         theme,
         nd.unreachable
       );
@@ -1469,7 +1770,7 @@ function appendDynamicOverlayQuads(theme) {
       const hw = chain[i];
       if (hw.pins && hw.pins.length > 0) {
         for (let p = 0; p < hw.pins.length; p++) {
-          pushSmallPortQuads(hw.pins[p].x, hw.pins[p].y, true, theme.textSecondary, theme, false);
+          pushWirePinArrowQuads(hw, p, theme.textSecondary, theme, false);
         }
       }
       if (hw.fromNode) {
@@ -1477,21 +1778,20 @@ function appendDynamicOverlayQuads(theme) {
       } else if (hw.fromChapterOutPort) {
         pushSmallPortQuads(hw.fromChapterOutPort.x, hw.fromChapterOutPort.y, true, theme.textSecondary, theme, false);
       } else if (hw.kind === "chapter-in-to-entry" && hw.fromChapterObj) {
-        pushSmallPortQuads(hw.fromChapterObj.inX, hw.fromChapterObj.inY, Boolean(hw.fromChapterObj.inConnected), theme.textSecondary, theme, false);
+        pushSmallInputSocketQuads(hw.fromChapterObj.inX, hw.fromChapterObj.inY, theme.textSecondary, theme, false, -1);
       }
       if (hw.toNode) {
-        pushPortQuads(hw.x2, hw.y2, true, theme.textSecondary, theme, false);
+        pushInputSocketQuads(hw.x2, hw.y2, theme.textSecondary, theme, false, -1);
       } else if (hw.toChapterOutPort) {
         pushSmallPortQuads(hw.toChapterOutPort.x, hw.toChapterOutPort.y, true, theme.textSecondary, theme, false);
       } else if (hw.toChapterObj) {
-        pushSmallPortQuads(hw.toChapterObj.inX, hw.toChapterObj.inY, true, theme.textSecondary, theme, false);
+        pushSmallInputSocketQuads(hw.toChapterObj.inX, hw.toChapterObj.inY, theme.textSecondary, theme, false, -1);
       }
     }
   }
 
   if (gesture && gesture.type === "wire-pin-drag" && gesture.wire && gesture.wire.pins && gesture.wire.pins[gesture.pinIdx]) {
-    const activePin = gesture.wire.pins[gesture.pinIdx];
-    pushSmallPortQuads(activePin.x, activePin.y, true, true, theme, false);
+    pushWirePinArrowQuads(gesture.wire, gesture.pinIdx, true, theme, false);
   }
 
   if (gesture && gesture.type === "choice-drag" && gesture.node && gesture.node.ports) {
@@ -1523,9 +1823,9 @@ function appendDynamicOverlayQuads(theme) {
       }
       pushShapedTextQuads(pt._shapedChoice, nd.x + 21, rowY + NODE_CHOICE_ROW_HEIGHT * 0.5, theme.textPrimary);
       const trashSp = studioGL.uv.trashIcon;
-      const tx = nd.x + nd.w - 23;
+      const tx = nd.x + nd.w - 24;
       const ty = rowY + (NODE_CHOICE_ROW_HEIGHT - trashSp.size) * 0.5;
-      pushQuadInstance(tx, ty, trashSp.size, trashSp.size, trashSp.u0, trashSp.v0, trashSp.u1, trashSp.v1, theme.textMuted);
+      pushQuadInstance(tx, ty, trashSp.size, trashSp.size, trashSp.u0, trashSp.v0, trashSp.u1, trashSp.v1, theme.textSecondary);
       pushPortQuads(nd.x + pt.ox, nd.y + pt.oy, Boolean(pt.connected), true, theme, nd.unreachable);
     }
   }
@@ -1593,16 +1893,16 @@ function appendDynamicOverlayQuads(theme) {
     }
     if (gesture.hoveredSceneNode) {
       const tnd = gesture.hoveredSceneNode;
-      pushPortQuads(tnd.x + tnd.inOx, tnd.y + tnd.inOy, Boolean(tnd.inConnected), true, theme, false);
+      pushInputSocketQuads(tnd.x + tnd.inOx, tnd.y + tnd.inOy, true, theme, false, -1);
     }
     if (gesture.hoveredChapterIn) {
-      pushSmallPortQuads(
+      pushSmallInputSocketQuads(
         gesture.hoveredChapterIn.inX,
         gesture.hoveredChapterIn.inY,
-        Boolean(gesture.hoveredChapterIn.inConnected),
         true,
         theme,
-        false
+        false,
+        -1
       );
     }
     if (gesture.hoveredChapterOutPort) {
@@ -1620,8 +1920,10 @@ function appendDynamicOverlayQuads(theme) {
   if (hovered) {
     if (hovered.type === "scene-out-port") {
       pushPortQuads(hovered.x, hovered.y, isHoveredPortItemConnected(hovered), true, theme, false);
-    } else if (hovered.type === "chapter-out-port" || hovered.type === "wire-pin") {
+    } else if (hovered.type === "chapter-out-port") {
       pushSmallPortQuads(hovered.x, hovered.y, isHoveredPortItemConnected(hovered), true, theme, false);
+    } else if (hovered.type === "wire-pin" && hovered.wire && hovered.pinIdx !== undefined) {
+      pushWirePinArrowQuads(hovered.wire, hovered.pinIdx, true, theme, false);
     } else if (hovered.type === "node-grip" && hovered.node) {
       const nd = hovered.node;
       pushQuadInstance(
@@ -1670,10 +1972,13 @@ function appendDynamicOverlayQuads(theme) {
       const btnX = nd.x + 8;
       const btnY = nd.y + nd.h - NODE_FOOTER_HEIGHT + 8;
       const btnS = 24;
-      pushBorderedBoxQuads(btnX, btnY, btnS, btnS, 1, theme.textPrimary, theme.bgElevated);
+      const cardBg = nd.unreachable ? theme.unreachCardBg : theme.bgObsidian;
+      const ix = btnX + (btnS - branchPlusSp.size) * 0.5;
+      const iy = btnY + (btnS - branchPlusSp.size) * 0.5;
+      pushSolidQuad(ix - 1, iy - 1, branchPlusSp.size + 2, branchPlusSp.size + 2, cardBg);
       pushQuadInstance(
-        btnX + (btnS - branchPlusSp.size) * 0.5,
-        btnY + (btnS - branchPlusSp.size) * 0.5,
+        ix,
+        iy,
         branchPlusSp.size,
         branchPlusSp.size,
         branchPlusSp.u0,
@@ -1686,12 +1991,16 @@ function appendDynamicOverlayQuads(theme) {
       const nd = hovered.node;
       const editPenSp = studioGL.uv.editPen;
       const btnS = 24;
-      const btnX = nd.x + nd.w - 8 - btnS;
+      const isPreview = typeof isEditorHistoryPreview === "function" && isEditorHistoryPreview();
+      const btnX = isPreview ? nd.x + nd.w - 8 - btnS : nd.x + nd.w - 8 - btnS * 2 - 6;
       const btnY = nd.y + nd.h - NODE_FOOTER_HEIGHT + 8;
-      pushBorderedBoxQuads(btnX, btnY, btnS, btnS, 1, theme.textPrimary, theme.bgElevated);
+      const cardBg = nd.unreachable ? theme.unreachCardBg : theme.bgObsidian;
+      const ix = btnX + (btnS - editPenSp.size) * 0.5;
+      const iy = btnY + (btnS - editPenSp.size) * 0.5;
+      pushSolidQuad(ix - 1, iy - 1, editPenSp.size + 2, editPenSp.size + 2, cardBg);
       pushQuadInstance(
-        btnX + (btnS - editPenSp.size) * 0.5,
-        btnY + (btnS - editPenSp.size) * 0.5,
+        ix,
+        iy,
         editPenSp.size,
         editPenSp.size,
         editPenSp.u0,
@@ -1700,12 +2009,34 @@ function appendDynamicOverlayQuads(theme) {
         editPenSp.v1,
         theme.textPrimary
       );
+    } else if (hovered.type === "delete-scene-btn" && hovered.node) {
+      const nd = hovered.node;
+      const trashSp = studioGL.uv.trashIcon;
+      const btnS = 24;
+      const btnX = nd.x + nd.w - 8 - btnS;
+      const btnY = nd.y + nd.h - NODE_FOOTER_HEIGHT + 8;
+      const cardBg = nd.unreachable ? theme.unreachCardBg : theme.bgObsidian;
+      const ix = btnX + (btnS - trashSp.size) * 0.5;
+      const iy = btnY + (btnS - trashSp.size) * 0.5;
+      pushSolidQuad(ix - 1, iy - 1, trashSp.size + 2, trashSp.size + 2, cardBg);
+      pushQuadInstance(
+        ix,
+        iy,
+        trashSp.size,
+        trashSp.size,
+        trashSp.u0,
+        trashSp.v0,
+        trashSp.u1,
+        trashSp.v1,
+        theme.accentDanger
+      );
     } else if (hovered.type === "choice-trash-btn" && hovered.node && typeof hovered.choiceIdx === "number") {
       const nd = hovered.node;
       const trashSp = studioGL.uv.trashIcon;
       const rowY = nd.y + NODE_HEADER_HEIGHT + hovered.choiceIdx * NODE_CHOICE_ROW_HEIGHT;
-      const tx = nd.x + nd.w - 23;
+      const tx = nd.x + nd.w - 24;
       const ty = rowY + (NODE_CHOICE_ROW_HEIGHT - trashSp.size) * 0.5;
+      pushSolidQuad(tx - 1, ty - 1, trashSp.size + 2, trashSp.size + 2, theme.bgObsidian);
       pushQuadInstance(
         tx,
         ty,
@@ -1715,7 +2046,7 @@ function appendDynamicOverlayQuads(theme) {
         trashSp.v0,
         trashSp.u1,
         trashSp.v1,
-        theme.textPrimary
+        theme.accentDanger
       );
     } else if (hovered.type === "branch-radio" && hovered.node) {
       const nd = hovered.node;

@@ -261,8 +261,7 @@ func ServeBookMedia(w http.ResponseWriter, r *http.Request, b *Book, rawRelPath 
 
 	if !b.IsPacked {
 		fullPath := filepath.Join(b.RootPath, filepath.FromSlash(cleanRel))
-		cleanRoot := filepath.Clean(b.RootPath) + string(os.PathSeparator)
-		if !strings.HasPrefix(filepath.Clean(fullPath), cleanRoot) {
+		if !IsSafePathInsideRoot(b.RootPath, fullPath) {
 			http.NotFound(w, r)
 			return
 		}

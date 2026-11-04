@@ -1,8 +1,8 @@
-# StoryTeller Architecture & Unbreakable Rules for AI Agents
+# Mojra (StoryTeller) Architecture & Unbreakable Rules for AI Agents
 
 ## 1. ALWAYS Keep the Top Bar (`header.topbar#topbar`) Visible — NEVER VIOLATE
 - **THE TOP BAR MUST ALWAYS REMAIN VISIBLE AND INTERACTIVE IN EVERY VIEW AND MODAL**:
-  - `header.topbar#topbar` (`app/templates/topbar.tpl`, included at the top of `app/templates/app_shell.tpl`) contains the `StoryTeller` brand logotype, the primary navigation tabs (`Biblioteka`, active book `<Title>`, `Node Studio`), and the global window/UI controls (imageless mode, UI zoom, dark/light theme, fullscreen, and quit `✕`).
+  - `header.topbar#topbar` (`app/templates/topbar.tpl`, included at the top of `app/templates/app_shell.tpl`) contains the `Mojra` brand logotype and symbol (`app/icons/mojra.svg`), the primary navigation tabs (`Biblioteka`, active book `<Title>`, `Playbook Studio`), and the global window/UI controls (imageless mode, UI zoom, dark/light theme, fullscreen, and quit `✕`).
   - **NEVER** hide, remove, replace, or cover `header.topbar#topbar` in any view (`#view-library`, `#view-player`, `#view-editor`) or in any modal/overlay—**especially when editing scene text (`#modal-scene-text` / `.scene-text-fullscreen-backdrop`)**.
   - Layout and stacking rules that MUST be preserved forever:
     1. `.app-root` (`app/styles/app.tss`) uses a 2-row grid (`grid-template-rows: auto 1fr`) where row `1` is exclusively `header.topbar#topbar` (`grid-row: 1; z-index: 200`) and row `2` (`grid-row: 2`) contains `main.workspace#workspace` and `.modals-root#modals-root`.
@@ -17,11 +17,14 @@
   - Escape literal arrows in prose as `\->`.
   - A single outgoing transition MUST always normalize to implicit `Dalej` (`next: <target>` or sequential same-file scene), never a single custom-labeled choice button.
 - **Node Studio Layout (`books/<id>/editor.txt`)**: Plain text using `pan_x: <int>`, `pan_y: <int>`, `zoom: <float>`, and `node: <scene_ref> -> <x>, <y>` snapped to `EditorGridSize = 24`.
+- **App Settings & Saves in Standard OS App Data (`book.DefaultAppDataDir()` / `book.DefaultSavesDir()`)**:
+  - Built or running apps and tests must **NEVER** write `saves/`, `settings.ini`, `<book-id>.sav`, `.storyteller.pid`, or `.history/` into the repository (`repo/saves/`, `repo/dist/saves/`, `books/<id>/.history/` are strictly forbidden).
+  - Keep all app settings (`saves/settings.ini`), player saves (`saves/<book-id>.sav`), process lock files (`saves/.storyteller.pid`), version history (`history/`), default projects (`projects/`), and exports (`exports/`) in the standard OS application data directory (`os.UserConfigDir()/StoryTeller`, i.e., `~/Library/Application Support/StoryTeller` on macOS, `%AppData%\StoryTeller` on Windows, `$XDG_CONFIG_HOME/StoryTeller` on Linux) via `book.DefaultAppDataDir()` and `book.ResolveSavesDir(rootDir)`, and use isolated `os.TempDir()` directories during `go test`.
 - **App Settings (`saves/settings.ini`)**: INI sections (`[display]`, `[audio]`, `[library]`) with `key = value` pairs written atomically via `.tmp` + `os.Rename`.
 - **Player Progress (`saves/<book-id>.sav`)**: Custom Little-Endian binary format (`STSV\x01`). Frequent `AudioTime` updates MUST patch bytes `[5..21]` in-place via `UpdateSaveAudioTimeInPlace` (`os.File.WriteAt`) without rewriting the file.
 
-## 3. Client-Server Protocol — HTML-Over-The-Wire (`POST /api/action`)
-- All UI mutations and commands go through `POST /api/action` with `Content-Type: application/x-www-form-urlencoded` and must pass `validateSameOriginAction` (`Sec-Fetch-Site`, `Origin`, `Referer`).
+## 3. Client-Server Protocol — WFP + HTML-Over-The-Wire (`POST /api/action`)
+- All UI mutations and commands go through `POST /api/action` using WFP wire framing (`Content-Type: text/x-wfp;charset=UTF-8`, `key=val` header lines + optional `_body=<key>` and `\n\n` raw UTF-8 body, decoded via pooled `sync.Pool` buffers in `internal/gui/wfp.go`) and must pass `validateSameOriginAction` (`Sec-Fetch-Site`, `Origin`, `Referer`).
 - Never return JSON from `/api/action`. Render a `.tpl` template chunk and set `X-Target` (`#app`, `#workspace`, `#modals-root`, `#editor-context-panel`, or `none` with HTTP `204 No Content`).
 - Sync state and native host commands exclusively via `X-*` HTTP response headers (`X-Theme`, `X-Imageless`, `X-Imageless-Locked`, `X-UI-Scale`, `X-Audio-Speed`, `X-Auto-Choice`, `X-Auto-Strategy`, `X-Keep-Scroll`, `X-Reset-Canvas`, `X-Device-Mode`, `X-Toast`, `X-Native-Cmd`).
 - Declare client actions in `.tpl` via `action: <ActionName>` and `data-*` attributes (`app/js/core.js` maps `data-foo-bar` to form param `foo_bar`).
@@ -78,9 +81,9 @@
 - **All-or-Nothing Narration Policy**:
   - When `narrated: false`, clear all scene audio fields, omit `voice:` from serialized `.txt` files, return HTTP `403` on audio requests, and render `#reader-progress-footer` instead of `#audio-deck`.
   - When `narrated: true`, emit a parser warning for every scene missing a valid audio file.
-- **Zero-Copy External Books & Read-Only `.stbook` Archives**:
+- **Zero-Copy External Books & Read-Only `.playbook` / `.stbook` Archives**:
   - `AddBookFromDisk` registers external paths in `settings.ini` (`ExternalBooks`) without copying files into `books/`.
-  - `.stbook` / `.zip` archives (`b.IsPacked == true`) are read-only; reject all mutations in `internal/book/mutator.go` and editor actions.
+  - `.playbook` / `.stbook` / `.zip` archives (`b.IsPacked == true`) are read-only; reject all mutations in `internal/book/mutator.go` and editor actions.
   - Production bundles (`packageBooksForDist`) must ship only `.stbook` archives inside `dist/.../books/` and never copy raw unpacked source folders.
 - **Graph-First Ordering & SSRF Protection**:
   - Order chapters and multi-file scenes by BFS graph reachability from `StartSceneID` (`orderChaptersAndScenesByGraph`), never by numeric filename prefixes (`01_...`).

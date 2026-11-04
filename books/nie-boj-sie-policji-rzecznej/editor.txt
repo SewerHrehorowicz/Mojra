@@ -70,12 +70,12 @@ node: dzieci_w_goraczce -> 552, 6696
 node: podpalenie_spichlerza -> 816, 6528
 node: w_strone_chaty -> 288, 6528
 node: furia_wiosla -> 288, 6696
-node: slepa_furia -> 144, 6888
-node: przeblysk_litosci -> 408, 6888
+node: slepa_furia -> 144, 6912
+node: przeblysk_litosci -> 408, 6912
 node: ciesla_z_toporem -> 816, 6696
-node: zemsta_na_ciesli -> 672, 6888
-node: obraz_rzezi -> 936, 6888
-node: plac_w_plomieniach -> 552, 7056
+node: zemsta_na_ciesli -> 672, 6912
+node: obraz_rzezi -> 936, 6912
+node: plac_w_plomieniach -> 552, 7080
 node: schody_w_korzeniach -> 1488, 5976
 node: prog_kaplicy -> 1488, 6144
 node: slepy_kustosz -> 1488, 6312

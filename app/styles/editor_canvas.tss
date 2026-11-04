@@ -184,15 +184,19 @@
 .canvas-floating-chapter-input
   position absolute
   z-index 90
-  background --bg-obsidian
-  border 1px solid --text-primary
+  background --bg-elevated
+  border none
+  border-bottom 1px solid --text-primary
   color --text-primary
   font-family --font-sans
   font-size 11px
-  font-weight 600
+  font-weight 700
   text-transform uppercase
-  letter-spacing 0.9px
-  padding 2px 6px
+  letter-spacing 0.65px
+  line-height 1
+  font-kerning none
+  font-variant-ligatures none
+  padding 0
   outline none
   white-space nowrap
 
@@ -281,16 +285,23 @@
   border none
   border-bottom 1px solid --text-primary
   color --text-primary
+  line-height 1
+  font-kerning none
+  font-variant-ligatures none
   outline none
-  padding 0 2px
+  padding 0
 
 .canvas-floating-node-input
   font-family --font-serif
   font-size 13px
+  font-weight 400
+  letter-spacing 0px
 
 .canvas-floating-choice-input
   font-family --font-sans
   font-size 11px
+  font-weight 400
+  letter-spacing 0px
 
 body[data-ui-scale="large"]
   .canvas-toolbar
@@ -307,10 +318,6 @@ body[data-ui-scale="large"]
   .canvas-zoom-label
     font-size 14px
     min-width 48px
-
-  .canvas-floating-chapter-input
-    font-size 13px
-    padding 4px 6px
 
   .canvas-context-item
     font-size 13px

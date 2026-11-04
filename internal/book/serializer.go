@@ -61,9 +61,6 @@ func SerializeDataFile(b *Book) string {
 	if startVal != "" {
 		fmt.Fprintf(&sb, "start: %s\n", startVal)
 	}
-	if expDir := sanitizeSingleLineMeta(b.ExportDir); expDir != "" {
-		fmt.Fprintf(&sb, "export_dir: %s\n", expDir)
-	}
 	return sb.String()
 }
 

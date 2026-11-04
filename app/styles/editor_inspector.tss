@@ -83,11 +83,13 @@ body[data-android="true"] .editor-context-panel
   text-overflow ellipsis
 
 .scene-text-delete-btn
-  color --danger
-  border-color --danger
+  color --text-secondary
   display inline-flex
   align-items center
   gap 6px
+
+.scene-text-delete-btn:hover
+  color --accent-danger
 
 .canvas-script-summary
   font-family --font-sans

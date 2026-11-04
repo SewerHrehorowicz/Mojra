@@ -14,6 +14,9 @@ import (
 )
 
 func writeFileIfChanged(path string, data []byte, perm os.FileMode) error {
+	if linfo, err := os.Lstat(path); err == nil && linfo.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("odmowa zapisu przez dowiązanie symboliczne (symlink): %s", path)
+	}
 	if existing, err := os.ReadFile(path); err == nil && bytes.Equal(existing, data) {
 		return nil
 	}
@@ -585,7 +588,7 @@ func resolveNonCollidingStandaloneCoords(b *Book, targetChapter string, baseX, b
 	const (
 		nodeW      = 192
 		nodeH      = 74
-		nodeMargin = 24
+		nodeMargin = 48
 	)
 	targetChKey := strings.ToLower(strings.TrimSpace(targetChapter))
 
@@ -775,7 +778,7 @@ func CreateNewBookWithMode(booksDir, title, author, mode, standard string, narra
 			ID:             id,
 			Title:          cleanTitle,
 			Author:         cleanAuthor,
-			Description:    "Scenariusz filmowy utworzony w StoryTeller Studio.",
+			Description:    "Scenariusz filmowy utworzony w Playbook Studio.",
 			Mode:           "screenplay",
 			ScriptStandard: normStd,
 			StartSceneID:   "poczatek",
@@ -836,7 +839,7 @@ func CreateNewBookWithMode(booksDir, title, author, mode, standard string, narra
 		return LoadBookFromDir(bookDir)
 	}
 
-	dataContent := fmt.Sprintf("title: %s\nauthor: %s\ndescription: Interaktywna opowieść utworzona w StoryTeller Studio.\nnarrated: %s\nimageless: %s\nstart: poczatek\n", cleanTitle, cleanAuthor, narratedStr, imagelessStr)
+	dataContent := fmt.Sprintf("title: %s\nauthor: %s\ndescription: Interaktywna opowieść utworzona w Playbook Studio.\nnarrated: %s\nimageless: %s\nstart: poczatek\n", cleanTitle, cleanAuthor, narratedStr, imagelessStr)
 	if err := os.WriteFile(filepath.Join(bookDir, "data.txt"), []byte(dataContent), 0644); err != nil {
 		return nil, err
 	}
@@ -853,7 +856,7 @@ Stoisz u progu nowej przygody. Wiatr niesie odległe echo dawnej pieśni.
 scene: Rozdroże
 id: rozdroze
 end: true
-Dotarłeś do celu podróży. Możesz rozbudować tę historię w Node Studio.
+Dotarłeś do celu podróży. Możesz rozbudować tę historię w Playbook Studio.
 `
 	if err := os.WriteFile(filepath.Join(bookDir, "rozdzial_1.txt"), []byte(storyContent), 0644); err != nil {
 		return nil, err
@@ -1067,13 +1070,19 @@ func PackBookToZip(bookDir, outZipPath string) error {
 		if wErr != nil {
 			return wErr
 		}
+		if d.Type()&os.ModeSymlink != 0 {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
 		if d.IsDir() {
 			if path != bookDir && strings.HasPrefix(d.Name(), ".") {
 				return filepath.SkipDir
 			}
 			return nil
 		}
-		if strings.HasPrefix(d.Name(), ".") {
+		if strings.HasPrefix(d.Name(), ".") || !IsSafePathInsideRoot(bookDir, path) {
 			return nil
 		}
 		rel, err := filepath.Rel(bookDir, path)
@@ -1338,6 +1347,15 @@ func copyBookDirectoryAll(srcDir, dstDir string) error {
 	return filepath.WalkDir(srcDir, func(path string, d os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
+		}
+		if d.Type()&os.ModeSymlink != 0 {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if path != srcDir && !IsSafePathInsideRoot(srcDir, path) {
+			return nil
 		}
 		rel, err := filepath.Rel(srcDir, path)
 		if err != nil {

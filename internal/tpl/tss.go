@@ -174,6 +174,9 @@ func preprocessCSSLines(source string) []cssPreprocessedLine {
 			if nextIdx >= len(rawLines) {
 				break
 			}
+			if isSelectorComma && countLeadingIndent(rawLines[nextIdx]) != indent {
+				break
+			}
 			nextTrimmed := strings.TrimSpace(rawLines[nextIdx])
 			acc += " " + nextTrimmed
 			i = nextIdx
@@ -186,7 +189,558 @@ func preprocessCSSLines(source string) []cssPreprocessedLine {
 		})
 		i++
 	}
+	return collapseMultilinePropertyBlocks(out)
+}
+
+var multilineCSSProperties = map[string]bool{
+	"transition":                 true,
+	"transition-property":        true,
+	"transition-duration":        true,
+	"transition-timing-function": true,
+	"transition-delay":           true,
+	"background":                 true,
+	"background-image":           true,
+	"background-position":        true,
+	"background-size":            true,
+	"background-repeat":          true,
+	"background-origin":          true,
+	"background-clip":            true,
+	"background-attachment":      true,
+	"background-blend-mode":      true,
+	"box-shadow":                 true,
+	"text-shadow":                true,
+	"transform":                  true,
+	"filter":                     true,
+	"backdrop-filter":            true,
+	"-webkit-backdrop-filter":    true,
+	"animation":                  true,
+	"animation-name":             true,
+	"animation-duration":         true,
+	"animation-timing-function":  true,
+	"animation-delay":            true,
+	"animation-iteration-count":  true,
+	"animation-direction":        true,
+	"animation-fill-mode":        true,
+	"animation-play-state":       true,
+	"font-family":                true,
+	"font-feature-settings":      true,
+	"font-variation-settings":    true,
+	"font-variant":               true,
+	"will-change":                true,
+	"mask":                       true,
+	"mask-image":                 true,
+	"mask-position":              true,
+	"mask-size":                  true,
+	"mask-repeat":                true,
+	"mask-origin":                true,
+	"mask-clip":                  true,
+	"mask-composite":             true,
+	"-webkit-mask":               true,
+	"-webkit-mask-image":         true,
+	"clip-path":                  true,
+	"-webkit-clip-path":          true,
+	"grid-template":              true,
+	"grid-template-areas":        true,
+	"grid-template-rows":         true,
+	"grid-template-columns":       true,
+	"border-image":               true,
+	"text-decoration":            true,
+	"src":                        true,
+	"cursor":                     true,
+	"contain":                    true,
+	"touch-action":               true,
+	"outline":                    true,
+	"border":                     true,
+	"border-top":                 true,
+	"border-right":               true,
+	"border-bottom":              true,
+	"border-left":                true,
+	"padding":                    true,
+	"margin":                     true,
+	"inset":                      true,
+	"gap":                        true,
+	"flex":                       true,
+	"grid-column":                true,
+	"grid-row":                   true,
+	"place-items":                true,
+	"place-content":              true,
+	"place-self":                 true,
+}
+
+var spaceJoinedCSSProperties = map[string]bool{
+	"transform":               true,
+	"filter":                  true,
+	"backdrop-filter":         true,
+	"-webkit-backdrop-filter": true,
+	"clip-path":               true,
+	"-webkit-clip-path":       true,
+	"grid-template":           true,
+	"grid-template-areas":     true,
+	"grid-template-rows":      true,
+	"grid-template-columns":    true,
+	"border-image":            true,
+	"text-decoration":         true,
+	"font-variant":            true,
+	"contain":                 true,
+	"touch-action":            true,
+	"outline":                 true,
+	"border":                  true,
+	"border-top":              true,
+	"border-right":            true,
+	"border-bottom":           true,
+	"border-left":             true,
+	"padding":                 true,
+	"margin":                  true,
+	"inset":                   true,
+	"gap":                     true,
+	"flex":                    true,
+	"grid-column":             true,
+	"grid-row":                true,
+	"place-items":             true,
+	"place-content":           true,
+	"place-self":              true,
+}
+
+var cssNestableFunctionNames = map[string]bool{
+	"linear-gradient":           true,
+	"radial-gradient":           true,
+	"conic-gradient":            true,
+	"repeating-linear-gradient": true,
+	"repeating-radial-gradient": true,
+	"repeating-conic-gradient":  true,
+	"polygon":                   true,
+	"inset":                     true,
+	"circle":                    true,
+	"ellipse":                   true,
+	"xywh":                      true,
+	"rect":                      true,
+	"path":                      true,
+	"steps":                     true,
+	"cubic-bezier":              true,
+	"color-mix":                 true,
+	"light-dark":                true,
+	"image-set":                 true,
+	"-webkit-image-set":         true,
+	"cross-fade":                true,
+	"drop-shadow":               true,
+	"clamp":                     true,
+	"min":                       true,
+	"max":                       true,
+	"calc":                      true,
+	"translate":                 true,
+	"translate3d":               true,
+	"scale":                     true,
+	"scale3d":                   true,
+	"rotate":                    true,
+	"rotate3d":                  true,
+	"skew":                      true,
+	"matrix":                    true,
+	"matrix3d":                  true,
+	"rgb":                       true,
+	"rgba":                      true,
+	"hsl":                       true,
+	"hsla":                      true,
+	"oklch":                     true,
+	"oklab":                     true,
+	"lab":                       true,
+	"lch":                       true,
+	"color":                     true,
+}
+
+func collapseMultilinePropertyBlocks(lines []cssPreprocessedLine) []cssPreprocessedLine {
+	type blockCtx struct {
+		indent       int
+		isSwitchBody bool
+	}
+	var stack []blockCtx
+	var out []cssPreprocessedLine
+
+	i := 0
+	for i < len(lines) {
+		pl := lines[i]
+		for len(stack) > 0 && stack[len(stack)-1].indent >= pl.Indent {
+			stack = stack[:len(stack)-1]
+		}
+		inSwitchBody := len(stack) > 0 && stack[len(stack)-1].isSwitchBody
+		hasChildren := i+1 < len(lines) && lines[i+1].Indent > pl.Indent
+
+		if !hasChildren {
+			out = append(out, pl)
+			i++
+			continue
+		}
+
+		// Collect all descendant lines under pl
+		endIdx := i + 1
+		for endIdx < len(lines) && lines[endIdx].Indent > pl.Indent {
+			endIdx++
+		}
+		subLines := lines[i+1 : endIdx]
+
+		// 1. Check if pl is a switch definition or block-level switch (`switch <name>`, `@switch <name>`, `-> switch(<name>)`)
+		if isBlockSwitchOrDefLine(pl.Content) {
+			out = append(out, pl)
+			stack = append(stack, blockCtx{indent: pl.Indent, isSwitchBody: true})
+			i++
+			continue
+		}
+
+		// 2. Direct child of a block-level `@switch` is a switch case header (`full`, `portrait, landscape`), not a property
+		if inSwitchBody {
+			out = append(out, pl)
+			stack = append(stack, blockCtx{indent: pl.Indent, isSwitchBody: false})
+			i++
+			continue
+		}
+
+		// 3. Check if pl is a property-level switch (`prop switch(name)` or `prop -> switch(name)`)
+		if propKey, isPropSw := parsePropertySwitchHeaderKey(pl.Content); isPropSw {
+			out = append(out, pl)
+			j := 0
+			for j < len(subLines) {
+				caseLine := subLines[j]
+				caseEnd := j + 1
+				for caseEnd < len(subLines) && subLines[caseEnd].Indent > caseLine.Indent {
+					caseEnd++
+				}
+				if caseEnd > j+1 {
+					caseKeySpec, inlineVal := splitSwitchCaseMultilineHeader(caseLine.Content)
+					collapsedVal := evalMultilinePropertyValue(propKey, inlineVal, subLines[j+1:caseEnd])
+					out = append(out, cssPreprocessedLine{
+						Indent:  caseLine.Indent,
+						Content: caseKeySpec + ": " + collapsedVal,
+						LineNum: caseLine.LineNum,
+					})
+				} else {
+					out = append(out, caseLine)
+				}
+				j = caseEnd
+			}
+			i = endIdx
+			continue
+		}
+
+		// 4. Check if pl is a multi-line property block (`transition`, `background`, `background linear-gradient(...)`, etc.)
+		if propKey, inlineVal, ok := matchMultilinePropertyHeader(pl.Content, pl.Indent, subLines[0].Content); ok {
+			collapsedVal := evalMultilinePropertyValue(propKey, inlineVal, subLines)
+			out = append(out, cssPreprocessedLine{
+				Indent:  pl.Indent,
+				Content: propKey + ": " + collapsedVal,
+				LineNum: pl.LineNum,
+			})
+			i = endIdx
+			continue
+		}
+
+		out = append(out, pl)
+		stack = append(stack, blockCtx{indent: pl.Indent, isSwitchBody: false})
+		i++
+	}
 	return out
+}
+
+func isBlockSwitchOrDefLine(content string) bool {
+	if strings.HasPrefix(content, "@switch ") || strings.HasPrefix(content, "@switch(") || strings.HasPrefix(content, "switch ") {
+		return true
+	}
+	if arrowIdx := findUnquotedArrow(content); arrowIdx >= 0 {
+		lhs := strings.TrimSpace(content[:arrowIdx])
+		rhs := strings.TrimSpace(content[arrowIdx+2:])
+		if lhs == "" {
+			if _, ok := parseSwitchTargetName(rhs); ok {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func parsePropertySwitchHeaderKey(content string) (string, bool) {
+	if arrowIdx := findUnquotedArrow(content); arrowIdx >= 0 {
+		lhs := strings.TrimSpace(content[:arrowIdx])
+		rhs := strings.TrimSpace(content[arrowIdx+2:])
+		if lhs != "" && cssPropKeyRe.MatchString(lhs) {
+			if _, inlineExpr, ok := parseInlineSwitchTarget(rhs); ok && inlineExpr == "" {
+				return lhs, true
+			}
+		}
+		return "", false
+	}
+	if key, val, _, ok := splitCSSPropertyHeader(content); ok {
+		if _, inlineExpr, isSw := parseInlineSwitchTarget(val); isSw && inlineExpr == "" {
+			return key, true
+		}
+	}
+	return "", false
+}
+
+func splitSwitchCaseMultilineHeader(content string) (caseKeySpec string, inlineVal string) {
+	trimmed := strings.TrimSpace(content)
+	if strings.HasSuffix(trimmed, ":") {
+		return strings.TrimSpace(trimmed[:len(trimmed)-1]), ""
+	}
+	if colonIdx := findFirstUnquotedColon(trimmed); colonIdx > 0 {
+		candidateKeys := splitTopLevelCommas(trimmed[:colonIdx])
+		valid := len(candidateKeys) > 0
+		for _, ck := range candidateKeys {
+			if !cssCaseKeyIdentRe.MatchString(ck) {
+				valid = false
+				break
+			}
+		}
+		if valid {
+			return strings.TrimSpace(trimmed[:colonIdx]), strings.TrimSpace(trimmed[colonIdx+1:])
+		}
+	}
+	if m := cssPropSwitchCaseLineRe.FindStringSubmatch(trimmed); len(m) == 3 {
+		return strings.TrimSpace(m[1]), strings.TrimSpace(m[2])
+	}
+	return trimmed, ""
+}
+
+func matchMultilinePropertyHeader(content string, indent int, firstChild string) (propKey string, inlineVal string, ok bool) {
+	if strings.HasPrefix(content, "@") || strings.HasPrefix(content, "switch ") || strings.HasPrefix(content, "->") {
+		return "", "", false
+	}
+	if strings.HasPrefix(firstChild, "@switch") || strings.HasPrefix(firstChild, "@if") || strings.HasPrefix(firstChild, "->") {
+		return "", "", false
+	}
+
+	// Case A: Bare property header `prop` or `prop:`
+	trimmed := strings.TrimSpace(content)
+	hasExplicitColon := strings.HasSuffix(trimmed, ":")
+	bareKey := strings.TrimSpace(strings.TrimSuffix(trimmed, ":"))
+	if cssPropKeyRe.MatchString(bareKey) && bareKey != "before" && bareKey != "after" {
+		isCustomProp := strings.HasPrefix(bareKey, "--") || strings.HasPrefix(bareKey, "$")
+		if isCustomProp || (indent > 0 && (multilineCSSProperties[bareKey] || hasExplicitColon)) {
+			return bareKey, "", true
+		}
+	}
+
+	// Case B: Property header with inline function starter, e.g. `background linear-gradient(to bottom)`
+	if key, val, hasColon, isProp := splitCSSPropertyHeader(trimmed); isProp && key != "before" && key != "after" {
+		if _, _, isSw := parseInlineSwitchTarget(val); isSw {
+			return "", "", false
+		}
+		isCustomProp := strings.HasPrefix(key, "--") || strings.HasPrefix(key, "$")
+		if (isCustomProp || (indent > 0 && (multilineCSSProperties[key] || hasColon))) && isCSSNestableFunctionExpr(val) {
+			return key, val, true
+		}
+	}
+
+	return "", "", false
+}
+
+func isCSSNestableFunctionExpr(expr string) bool {
+	trimmed := strings.TrimSpace(expr)
+	if cssNestableFunctionNames[trimmed] {
+		return true
+	}
+	openIdx := strings.IndexByte(trimmed, '(')
+	if openIdx <= 0 {
+		return false
+	}
+	fnName := strings.TrimSpace(trimmed[:openIdx])
+	return cssNestableFunctionNames[fnName]
+}
+
+func evalMultilinePropertyValue(propKey, headerVal string, sub []cssPreprocessedLine) string {
+	items := evalMultilineSubItems(propKey, sub)
+	if headerVal != "" {
+		return spliceCSSFunctionArgs(headerVal, items)
+	}
+	return joinCSSPropertyItems(propKey, items)
+}
+
+func evalMultilineSubItems(propKey string, sub []cssPreprocessedLine) []string {
+	var items []string
+	j := 0
+	for j < len(sub) {
+		itemLine := sub[j]
+		itemEnd := j + 1
+		for itemEnd < len(sub) && sub[itemEnd].Indent > itemLine.Indent {
+			itemEnd++
+		}
+		itemText := cleanMultilineItemText(propKey, itemLine.Content)
+		if itemEnd > j+1 {
+			nestedItems := evalMultilineSubItems(propKey, sub[j+1:itemEnd])
+			itemText = spliceCSSFunctionArgs(itemText, nestedItems)
+		}
+		if itemText != "" {
+			items = append(items, itemText)
+		}
+		j = itemEnd
+	}
+	return items
+}
+
+func cleanMultilineItemText(propKey, s string) string {
+	cleaned := strings.TrimSpace(s)
+	cleaned = strings.TrimSpace(strings.TrimSuffix(cleaned, ";"))
+	cleaned = strings.TrimSpace(strings.TrimSuffix(cleaned, ","))
+	if propKey == "transition" && isCSSPropertyAssignment(cleaned) {
+		colonIdx := findFirstUnquotedColon(cleaned)
+		if colonIdx > 0 {
+			cleaned = strings.TrimSpace(cleaned[:colonIdx]) + " " + strings.TrimSpace(cleaned[colonIdx+1:])
+		}
+	}
+	return cleaned
+}
+
+func spliceCSSFunctionArgs(header string, args []string) string {
+	trimmed := strings.TrimSpace(header)
+	openIdx := findFirstUnquotedOpenParen(trimmed)
+	if openIdx < 0 {
+		sep := ", "
+		if isSpaceSeparatedCSSFunc(trimmed) {
+			sep = " "
+		}
+		return trimmed + "(" + strings.Join(args, sep) + ")"
+	}
+	closeIdx := findMatchingCloseParen(trimmed, openIdx)
+	if closeIdx < 0 {
+		closeIdx = len(trimmed)
+	}
+	fnName := strings.TrimSpace(trimmed[:openIdx])
+	sep := ", "
+	if isSpaceSeparatedCSSFunc(fnName) {
+		sep = " "
+	}
+	existing := strings.TrimSpace(trimmed[openIdx+1 : closeIdx])
+	existing = strings.TrimSpace(strings.TrimSuffix(existing, ","))
+	joined := strings.Join(args, sep)
+	var inner string
+	if existing != "" && joined != "" {
+		inner = existing + sep + joined
+	} else if existing != "" {
+		inner = existing
+	} else {
+		inner = joined
+	}
+	if closeIdx >= len(trimmed) {
+		return trimmed[:openIdx+1] + inner + ")"
+	}
+	return trimmed[:openIdx+1] + inner + trimmed[closeIdx:]
+}
+
+func isSpaceSeparatedCSSFunc(fnName string) bool {
+	switch fnName {
+	case "drop-shadow", "inset", "xywh", "rect":
+		return true
+	default:
+		return false
+	}
+}
+
+func findFirstUnquotedOpenParen(s string) int {
+	inQuote := byte(0)
+	for i := 0; i < len(s); i++ {
+		ch := s[i]
+		if inQuote != 0 {
+			if ch == '\\' {
+				i++
+				continue
+			}
+			if ch == inQuote {
+				inQuote = 0
+			}
+			continue
+		}
+		if ch == '"' || ch == '\'' {
+			inQuote = ch
+			continue
+		}
+		if ch == '(' {
+			return i
+		}
+	}
+	return -1
+}
+
+func findMatchingCloseParen(s string, openIdx int) int {
+	depth := 0
+	inQuote := byte(0)
+	for i := openIdx; i < len(s); i++ {
+		ch := s[i]
+		if inQuote != 0 {
+			if ch == '\\' {
+				i++
+				continue
+			}
+			if ch == inQuote {
+				inQuote = 0
+			}
+			continue
+		}
+		if ch == '"' || ch == '\'' {
+			inQuote = ch
+			continue
+		}
+		if ch == '(' {
+			depth++
+		} else if ch == ')' {
+			depth--
+			if depth == 0 {
+				return i
+			}
+		}
+	}
+	return -1
+}
+
+func joinCSSPropertyItems(propKey string, items []string) string {
+	if len(items) == 0 {
+		return ""
+	}
+	if len(items) == 1 {
+		return items[0]
+	}
+	if spaceJoinedCSSProperties[propKey] {
+		return strings.Join(items, " ")
+	}
+	if propKey == "background" || propKey == "mask" || propKey == "-webkit-mask" || strings.HasPrefix(propKey, "--") || strings.HasPrefix(propKey, "$") {
+		var layers []string
+		for _, item := range items {
+			if len(layers) > 0 && isCSSImageLayerExpr(layers[len(layers)-1]) && isCSSBackgroundLayerModifier(item) {
+				layers[len(layers)-1] += " " + item
+				continue
+			}
+			layers = append(layers, item)
+		}
+		return strings.Join(layers, ", ")
+	}
+	return strings.Join(items, ", ")
+}
+
+func isCSSImageLayerExpr(s string) bool {
+	return strings.Contains(s, "gradient(") || strings.Contains(s, "url(") || strings.Contains(s, "image-set(") || strings.Contains(s, "cross-fade(")
+}
+
+func isCSSBackgroundLayerModifier(s string) bool {
+	trimmed := strings.TrimSpace(s)
+	if trimmed == "" || isCSSImageLayerExpr(trimmed) {
+		return false
+	}
+	if strings.Contains(trimmed, "/") {
+		return true
+	}
+	firstWord := trimmed
+	if sp := strings.IndexAny(trimmed, " \t"); sp > 0 {
+		firstWord = trimmed[:sp]
+	}
+	if (firstWord[0] >= '0' && firstWord[0] <= '9') || (len(firstWord) > 1 && firstWord[0] == '-' && firstWord[1] >= '0' && firstWord[1] <= '9') {
+		return true
+	}
+	switch firstWord {
+	case "left", "center", "right", "top", "bottom",
+		"repeat", "repeat-x", "repeat-y", "no-repeat", "space", "round",
+		"scroll", "fixed", "local",
+		"border-box", "padding-box", "content-box", "text",
+		"contain", "cover", "auto":
+		return true
+	default:
+		return false
+	}
 }
 
 func replaceBlockCommentsPreservingNewlines(s string) string {

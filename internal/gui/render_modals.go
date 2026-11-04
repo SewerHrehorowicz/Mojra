@@ -55,8 +55,11 @@ func buildScreenplayFormatInsertPills(standard string, b *book.Book) ([]map[stri
 
 func buildExportFormatOptions(rawFormat string, isScreenplay bool) (string, string, []map[string]any) {
 	norm := strings.ToLower(strings.TrimSpace(rawFormat))
+	if norm == "stbook" {
+		norm = "playbook"
+	}
 	if isScreenplay {
-		if norm != "pdf" && norm != "fountain" && norm != "stbook" {
+		if norm != "pdf" && norm != "fountain" && norm != "playbook" {
 			norm = "pdf"
 		}
 		defs := []struct {
@@ -65,7 +68,7 @@ func buildExportFormatOptions(rawFormat string, isScreenplay bool) (string, stri
 		}{
 			{"pdf", "Scenariusz PDF (.pdf)"},
 			{"fountain", "Scenariusz Fountain (.fountain)"},
-			{"stbook", "Paczka projektu StoryTeller (.stbook)"},
+			{"playbook", "Playbook (.playbook)"},
 		}
 		var opts []map[string]any
 		activeLabel := defs[0].label
@@ -83,11 +86,11 @@ func buildExportFormatOptions(rawFormat string, isScreenplay bool) (string, stri
 		return norm, activeLabel, opts
 	}
 
-	norm = "stbook"
-	activeLabel := "Paczka projektu StoryTeller (.stbook)"
+	norm = "playbook"
+	activeLabel := "Playbook (.playbook)"
 	opts := []map[string]any{
 		{
-			"value":     "stbook",
+			"value":     "playbook",
 			"label":     activeLabel,
 			"is_active": true,
 		},

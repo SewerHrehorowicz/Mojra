@@ -112,25 +112,40 @@ function hitTestStudioCanvas(wx, wy) {
       }
     }
 
-    // 2b. Wire control pins
+    // 2b. Wire control pins (thickened line segment handles)
     const allWires = studioGraphState.wires || [];
-    const pinHitRSq = 100; // 10px world radius
+    const pinHitRSq = 64; // 8px perpendicular radius along thickened bar
     for (let i = allWires.length - 1; i >= 0; i--) {
       const w = allWires[i];
       if (!w.pins || w.pins.length === 0) continue;
       for (let pIdx = w.pins.length - 1; pIdx >= 0; pIdx--) {
         const p = w.pins[pIdx];
-        const dx = wx - p.x;
-        const dy = wy - p.y;
-        if (dx * dx + dy * dy <= pinHitRSq) {
-          return {
-            type: "wire-pin",
-            wire: w,
-            pinIdx: pIdx,
-            pin: p,
-            x: p.x,
-            y: p.y
-          };
+        const bar = typeof computeWirePinSegmentBar === "function" ? computeWirePinSegmentBar(w, p) : null;
+        if (bar) {
+          if (distToSegmentSq(wx, wy, bar.x1, bar.y1, bar.x2, bar.y2) <= pinHitRSq) {
+            return {
+              type: "wire-pin",
+              wire: w,
+              pinIdx: pIdx,
+              pin: p,
+              segIdx: bar.segIdx,
+              x: bar.cx,
+              y: bar.cy
+            };
+          }
+        } else {
+          const dx = wx - p.x;
+          const dy = wy - p.y;
+          if (dx * dx + dy * dy <= 100) {
+            return {
+              type: "wire-pin",
+              wire: w,
+              pinIdx: pIdx,
+              pin: p,
+              x: p.x,
+              y: p.y
+            };
+          }
         }
       }
     }
@@ -142,11 +157,18 @@ function hitTestStudioCanvas(wx, wy) {
     const nd = nodes[i];
     if (wx >= nd.x && wx <= nd.x + nd.w && wy >= nd.y && wy <= nd.y + nd.h) {
       const footerTop = nd.y + nd.h - NODE_FOOTER_HEIGHT;
-      if (wx >= nd.x + nd.w - 8 - footerBtnSize && wx <= nd.x + nd.w - 8 && wy >= footerTop + 8 && wy <= footerTop + 8 + footerBtnSize) {
+      const editX = isPreview
+        ? nd.x + nd.w - 8 - footerBtnSize
+        : nd.x + nd.w - 8 - footerBtnSize * 2 - 6;
+      if (wx >= editX && wx <= editX + footerBtnSize && wy >= footerTop + 8 && wy <= footerTop + 8 + footerBtnSize) {
         return { type: "edit-scene-btn", node: nd };
       }
       if (isPreview) {
         return { type: "node-card", node: nd };
+      }
+      const delX = nd.x + nd.w - 8 - footerBtnSize;
+      if (wx >= delX && wx <= delX + footerBtnSize && wy >= footerTop + 8 && wy <= footerTop + 8 + footerBtnSize) {
+        return { type: "delete-scene-btn", node: nd };
       }
       if (wx >= nd.x + 8 && wx <= nd.x + 8 + footerBtnSize && wy >= footerTop + 8 && wy <= footerTop + 8 + footerBtnSize) {
         return { type: "add-choice-btn", node: nd };
@@ -264,6 +286,7 @@ function updateCanvasHoverCursor(viewport, hit) {
     case "chapter-title":
     case "add-choice-btn":
     case "edit-scene-btn":
+    case "delete-scene-btn":
     case "choice-trash-btn":
     case "branch-radio":
     case "node-card":
@@ -845,7 +868,7 @@ function handleEditorCanvasClick(e) {
 }
 
 function snapToWirePinGrid(val) {
-  return Math.round(val / 12) * 12;
+  return Math.round(val / 6) * 6;
 }
 
 function computePointArcLengthAlongPolyline(pts, px, py) {
@@ -898,7 +921,7 @@ function rerouteAfterWirePinMutation(wire) {
     if (wire.pins && wire.pins.length > 0) {
       studioGraphState.wirePins.set(
         wire.wireKey,
-        wire.pins.map((p) => ({ x: p.x, y: p.y }))
+        wire.pins.map((p) => ({ x: p.x, y: p.y, axis: p.axis, segIdx: p.segIdx }))
       );
     } else {
       studioGraphState.wirePins.delete(wire.wireKey);
@@ -928,11 +951,38 @@ function beginWirePinDragGesture(hit, viewport, clientX, clientY, isTouch) {
   const wire = hit.wire;
   if (!wire) return false;
   if (!wire.pins) wire.pins = [];
-  const isNewPin = hit.type === "wire";
+  const pts = wire.pts && wire.pts.length >= 2 ? wire.pts : wire.basePts || [];
+  let segIdx = typeof hit.segIdx === "number" ? hit.segIdx : 0;
+  if (hit.type === "wire-pin" && hit.pin && typeof hit.pin.segIdx === "number") {
+    segIdx = hit.pin.segIdx;
+  }
+  if (segIdx < 0 || segIdx >= pts.length - 1) {
+    segIdx = Math.max(0, pts.length - 2);
+  }
+  const p0 = pts[segIdx] || { x: wire.x1, y: wire.y1 };
+  const p1 = pts[segIdx + 1] || { x: wire.x2, y: wire.y2 };
+  const isHoriz = Math.abs(p0.y - p1.y) <= Math.abs(p0.x - p1.x);
+  const axis = isHoriz ? "H" : "V";
+  const segMidX = Math.round((p0.x + p1.x) * 0.5);
+  const segMidY = Math.round((p0.y + p1.y) * 0.5);
+
+  let existingIdx = -1;
+  if (hit.type === "wire-pin" && typeof hit.pinIdx === "number") {
+    existingIdx = hit.pinIdx;
+  } else {
+    for (let i = 0; i < wire.pins.length; i++) {
+      if (wire.pins[i] && wire.pins[i].segIdx === segIdx) {
+        existingIdx = i;
+        break;
+      }
+    }
+  }
+
+  const isNewPin = existingIdx < 0;
   const ptWorld = clientToStudioWorld(viewport, clientX, clientY);
-  const startWx = isNewPin ? ptWorld.wx : hit.pin.x;
-  const startWy = isNewPin ? ptWorld.wy : hit.pin.y;
-  const pinIdx = isNewPin ? findInsertIndexForWirePin(wire, startWx, startWy) : hit.pinIdx;
+  const startWx = isNewPin ? ptWorld.wx : wire.pins[existingIdx].x;
+  const startWy = isNewPin ? ptWorld.wy : wire.pins[existingIdx].y;
+  const pinIdx = isNewPin ? findInsertIndexForWirePin(wire, startWx, startWy) : existingIdx;
 
   activeCanvasGesture = {
     type: "wire-pin-drag",
@@ -940,6 +990,10 @@ function beginWirePinDragGesture(hit, viewport, clientX, clientY, isTouch) {
     viewport: viewport,
     wire: wire,
     pinIdx: pinIdx,
+    segIdx: segIdx,
+    axis: axis,
+    fixedX: segMidX,
+    fixedY: segMidY,
     isNewPin: isNewPin,
     inserted: !isNewPin,
     startClientX: clientX,
@@ -1427,21 +1481,29 @@ function bindEditorCanvasEvents() {
       const wire = activeCanvasGesture.wire;
       if (!wire) return;
       const ptWorld = clientToStudioWorld(activeCanvasGesture.viewport, clientX, clientY);
-      const snappedX = snapToWirePinGrid(ptWorld.wx);
-      const snappedY = snapToWirePinGrid(ptWorld.wy);
+      const isHoriz = activeCanvasGesture.axis === "H";
+      const snappedX = isHoriz ? activeCanvasGesture.fixedX : snapToWirePinGrid(ptWorld.wx);
+      const snappedY = isHoriz ? snapToWirePinGrid(ptWorld.wy) : activeCanvasGesture.fixedY;
       if (!activeCanvasGesture.inserted) {
-        wire.pins.splice(activeCanvasGesture.pinIdx, 0, { x: snappedX, y: snappedY });
+        wire.pins.splice(activeCanvasGesture.pinIdx, 0, {
+          x: snappedX,
+          y: snappedY,
+          axis: activeCanvasGesture.axis,
+          segIdx: activeCanvasGesture.segIdx
+        });
         activeCanvasGesture.inserted = true;
       } else if (wire.pins[activeCanvasGesture.pinIdx]) {
+        const curPin = wire.pins[activeCanvasGesture.pinIdx];
         if (
-          wire.pins[activeCanvasGesture.pinIdx].x === snappedX &&
-          wire.pins[activeCanvasGesture.pinIdx].y === snappedY &&
+          curPin.x === snappedX &&
+          curPin.y === snappedY &&
           activeCanvasGesture.moved
         ) {
           return;
         }
-        wire.pins[activeCanvasGesture.pinIdx].x = snappedX;
-        wire.pins[activeCanvasGesture.pinIdx].y = snappedY;
+        curPin.x = snappedX;
+        curPin.y = snappedY;
+        curPin.axis = activeCanvasGesture.axis;
       }
       activeCanvasGesture.moved = true;
       rerouteAfterWirePinMutation(wire);
@@ -1812,15 +1874,6 @@ function bindEditorCanvasEvents() {
       const wire = g.wire;
       if (wire && g.inserted && g.moved && wire.pins && wire.pins[g.pinIdx]) {
         if (g.isTouch) suppressNextTouchClickUntil = Date.now() + 360;
-        const p = wire.pins[g.pinIdx];
-        const nearStart = Math.hypot(p.x - wire.x1, p.y - wire.y1) <= 14;
-        const nearEnd = Math.hypot(p.x - wire.x2, p.y - wire.y2) <= 14;
-        const nearPrev =
-          g.pinIdx > 0 &&
-          Math.hypot(p.x - wire.pins[g.pinIdx - 1].x, p.y - wire.pins[g.pinIdx - 1].y) <= 12;
-        const nearNext =
-          g.pinIdx + 1 < wire.pins.length &&
-          Math.hypot(p.x - wire.pins[g.pinIdx + 1].x, p.y - wire.pins[g.pinIdx + 1].y) <= 12;
         let redundantCollinear = false;
         if (!g.isNewPin) {
           const savedPin = wire.pins.splice(g.pinIdx, 1)[0];
@@ -1834,7 +1887,7 @@ function bindEditorCanvasEvents() {
           }
           wire.pins.splice(g.pinIdx, 0, savedPin);
         }
-        if (nearStart || nearEnd || nearPrev || nearNext || redundantCollinear) {
+        if (redundantCollinear) {
           wire.pins.splice(g.pinIdx, 1);
         }
         rerouteAfterWirePinMutation(wire);
@@ -2329,6 +2382,13 @@ function bindEditorCanvasEvents() {
       e.preventDefault();
       e.stopPropagation();
       sendServerAction("OpenSceneTextModal", { scene: hit.node.id });
+      return;
+    }
+
+    if (hit.type === "delete-scene-btn") {
+      e.preventDefault();
+      e.stopPropagation();
+      sendServerAction("PromptDeleteScene", { scene: hit.node.id });
       return;
     }
 

@@ -73,7 +73,7 @@ func main() {
 }
 
 func printUsage() {
-	fmt.Println(`StoryTeller — Interaktywny Odtwarzacz Audiobooków & Studio
+	fmt.Println(`Mojra — Interaktywny Czytnik & Playbook Studio
 
 Użycie / Usage:
   storyteller [run] [--port 8484] [--headless]
@@ -98,10 +98,10 @@ Użycie / Usage:
       Buduje samodzielną paczkę wykonywalną dla systemu Linux (dist/StoryTeller-linux/ + .zip).
 
   storyteller pack <id-książki>
-      Pakuje folder książki z katalogu books/<id> do archiwum dist/<id>.stbook.
+      Pakuje folder książki z katalogu books/<id> do archiwum dist/<id>.playbook.
 
   storyteller add <ścieżka-na-dysku | url>
-      Dodaje książkę do biblioteki z dysku (bez kopiowania plików) lub pobiera z adresu URL (.stbook / .zip).`)
+      Dodaje książkę do biblioteki z dysku (bez kopiowania plików) lub pobiera z adresu URL (.playbook / .zip).`)
 }
 
 func printBuildUsage() {
@@ -155,81 +155,14 @@ func isRepoDir(dir string) bool {
 	return err == nil && !info.IsDir()
 }
 
-func copyDirRecursivePreserve(srcDir, dstDir string) {
-	info, err := os.Stat(srcDir)
-	if err != nil || !info.IsDir() {
-		return
-	}
-	_ = filepath.WalkDir(srcDir, func(path string, d os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return nil
-		}
-		rel, err := filepath.Rel(srcDir, path)
-		if err != nil || rel == "." {
-			return nil
-		}
-		target := filepath.Join(dstDir, rel)
-		if d.IsDir() {
-			_ = os.MkdirAll(target, 0755)
-			return nil
-		}
-		srcInfo, err := d.Info()
-		if err != nil {
-			return nil
-		}
-		if dstInfo, err := os.Stat(target); err == nil && !dstInfo.IsDir() {
-			if !srcInfo.ModTime().After(dstInfo.ModTime()) {
-				return nil
-			}
-		}
-		_ = copyFileWithMode(path, target, srcInfo.Mode().Perm())
-		return nil
-	})
-}
-
-func preserveDistRuntimeState(distDir string) {
-	distBooks := filepath.Join(distDir, "books")
-	distSaves := filepath.Join(distDir, "saves")
-	_ = os.MkdirAll(distBooks, 0755)
-	_ = os.MkdirAll(distSaves, 0755)
-	for _, candidate := range []string{
-		filepath.Join(distDir, "StoryTeller.app", "Contents", "Resources"),
-		filepath.Join(distDir, "StoryTeller-windows"),
-		filepath.Join(distDir, "StoryTeller-linux"),
-	} {
-		copyDirRecursivePreserve(filepath.Join(candidate, "books"), distBooks)
-		copyDirRecursivePreserve(filepath.Join(candidate, "saves"), distSaves)
-	}
-	repoDir := filepath.Clean(filepath.Join(distDir, ".."))
-	if isRepoDir(repoDir) {
-		repoBooks := filepath.Join(repoDir, "books")
-		repoSaves := filepath.Join(repoDir, "saves")
-		copyDirRecursivePreserve(repoSaves, distSaves)
-		copyDirRecursivePreserve(distSaves, repoSaves)
-		if entries, err := os.ReadDir(distBooks); err == nil {
-			for _, e := range entries {
-				if !e.IsDir() || strings.HasPrefix(e.Name(), ".") || e.Name() == "nie-boj-sie-policji-rzecznej" {
-					continue
-				}
-				srcBookDir := filepath.Join(distBooks, e.Name())
-				if book.HasBookFilesInDir(srcBookDir) {
-					copyDirRecursivePreserve(srcBookDir, filepath.Join(repoBooks, e.Name()))
-				}
-			}
-		}
-	}
-}
-
 func resolveDistRuntimeDir(repoDir string) string {
-	distDir := filepath.Join(repoDir, "dist")
-	preserveDistRuntimeState(distDir)
-	distBooks := filepath.Join(distDir, "books")
-	if info, err := os.Stat(distBooks); err != nil || !info.IsDir() {
-		_ = packageBooksForDist(filepath.Join(repoDir, "books"), distBooks)
-	} else if entries, err := os.ReadDir(distBooks); err == nil && len(entries) == 0 {
-		_ = packageBooksForDist(filepath.Join(repoDir, "books"), distBooks)
+	runtimeDir := book.DefaultAppDataDir()
+	runtimeBooks := filepath.Join(runtimeDir, "books")
+	_ = os.MkdirAll(runtimeBooks, 0755)
+	if repoDir != "" {
+		_ = packageBooksForDist(filepath.Join(repoDir, "books"), runtimeBooks)
 	}
-	return distDir
+	return runtimeDir
 }
 
 func resolveRepoRootDir() string {
@@ -306,14 +239,6 @@ func runCmd(args []string, forceDev bool) {
 	}
 
 	rootDir := resolveRootDir()
-	appDir := filepath.Join(rootDir, "app")
-	if info, err := os.Stat(filepath.Join(appDir, "templates")); err == nil && info.IsDir() {
-		if err := tpl.BuildApp(appDir); err != nil {
-			fmt.Fprintf(os.Stderr, "Błąd kompilacji szablonów .tpl: %v\n", err)
-			os.Exit(1)
-		}
-	}
-
 	if err := gui.LaunchWithOptions(rootDir, storyteller.AppFS, *port, *headless, devMode); err != nil {
 		fmt.Fprintf(os.Stderr, "Błąd uruchomienia StoryTeller: %v\n", err)
 		os.Exit(1)
@@ -567,6 +492,7 @@ func prepareBuildAssets(rootDir string) error {
 	if err := tpl.BuildApp(appDir); err != nil {
 		return fmt.Errorf("błąd kompilacji .tpl/CSS/JS: %w", err)
 	}
+	_ = os.Remove(filepath.Join(booksDir, "nie-boj-sie-policji-rzecznej.playbook"))
 	_ = os.Remove(filepath.Join(booksDir, "nie-boj-sie-policji-rzecznej.stbook"))
 	fmt.Println("✓ Skompilowano app/templates/*.tpl -> build/app/index.html")
 	fmt.Println("✓ Połączono arkusze CSS -> build/app/style.css")
@@ -598,6 +524,7 @@ func packageBooksForDist(srcBooksDir, dstBooksDir string) error {
 			continue
 		}
 		bookID := book.SanitizeBookID(e.Name())
+		_ = os.RemoveAll(filepath.Join(dstBooksDir, e.Name()))
 		outZip := filepath.Join(dstBooksDir, bookID+".stbook")
 		if err := book.PackBookToZip(dirPath, outZip); err != nil {
 			return err
@@ -609,7 +536,7 @@ func packageBooksForDist(srcBooksDir, dstBooksDir string) error {
 			continue
 		}
 		lower := strings.ToLower(e.Name())
-		if !strings.HasSuffix(lower, ".stbook") && !strings.HasSuffix(lower, ".zip") {
+		if !strings.HasSuffix(lower, ".playbook") && !strings.HasSuffix(lower, ".stbook") && !strings.HasSuffix(lower, ".zip") {
 			continue
 		}
 		stem := strings.TrimSuffix(e.Name(), filepath.Ext(e.Name()))
@@ -769,15 +696,12 @@ func buildCmd(args []string) {
 			fmt.Fprintf(os.Stderr, "Błąd budowania pliku wykonywalnego: %v\n", err)
 			os.Exit(1)
 		}
-		_ = packageBooksForDist(filepath.Join(rootDir, "books"), filepath.Join(rootDir, "dist", "books"))
 		fmt.Printf("✓ Zbudowano samodzielną aplikację (%s/%s): %s\n", targetOS, targetArch, targetBin)
 		return
 	}
 
 	distDir := filepath.Join(rootDir, "dist")
 	_ = os.MkdirAll(distDir, 0755)
-	preserveDistRuntimeState(distDir)
-	_ = packageBooksForDist(filepath.Join(rootDir, "books"), filepath.Join(distDir, "books"))
 	for _, stale := range []string{
 		"StoryTeller.app",
 		"StoryTeller-macos.zip",
@@ -785,6 +709,8 @@ func buildCmd(args []string) {
 		"StoryTeller-windows.zip",
 		"StoryTeller-linux",
 		"StoryTeller-linux.zip",
+		"books",
+		"saves",
 	} {
 		_ = os.RemoveAll(filepath.Join(distDir, stale))
 	}
@@ -966,9 +892,9 @@ func packageMacOSBundle(rootDir string, archBins map[string]string) error {
 <plist version="1.0">
 <dict>
 	<key>CFBundleName</key>
-	<string>StoryTeller</string>
+	<string>Mojra</string>
 	<key>CFBundleDisplayName</key>
-	<string>StoryTeller</string>
+	<string>Mojra</string>
 	<key>CFBundleIdentifier</key>
 	<string>pl.storyteller.app</string>
 	<key>CFBundleVersion</key>
@@ -1011,7 +937,6 @@ func packageWindowsBundle(rootDir string, archBins map[string]string) error {
 	outDir := filepath.Join(rootDir, "dist", "StoryTeller-windows")
 	_ = os.RemoveAll(outDir)
 	_ = os.MkdirAll(outDir, 0755)
-	_ = os.MkdirAll(filepath.Join(outDir, "saves"), 0755)
 
 	icoPath := filepath.Join(outDir, "StoryTeller.ico")
 	if err := writeWindowsAppIconICO(icoPath); err != nil {
@@ -1075,7 +1000,6 @@ func packageLinuxBundle(rootDir string, archBins map[string]string) error {
 	outDir := filepath.Join(rootDir, "dist", "StoryTeller-linux")
 	_ = os.RemoveAll(outDir)
 	_ = os.MkdirAll(outDir, 0755)
-	_ = os.MkdirAll(filepath.Join(outDir, "saves"), 0755)
 
 	iconPath := filepath.Join(outDir, "StoryTeller.png")
 	if err := writeLinuxAppIconPNG(iconPath); err != nil {
@@ -1120,8 +1044,8 @@ func packageLinuxBundle(rootDir string, archBins map[string]string) error {
 
 	desktopEntry := `[Desktop Entry]
 Type=Application
-Name=StoryTeller
-Comment=Interaktywny Odtwarzacz Audiobooków & Studio
+Name=Mojra
+Comment=Interaktywny Czytnik & Playbook Studio
 Exec=./storyteller
 Icon=StoryTeller
 Terminal=false
@@ -1247,7 +1171,7 @@ func packageAndroidBundle(rootDir string, archBins map[string]string) error {
     <uses-sdk android:minSdkVersion="24" android:targetSdkVersion="35" />
     <uses-permission android:name="android.permission.INTERNET" />
     <application
-        android:label="StoryTeller"
+        android:label="Mojra"
         android:icon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="true"
         android:hardwareAccelerated="true"
@@ -1526,15 +1450,16 @@ func blendRGBA(dst, src color.RGBA, alpha float64) color.RGBA {
 	}
 }
 
-// renderStoryTellerIcon renders an original StoryTeller audiobook icon:
-// an open two-page book spread paired with studio headphones and a 5-bar audio equalizer.
+// renderStoryTellerIcon renders the Mojra app icon inside a macOS-style rounded squircle:
+// the minimalist black-and-white Mojra "M" loom mark with perfectly equal top/bottom and left/right margins.
 // Uses 2x2 supersampling and pixel-aligned minimum stroke weights so small icons (16x16..64x64)
 // and large icons (256x256..512x512) are both razor-sharp.
 func renderStoryTellerIcon(size int) *image.RGBA {
 	img := image.NewRGBA(image.Rect(0, 0, size, size))
 	scale := 512.0 / float64(size)
 	aa := 0.45 * scale
-	minHalf := math.Max(5.5, 0.72*scale)
+	mainHalf := math.Max(6.0, 0.75*scale)
+	midHalf := math.Max(4.8, 0.65*scale)
 
 	sqHalf := 216.0
 	sqRad := 96.0
@@ -1553,6 +1478,8 @@ func renderStoryTellerIcon(size int) *image.RGBA {
 		return 0.5 - dist/(2.0*aa)
 	}
 
+	fgWhite := color.RGBA{R: 255, G: 255, B: 255, A: 255}
+
 	sampleAt := func(fx, fy float64) (float64, float64, float64, float64) {
 		dxSq := math.Abs(fx-256.0) - (sqHalf - sqRad)
 		dySq := math.Abs(fy-256.0) - (sqHalf - sqRad)
@@ -1567,62 +1494,57 @@ func renderStoryTellerIcon(size int) *image.RGBA {
 
 		tGrad := math.Max(0.0, math.Min(1.0, (fy-40.0)/432.0))
 		bgCol := color.RGBA{
-			R: uint8(24.0 - 10.0*tGrad),
-			G: uint8(24.0 - 10.0*tGrad),
-			B: uint8(30.0 - 12.0*tGrad),
+			R: uint8(14.0 - 8.0*tGrad),
+			G: uint8(14.0 - 8.0*tGrad),
+			B: uint8(16.0 - 8.0*tGrad),
 			A: 255,
 		}
 
 		borderHalf := math.Max(3.0, 0.45*scale)
 		borderDist := math.Abs(distSq+borderHalf) - borderHalf
-		col := blendRGBA(bgCol, color.RGBA{R: 88, G: 88, B: 104, A: 255}, smoothAlpha(borderDist))
+		col := blendRGBA(bgCol, color.RGBA{R: 76, G: 76, B: 82, A: 255}, smoothAlpha(borderDist))
 
-		ax := math.Abs(fx - 256.0)
+		// Mojra "M" Loom coordinates centered at (256, 256) with equal top/bottom margins (112..400 inside 40..472)
+		const (
+			xL   = 141.0
+			xM   = 256.0
+			xR   = 371.0
+			yTop = 135.0
+			yMid = 256.0
+			yBot = 377.0
+			rOut = 23.0
+		)
 
-		const bookHalfW = 96.0
-		clampedX := math.Min(ax, bookHalfW)
-		pageArch := -14.0 * math.Sin(math.Pi*clampedX/bookHalfW)
-		yTop := 254.0 + pageArch
-		yBot := 356.0 + pageArch
-		yBot2 := 374.0 + pageArch
+		// 1. Stems & Diagonals
+		distLines := sdCapsule(fx, fy, xL, yTop, xL, yBot, mainHalf)
+		distLines = math.Min(distLines, sdCapsule(fx, fy, xR, yTop, xR, yBot, mainHalf))
+		distLines = math.Min(distLines, sdCapsule(fx, fy, xL, yTop, xM, yMid, mainHalf))
+		distLines = math.Min(distLines, sdCapsule(fx, fy, xR, yTop, xM, yMid, mainHalf))
+		distLines = math.Min(distLines, sdCapsule(fx, fy, xM, yMid, xM, yBot, midHalf))
 
-		if ax <= bookHalfW && fy >= yTop && fy <= yBot {
-			col = blendRGBA(col, color.RGBA{R: 36, G: 36, B: 46, A: 255}, 0.85)
-		}
+		// 2. Solid outer balls: top-left, bottom-left, bottom-right
+		distBalls := math.Hypot(fx-xL, fy-yTop) - rOut
+		distBalls = math.Min(distBalls, math.Hypot(fx-xL, fy-yBot)-rOut)
+		distBalls = math.Min(distBalls, math.Hypot(fx-xR, fy-yBot)-rOut)
 
-		distBook := 1e9
-		if ax <= bookHalfW+minHalf {
-			distBook = math.Min(distBook, math.Abs(fy-yTop)-minHalf)
-			distBook = math.Min(distBook, math.Abs(fy-yBot)-minHalf)
-		}
-		if size >= 32 && ax <= bookHalfW-4.0 {
-			distBook = math.Min(distBook, math.Abs(fy-yBot2)-math.Max(4.0, 0.55*scale))
-		}
-		distBook = math.Min(distBook, sdCapsule(ax, fy, bookHalfW, 254.0, bookHalfW, 356.0, minHalf))
-		distBook = math.Min(distBook, sdCapsule(fx, fy, 256.0, 254.0, 256.0, 360.0, minHalf))
+		col = blendRGBA(col, fgWhite, smoothAlpha(math.Min(distLines, distBalls)))
 
-		col = blendRGBA(col, color.RGBA{R: 248, G: 248, B: 252, A: 255}, smoothAlpha(distBook))
+		// 3. Top-right hollow ring ball at (xR, yTop)
+		dTopRight := math.Hypot(fx-xR, fy-yTop)
+		col = blendRGBA(col, bgCol, smoothAlpha(dTopRight-rOut))
+		ringHalfTR := math.Max(5.4, 0.65*scale)
+		dRingTR := math.Abs(dTopRight-(rOut-ringHalfTR)) - ringHalfTR
+		col = blendRGBA(col, fgWhite, smoothAlpha(dRingTR))
 
-		distHeadphones := 1e9
-		archHalf := math.Max(7.5, 0.78*scale)
-		if fy <= 244.0 {
-			dArc := math.Abs(math.Hypot(fx-256.0, fy-244.0)-138.0) - archHalf
-			distHeadphones = math.Min(distHeadphones, dArc)
-		}
-		cupHalf := math.Max(14.0, 0.95*scale)
-		dCup := sdCapsule(ax, fy, 138.0, 234.0, 138.0, 296.0, cupHalf)
-		distHeadphones = math.Min(distHeadphones, dCup)
+		// 4. Center double-ring destiny node ◉ at (256, 256)
+		const rCenterOut = 35.5
+		dCenter := math.Hypot(fx-xM, fy-yMid)
+		col = blendRGBA(col, bgCol, smoothAlpha(dCenter-rCenterOut))
+		ringHalfC := math.Max(5.8, 0.70*scale)
+		dRingC := math.Abs(dCenter-(rCenterOut-ringHalfC)) - ringHalfC
+		dDotC := dCenter - 13.6
+		col = blendRGBA(col, fgWhite, smoothAlpha(math.Min(dRingC, dDotC)))
 
-		col = blendRGBA(col, color.RGBA{R: 238, G: 238, B: 246, A: 255}, smoothAlpha(distHeadphones))
-
-		eqHalf := math.Max(6.5, 0.70*scale)
-		distEq := sdCapsule(fx, fy, 256.0, 150.0, 256.0, 216.0, eqHalf)
-		distEq = math.Min(distEq, sdCapsule(ax, fy, 28.0, 168.0, 28.0, 216.0, eqHalf))
-		if size >= 24 {
-			distEq = math.Min(distEq, sdCapsule(ax, fy, 56.0, 186.0, 56.0, 216.0, eqHalf))
-		}
-
-		col = blendRGBA(col, color.RGBA{R: 212, G: 212, B: 226, A: 255}, smoothAlpha(distEq))
 		return float64(col.R) * bgAlpha, float64(col.G) * bgAlpha, float64(col.B) * bgAlpha, bgAlpha
 	}
 
@@ -2031,10 +1953,10 @@ func packCmd(args []string) {
 	srcDir := filepath.Join(rootDir, "books", bookID)
 	distDir := filepath.Join(rootDir, "dist")
 	_ = os.MkdirAll(distDir, 0755)
-	outZip := filepath.Join(distDir, bookID+".stbook")
+	outZip := filepath.Join(distDir, bookID+".playbook")
 
 	if err := book.PackBookToZip(srcDir, outZip); err != nil {
-		fmt.Fprintf(os.Stderr, "Błąd pakowania .stbook: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Błąd pakowania .playbook: %v\n", err)
 		os.Exit(1)
 	}
 	fmt.Printf("✓ Spakowano książkę do archiwum: %s\n", outZip)
@@ -2042,12 +1964,12 @@ func packCmd(args []string) {
 
 func addCmd(args []string) {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "Podaj ścieżkę na dysku lub adres URL, np.: storyteller add /ścieżka/do/książki lub storyteller add https://example.com/ksiazka.stbook")
+		fmt.Fprintln(os.Stderr, "Podaj ścieżkę na dysku lub adres URL, np.: storyteller add /ścieżka/do/książki lub storyteller add https://example.com/ksiazka.playbook")
 		os.Exit(1)
 	}
 	rootDir := resolveRootDir()
-	booksDir := filepath.Join(rootDir, "books")
-	savesDir := filepath.Join(rootDir, "saves")
+	booksDir := book.DefaultProjectsDir()
+	savesDir := book.ResolveSavesDir(rootDir)
 	settings := book.LoadAppSettings(savesDir)
 
 	for _, target := range args {
@@ -2062,6 +1984,7 @@ func addCmd(args []string) {
 				fmt.Fprintf(os.Stderr, "Błąd pobierania książki z URL (%s): %v\n", trimmed, err)
 				os.Exit(1)
 			}
+			settings.AddExternalBook(b.RootPath)
 			settings.ActiveBookID = b.ID
 			_ = book.SaveAppSettings(savesDir, settings)
 			fmt.Printf("✓ Pobrano i dodano książkę do biblioteki: %s (%s)\n", b.Title, b.RootPath)

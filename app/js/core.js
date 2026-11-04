@@ -393,6 +393,80 @@ function applyServerResponseHeaders(resp, actionName) {
   return false;
 }
 
+function escapeWFPHeaderVal(str) {
+  return String(str)
+    .replace(/\\/g, "\\\\")
+    .replace(/\n/g, "\\n")
+    .replace(/\r/g, "\\r");
+}
+
+function encodeWFP(params) {
+  if (!params) return "";
+  const entries = [];
+  if (typeof FormData !== "undefined" && params instanceof FormData) {
+    params.forEach((val, key) => {
+      if (val !== undefined && val !== null) {
+        entries.push([String(key), String(val)]);
+      }
+    });
+  } else {
+    Object.keys(params).forEach((k) => {
+      const val = params[k];
+      if (val !== undefined && val !== null) {
+        entries.push([String(k), String(val)]);
+      }
+    });
+  }
+  let bodyKey = "";
+  let bodyVal = "";
+  for (let i = 0; i < entries.length; i++) {
+    const k = entries[i][0];
+    const v = entries[i][1];
+    if (v.includes("\n") || v.includes("\r")) {
+      if (!bodyKey || k === "text") {
+        bodyKey = k;
+        bodyVal = v;
+      }
+    }
+  }
+  const lines = [];
+  for (let i = 0; i < entries.length; i++) {
+    const k = entries[i][0];
+    const v = entries[i][1];
+    if (k === bodyKey) {
+      lines.push("_body=" + k);
+    } else {
+      lines.push(k + "=" + escapeWFPHeaderVal(v));
+    }
+  }
+  return lines.join("\n") + (bodyKey ? "\n\n" + bodyVal : "");
+}
+
+function decodeWFP(rawText) {
+  const raw = String(rawText || "");
+  const sep = raw.indexOf("\n\n");
+  const head = sep < 0 ? raw : raw.slice(0, sep);
+  const body = sep < 0 ? "" : raw.slice(sep + 2);
+  const out = {};
+  let bodyKey = "";
+  head.split("\n").forEach((line) => {
+    const clean = line.endsWith("\r") ? line.slice(0, -1) : line;
+    const idx = clean.indexOf("=");
+    if (idx <= 0) return;
+    const k = clean.slice(0, idx).trim();
+    const v = clean.slice(idx + 1);
+    if (k === "_body") {
+      bodyKey = v.trim();
+      return;
+    }
+    out[k] = v.replace(/\\([nr\\])/g, (_, c) => (c === "n" ? "\n" : c === "r" ? "\r" : "\\"));
+  });
+  if (bodyKey) {
+    out[bodyKey] = body;
+  }
+  return out;
+}
+
 async function sendServerAction(actionName, params) {
   hideUITooltip();
   params = params || {};
@@ -473,15 +547,14 @@ async function sendServerAction(actionName, params) {
   const prevAudioTime = prevAudio ? prevAudio.currentTime || 0 : 0;
   const prevAudioUrl = prevAudio ? prevAudio.getAttribute("data-audio-url") || "" : "";
 
-  const form = new URLSearchParams();
-  form.set("action", actionName);
+  const wfpPayload = { action: actionName };
   if (prevAudio && prevAudioTime > 0 && actionName !== "SaveAudioTime") {
-    form.set("audio_time", String(Math.floor(prevAudioTime * 10) / 10));
+    wfpPayload.audio_time = String(Math.floor(prevAudioTime * 10) / 10);
   }
   if (params) {
     Object.keys(params).forEach((k) => {
       if (params[k] !== undefined && params[k] !== null) {
-        form.set(k, String(params[k]));
+        wfpPayload[k] = String(params[k]);
       }
     });
   }
@@ -489,10 +562,10 @@ async function sendServerAction(actionName, params) {
   const resp = await fetch("/api/action", {
     method: "POST",
     headers: {
-      "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+      "Content-Type": "text/x-wfp;charset=UTF-8",
       "X-Requested-With": "StoryTeller"
     },
-    body: form.toString()
+    body: encodeWFP(wfpPayload)
   });
 
   if (applyServerResponseHeaders(resp, actionName)) {
@@ -776,17 +849,18 @@ function syncBreakdownActBar(root) {
 }
 
 function postServerActionSilent(actionName, paramsOrFormData) {
-  const body = new URLSearchParams();
-  body.set("action", actionName);
+  const wfpPayload = { action: actionName };
   if (paramsOrFormData) {
     if (typeof FormData !== "undefined" && paramsOrFormData instanceof FormData) {
       paramsOrFormData.forEach((val, key) => {
-        body.set(key, String(val));
+        if (val !== undefined && val !== null) {
+          wfpPayload[key] = String(val);
+        }
       });
     } else {
       Object.keys(paramsOrFormData).forEach((k) => {
         if (paramsOrFormData[k] !== undefined && paramsOrFormData[k] !== null) {
-          body.set(k, String(paramsOrFormData[k]));
+          wfpPayload[k] = String(paramsOrFormData[k]);
         }
       });
     }
@@ -794,10 +868,10 @@ function postServerActionSilent(actionName, paramsOrFormData) {
   fetch("/api/action", {
     method: "POST",
     headers: {
-      "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+      "Content-Type": "text/x-wfp;charset=UTF-8",
       "X-Requested-With": "StoryTeller"
     },
-    body: body.toString()
+    body: encodeWFP(wfpPayload)
   })
     .then((resp) => {
       if (resp) {

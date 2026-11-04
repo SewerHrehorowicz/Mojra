@@ -1,0 +1,247 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1200" viewBox="0 0 1200 1200">
+  <defs>
+    <style>
+      .bg-dark { fill: #000000; }
+      .bg-light { fill: #ffffff; }
+      .label-dark { fill: #ffffff; font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 11px; letter-spacing: 2px; font-weight: 600; }
+      .label-light { fill: #000000; font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 11px; letter-spacing: 2px; font-weight: 600; }
+      .sub-dark { fill: #888888; font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 10px; letter-spacing: 1.5px; }
+      .sub-light { fill: #666666; font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 10px; letter-spacing: 1.5px; }
+      .wordmark-serif-dark { fill: #ffffff; font-family: Georgia, "Times New Roman", serif; font-size: 62px; font-weight: 700; letter-spacing: 1.6px; }
+      .wordmark-serif-light { fill: #000000; font-family: Georgia, "Times New Roman", serif; font-size: 62px; font-weight: 700; letter-spacing: 1.6px; }
+      .submark-dark { fill: #ffffff; font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 16px; font-weight: 700; letter-spacing: 1.5px; }
+      .submark-light { fill: #000000; font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 16px; font-weight: 700; letter-spacing: 1.5px; }
+      .topbar-logo-dark { fill: #ffffff; font-family: Georgia, "Times New Roman", serif; font-size: 15px; font-weight: 700; letter-spacing: 0.6px; }
+      .topbar-logo-light { fill: #000000; font-family: Georgia, "Times New Roman", serif; font-size: 15px; font-weight: 700; letter-spacing: 0.6px; }
+      .topbar-tab-dark { fill: #ffffff; font-family: -apple-system, BlinkMacSystemFont, sans-serif; font-size: 12px; font-weight: 500; }
+      .topbar-tab-muted-dark { fill: #888888; font-family: -apple-system, BlinkMacSystemFont, sans-serif; font-size: 12px; font-weight: 500; }
+      .topbar-tab-light { fill: #000000; font-family: -apple-system, BlinkMacSystemFont, sans-serif; font-size: 12px; font-weight: 500; }
+      .topbar-tab-muted-light { fill: #666666; font-family: -apple-system, BlinkMacSystemFont, sans-serif; font-size: 12px; font-weight: 500; }
+    </style>
+
+    <!-- Seamless clip paths to keep 100% original Georgia Bold "Mojra" while lifting only the bottom curve of "j" by 3.5px -->
+    <clipPath id="clip-mojra-upper">
+      <rect x="-10" y="0" width="300" height="65" />
+    </clipPath>
+    <clipPath id="clip-mojra-descender">
+      <rect x="-10" y="65" width="300" height="40" />
+    </clipPath>
+
+    <!-- Reusable Merged Symbol "M":
+         - Stroke width = 3.27px (1/3 between v1's 2.8px and v2's 4.2px), center stem = 2.6px
+         - Ball radii from v2: outer r=6.4, center r=9.8 / inner r=3.8 -->
+    <g id="mojra-mark-dark">
+      <line x1="34" y1="24" x2="34" y2="96" stroke="#ffffff" stroke-width="3.3" />
+      <line x1="94" y1="24" x2="94" y2="96" stroke="#ffffff" stroke-width="3.3" />
+      <path d="M 34 24 L 64 56 L 94 24" fill="none" stroke="#ffffff" stroke-width="3.3" stroke-linejoin="round" />
+      <line x1="64" y1="56" x2="64" y2="96" stroke="#ffffff" stroke-width="2.6" />
+
+      <circle cx="34" cy="24" r="6.4" fill="#ffffff" />
+      <circle cx="94" cy="24" r="6.4" fill="#000000" stroke="#ffffff" stroke-width="3.0" />
+      <circle cx="34" cy="96" r="6.4" fill="#ffffff" />
+      <circle cx="94" cy="96" r="6.4" fill="#ffffff" />
+
+      <circle cx="64" cy="56" r="9.8" fill="#000000" stroke="#ffffff" stroke-width="3.1" />
+      <circle cx="64" cy="56" r="3.8" fill="#ffffff" />
+    </g>
+
+    <g id="mojra-mark-light">
+      <line x1="34" y1="24" x2="34" y2="96" stroke="#000000" stroke-width="3.3" />
+      <line x1="94" y1="24" x2="94" y2="96" stroke="#000000" stroke-width="3.3" />
+      <path d="M 34 24 L 64 56 L 94 24" fill="none" stroke="#000000" stroke-width="3.3" stroke-linejoin="round" />
+      <line x1="64" y1="56" x2="64" y2="96" stroke="#000000" stroke-width="2.6" />
+
+      <circle cx="34" cy="24" r="6.4" fill="#000000" />
+      <circle cx="94" cy="24" r="6.4" fill="#ffffff" stroke="#000000" stroke-width="3.0" />
+      <circle cx="34" cy="96" r="6.4" fill="#000000" />
+      <circle cx="94" cy="96" r="6.4" fill="#000000" />
+
+      <circle cx="64" cy="56" r="9.8" fill="#ffffff" stroke="#000000" stroke-width="3.1" />
+      <circle cx="64" cy="56" r="3.8" fill="#000000" />
+    </g>
+
+    <!-- Reusable Wordmark:
+         - Original Georgia Bold "Mojra" with balanced whitespace and slightly lifted 'j' hook
+         - "P" in "PLAYBOOK STUDIO" aligned to the visual first vertical stem of "M" (x=5.5)
+         - Dot "." placed closely right before "P" (x=-2) -->
+    <g id="mojra-wordmark-dark">
+      <g clip-path="url(#clip-mojra-upper)">
+        <text class="wordmark-serif-dark" x="0" y="68">Mojra</text>
+      </g>
+      <g clip-path="url(#clip-mojra-descender)">
+        <text class="wordmark-serif-dark" x="0" y="64.5">Mojra</text>
+      </g>
+      <text class="submark-dark" x="-2" y="103">.</text>
+      <text class="submark-dark" x="5.5" y="103">PLAYBOOK STUDIO</text>
+    </g>
+
+    <g id="mojra-wordmark-light">
+      <g clip-path="url(#clip-mojra-upper)">
+        <text class="wordmark-serif-light" x="0" y="68">Mojra</text>
+      </g>
+      <g clip-path="url(#clip-mojra-descender)">
+        <text class="wordmark-serif-light" x="0" y="64.5">Mojra</text>
+      </g>
+      <text class="submark-light" x="-2" y="103">.</text>
+      <text class="submark-light" x="5.5" y="103">PLAYBOOK STUDIO</text>
+    </g>
+  </defs>
+
+  <!-- LEFT HALF: DARK MODE (#000000) -->
+  <rect class="bg-dark" x="0" y="0" width="600" height="1200" />
+  <!-- RIGHT HALF: LIGHT MODE (#FFFFFF) -->
+  <rect class="bg-light" x="600" y="0" width="600" height="1200" />
+  <!-- CENTER DIVIDER -->
+  <line x1="600" y1="0" x2="600" y2="1200" stroke="#444444" stroke-width="1" />
+
+  <!-- HEADER -->
+  <text class="label-dark" x="56" y="54">MOJRA V3 — DOCELOWY LOGOTYP (TRYB CIEMNY)</text>
+  <text class="label-light" x="656" y="54">MOJRA V3 — DOCELOWY LOGOTYP (TRYB JASNY)</text>
+  <line x1="56" y1="74" x2="544" y2="74" stroke="#262626" stroke-width="1" />
+  <line x1="656" y1="74" x2="1144" y2="74" stroke="#d9d9d9" stroke-width="1" />
+
+  <!-- ===================================================================== -->
+  <!-- ROW 1: GŁÓWNY LOGOTYP POZIOMY (BEZ RAMKI, GRUBOŚĆ 1/3, KULKI Z V2)    -->
+  <!-- ===================================================================== -->
+  <text class="sub-dark" x="56" y="124">01 / LOGOTYP GŁÓWNY (BEZ RAMKI, LINIA 3.3PX, KULKI Z V2)</text>
+  <text class="sub-light" x="656" y="124">01 / LOGOTYP GŁÓWNY (BEZ RAMKI, LINIA 3.3PX, KULKI Z V2)</text>
+
+  <!-- Dark Row 1 -->
+  <g transform="translate(56, 156)">
+    <use href="#mojra-mark-dark" x="-20" y="0" />
+    <use href="#mojra-wordmark-dark" x="114" y="0" />
+  </g>
+
+  <!-- Light Row 1 -->
+  <g transform="translate(656, 156)">
+    <use href="#mojra-mark-light" x="-20" y="0" />
+    <use href="#mojra-wordmark-light" x="114" y="0" />
+  </g>
+
+  <line x1="56" y1="326" x2="544" y2="326" stroke="#222222" stroke-width="1" />
+  <line x1="656" y1="326" x2="1144" y2="326" stroke="#e5e5e5" stroke-width="1" />
+
+  <!-- ===================================================================== -->
+  <!-- ROW 2: ZBLIŻENIE Z LINIAMI POMOCNICZYMI WYRÓWNANIA (ALIGNMENT GRID)   -->
+  <!-- ===================================================================== -->
+  <text class="sub-dark" x="56" y="376">02 / GEOMETRIA I WYRÓWNANIE „P” DO PIERWSZEJ TYCZKI „M”</text>
+  <text class="sub-light" x="656" y="376">02 / GEOMETRIA I WYRÓWNANIE „P” DO PIERWSZEJ TYCZKI „M”</text>
+
+  <!-- Dark Row 2 (With subtle alignment guides) -->
+  <g transform="translate(56, 408)">
+    <line x1="119.5" y1="8" x2="119.5" y2="116" stroke="#383838" stroke-width="1" stroke-dasharray="3 3" />
+    <line x1="312" y1="8" x2="312" y2="116" stroke="#383838" stroke-width="1" stroke-dasharray="3 3" />
+    <line x1="14" y1="24" x2="330" y2="24" stroke="#262626" stroke-width="1" stroke-dasharray="2 4" />
+    <line x1="14" y1="96" x2="330" y2="96" stroke="#262626" stroke-width="1" stroke-dasharray="2 4" />
+
+    <use href="#mojra-mark-dark" x="-20" y="0" />
+    <use href="#mojra-wordmark-dark" x="114" y="0" />
+  </g>
+
+  <!-- Light Row 2 (With subtle alignment guides) -->
+  <g transform="translate(656, 408)">
+    <line x1="119.5" y1="8" x2="119.5" y2="116" stroke="#bbbbbb" stroke-width="1" stroke-dasharray="3 3" />
+    <line x1="312" y1="8" x2="312" y2="116" stroke="#bbbbbb" stroke-width="1" stroke-dasharray="3 3" />
+    <line x1="14" y1="24" x2="330" y2="24" stroke="#e0e0e0" stroke-width="1" stroke-dasharray="2 4" />
+    <line x1="14" y1="96" x2="330" y2="96" stroke="#e0e0e0" stroke-width="1" stroke-dasharray="2 4" />
+
+    <use href="#mojra-mark-light" x="-20" y="0" />
+    <use href="#mojra-wordmark-light" x="114" y="0" />
+  </g>
+
+  <line x1="56" y1="578" x2="544" y2="578" stroke="#222222" stroke-width="1" />
+  <line x1="656" y1="578" x2="1144" y2="578" stroke="#e5e5e5" stroke-width="1" />
+
+  <!-- ===================================================================== -->
+  <!-- ROW 3: UKŁAD CENTRALNY (SPLASH SCREEN) + IKONA APLIKACJI              -->
+  <!-- ===================================================================== -->
+  <text class="sub-dark" x="56" y="628">03 / UKŁAD PIONOWY (EKRAN STARTOWY) + IKONA APLIKACJI</text>
+  <text class="sub-light" x="656" y="628">03 / UKŁAD PIONOWY (EKRAN STARTOWY) + IKONA APLIKACJI</text>
+
+  <!-- Dark Row 3 -->
+  <g transform="translate(56, 658)">
+    <g transform="translate(38, -8)">
+      <use href="#mojra-mark-dark" x="0" y="0" />
+    </g>
+    <g transform="translate(0, 94)">
+      <use href="#mojra-wordmark-dark" x="0" y="0" />
+    </g>
+
+    <g transform="translate(296, 28)">
+      <rect x="0" y="0" width="112" height="112" fill="none" stroke="#ffffff" stroke-width="2" />
+      <g transform="translate(-8, -4)">
+        <use href="#mojra-mark-dark" x="0" y="0" />
+      </g>
+    </g>
+  </g>
+
+  <!-- Light Row 3 -->
+  <g transform="translate(656, 658)">
+    <g transform="translate(38, -8)">
+      <use href="#mojra-mark-light" x="0" y="0" />
+    </g>
+    <g transform="translate(0, 94)">
+      <use href="#mojra-wordmark-light" x="0" y="0" />
+    </g>
+
+    <g transform="translate(296, 28)">
+      <rect x="0" y="0" width="112" height="112" fill="none" stroke="#000000" stroke-width="2" />
+      <g transform="translate(-8, -4)">
+        <use href="#mojra-mark-light" x="0" y="0" />
+      </g>
+    </g>
+  </g>
+
+  <line x1="56" y1="908" x2="544" y2="908" stroke="#222222" stroke-width="1" />
+  <line x1="656" y1="908" x2="1144" y2="908" stroke="#e5e5e5" stroke-width="1" />
+
+  <!-- ===================================================================== -->
+  <!-- ROW 4: PASEK GÓRNY (#TOPBAR) Z ZAKŁADKĄ "PLAYBOOK STUDIO"             -->
+  <!-- ===================================================================== -->
+  <text class="sub-dark" x="56" y="958">04 / PASEK GÓRNY APLIKACJI (#TOPBAR) — ZAKŁADKA „PLAYBOOK STUDIO”</text>
+  <text class="sub-light" x="656" y="958">04 / PASEK GÓRNY APLIKACJI (#TOPBAR) — ZAKŁADKA „PLAYBOOK STUDIO”</text>
+
+  <!-- Dark Topbar Preview -->
+  <g transform="translate(56, 990)">
+    <rect x="0" y="0" width="488" height="44" fill="#000000" stroke="#ffffff" stroke-width="1" />
+    <g transform="translate(14, 12)">
+      <line x1="3" y1="3" x2="3" y2="17" stroke="#ffffff" stroke-width="1.65" />
+      <line x1="17" y1="3" x2="17" y2="17" stroke="#ffffff" stroke-width="1.65" />
+      <path d="M 3 3 L 10 10.5 L 17 3" fill="none" stroke="#ffffff" stroke-width="1.65" stroke-linejoin="round" />
+      <line x1="10" y1="10.5" x2="10" y2="17" stroke="#ffffff" stroke-width="1.35" />
+      <circle cx="3" cy="3" r="2.1" fill="#ffffff" />
+      <circle cx="17" cy="3" r="2.1" fill="#000000" stroke="#ffffff" stroke-width="1.5" />
+      <circle cx="3" cy="17" r="2.1" fill="#ffffff" />
+      <circle cx="17" cy="17" r="2.1" fill="#ffffff" />
+      <circle cx="10" cy="10.5" r="3.0" fill="#000000" stroke="#ffffff" stroke-width="1.6" />
+      <circle cx="10" cy="10.5" r="1.15" fill="#ffffff" />
+    </g>
+    <text class="topbar-logo-dark" x="42" y="27">Mojra</text>
+    <text class="topbar-tab-muted-dark" x="108" y="26">Biblioteka</text>
+    <text class="topbar-tab-muted-dark" x="188" y="26">Kronika Ósmego Dnia</text>
+    <text class="topbar-tab-dark" x="338" y="26">Playbook Studio</text>
+    <text class="topbar-tab-dark" x="462" y="27">✕</text>
+  </g>
+
+  <!-- Light Topbar Preview -->
+  <g transform="translate(656, 990)">
+    <rect x="0" y="0" width="488" height="44" fill="#ffffff" stroke="#000000" stroke-width="1" />
+    <g transform="translate(14, 12)">
+      <line x1="3" y1="3" x2="3" y2="17" stroke="#000000" stroke-width="1.65" />
+      <line x1="17" y1="3" x2="17" y2="17" stroke="#000000" stroke-width="1.65" />
+      <path d="M 3 3 L 10 10.5 L 17 3" fill="none" stroke="#000000" stroke-width="1.65" stroke-linejoin="round" />
+      <line x1="10" y1="10.5" x2="10" y2="17" stroke="#000000" stroke-width="1.35" />
+      <circle cx="3" cy="3" r="2.1" fill="#000000" />
+      <circle cx="17" cy="3" r="2.1" fill="#ffffff" stroke="#000000" stroke-width="1.5" />
+      <circle cx="3" cy="17" r="2.1" fill="#000000" />
+      <circle cx="17" cy="17" r="2.1" fill="#000000" />
+      <circle cx="10" cy="10.5" r="3.0" fill="#ffffff" stroke="#000000" stroke-width="1.6" />
+      <circle cx="10" cy="10.5" r="1.15" fill="#000000" />
+    </g>
+    <text class="topbar-logo-light" x="42" y="27">Mojra</text>
+    <text class="topbar-tab-muted-light" x="108" y="26">Biblioteka</text>
+    <text class="topbar-tab-muted-light" x="188" y="26">Kronika Ósmego Dnia</text>
+    <text class="topbar-tab-light" x="338" y="26">Playbook Studio</text>
+    <text class="topbar-tab-light" x="462" y="27">✕</text>
+  </g>
+</svg>

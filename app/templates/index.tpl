@@ -5,7 +5,10 @@ html lang: pl
         meta
             name: viewport
             content: "width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
-        title "StoryTeller — Interaktywne Audiobooki & Studio"
+        {if standalone_mode}
+            title {active_book_title}
+        {else}
+            title "Mojra — Interaktywne Książki i Audiobooki"
         link
             rel: icon
             type: image/png
