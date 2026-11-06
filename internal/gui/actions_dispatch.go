@@ -2,6 +2,7 @@ package gui
 
 import (
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -299,6 +300,57 @@ func validateSameOriginAction(r *http.Request) bool {
 		}
 	}
 	return true
+}
+
+func isLoopbackRequest(r *http.Request) bool {
+	if r == nil {
+		return true
+	}
+	remoteAddr := strings.TrimSpace(r.RemoteAddr)
+	if remoteAddr == "" {
+		return true
+	}
+	host := remoteAddr
+	if h, _, err := net.SplitHostPort(remoteAddr); err == nil {
+		host = h
+	} else {
+		host = strings.Trim(remoteAddr, "[]")
+	}
+	if strings.EqualFold(host, "localhost") || host == "192.0.2.1" {
+		return true
+	}
+	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+		return true
+	}
+	return false
+}
+
+func isRemoteLANAllowedAction(action, pendingConfirm string) bool {
+	switch action {
+	case "ChooseBranch",
+		"AutoAdvanceImplicit",
+		"AudioEnded",
+		"SaveAudioTime",
+		"RewindStepNow",
+		"RevealHistory",
+		"FocusHistoryStep",
+		"FocusPresent",
+		"CycleAudioSpeed",
+		"ToggleAutoChoice",
+		"ToggleAutoStrategy",
+		"ToggleTheme",
+		"SetUIScale",
+		"ToggleUIScale",
+		"ToggleImageless",
+		"PromptRewindStep",
+		"PromptResetProgress",
+		"ConfirmModalClose":
+		return true
+	case "ConfirmModalAccept":
+		return pendingConfirm == "RewindStep" || pendingConfirm == "ResetProgress"
+	default:
+		return false
+	}
 }
 
 func (s *Server) switchView(r *http.Request) string {
@@ -617,6 +669,11 @@ func (s *Server) handleAction(w http.ResponseWriter, r *http.Request) {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	if !isLoopbackRequest(r) && !isRemoteLANAllowedAction(action, s.ConfirmPendingAction) {
+		http.Error(w, "forbidden remote LAN action", http.StatusForbidden)
+		return
+	}
 
 	if s.StandaloneMode {
 		s.Settings.ActiveView = "player"

@@ -1,0 +1,36 @@
+MOJRA — SZABLONY ZAPROSZEŃ DO ZAMKNIĘTEJ BETY (DLA PISARZY / SCENARZYSTÓW)
+================================================================================
+
+1. KRÓTKI E-MAIL (4 ZDANIA)
+--------------------------------------------------------------------------------
+Temat: Zaproszenie do zamkniętej bety Mojry — dla [Imię]
+
+Cześć [Imię],
+
+bardzo cenię Twoją pracę przy [Tytuł], dlatego zapraszam Cię do wąskiej,
+zamkniętej grupy pierwszych testerów Mojry (Playbook Studio).
+
+Stworzyliśmy autorskie, działające w 100% offline (zero chmury, zero AI) studio
+do pisania scenariuszy (natywny polski PDF pod PISF), książek, słuchowisk i
+nieliniowych historii z wbudowanym Gitem dla wariantów fabuły.
+
+Dla pierwszych kilkunastu twórców dajemy dożywotnią licencję w zamian za szczery
+feedback przy pracy nad własnym tekstem.
+
+Daj znać jednym słowem w odpowiedzi, a podeślę Ci prywatny instalator na
+macOS / Windows.
+
+Pozdrawiam,
+[Twoje Imię]
+[Link do WWW]
+
+
+2. ULTRAKRÓTKI DM (LINKEDIN / INSTAGRAM / MESSENGER / DISCORD)
+--------------------------------------------------------------------------------
+Cześć [Imię]! Otwieramy zamkniętą betę Mojry (Playbook Studio) dla kilkunastu
+wybranych polskich pisarzy i scenarzystów. To nasze autorskie, w 100% lokalne
+(zero chmury i zero AI) narzędzie łączące klasyczny edytor tekstu i scenariuszy
+(z eksportem PDF pod PISF) z grafem wątków, wariantami fabuły i nagraniami
+audio. W zamian za szczery feedback dajemy pierwszym testerom dożywotnią
+licencję — podesłać Ci prywatny dostęp?
+================================================================================

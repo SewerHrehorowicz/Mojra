@@ -219,6 +219,8 @@ func CSSModuleFiles(appDir string) []string {
 		"player.tss",
 		"editor_canvas.tss",
 		"editor_inspector.tss",
+		"editor_panels.tss",
+		"editor_history.tss",
 		"editor_perf.tss",
 		"modals.tss",
 	}
@@ -254,9 +256,11 @@ func JSModuleFiles(appDir string) []string {
 		"audio.js",
 		"player.js",
 		"editor_webgl.js",
+		"editor_webgl_scene.js",
 		"editor_canvas.js",
 		"editor_wires.js",
 		"editor_inspector.js",
+		"editor_rules.js",
 		"editor_gestures.js",
 		"editor_perf.js",
 	}
@@ -333,6 +337,7 @@ func BuildPlayerOnlyApp(appDir, outDir string) error {
 	delete(templates, "editor_context_panel")
 	delete(templates, "editor_history_panel")
 	delete(templates, "editor_breakdown_panel")
+	delete(templates, "editor_variables_panel")
 	StripDevNodesFromTemplates(templates)
 	idxTpl, ok := templates["index"]
 	if !ok {
@@ -369,13 +374,20 @@ func BuildWWW(rootDir string) error {
 	if err := os.MkdirAll(filepath.Join(outDir, "fonts"), 0755); err != nil {
 		return fmt.Errorf("mkdir %s: %w", outDir, err)
 	}
-	indexHTMLPath := filepath.Join(outDir, "index.html")
-	if err := TranspileDirectoryToHTML(wwwDir, indexHTMLPath); err != nil {
-		return fmt.Errorf("www tpl transpile error: %w", err)
+	templates, err := LoadTemplatesFromDir(wwwDir, nil)
+	if err != nil {
+		return fmt.Errorf("www tpl load error: %w", err)
 	}
-	if rawHTML, err := os.ReadFile(indexHTMLPath); err == nil {
-		relHTML := strings.ReplaceAll(string(rawHTML), `src="/app.js"`, `src="app.js"`)
-		_ = os.WriteFile(indexHTMLPath, []byte(relHTML), 0644)
+	if _, ok := templates["index"]; !ok {
+		return fmt.Errorf("missing index.tpl in %s", wwwDir)
+	}
+	for name, tmpl := range templates {
+		htmlPath := filepath.Join(outDir, name+".html")
+		htmlStr := TranspileStaticHTML(tmpl, templates)
+		relHTML := strings.ReplaceAll(htmlStr, `src="/app.js"`, `src="app.js"`)
+		if err := os.WriteFile(htmlPath, []byte(relHTML), 0644); err != nil {
+			return fmt.Errorf("write %s: %w", htmlPath, err)
+		}
 	}
 	styleCSSPath := filepath.Join(outDir, "style.css")
 	if err := BundleCSSFiles(

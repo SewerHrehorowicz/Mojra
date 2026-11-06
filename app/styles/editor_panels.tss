@@ -1,0 +1,674 @@
+// Breakdown Panel & Slugline Helpers
+.breakdown-export-bar
+  display flex
+  flex-wrap wrap
+  gap 6px
+  padding 10px 14px
+  border-bottom 1px solid --border-subtle
+  background --bg-obsidian
+  flex-shrink 0
+
+.breakdown-metrics-grid
+  display grid
+  grid-template-columns 1fr 1fr
+  border-top 1px solid --border-subtle
+
+.breakdown-metric-cell
+  display flex
+  flex-direction column
+  gap 3px
+  padding 8px 0
+  background transparent
+  border-bottom 1px solid --border-subtle
+
+.breakdown-metric-cell:nth-child(odd)
+  padding-right 12px
+  border-right 1px solid --border-subtle
+
+.breakdown-metric-cell:nth-child(even)
+  padding-left 12px
+
+.breakdown-metric-label
+  font-family --font-sans
+  font-size 9px
+  text-transform uppercase
+  letter-spacing 0.5px
+  color --text-muted
+
+.breakdown-metric-value
+  font-family --font-sans
+  font-size 13px
+  font-weight 600
+  color --text-primary
+
+.breakdown-acts-bar
+  display flex
+  width 100%
+  height 3px
+  gap 2px
+  margin-bottom 2px
+
+.breakdown-act-segment
+  flex 1 1 0%
+  height 100%
+  background --text-secondary
+
+.breakdown-act-segment.is-dominant
+  background --text-primary
+
+.breakdown-acts-list
+  display flex
+  flex-direction column
+
+.breakdown-act-row
+  display flex
+  align-items center
+  justify-content space-between
+  gap 8px
+  padding 8px 0
+  border-bottom 1px solid --border-subtle
+
+.breakdown-act-left
+  display flex
+  align-items baseline
+  gap 8px
+  min-width 0
+
+.breakdown-act-name
+  font-family --font-sans
+  font-size 12px
+  font-weight 600
+  color --text-primary
+
+.breakdown-act-meta
+  font-family --font-sans
+  font-size 10px
+  color --text-muted
+  white-space nowrap
+  overflow hidden
+  text-overflow ellipsis
+
+.breakdown-act-pct
+  font-family --font-sans
+  font-size 11px
+  font-weight 600
+  color --text-primary
+  flex-shrink 0
+  min-width 28px
+  text-align right
+
+.breakdown-entities-list
+  display flex
+  flex-direction column
+  gap 12px
+
+.breakdown-entity-item
+  display flex
+  flex-direction column
+  gap 5px
+
+.breakdown-rename-form, .breakdown-entity-line
+  display flex
+  align-items baseline
+  justify-content space-between
+  gap 6px
+  width 100%
+  padding-bottom 4px
+  border-bottom 1px solid --border-strong
+  transition border-color 0.15s ease
+
+.breakdown-rename-form:focus-within, .breakdown-entity-line:focus-within
+  border-bottom-color --text-primary
+
+.breakdown-name-input
+  flex 1
+  min-width 0
+  background transparent
+  border none !important
+  outline none
+  color --text-primary
+  font-family --font-sans
+  font-size 12px
+  font-weight 600
+  letter-spacing 0.2px
+  padding 0
+
+.breakdown-loc-prefix
+  font-family --font-sans
+  font-size 11px
+  font-weight 600
+  color --text-muted
+  flex-shrink 0
+
+.breakdown-entity-days
+  font-family --font-sans
+  font-size 10px
+  color --text-muted
+  white-space nowrap
+  flex-shrink 0
+
+.breakdown-jump-btn
+  display flex
+  align-items center
+  justify-content space-between
+  gap 6px
+  background transparent
+  border none
+  padding 0
+  text-align left
+  cursor pointer
+  color --text-secondary
+  width 100%
+  min-width 0
+
+.breakdown-jump-arrow
+  font-family --font-sans
+  font-size 11px
+  color --text-muted
+  flex-shrink 0
+  transition color 0.15s ease
+
+.breakdown-jump-btn:hover .history-version-time, .breakdown-jump-btn:hover .breakdown-jump-arrow
+  color --text-primary
+
+.node-slugline-input
+  font-family --font-screenplay
+  font-weight 700
+  text-transform uppercase
+
+.node-script-length-badge
+  font-family --font-sans
+  font-size 10px
+  font-weight 600
+  padding 0
+  border none
+  background transparent
+  color --text-muted
+  white-space nowrap
+  flex-shrink 0
+
+.slugline-helper-pills
+  display flex
+  flex-wrap wrap
+  gap 4px
+  padding 2px 0 4px
+
+.slugline-pill-btn
+  background --bg-elevated
+  border 1px solid --border-subtle
+  color --text-secondary
+  font-family --font-sans
+  font-size 9px
+  font-weight 600
+  padding 2px 6px
+  cursor pointer
+
+.slugline-pill-btn:hover
+  border-color --text-primary
+  color --text-primary
+
+// Variables Panel & Unified 3-Row Choice Rule Stack
+.breakdown-section-header
+  display flex
+  align-items center
+  justify-content space-between
+  gap 8px
+
+.var-section-add-btn
+  width 28px
+  height 28px
+  padding 0
+  display inline-flex
+  align-items center
+  justify-content center
+  color --text-muted
+  flex-shrink 0
+
+.var-section-add-btn:hover
+  color --text-primary
+
+.var-section-add-btn .media-plus-icon
+  width 15px
+  height 15px
+  display block
+  pointer-events none
+
+.var-panel-row
+  display flex
+  align-items center
+  gap 8px
+  padding 4px 0
+
+.var-panel-inline-form
+  flex 1
+  min-width 0
+  display flex
+  align-items center
+  gap 8px
+
+.var-panel-inline-form:has(+ .var-bool-toggle-btn)
+  flex 0 0 108px
+  width 108px
+
+.var-name-input
+  width 108px
+  flex 0 0 108px
+  font-family --font-mono
+  font-size 12px
+  color --text-secondary
+
+.var-name-input:focus
+  color --text-primary
+
+.var-val-input
+  flex 1
+  min-width 0
+  font-family --font-mono
+  font-size 12px
+
+.var-options-input
+  font-family --font-sans
+
+.var-bool-toggle-btn
+  flex 1
+  min-width 0
+  display flex
+  align-items center
+  justify-content flex-start
+  gap 8px
+  background transparent
+  border none !important
+  padding 3px 0 4px 0
+  color --text-secondary
+  font-family --font-mono
+  font-size 12px
+  cursor pointer
+
+.var-bool-toggle-btn:hover, .var-bool-toggle-btn.active
+  color --text-primary
+
+.ui-toggle-track
+  width 22px
+  height 10px
+  background --toggle-track
+  display inline-flex
+  align-items center
+  padding 2px
+  flex-shrink 0
+  pointer-events none
+  transition background 0.15s ease
+
+.ui-toggle-thumb
+  width 6px
+  height 6px
+  background --toggle-thumb-off
+  transform translateX(0)
+  pointer-events none
+  transition transform 0.15s ease, background 0.15s ease
+
+.var-bool-toggle-btn.active .ui-toggle-track, .test-var-bool-btn.active .ui-toggle-track
+  background --toggle-track-on
+
+.var-bool-toggle-btn.active .ui-toggle-thumb, .test-var-bool-btn.active .ui-toggle-thumb
+  background --text-primary
+  transform translateX(12px)
+
+.var-remove-btn
+  width 28px
+  height 28px
+  padding 0
+  display inline-flex
+  align-items center
+  justify-content center
+  color --text-muted
+  flex-shrink 0
+
+.var-remove-btn:hover
+  color --accent-danger
+
+.var-panel-add-row
+  display flex
+  flex-wrap wrap
+  gap 6px
+  padding 12px 14px
+
+.syn-input-wrap
+  position relative
+  flex 1
+  min-width 0
+  display flex
+  align-items center
+  gap 4px
+  border-bottom 1px solid --border-strong
+  transition border-color 0.15s ease
+
+.syn-input-wrap:has(> .syn-autocomplete-dropdown:not(.hidden))
+  z-index 85
+
+.syn-input-wrap:focus-within
+  border-bottom-color --text-primary
+
+.syn-input-wrap.is-invalid, .syn-input-wrap.is-invalid:focus-within
+  border-bottom-color --accent-danger !important
+
+.syn-input-wrap.is-invalid .syn-inner-input, .syn-input-wrap.is-invalid .syn-brace
+  color --accent-danger !important
+
+.syn-input-wrap.is-disabled
+  opacity 0.35
+  cursor not-allowed
+
+.choice-rule-toggle-btn:disabled, .choice-syntax-help-btn:disabled, .scene-preview-mode-btn:disabled
+  opacity 0.28
+  cursor not-allowed
+  pointer-events none
+
+.syn-inner-input
+  border-bottom none !important
+  font-family --font-mono
+  font-size 12px
+  color --text-secondary
+
+.syn-inner-input:focus
+  color --text-primary
+
+.syn-brace
+  font-family --font-mono
+  font-size 12px
+  line-height 1.4
+  color --text-muted
+  user-select none
+  flex-shrink 0
+  pointer-events none
+
+.context-choice-item.is-rule-expanded
+  align-items center
+
+.choice-triple-stack
+  flex 1
+  min-width 0
+  display flex
+  flex-direction column
+  border-top 1px solid --border-strong
+  border-bottom 1px solid --border-strong
+  background transparent
+  transition border-color 0.15s ease
+
+.choice-triple-stack:focus-within
+  border-top-color --text-primary
+  border-bottom-color --text-primary
+
+.choice-triple-row
+  position relative
+  display flex
+  align-items center
+  gap 6px
+  min-height 26px
+  height 26px
+  line-height 1.4
+  padding 0
+  border-bottom 1px solid --border-subtle
+
+.choice-triple-row.choice-triple-label
+  height auto
+  min-height 26px
+  align-items flex-start
+  padding 3px 0
+
+.choice-row-key
+  font-family --font-mono
+  font-size 12px
+  line-height 1.4
+  color --text-muted
+  width 42px
+  min-width 42px
+  flex-shrink 0
+  user-select none
+
+.choice-triple-row.is-empty-rule:not(:focus-within) .choice-row-key, .node-meta-row.is-empty-rule:not(:focus-within) .node-meta-key, .scene-settings-row.is-empty-rule:not(:focus-within) .node-meta-key
+  opacity 0.45
+
+.choice-triple-row:has(> .syn-autocomplete-dropdown:not(.hidden))
+  z-index 85
+
+.choice-triple-row:last-child
+  border-bottom none
+
+.choice-triple-row.is-invalid .choice-rule-input, .choice-triple-row.is-invalid .choice-row-key, .choice-triple-row.is-invalid .syn-brace
+  color --accent-danger !important
+
+.choice-triple-row .node-choice-label
+  flex 1
+  min-width 0
+  border none !important
+  border-bottom none !important
+  background transparent
+  color --text-primary
+  font-family --font-sans
+  font-size 12px
+  line-height 1.4
+  padding 0
+  margin 0
+  resize none !important
+  overflow hidden !important
+
+.choice-exit-input, .choice-rule-input
+  flex 1
+  min-width 0
+  height 100%
+  background transparent
+  border none !important
+  border-bottom none !important
+  color --text-secondary
+  font-family --font-mono
+  font-size 12px
+  line-height 1.4
+  padding 0
+
+.choice-exit-input:focus, .choice-rule-input:focus
+  outline none
+  color --text-primary
+
+.choice-exit-input::placeholder, .choice-rule-input::placeholder
+  color --text-muted
+  opacity 0.65
+
+.choice-rule-toggle-btn, .choice-syntax-help-btn
+  width 28px
+  height 28px
+  padding 0
+  display inline-flex
+  align-items center
+  justify-content center
+  color --text-muted
+  flex-shrink 0
+
+.syn-dropdown-top-btn
+  width 22px
+  height 22px
+  padding 0
+  display inline-flex
+  align-items center
+  justify-content center
+  color --text-muted
+  flex-shrink 0
+
+.syn-dropdown-top-btn:hover, .syn-dropdown-top-btn.active
+  color --text-primary
+
+.choice-braces-icon, .choice-help-icon
+  width 15px
+  height 15px
+  display block
+  pointer-events none
+
+.syn-dropdown-top-btn .choice-help-icon, .syn-dropdown-top-btn .media-plus-icon
+  width 13px
+  height 13px
+  display block
+  pointer-events none
+
+.syn-autocomplete-dropdown
+  position absolute
+  top 100%
+  left 0
+  right auto
+  width 240px
+  z-index 90
+  background --dropdown-bg
+  border-top 1px solid --text-primary
+  border-left 1px solid --dropdown-border
+  border-right 1px solid --dropdown-border
+  border-bottom 1px solid --dropdown-border
+  display flex
+  flex-direction column
+  box-shadow 0 6px 16px rgba(0, 0, 0, 0.45)
+  box-shadow switch(theme)
+    light 0 2px 8px rgba(0, 0, 0, 0.05)
+
+.syn-dropdown-list
+  max-height 182px
+  overflow-y auto
+  scrollbar-width thin
+  scrollbar-color --dropdown-border transparent
+  display flex
+  flex-direction column
+
+.syn-dropdown-list::-webkit-scrollbar
+  width 4px
+
+.syn-dropdown-list::-webkit-scrollbar-track
+  background transparent
+
+.syn-dropdown-list::-webkit-scrollbar-thumb
+  background --dropdown-border
+
+.syn-dropdown-item
+  width 100%
+  height 26px
+  flex-shrink 0
+  display flex
+  align-items center
+  justify-content space-between
+  gap 10px
+  padding 0 10px
+  background transparent
+  border none
+  color --dropdown-item-fg
+  font-family --font-mono
+  font-size 12px
+  line-height 1.4
+  text-align left
+  cursor pointer
+
+.syn-dropdown-item:hover, .syn-dropdown-item.active
+  background --dropdown-hover-bg
+  color --text-primary
+
+.syn-dropdown-var-name
+  color inherit
+  font-weight 400
+
+.syn-dropdown-var-meta
+  color --dropdown-meta-fg
+  font-size 0.85em
+  white-space nowrap
+  overflow hidden
+  text-overflow ellipsis
+
+.syntax-help-section
+  display flex
+  flex-direction column
+  gap 4px
+
+.syntax-help-row
+  display flex
+  align-items baseline
+  justify-content space-between
+  gap 8px
+  font-size 10px
+
+.syntax-help-code
+  font-family --font-mono
+  color --text-primary
+  white-space nowrap
+  flex-shrink 0
+
+.syntax-help-desc
+  font-family --font-sans
+  color --text-muted
+  text-align right
+
+.book-setting-toggle-btn, .form-toggle-btn
+  flex 1
+  min-width 0
+  width 100%
+  display flex
+  align-items center
+  justify-content flex-start
+  gap 8px
+  background transparent
+  border none !important
+  border-bottom none !important
+  color --text-secondary
+  font-family --font-sans
+  font-size 12px
+  line-height 1.4
+  padding 3px 0
+  cursor pointer
+  text-align left
+  transition color 0.15s ease
+
+.book-setting-toggle-btn:hover, .book-setting-toggle-btn.active, .form-toggle-btn:hover, .form-toggle-btn.active
+  color --text-primary
+  border none !important
+  border-bottom none !important
+
+.toggle-right
+  display inline-flex
+  align-items center
+  gap 8px
+  flex-shrink 0
+  pointer-events none
+
+.book-setting-toggle-btn .action-icon, .form-toggle-btn .action-icon
+  width 15px
+  height 15px
+  color --text-muted
+  flex-shrink 0
+  pointer-events none
+
+.book-setting-toggle-btn:hover .action-icon, .book-setting-toggle-btn.active .action-icon, .form-toggle-btn:hover .action-icon, .form-toggle-btn.active .action-icon
+  color --text-primary
+
+.toggle-switch
+  width 22px
+  height 10px
+  border none
+  background --toggle-track
+  position relative
+  flex-shrink 0
+  display inline-flex
+  align-items center
+  padding 2px
+  pointer-events none
+  transition background 0.15s ease
+
+.toggle-thumb
+  width 6px
+  height 6px
+  border none
+  background --toggle-thumb-off
+  transform translateX(0)
+  pointer-events none
+  transition transform 0.15s ease, background 0.15s ease
+
+.book-setting-toggle-btn:hover .toggle-thumb, .form-toggle-btn:hover .toggle-thumb
+  background --text-secondary
+
+.book-setting-toggle-btn.active .toggle-switch, .form-toggle-btn.active .toggle-switch
+  background --toggle-track-on
+
+.book-setting-toggle-btn.active .toggle-thumb, .form-toggle-btn.active .toggle-thumb
+  background --text-primary
+  transform translateX(12px)

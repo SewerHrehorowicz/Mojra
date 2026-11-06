@@ -445,7 +445,9 @@ func (s *Server) addBookFromURL(rawURL string) string {
 	if !book.IsTempDir(s.RootDir) || book.IsInsideRepoDir(s.RootDir) {
 		targetBooksDir = book.DefaultProjectsDir()
 	}
+	s.mu.Unlock()
 	downloaded, err := book.DownloadBookFromURL(targetBooksDir, rawURL)
+	s.mu.Lock()
 	if err != nil {
 		return err.Error()
 	}

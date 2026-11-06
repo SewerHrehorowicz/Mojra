@@ -1,0 +1,614 @@
+// History Panel & Branch Graph Timeline
+.history-branch-diff
+  margin-top 4px
+  font-family --font-sans
+  font-size 10px
+  color --text-secondary
+
+.history-branch-actions
+  display flex
+  align-items center
+  gap 4px
+  flex-shrink 0
+
+.history-panel-header
+  display flex
+  align-items center
+  justify-content space-between
+  gap 8px
+  height 36px
+  min-height 36px
+  max-height 36px
+  padding 0 14px
+  box-sizing border-box
+  border-bottom 1px solid --border-subtle
+  background --bg-topbar
+  flex-shrink 0
+
+.history-panel-title
+  font-family --font-sans
+  font-size 11px
+  font-weight 600
+  text-transform uppercase
+  letter-spacing 0.9px
+  color --text-primary
+
+.history-unsaved-banner
+  padding 8px 14px
+  border-bottom 1px solid --border-subtle
+  background --bg-elevated
+  flex-shrink 0
+
+.history-unsaved-text
+  font-family --font-sans
+  font-size 11px
+  color --text-primary
+
+.history-unsaved-text.is-clean
+  color --text-muted
+
+.history-preview-banner
+  display flex
+  flex-direction column
+  gap 6px
+  padding 10px 14px
+  border-bottom 1px solid --text-primary
+  background --bg-elevated
+  flex-shrink 0
+
+.history-preview-banner-title
+  font-family --font-sans
+  font-size 11px
+  font-weight 600
+  color --text-primary
+
+.history-preview-banner-actions
+  display flex
+  flex-wrap wrap
+  gap 6px
+  align-items center
+
+.history-version-form
+  display flex
+  flex-direction column
+  gap 6px
+  padding 12px 14px
+  border-bottom 1px solid --border-subtle
+  background --bg-obsidian
+  flex-shrink 0
+
+.history-version-input-row
+  display flex
+  align-items center
+  gap 6px
+
+.history-version-input
+  flex 1
+  min-width 0
+  background transparent
+  border none
+  border-bottom 1px solid --border-strong
+  color --text-primary
+  font-family --font-sans
+  font-size 11px
+  padding 4px 0
+  transition border-color 0.15s ease
+
+.history-version-input::placeholder
+  color --text-muted
+  font-weight 300
+  opacity 1
+
+.history-version-input:focus
+  outline none
+  border-bottom-color --text-primary
+
+.history-version-save-btn
+  flex-shrink 0
+  white-space nowrap
+
+.history-panel-body
+  display flex
+  flex-direction column
+  gap 16px
+  padding 14px
+  overflow-y auto
+  flex 1
+
+.history-panel-section
+  display flex
+  flex-direction column
+  gap 8px
+
+.history-items-list
+  display flex
+  flex-direction column
+  gap 6px
+
+.history-step-item
+  width 100%
+  display flex
+  flex-direction column
+  align-items stretch
+  gap 3px
+  padding 8px 10px
+  background --bg-elevated
+  border 1px solid --border-subtle
+  color --text-primary
+  font-family --font-sans
+  text-align left
+  cursor pointer
+  transition border-color 0.12s ease, background 0.12s ease
+
+.history-step-item:hover
+  border-color --text-primary
+
+.history-step-item.history-item-current
+  border-color --text-primary
+  box-shadow 0 0 0 1px --text-primary
+
+.history-step-item.history-item-undone
+  opacity 0.55
+
+.history-step-top
+  display flex
+  align-items center
+  justify-content space-between
+  gap 6px
+  width 100%
+
+.history-step-label
+  font-size 11px
+  line-height 1.35
+  color --text-primary
+  overflow hidden
+  text-overflow ellipsis
+  white-space nowrap
+  flex 1
+  min-width 0
+
+.history-step-badge
+  font-family --font-sans
+  font-size 10px
+  font-weight 600
+  text-transform uppercase
+  letter-spacing 0.5px
+  padding 0
+  border none
+  color --text-muted
+  background transparent
+  flex-shrink 0
+
+.history-step-meta
+  display flex
+  align-items center
+  justify-content space-between
+  width 100%
+
+.history-step-time
+  font-size 10px
+  color --text-muted
+
+.history-version-card
+  display flex
+  align-items center
+  justify-content space-between
+  gap 8px
+  padding 8px 10px
+  background --bg-elevated
+  border 1px solid --border-subtle
+  transition border-color 0.12s ease, background 0.12s ease
+
+.history-version-card.history-version-clickable
+  cursor pointer
+
+.history-version-card.history-version-clickable:hover
+  border-color --text-primary
+
+.history-version-card.history-item-current
+  border-color --text-primary
+  box-shadow 0 0 0 1px --text-primary
+
+.history-version-info
+  display flex
+  flex-direction column
+  gap 2px
+  min-width 0
+  flex 1
+
+.history-version-name
+  font-family --font-sans
+  font-size 12px
+  font-weight 600
+  color --text-primary
+  overflow hidden
+  text-overflow ellipsis
+  white-space nowrap
+
+.history-version-time
+  font-family --font-sans
+  font-size 10px
+  color --text-muted
+
+.history-restore-btn
+  flex-shrink 0
+
+.history-empty-note
+  font-family --font-sans
+  font-size 11px
+  color --text-muted
+  padding 6px 0
+
+// Unified History & Branch Graph Timeline
+.history-compact-form
+  display flex
+  align-items center
+  gap 6px
+  padding 8px 12px
+  border-bottom 1px solid --border-subtle
+  background --bg-obsidian
+  flex-shrink 0
+
+.history-branch-create-form
+  border-top 1px solid --border-subtle
+  border-bottom none
+
+.history-active-branch-bar
+  display flex
+  align-items center
+  gap 7px
+  padding 6px 12px
+  border-bottom 1px solid --border-subtle
+  background --bg-elevated
+  flex-shrink 0
+
+.history-active-branch-dot
+  width 6px
+  height 6px
+  border-radius 50% !important
+  background --text-primary
+  flex-shrink 0
+
+.history-active-branch-name
+  font-family --font-sans
+  font-size 10px
+  font-weight 700
+  letter-spacing 0.8px
+  text-transform uppercase
+  color --text-primary
+  overflow hidden
+  text-overflow ellipsis
+  white-space nowrap
+
+.history-graph-scroll
+  position relative
+  display flex
+  flex-direction column
+  flex 1
+  min-height 0
+  overflow-y auto
+  overflow-x hidden
+  padding 10px 10px 18px 10px
+
+.history-graph-list
+  display flex
+  flex-direction column
+  gap 0
+  width 100%
+
+.history-graph-row
+  position relative
+  display flex
+  align-items center
+  width 100%
+  height 28px
+  min-height 28px
+  max-height 28px
+  flex-shrink 0
+  --row-stem-color --border-subtle
+
+.history-graph-row.is-active-lineage
+  --row-stem-color --history-box-active-lineage
+
+.history-graph-row.is-unnamed-step
+  --row-stem-color --history-box-unnamed
+
+.history-graph-row.is-current-row
+  --row-stem-color --text-primary
+
+.history-graph-row.is-undone-row
+  opacity 0.5
+
+.history-graph-row.is-dragging-source
+  opacity 0.45
+
+.history-graph-lanes
+  display flex
+  align-items stretch
+  height 28px
+  flex-shrink 0
+
+.history-lane-cell
+  position relative
+  width 18px
+  min-width 18px
+  max-width 18px
+  height 28px
+  flex-shrink 0
+
+.history-lane-rail-up
+  position absolute
+  left 8px
+  top 0
+  width 0
+  height 14px
+  border-left 1px solid --history-rail-inactive
+  pointer-events none
+  z-index 1
+
+.history-lane-rail-down
+  position absolute
+  left 8px
+  top 14px
+  width 0
+  height 14px
+  border-left 1px solid --history-rail-inactive
+  pointer-events none
+  z-index 1
+
+.history-lane-rail-up.is-active, .history-lane-rail-down.is-active
+  border-left-color --text-primary
+  z-index 2
+
+.history-lane-rail-up.is-dashed, .history-lane-rail-down.is-dashed
+  border-left-style dashed
+
+.history-lane-cell.is-drop-target-rail .history-lane-rail-up, .history-lane-cell.is-drop-target-rail .history-lane-rail-down
+  border-left-color --text-primary
+  border-left-width 2px
+  z-index 3
+
+.history-lane-fork.is-corner
+  position absolute
+  left 0
+  top 0
+  width 9px
+  height 14px
+  border-right 1px solid --history-rail-inactive
+  border-bottom 1px solid --history-rail-inactive
+  border-bottom-right-radius 6px !important
+  pointer-events none
+  z-index 1
+
+.history-lane-fork.is-horiz
+  position absolute
+  left 0
+  top 13px
+  width 18px
+  height 0
+  border-bottom 1px solid --history-rail-inactive
+  pointer-events none
+  z-index 1
+
+.history-lane-fork.is-corner.is-active, .history-lane-fork.is-horiz.is-active
+  border-color --text-primary
+  z-index 2
+
+.history-lane-compact.is-out
+  position absolute
+  left 0
+  top 0
+  width 9px
+  height 6px
+  border-right 1px solid --history-rail-inactive
+  border-bottom 1px solid --history-rail-inactive
+  border-bottom-right-radius 5px !important
+  pointer-events none
+  z-index 1
+
+.history-lane-compact.is-horiz
+  position absolute
+  left 0
+  top 5px
+  width 18px
+  height 0
+  border-bottom 1px solid --history-rail-inactive
+  pointer-events none
+  z-index 1
+
+.history-lane-compact.is-in
+  position absolute
+  left 8px
+  top 5px
+  width 10px
+  height 9px
+  border-left 1px solid --history-rail-inactive
+  border-top 1px solid --history-rail-inactive
+  border-top-left-radius 5px !important
+  pointer-events none
+  z-index 1
+
+.history-lane-compact.is-out.is-active, .history-lane-compact.is-horiz.is-active, .history-lane-compact.is-in.is-active
+  border-color --text-primary
+  z-index 2
+
+.history-lane-stem.is-start
+  position absolute
+  left 9px
+  right 0
+  top 13px
+  height 1px
+  background --row-stem-color
+  pointer-events none
+  z-index 3
+
+.history-lane-stem.is-through
+  position absolute
+  left 0
+  right 0
+  top 13px
+  height 1px
+  background --row-stem-color
+  pointer-events none
+  z-index 3
+
+.history-rail-hit
+  position absolute
+  inset 0
+  width 100%
+  height 100%
+  background transparent
+  border none
+  padding 0
+  cursor pointer
+  z-index 3
+
+.history-rail-node
+  position absolute
+  left 5px
+  top 10px
+  width 7px
+  height 7px
+  padding 0
+  border-radius 50% !important
+  border 1px solid --history-rail-inactive
+  background --bg-obsidian
+  cursor grab
+  z-index 4
+  transition transform 0.12s ease, border-color 0.12s ease, background 0.12s ease
+
+.history-rail-node.is-active-lineage-node
+  border-color --text-primary
+  background --text-primary
+
+.history-rail-node.is-unnamed-node
+  width 5px
+  height 5px
+  left 6px
+  top 11px
+  border-color --text-secondary
+  background --bg-obsidian
+
+.history-rail-node.is-current-node
+  left 3px
+  top 8px
+  width 11px
+  height 11px
+  border 2px solid --text-primary
+  background --bg-obsidian
+  box-shadow inset 0 0 0 2px --bg-obsidian, inset 0 0 0 4px --text-primary
+
+.history-rail-node:hover
+  border-color --text-primary
+  transform scale(1.18)
+
+.history-row-stem
+  width 8px
+  min-width 8px
+  height 1px
+  background --row-stem-color
+  flex-shrink 0
+  pointer-events none
+
+.history-row-box
+  display flex
+  align-items center
+  gap 6px
+  flex 1
+  min-width 0
+  height 24px
+  padding 0 7px 0 5px
+  background --bg-obsidian
+  border 1px solid --row-stem-color
+  cursor pointer
+  transition border-color 0.12s ease, background 0.12s ease
+
+.history-graph-row.is-current-row .history-row-box
+  background --bg-elevated
+  border-color --text-primary
+
+.history-row-box:hover
+  border-color --text-primary
+
+.history-row-grip
+  font-family --font-sans
+  font-size 10px
+  line-height 1
+  letter-spacing -1px
+  color --text-muted
+  cursor grab
+  padding 2px 2px
+  flex-shrink 0
+  user-select none
+
+.history-row-grip:hover
+  color --text-primary
+
+.history-row-title
+  font-family --font-sans
+  font-size 11px
+  font-weight 400
+  color --text-secondary
+  overflow hidden
+  text-overflow ellipsis
+  white-space nowrap
+  flex 1
+  min-width 0
+
+.history-graph-row.is-active-lineage .history-row-title
+  color --text-primary
+  font-weight 500
+
+.history-graph-row.is-current-row .history-row-title
+  color --text-primary
+  font-weight 700
+
+.history-graph-row.is-inactive-branch .history-row-title
+  color --text-muted
+
+.history-row-meta
+  font-family --font-sans
+  font-size 9px
+  font-weight 400
+  color --text-muted
+  white-space nowrap
+  flex-shrink 0
+
+.history-graph-row.is-current-row .history-row-meta
+  color --text-secondary
+
+.history-drop-preview-row
+  display flex
+  align-items center
+  width 100%
+  height 26px
+  margin-bottom 4px
+  flex-shrink 0
+  pointer-events none
+
+.history-drop-preview-dot
+  width 9px
+  height 9px
+  margin-left 4px
+  border-radius 50% !important
+  border 1px dashed --text-primary
+  background --bg-obsidian
+  flex-shrink 0
+
+.history-drop-preview-stem
+  width 10px
+  height 1px
+  border-top 1px dashed --text-primary
+  flex-shrink 0
+
+.history-drop-preview-box
+  display flex
+  align-items center
+  justify-content space-between
+  gap 6px
+  flex 1
+  min-width 0
+  height 24px
+  padding 0 8px
+  border 1px dashed --text-primary
+  background --bg-elevated

@@ -56,6 +56,10 @@ html lang: pl
                 "STORYTELLING REDEFINED"
                 span.dot "•"
                 span.soon "COMING SOON"
+                span.dot "•"
+                a.footer-investor-link
+                    href: inwestorzy.html
+                    "DLA INWESTORÓW"
 
         .wasm-overlay#wasm-overlay
             role: dialog
