@@ -200,9 +200,9 @@ func TestBookHistoryMultiChapterDeltaAndBlobPruning(t *testing.T) {
 		t.Fatalf("CreateNewBook failed: %v", err)
 	}
 	// Convert to multi-file book by adding a second chapter file on disk
-	ch1Path := filepath.Join(b.RootPath, "rozdzial_1.txt")
-	ch2Path := filepath.Join(b.RootPath, "rozdzial_2.txt")
-	_ = os.Remove(filepath.Join(b.RootPath, "story.txt"))
+	ch1Path := filepath.Join(b.RootPath, "rozdzial_1.playtxt")
+	ch2Path := filepath.Join(b.RootPath, "rozdzial_2.playtxt")
+	_ = os.Remove(filepath.Join(b.RootPath, "story.playtxt"))
 	if err := os.WriteFile(ch1Path, []byte("chapter: Rozdział 1\nid: rozdzial_1\n\nscene: Start\nid: poczatek\nnext: s2\ntext:\nTekst rozdziału pierwszego.\n"), 0644); err != nil {
 		t.Fatalf("write ch1 failed: %v", err)
 	}
@@ -219,7 +219,7 @@ func TestBookHistoryMultiChapterDeltaAndBlobPruning(t *testing.T) {
 	}
 
 	// Modify only Rozdział 2 and add a third chapter file
-	ch3Path := filepath.Join(b.RootPath, "rozdzial_3.txt")
+	ch3Path := filepath.Join(b.RootPath, "rozdzial_3.playtxt")
 	if err := os.WriteFile(ch3Path, []byte("chapter: Rozdział 3\nid: rozdzial_3\n\nscene: Trzecia\nid: s3\nend: true\ntext:\nNowy rozdział trzeci.\n"), 0644); err != nil {
 		t.Fatalf("write ch3 failed: %v", err)
 	}
@@ -232,29 +232,29 @@ func TestBookHistoryMultiChapterDeltaAndBlobPruning(t *testing.T) {
 	if len(h.Revisions) != 2 {
 		t.Fatalf("expected 2 revisions, got %d", len(h.Revisions))
 	}
-	// Verify unchanged rozdzial_1.txt shares the exact same SHA-256 blob hash between r1 and r2
-	if h.Revisions[0].Files["rozdzial_1.txt"] == "" || h.Revisions[0].Files["rozdzial_1.txt"] != h.Revisions[1].Files["rozdzial_1.txt"] {
-		t.Fatalf("expected unchanged rozdzial_1.txt to reuse identical blob hash across revisions")
+	// Verify unchanged rozdzial_1.playtxt shares the exact same SHA-256 blob hash between r1 and r2
+	if h.Revisions[0].Files["rozdzial_1.playtxt"] == "" || h.Revisions[0].Files["rozdzial_1.playtxt"] != h.Revisions[1].Files["rozdzial_1.playtxt"] {
+		t.Fatalf("expected unchanged rozdzial_1.playtxt to reuse identical blob hash across revisions")
 	}
 
-	// Undo should remove rozdzial_3.txt from disk since it did not exist in r1
+	// Undo should remove rozdzial_3.playtxt from disk since it did not exist in r1
 	if _, _, err := UndoBookHistory(b); err != nil {
 		t.Fatalf("UndoBookHistory failed: %v", err)
 	}
 	if _, err := os.Stat(ch3Path); !os.IsNotExist(err) {
-		t.Fatalf("expected rozdzial_3.txt to be removed after undo to baseline")
+		t.Fatalf("expected rozdzial_3.playtxt to be removed after undo to baseline")
 	}
 
-	// Redo brings rozdzial_3.txt back
+	// Redo brings rozdzial_3.playtxt back
 	if _, _, err := RedoBookHistory(b); err != nil {
 		t.Fatalf("RedoBookHistory failed: %v", err)
 	}
 	if _, err := os.Stat(ch3Path); err != nil {
-		t.Fatalf("expected rozdzial_3.txt to be restored after redo: %v", err)
+		t.Fatalf("expected rozdzial_3.playtxt to be restored after redo: %v", err)
 	}
 
 	// Modify ch3 text in a new unnamed edit, then collapse into a Named Version and verify old ch3 blob is pruned
-	oldCh3Hash := h.Revisions[1].Files["rozdzial_3.txt"]
+	oldCh3Hash := h.Revisions[1].Files["rozdzial_3.playtxt"]
 	if err := os.WriteFile(ch3Path, []byte("chapter: Rozdział 3\nid: rozdzial_3\n\nscene: Trzecia\nid: s3\nend: true\ntext:\nZmieniony tekst rozdziału trzeciego.\n"), 0644); err != nil {
 		t.Fatalf("write updated ch3 failed: %v", err)
 	}

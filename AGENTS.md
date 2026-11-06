@@ -12,11 +12,11 @@
 
 ## 2. File & Data Formats — ZERO JSON / ZERO YAML / ZERO SQL
 - **NEVER use JSON (`encoding/json`, `JSON.stringify`, `JSON.parse`, `.json` files) anywhere** in backend, frontend, configuration, or disk persistence.
-- **Book Metadata (`books/<id>/data.txt`)**: Plain UTF-8 text using `key: value` lines (`title:`, `author:`, `description:`, `narrated: true|false`, `imageless: true|false`, `start: <scene_id>`, `cover: <rel_path>`).
-- **Story Files (`books/<id>/story.txt` or per-chapter `<chapter_id>.txt`)**: Plain UTF-8 text using structural `key: value` headers (`chapter:`, `scene:`, `id:`, `image:`, `voice:`, `next:`, `end: true`, `text:`), prose paragraphs, and `Choice Label -> TargetSceneID` (or `-> END`) transitions.
+- **Book Metadata (`books/<id>/book.playtxt`)**: Plain UTF-8 text using `key: value` lines (`title:`, `author:`, `description:`, `narrated: true|false`, `imageless: true|false`, `start: <scene_id>`, `cover: <rel_path>`, `enum:`, `var:`).
+- **Story Files (`books/<id>/story.playtxt` or per-chapter `<chapter_id>.playtxt`)**: Plain UTF-8 text using structural `key: value` headers (`chapter:`, `scene:`, `id:`, `image:`, `voice:`, `next:`, `end: true`, `text:`), prose paragraphs, and `Choice Label -> TargetSceneID` (or `-> END`) transitions.
   - Escape literal arrows in prose as `\->`.
   - A single outgoing transition MUST always normalize to implicit `Dalej` (`next: <target>` or sequential same-file scene), never a single custom-labeled choice button.
-- **Node Studio Layout (`books/<id>/editor.txt`)**: Plain text using `pan_x: <int>`, `pan_y: <int>`, `zoom: <float>`, and `node: <scene_ref> -> <x>, <y>` snapped to `EditorGridSize = 24`.
+- **Node Studio Layout (`books/<id>/.editor.cfg`)**: Plain text using `pan_x: <int>`, `pan_y: <int>`, `zoom: <float>`, and `node: <scene_ref> -> <x>, <y>` snapped to `EditorGridSize = 24`.
 - **App Settings & Saves in Standard OS App Data (`book.DefaultAppDataDir()` / `book.DefaultSavesDir()`)**:
   - Built or running apps and tests must **NEVER** write `saves/`, `settings.ini`, `<book-id>.sav`, `.storyteller.pid`, or `.history/` into the repository (`repo/saves/`, `repo/dist/saves/`, `books/<id>/.history/` are strictly forbidden).
   - Keep all app settings (`saves/settings.ini`), player saves (`saves/<book-id>.sav`), process lock files (`saves/.storyteller.pid`), version history (`history/`), default projects (`projects/`), and exports (`exports/`) in the standard OS application data directory (`os.UserConfigDir()/StoryTeller`, i.e., `~/Library/Application Support/StoryTeller` on macOS, `%AppData%\StoryTeller` on Windows, `$XDG_CONFIG_HOME/StoryTeller` on Linux) via `book.DefaultAppDataDir()` and `book.ResolveSavesDir(rootDir)`, and use isolated `os.TempDir()` directories during `go test`.
@@ -44,7 +44,7 @@
   - Wrap device preview rules in `/* @dev-only-start */ ... /* @dev-only-end */` and template nodes in `{if dev_mode}` so production builds strip them completely.
   - Register any new `.tss` or `.js` module in `CSSModuleFiles` / `JSModuleFiles` (and `CSSPlayerModuleFiles` / `JSPlayerModuleFiles` if needed in standalone player mode) in `internal/tpl/bundle.go`.
 - **UI & Control Rules**:
-  - Store all graphic UI/UX design sheets and visual specifications in `designs/` (`designs/forms.png`, `designs/branch-graph.png`, `designs/breakdown-panel.png`, etc.).
+  - Store all graphic UI/UX design sheets and visual specifications in `designs/` (`designs/forms.png`, `designs/branch-graph.png`, `designs/breakdown-panel.png`, etc.). **NEVER present UI designs, layouts, or mockups as ASCII art in chat** — always generate a real `.png` design sheet in `designs/` and attach/read it.
   - Keep `border-radius: 0 !important` globally (`base.tss`), except circular node ports, slider thumbs, and progress/notch pills.
   - Never use native `<select>` elements; always use `.custom-select`.
   - **Minimalist Form Design System (`designs/forms.png`)**:
@@ -64,6 +64,9 @@
   - Never use up/down arrow buttons (`↑`, `↓`) to reorder scenes, choices, or items (rejected at `.tpl` compile time); use 24px-grid canvas dragging (`data-node-drag-grip`) and wire ports.
   - Never explain the UI inside the UI (never write `"Kliknij przycisk..."`, `"Kliknij aby..."`, `"Przeciągnij..."`, or tutorial hints) and never spam the UI with unnecessary text, subtitles, or redundant headers.
   - Keep canvas node cards (`.timeline-node-card`) read-only on the canvas (grip `⋮⋮`, title, choice labels, ports, `+ Wybór`); all editable inputs and delete buttons belong in `#editor-context-panel`.
+  - **Right-Side Studio Panels (`320px` Column) vs Portrait Phones**:
+    - `.editor-context-panel`, `.editor-history-panel`, `.editor-help-panel`, `.editor-breakdown-panel`, and `.editor-variables-panel` (`app/styles/editor_inspector.tss`) MUST ALWAYS render as a `320px` right-hand column (`width: 320px; min-width: 320px; max-width: 320px; border-left: 1px solid --border-subtle; flex-shrink: 0`) alongside a visible `#timeline-scroll-viewport` canvas on desktop, tablet, and landscape.
+    - Full-width panel mode (`width: 100%; flex: 1; border-left: none`) is strictly restricted to portrait phones (`@media (max-width: 760px) and (orientation: portrait)` and `.device-stage[data-preview="portrait"]`). Never hide `#timeline-scroll-viewport` on desktop when a right-side panel is open.
 
 ## 5. Performance, Zero External Dependencies & Repository Hygiene
 - **Performance Hard Rules (P0)**:
@@ -79,7 +82,7 @@
   - Audio: ONLY `.ogg`, `.flac`, `.mp3` (verify `OggS`, `fLaC`, `ID3`/`\xff\xe0`). Strictly forbid `.wav`.
   - Reject any media file > 100 MB or containing HTML/XML/script signatures in the first 512 bytes.
 - **All-or-Nothing Narration Policy**:
-  - When `narrated: false`, clear all scene audio fields, omit `voice:` from serialized `.txt` files, return HTTP `403` on audio requests, and render `#reader-progress-footer` instead of `#audio-deck`.
+  - When `narrated: false`, clear all scene audio fields, omit `voice:` from serialized `.playtxt` files, return HTTP `403` on audio requests, and render `#reader-progress-footer` instead of `#audio-deck`.
   - When `narrated: true`, emit a parser warning for every scene missing a valid audio file.
 - **Zero-Copy External Books & Read-Only `.playbook` / `.stbook` Archives**:
   - `AddBookFromDisk` registers external paths in `settings.ini` (`ExternalBooks`) without copying files into `books/`.

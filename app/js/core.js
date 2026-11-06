@@ -126,16 +126,26 @@ function showToast(message) {
 }
 
 function syncTopbarToggleIcons() {
-  const isLarge = document.body.getAttribute("data-ui-scale") === "large";
+  const uiScaleAttr = document.body.getAttribute("data-ui-scale");
+  const isLarge = uiScaleAttr === "large";
+  const isZen = uiScaleAttr === "zen";
+  const isSmall = !isLarge && !isZen;
   const zoomInIcon = qs("#icon-zoom-in");
   const zoomOutIcon = qs("#icon-zoom-out");
+  const zoomZenIcon = qs("#icon-zoom-zen");
   const zoomBtn = qs("#btn-toggle-ui-scale");
-  if (zoomInIcon) zoomInIcon.classList.toggle("hidden", isLarge);
-  if (zoomOutIcon) zoomOutIcon.classList.toggle("hidden", !isLarge);
+  if (zoomInIcon) zoomInIcon.classList.toggle("hidden", !isSmall);
+  if (zoomZenIcon) zoomZenIcon.classList.toggle("hidden", !isLarge);
+  if (zoomOutIcon) zoomOutIcon.classList.toggle("hidden", !isZen);
   if (zoomBtn) {
+    zoomBtn.classList.toggle("active", isZen);
     setElementHint(
       zoomBtn,
-      isLarge ? "Pomniejsz przyciski i kontrolki (- / Ctrl+-)" : "Powiększ przyciski i kontrolki (+ / Ctrl++)"
+      isLarge
+        ? "Tryb Zen — sama treść"
+        : isZen
+          ? "Wyjdź z trybu Zen (małe UI)"
+          : "Powiększ przyciski i kontrolki (+ / Ctrl++)"
     );
   }
 
@@ -168,15 +178,21 @@ function syncTopbarToggleIcons() {
 }
 
 function toggleUIScaleClient(forcedScale) {
-  const currentScale = document.body.getAttribute("data-ui-scale") === "large" ? "large" : "small";
+  const rawScale = document.body.getAttribute("data-ui-scale");
+  const currentScale = rawScale === "large" || rawScale === "zen" ? rawScale : "small";
   const nextScale =
-    forcedScale === "large" || forcedScale === "small"
+    forcedScale === "large" || forcedScale === "small" || forcedScale === "zen"
       ? forcedScale
-      : currentScale === "large"
-        ? "small"
-        : "large";
+      : currentScale === "small"
+        ? "large"
+        : currentScale === "large"
+          ? "zen"
+          : "small";
   document.body.setAttribute("data-ui-scale", nextScale);
   syncTopbarToggleIcons();
+  if (typeof restorePlayerScrollPosition === "function") {
+    restorePlayerScrollPosition();
+  }
   if (typeof initSceneTextModalFeed === "function") {
     initSceneTextModalFeed(false);
   }
@@ -483,6 +499,26 @@ async function sendServerAction(actionName, params) {
     actionName === "CopyHistoryRevisionToBranch" ||
     actionName === "CloseSceneTextModal" ||
     actionName === "NavigateSceneTextModal" ||
+    actionName === "AddBookVariable" ||
+    actionName === "SetSceneTextPreviewMode" ||
+    actionName === "ToggleSceneTestVarsPopover" ||
+    actionName === "UpdateSceneTextTestVar" ||
+    actionName === "ToggleChoiceRule" ||
+    actionName === "ToggleSyntaxHelp" ||
+    actionName === "ToggleEditorVariablesPanel" ||
+    actionName === "ToggleBookSettings" ||
+    actionName === "ToggleEditorBreakdownPanel" ||
+    actionName === "OpenEditorHelpModal" ||
+    actionName === "CloseBookSettings" ||
+    actionName === "CloseEditorVariablesPanel" ||
+    actionName === "CloseEditorBreakdownPanel" ||
+    actionName === "CloseEditorHistoryPanel" ||
+    actionName === "CloseEditorHelpModal" ||
+    actionName === "AddBookVariable" ||
+    actionName === "ToggleBookVariableBool" ||
+    actionName === "UpdateBookVariable" ||
+    actionName === "RemoveBookVariable" ||
+    actionName === "OpenSceneTextModal" ||
     actionName === "SwitchView" ||
     actionName === "OpenBook"
   ) {
@@ -512,13 +548,19 @@ async function sendServerAction(actionName, params) {
       params.book_settings_open = bsBtn.classList.contains("active") ? "true" : "false";
     }
   }
-  if (actionName === "SelectStudioScene" && params.scene) {
+  if ((actionName === "SelectStudioScene" || actionName === "OpenSceneTextModal") && params.scene) {
     if (typeof editorSelectionCleared !== "undefined") {
       editorSelectionCleared = false;
     }
     if (typeof selectedNodeIds !== "undefined") {
       selectedNodeIds.clear();
       selectedNodeIds.add(String(params.scene));
+    }
+    if (typeof syncNodeSelectionDOM === "function") {
+      syncNodeSelectionDOM();
+    }
+    if (typeof renderStudioCanvas === "function") {
+      renderStudioCanvas();
     }
   } else if (
     actionName === "PreviewHistoryRevision" ||
@@ -598,10 +640,58 @@ async function sendServerAction(actionName, params) {
 
   if (targetSelector === "#modals-root") {
     const modalsRoot = qs("#modals-root");
+    const wasModalSceneTextOpen = Boolean(qs("#modal-scene-text", modalsRoot));
+    const prevModalSceneInput = qs('#modal-scene-text input[name="scene_id"]', modalsRoot);
+    const prevModalSceneId = prevModalSceneInput ? (prevModalSceneInput.value || "").trim() : "";
     const prevModalFeed = qs(".scene-text-editor-feed", modalsRoot);
     const prevModalScrollTop = prevModalFeed ? prevModalFeed.scrollTop : 0;
     if (modalsRoot) {
       modalsRoot.innerHTML = html;
+    }
+    const nextSceneTextModal = qs("#modal-scene-text", modalsRoot);
+    if (nextSceneTextModal && !wasModalSceneTextOpen) {
+      nextSceneTextModal.classList.add("is-entering");
+    }
+    const nextModalSceneInput = nextSceneTextModal ? qs('input[name="scene_id"]', nextSceneTextModal) : null;
+    const nextModalSceneId = nextModalSceneInput ? (nextModalSceneInput.value || "").trim() : "";
+    const syncedCanvasSceneId = nextModalSceneId || (actionName === "CloseSceneTextModal" ? prevModalSceneId : "");
+    if (syncedCanvasSceneId && typeof selectedNodeIds !== "undefined") {
+      if (typeof editorSelectionCleared !== "undefined") {
+        editorSelectionCleared = false;
+      }
+      if (typeof studioGraphState !== "undefined") {
+        studioGraphState.selectedChapterKey = "";
+        studioGraphState.overlayBatchDirty = true;
+      }
+      selectedNodeIds.clear();
+      selectedNodeIds.add(syncedCanvasSceneId);
+      const contextForm = qs("#editor-context-form");
+      if (contextForm) {
+        contextForm.setAttribute("data-context-scene-id", syncedCanvasSceneId);
+      }
+      const expandBtn = qs("#btn-expand-scene-text");
+      if (expandBtn) {
+        expandBtn.setAttribute("data-scene", syncedCanvasSceneId);
+      }
+      if (typeof syncNodeSelectionDOM === "function") {
+        syncNodeSelectionDOM();
+      }
+      if (
+        nextModalSceneId &&
+        (actionName === "NavigateSceneTextModal" || actionName === "OpenSceneTextModal" || actionName === "BranchChoiceScene") &&
+        typeof ensureNodeVisibleInCanvasViewport === "function"
+      ) {
+        ensureNodeVisibleInCanvasViewport(nextModalSceneId);
+      }
+      if (typeof renderStudioCanvas === "function") {
+        renderStudioCanvas();
+      }
+    }
+    if (typeof syncEditorViewportVisibility === "function") {
+      syncEditorViewportVisibility();
+    }
+    if (modalsRoot && typeof autoResizeAllInspectorTextareas === "function") {
+      autoResizeAllInspectorTextareas(modalsRoot);
     }
     if ((actionName === "NavigateSceneTextModal" || actionName === "SaveSceneTextModal") && params && params.scene_id) {
       const nd =
@@ -676,14 +766,42 @@ async function sendServerAction(actionName, params) {
       actionName === "ConfirmModalClose" ||
       actionName === "ConfirmModalAccept" ||
       actionName === "BranchChoiceScene" ||
-      actionName === "ConnectChoice"
+      actionName === "ConnectChoice" ||
+      actionName === "AddBookVariable" ||
+      actionName === "SetSceneTextPreviewMode" ||
+      actionName === "ToggleSceneTestVarsPopover" ||
+      actionName === "UpdateSceneTextTestVar" ||
+      actionName === "ToggleChoiceRule" ||
+      actionName === "ToggleSyntaxHelp"
     ) {
       const feed = qs(".scene-text-editor-feed", modalsRoot);
-      if (feed) {
+      if (feed && prevModalScrollTop !== null) {
         feed.scrollTop = prevModalScrollTop;
       }
       if (typeof initSceneTextModalFeed === "function") {
         initSceneTextModalFeed(false);
+      }
+      if (actionName === "ToggleChoiceRule" && typeof studioGraphState !== "undefined" && studioGraphState.nodeById) {
+        const scInp = qs('input[name="scene_id"]', modalsRoot);
+        const scId = scInp ? scInp.value : "";
+        const nd = scId ? studioGraphState.nodeById.get(scId) : null;
+        if (nd && nd.ports) {
+          qsa(".modal-choice-row", modalsRoot).forEach((rowEl, idx) => {
+            if (nd.ports[idx]) {
+              const pIcon = qs(".choice-port-icon", rowEl);
+              nd.ports[idx].isConditional = Boolean(pIcon && pIcon.classList.contains("port-diamond"));
+            }
+          });
+          studioGraphState.staticBatchDirty = true;
+          if (typeof renderStudioCanvas === "function") renderStudioCanvas();
+        }
+      }
+      if (actionName === "AddBookVariable" && typeof lastSynRuleInputName === "string" && lastSynRuleInputName) {
+        const restoredInput = qs('input[name="' + lastSynRuleInputName + '"]', modalsRoot);
+        if (restoredInput && typeof positionAndShowSynDropdown === "function") {
+          restoredInput.focus();
+          positionAndShowSynDropdown(restoredInput);
+        }
       }
     } else if (actionName === "OpenNewBookModal") {
       const newBookInp = qs("#new-book-title", modalsRoot);
@@ -747,11 +865,19 @@ async function sendServerAction(actionName, params) {
         selectedNodeIds.add(selId);
       }
       syncNodeSelectionDOM();
+      if (typeof syncEditorViewportVisibility === "function") {
+        syncEditorViewportVisibility();
+      }
       if (typeof renderStudioCanvas === "function") {
         renderStudioCanvas();
       }
-    } else if (typeof autoResizeAllInspectorTextareas === "function") {
-      autoResizeAllInspectorTextareas(qs("#editor-context-panel") || document);
+    } else {
+      if (typeof syncEditorViewportVisibility === "function") {
+        syncEditorViewportVisibility();
+      }
+      if (typeof autoResizeAllInspectorTextareas === "function") {
+        autoResizeAllInspectorTextareas(qs("#editor-context-panel") || document);
+      }
     }
     return;
   }
@@ -773,21 +899,73 @@ async function sendServerAction(actionName, params) {
     resetEditorCanvasViewState();
   }
 
+  const wasSceneTextOpen = Boolean(qs("#modal-scene-text"));
+  const prevOpenRightPanels = new Set();
+  qsa("#editor-workspace-body > aside:not(.hidden)").forEach((el) => {
+    if (el.id) prevOpenRightPanels.add(el.id);
+  });
+  const prevModalFeed = qs(".scene-text-editor-feed");
+  const prevModalScrollTop = prevModalFeed ? prevModalFeed.scrollTop : null;
   const targetEl = qs(targetSelector) || qs("#app");
   if (targetEl) {
     targetEl.innerHTML = html;
     if (targetSelector === "#workspace") {
       const modalsRoot = qs("#modals-root");
       if (modalsRoot && modalsRoot.innerHTML !== "") {
-        modalsRoot.innerHTML = "";
+        const keepSceneText =
+          actionName !== "CloseSceneTextModal" &&
+          Boolean(qs("#view-editor", targetEl)) &&
+          Boolean(qs("#modal-scene-text", modalsRoot));
+        if (!keepSceneText) {
+          modalsRoot.innerHTML = "";
+        }
       }
+    }
+    qsa("#editor-workspace-body > aside:not(.hidden)").forEach((el) => {
+      if (el.id && !prevOpenRightPanels.has(el.id)) {
+        el.classList.add("is-entering");
+      }
+    });
+    const nextSceneTextModal = qs("#modal-scene-text");
+    if (nextSceneTextModal && !wasSceneTextOpen) {
+      nextSceneTextModal.classList.add("is-entering");
+    }
+    if (
+      nextSceneTextModal &&
+      nextSceneTextModal.classList.contains("mode-full") &&
+      (actionName === "ToggleBookSettings" ||
+        actionName === "ToggleEditorVariablesPanel" ||
+        actionName === "ToggleEditorBreakdownPanel" ||
+        actionName === "ToggleEditorHistoryPanel" ||
+        actionName === "OpenEditorHelpModal") &&
+      typeof isAnyEditorPanelOpen === "function" &&
+      isAnyEditorPanelOpen()
+    ) {
+      nextSceneTextModal.classList.remove("mode-full");
+      nextSceneTextModal.classList.add("mode-half");
+      const expandFullBtn = qs("#btn-expand-scene-text-full", nextSceneTextModal);
+      if (expandFullBtn) expandFullBtn.classList.remove("hidden");
     }
     syncFullscreenButtonState();
     syncTopbarToggleIcons();
     syncEditorHistoryHeaders(resp);
     syncBreakdownActBar(targetEl);
+    if (typeof syncEditorViewportVisibility === "function") {
+      syncEditorViewportVisibility();
+    }
     if (typeof autoResizeAllInspectorTextareas === "function") {
       autoResizeAllInspectorTextareas(targetEl);
+    }
+    const nextModalFeed = qs(".scene-text-editor-feed");
+    if (nextModalFeed && prevModalScrollTop !== null && actionName !== "OpenSceneTextModal" && actionName !== "NavigateSceneTextModal") {
+      nextModalFeed.scrollTop = prevModalScrollTop;
+    }
+    if (actionName === "AddBookVariable" && typeof lastSynRuleInputName === "string" && lastSynRuleInputName) {
+      const restoredInput = qs('input[name="' + lastSynRuleInputName + '"]', targetEl);
+      if (restoredInput && typeof positionAndShowSynDropdown === "function") {
+        restoredInput.focus();
+        positionAndShowSynDropdown(restoredInput);
+      }
     }
     const nextEditorViewport = qs("#timeline-scroll-viewport");
     if (nextEditorViewport && prevEditorScrollTop !== null) {
@@ -837,6 +1015,8 @@ async function sendServerAction(actionName, params) {
       if (modalTa) {
         modalTa.focus({ preventScroll: true });
       }
+    } else if (qs("#modal-scene-text") && typeof initSceneTextModalFeed === "function") {
+      initSceneTextModalFeed(false);
     }
   }
 }
@@ -920,6 +1100,27 @@ function bindDeclarativeActionBridge() {
     }
   });
 
+  document.addEventListener("pointermove", (e) => {
+    if (activeHintEl) return;
+    if (e.pointerType && e.pointerType !== "mouse" && e.pointerType !== "pen") {
+      return;
+    }
+    const t = e.target;
+    if (!t || !t.closest) return;
+    const hintEl = t.closest("[data-hint]");
+    if (!hintEl || !(hintEl.getAttribute("data-hint") || "").trim()) return;
+    activeHintEl = hintEl;
+    if (uiTooltipTimer) {
+      clearTimeout(uiTooltipTimer);
+    }
+    uiTooltipTimer = setTimeout(() => {
+      uiTooltipTimer = null;
+      if (activeHintEl === hintEl) {
+        positionAndShowUITooltip(hintEl);
+      }
+    }, 120);
+  });
+
   document.addEventListener("pointerout", (e) => {
     if (!activeHintEl) return;
     const rel = e.relatedTarget;
@@ -946,6 +1147,15 @@ function bindDeclarativeActionBridge() {
 
   document.addEventListener("keydown", (e) => {
     hideUITooltip();
+    let allowDevTools = false;
+    /* @dev-only-start */
+    allowDevTools = true;
+    /* @dev-only-end */
+    if (!allowDevTools && (e.key === "F12" || e.code === "F12")) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
     const inEditableField = Boolean(
       e.target &&
         e.target.closest &&
@@ -1144,6 +1354,56 @@ function bindDeclarativeActionBridge() {
     }
     e.preventDefault();
     e.stopPropagation();
+
+    if (actionName === "SetSceneTextWidthMode") {
+      const sceneModal = qs("#modal-scene-text");
+      const expandFullBtn = qs("#btn-expand-scene-text-full");
+      const reqMode = (target.getAttribute("data-mode") || "full").toLowerCase();
+      if (sceneModal) {
+        sceneModal.classList.remove("is-entering");
+        const toFull = reqMode === "full";
+        sceneModal.classList.toggle("mode-full", toFull);
+        sceneModal.classList.toggle("mode-half", !toFull);
+        if (expandFullBtn) {
+          expandFullBtn.classList.toggle("hidden", toFull);
+        }
+        if (typeof syncEditorViewportVisibility === "function") {
+          syncEditorViewportVisibility();
+        }
+        const modalTa = qs("#modal-scene-textarea", sceneModal);
+        if (modalTa && typeof autoResizeSceneTextarea === "function") {
+          autoResizeSceneTextarea(modalTa);
+          setTimeout(() => autoResizeSceneTextarea(modalTa), 240);
+        }
+        postServerActionSilent("SetSceneTextWidthMode", { mode: toFull ? "full" : "half" });
+        return;
+      }
+    }
+    if (actionName === "CloseSceneTextModal" && target.id === "btn-collapse-scene-text") {
+      const sceneModal = qs("#modal-scene-text");
+      if (sceneModal && sceneModal.classList.contains("mode-full")) {
+        sceneModal.classList.remove("is-entering", "mode-full");
+        sceneModal.classList.add("mode-half");
+        const expandFullBtn = qs("#btn-expand-scene-text-full");
+        if (expandFullBtn) {
+          expandFullBtn.classList.remove("hidden");
+        }
+        if (typeof syncEditorViewportVisibility === "function") {
+          syncEditorViewportVisibility();
+        }
+        const modalTa = qs("#modal-scene-textarea", sceneModal);
+        if (modalTa && typeof autoResizeSceneTextarea === "function") {
+          autoResizeSceneTextarea(modalTa);
+          setTimeout(() => autoResizeSceneTextarea(modalTa), 240);
+        }
+        postServerActionSilent("SetSceneTextWidthMode", { mode: "half" });
+        return;
+      }
+      if (sceneModal) {
+        sceneModal.classList.remove("is-entering");
+        sceneModal.classList.add("is-collapsing");
+      }
+    }
 
     const params = {};
     const isModalOnlyAction =

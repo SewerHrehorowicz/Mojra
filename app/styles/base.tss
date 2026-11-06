@@ -88,12 +88,12 @@ input, textarea
   gap 6px
 
 .btn-icon
-  width 13px
-  height 13px
+  width 15px
+  height 15px
 
 .node-close-btn
-  width 30px
-  height 30px
+  width 28px
+  height 28px
   display inline-flex
   align-items center
   justify-content center
@@ -117,16 +117,22 @@ input, textarea
   pointer-events none
 
 // Universal 4-Corner Selection for Single-Icon Toggles (without separate on/off icons)
-.top-action-btn, .scene-settings-toggle-btn, .deck-chip, .icon-toggle-btn
+.top-action-btn, .scene-settings-toggle-btn, .scene-preview-mode-btn, .choice-rule-toggle-btn, .choice-syntax-help-btn, .deck-chip, .icon-toggle-btn
   position relative
 
-.top-action-btn.active, .scene-settings-toggle-btn.active, .deck-chip.chip-active, .icon-toggle-btn.active
+.top-action-btn.active, .scene-settings-toggle-btn.active, .scene-preview-mode-btn.active, .choice-rule-toggle-btn.active, .choice-syntax-help-btn.active, .deck-chip.chip-active, .icon-toggle-btn.active
   color --text-primary
 
 .top-action-btn.active:not(#btn-toggle-imageless)::before,
 .top-action-btn.active:not(#btn-toggle-imageless)::after,
 .scene-settings-toggle-btn.active::before,
 .scene-settings-toggle-btn.active::after,
+.scene-preview-mode-btn.active::before,
+.scene-preview-mode-btn.active::after,
+.choice-rule-toggle-btn.active::before,
+.choice-rule-toggle-btn.active::after,
+.choice-syntax-help-btn.active::before,
+.choice-syntax-help-btn.active::after,
 .deck-chip.chip-active::before,
 .deck-chip.chip-active::after,
 .icon-toggle-btn.active::before,
@@ -142,6 +148,9 @@ input, textarea
 
 .top-action-btn.active:not(#btn-toggle-imageless)::before,
 .scene-settings-toggle-btn.active::before,
+.scene-preview-mode-btn.active::before,
+.choice-rule-toggle-btn.active::before,
+.choice-syntax-help-btn.active::before,
 .deck-chip.chip-active::before,
 .icon-toggle-btn.active::before
   top 0
@@ -155,6 +164,9 @@ input, textarea
 
 .top-action-btn.active:not(#btn-toggle-imageless)::after,
 .scene-settings-toggle-btn.active::after,
+.scene-preview-mode-btn.active::after,
+.choice-rule-toggle-btn.active::after,
+.choice-syntax-help-btn.active::after,
 .deck-chip.chip-active::after,
 .icon-toggle-btn.active::after
   bottom 0
@@ -178,16 +190,16 @@ body[data-ui-scale="large"]
     gap 6px
 
   .btn-icon
-    width 14px
-    height 14px
+    width 18px
+    height 18px
 
   .node-close-btn
-    width 38px
-    height 38px
+    width 32px
+    height 32px
 
   .node-close-icon
-    width 22px
-    height 22px
+    width 18px
+    height 18px
 
 // Shared Warning Callout
 .book-warnings-box

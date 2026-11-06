@@ -1,0 +1,391 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1680" height="1080" viewBox="0 0 1680 1080">
+  <defs>
+    <pattern id="grid24" width="24" height="24" patternUnits="userSpaceOnUse">
+      <path d="M 24 0 L 0 0 0 24" fill="none" stroke="#111111" stroke-width="1" />
+    </pattern>
+
+    <style>
+      .bg { fill: #000000; }
+      .card { fill: #050505; stroke: #222222; stroke-width: 1; }
+      .card-hi { fill: #070707; stroke: #484848; stroke-width: 1; }
+      .hdr { fill: #ffffff; font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif; font-size: 12px; font-weight: 700; letter-spacing: 2.2px; }
+      .sub { fill: #787878; font-family: "SF Mono", Menlo, monospace; font-size: 10px; letter-spacing: 1.4px; }
+      .num { fill: #ffffff; font-family: "SF Mono", Menlo, monospace; font-size: 11px; font-weight: 700; letter-spacing: 1.5px; }
+      .title { fill: #ffffff; font-family: Georgia, serif; font-size: 17px; font-weight: 400; }
+      .desc { fill: #808080; font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif; font-size: 12px; font-weight: 300; }
+      .tag { fill: #666666; font-family: "SF Mono", Menlo, monospace; font-size: 9.5px; letter-spacing: 1.2px; }
+      .file-badge { fill: #ffffff; font-family: "SF Mono", Menlo, monospace; font-size: 8px; font-weight: 700; letter-spacing: 1px; }
+      .file-badge-inv { fill: #000000; font-family: "SF Mono", Menlo, monospace; font-size: 8px; font-weight: 700; letter-spacing: 1px; }
+    </style>
+
+    <!-- =================================================================== -->
+    <!-- All icons authored on a 64x64 viewBox for organic curves & balance  -->
+    <!-- =================================================================== -->
+
+    <!-- 01: PEŁNY OBRYS KSIĘGI + DUŻY PLAY W OTWARTYM ŚWIETLE -->
+    <!-- Ciągły, nieprzerwany obrys otwartej księgi, brak środkowej kreski grzbietu, duży Play w centrum -->
+    <g id="pb-v1">
+      <path d="M 4 14 C 12 10.5, 23 11.5, 32 16.5 C 41 11.5, 52 10.5, 60 14 V 48 C 52 44.5, 41 45.5, 32 50.5 C 23 45.5, 12 44.5, 4 48 Z"
+        fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+      <path d="M 6 54 C 14 51, 24 52, 32 56.5 C 40 52, 50 51, 58 54"
+        fill="none" stroke="currentColor" stroke-width="2.0" stroke-linecap="round" stroke-linejoin="round" />
+      <path d="M 26 22.5 L 42.5 32.5 L 26 42.5 Z" fill="currentColor" />
+    </g>
+
+    <!-- 02: PŁYNNE FALE KART U PODSTAWY + WIELKI PLAY PONAD KSIĘGĄ -->
+    <!-- Kaligraficzny, miękki rozkład kartek na dole i duży znak Play w powietrzu nad nimi -->
+    <g id="pb-v2">
+      <!-- Large confident Play at top-center -->
+      <path d="M 24 8 L 45 20.5 L 24 33 Z" fill="currentColor" />
+      <!-- Upper flowing pages wave (generous 9px gap below Play) -->
+      <path d="M 4 41 C 13 38, 24 40.5, 32 46.5 C 40 40.5, 51 38, 60 41"
+        fill="none" stroke="currentColor" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round" />
+      <!-- Lower book cover wave -->
+      <path d="M 7 49.5 C 15 47, 25 49, 32 54.5 C 39 49, 49 47, 57 49.5"
+        fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+    </g>
+
+    <!-- 03: LEWA KARTA KSIĘGI + PRAWE SKRZYDŁO JAKO DUŻY PLAY (50/50 BALANS) -->
+    <!-- Lewa połowa to miękka karta otwartej księgi, prawa (oddzielona szerokim światłem) to duży Play -->
+    <g id="pb-v3">
+      <!-- Left organic page -->
+      <path d="M 6 13 C 13 10.5, 22 12, 28 16.5 V 51.5 C 22 47, 13 45.5, 6 48 Z"
+        fill="none" stroke="currentColor" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round" />
+      <!-- Subtle second leaf under left page -->
+      <path d="M 9 53.5 C 15 51.5, 22 52.5, 28 56"
+        fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+      <!-- Right large Play wing with wide 8px breathing gap from spine -->
+      <path d="M 36 15.5 L 59 32 L 36 48.5 Z" fill="currentColor" />
+    </g>
+
+    <!-- 04: OTWARTA KSIĘGA Z DUŻYM PLAY WYCHODZĄCYM W PRAWĄ STRONĘ -->
+    <!-- Miękki łuk otwartej książki, w którym prawa karta otwiera szeroką przestrzeń dla dużego Play -->
+    <g id="pb-v4">
+      <!-- Left full page -->
+      <path d="M 5 14 C 13 11, 24 12.5, 31 18 V 51 C 24 45.5, 13 44, 5 47 Z"
+        fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" />
+      <!-- Right top & bottom page curves framing the Play symbol from afar -->
+      <path d="M 31 18 C 37 13, 46 11.5, 55 13.5"
+        fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" />
+      <path d="M 31 51 C 37 46, 46 44.5, 55 46.5"
+        fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" />
+      <!-- Large Play symbol with generous air all around -->
+      <path d="M 38 20.5 L 58 32 L 38 43.5 Z" fill="currentColor" />
+    </g>
+
+    <!-- 05: DWIE MIĘKKIE KARTY (PERSPEKTYWA) + DUŻY PLAY PONAD GRZBIETEM -->
+    <!-- Książka leżąca w miękkiej perspektywie z dużym, pełnym oddechu znakiem Play -->
+    <g id="pb-v5">
+      <!-- Open book cradle with curved pages -->
+      <path d="M 5 26 C 14 24, 24 26.5, 32 32 C 40 26.5, 50 24, 59 26 L 55 49 C 47 47, 39 49, 32 54.5 C 25 49, 17 47, 9 49 Z"
+        fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+      <!-- Large Play floating above the open book with wide clearance -->
+      <path d="M 24.5 7.5 L 44.5 19.5 L 24.5 31.5 Z" fill="currentColor" />
+    </g>
+
+    <!-- 06: MIĘKKI MONOLIT KSIĘGI Z DUŻYM WYCIĘCIEM PLAY (WYSOKI KONTRAST) -->
+    <!-- Pełne, zaokrąglone karty księgi i bardzo duży Play w negatywie z szerokim światłem -->
+    <g id="pb-v6">
+      <path fill-rule="evenodd" clip-rule="evenodd"
+        d="M 5 14 C 14 10.5, 24 12, 32 17.5 C 40 12, 50 10.5, 59 14 V 49 C 50 45.5, 40 47, 32 52.5 C 24 47, 14 45.5, 5 49 Z M 24.5 20.5 L 44.5 32.5 L 24.5 44.5 Z"
+        fill="currentColor" />
+    </g>
+  </defs>
+
+  <!-- BACKGROUND -->
+  <rect width="1680" height="1080" class="bg" />
+  <rect width="1680" height="1080" fill="url(#grid24)" />
+
+  <!-- HEADER -->
+  <text x="56" y="52" class="hdr">MOJRA — NOWE PROPOZYCJE IKONY „PLAYBOOK” (MIĘKKA KSIĘGA, DUŻY PLAY, DUŻO ODDECHU, BEZ RAMKI)</text>
+  <text x="1624" y="52" text-anchor="end" class="sub">ZERO RAMKI [ ] • WIĘKSZY PLAY • ORGANICZNY KSZTAŁT KSIĄŻKI</text>
+  <line x1="56" y1="70" x2="1624" y2="70" stroke="#242424" stroke-width="1" />
+
+  <!-- ===================================================================== -->
+  <!-- ROW 1: WARIANTY 01, 02, 03                                            -->
+  <!-- ===================================================================== -->
+
+  <!-- CARD 01 (RECOMMENDED) -->
+  <g transform="translate(56, 96)">
+    <rect width="496" height="440" class="card-hi" />
+    <text x="24" y="34" class="num">01 / ROZCHYLONE KARTY + DUŻY PLAY W ŚWIETLE (REKOMENDOWANY)</text>
+    <text x="24" y="58" class="title">Brak środkowej kreski grzbietu — duży Play oddycha w centrum</text>
+    <text x="24" y="80" class="desc">Miękkie łuki stron po bokach i kołyska okładki u dołu. Zero ciasnoty.</text>
+    <line x1="24" y1="98" x2="472" y2="98" stroke="#222222" stroke-width="1" />
+
+    <!-- A. Standalone Web Trigger (NO bracket frame!) -->
+    <text x="96" y="132" text-anchor="middle" class="tag">SAMODZIELNA IKONA WWW</text>
+    <g transform="translate(64, 158)" color="#ffffff">
+      <use href="#pb-v1" />
+    </g>
+
+    <!-- B. OS File Icon (.playbook Dark & Light) -->
+    <text x="268" y="132" text-anchor="middle" class="tag">IKONA PLIKU .PLAYBOOK</text>
+    <g transform="translate(196, 150)" color="#ffffff">
+      <path d="M 0 0 H 46 L 62 16 V 80 H 0 Z" fill="#0a0a0a" stroke="#ffffff" stroke-width="1.5" />
+      <path d="M 46 0 V 16 H 62" fill="none" stroke="#ffffff" stroke-width="1.5" />
+      <g transform="translate(11, 14) scale(0.625)">
+        <use href="#pb-v1" />
+      </g>
+      <rect x="6" y="60" width="50" height="13" fill="#ffffff" />
+      <text x="31" y="69.5" text-anchor="middle" class="file-badge-inv">.PLAYBOOK</text>
+    </g>
+    <g transform="translate(278, 150)" color="#000000">
+      <path d="M 0 0 H 46 L 62 16 V 80 H 0 Z" fill="#ffffff" stroke="#000000" stroke-width="1.5" />
+      <path d="M 46 0 V 16 H 62" fill="none" stroke="#000000" stroke-width="1.5" />
+      <g transform="translate(11, 14) scale(0.625)">
+        <use href="#pb-v1" />
+      </g>
+      <rect x="6" y="60" width="50" height="13" fill="#000000" />
+      <text x="31" y="69.5" text-anchor="middle" class="file-badge">.PLAYBOOK</text>
+    </g>
+
+    <!-- C. Small UI Scale -->
+    <text x="424" y="132" text-anchor="middle" class="tag">SKALA 28PX</text>
+    <g transform="translate(410, 172) scale(0.4375)" color="#ffffff">
+      <use href="#pb-v1" />
+    </g>
+
+    <!-- Mini Landing Preview (NO brackets around icon!) -->
+    <rect x="24" y="264" width="448" height="152" fill="#000000" stroke="#1f1f1f" />
+    <text x="248" y="302" text-anchor="middle" fill="#ffffff" font-family="Georgia, serif" font-size="16">Każda opowieść ma więcej niż jedną nić.</text>
+    <text x="248" y="324" text-anchor="middle" fill="#777777" font-family="-apple-system, sans-serif" font-size="10">Kiedy słowo, głos i wybór splatają się w jedną żywą księgę.</text>
+    <g transform="translate(226, 348) scale(0.6875)" color="#ffffff">
+      <use href="#pb-v1" />
+    </g>
+  </g>
+
+  <!-- CARD 02 -->
+  <g transform="translate(592, 96)">
+    <rect width="496" height="440" class="card" />
+    <text x="24" y="34" class="num">02 / FALE OTWARTYCH KART + DUŻY PLAY PONAD KSIĘGĄ</text>
+    <text x="24" y="58" class="title">Miękka kaligraficzna podstawa księgi i duży Play nad nią</text>
+    <text x="24" y="80" class="desc">Najlżejsza forma — zero pionowych ścianek, czysty przepływ i duży Play.</text>
+    <line x1="24" y1="98" x2="472" y2="98" stroke="#222222" stroke-width="1" />
+
+    <text x="96" y="132" text-anchor="middle" class="tag">SAMODZIELNA IKONA WWW</text>
+    <g transform="translate(64, 158)" color="#ffffff">
+      <use href="#pb-v2" />
+    </g>
+
+    <text x="268" y="132" text-anchor="middle" class="tag">IKONA PLIKU .PLAYBOOK</text>
+    <g transform="translate(196, 150)" color="#ffffff">
+      <path d="M 0 0 H 46 L 62 16 V 80 H 0 Z" fill="#0a0a0a" stroke="#ffffff" stroke-width="1.5" />
+      <path d="M 46 0 V 16 H 62" fill="none" stroke="#ffffff" stroke-width="1.5" />
+      <g transform="translate(11, 14) scale(0.625)">
+        <use href="#pb-v2" />
+      </g>
+      <rect x="6" y="60" width="50" height="13" fill="#ffffff" />
+      <text x="31" y="69.5" text-anchor="middle" class="file-badge-inv">.PLAYBOOK</text>
+    </g>
+    <g transform="translate(278, 150)" color="#000000">
+      <path d="M 0 0 H 46 L 62 16 V 80 H 0 Z" fill="#ffffff" stroke="#000000" stroke-width="1.5" />
+      <path d="M 46 0 V 16 H 62" fill="none" stroke="#000000" stroke-width="1.5" />
+      <g transform="translate(11, 14) scale(0.625)">
+        <use href="#pb-v2" />
+      </g>
+      <rect x="6" y="60" width="50" height="13" fill="#000000" />
+      <text x="31" y="69.5" text-anchor="middle" class="file-badge">.PLAYBOOK</text>
+    </g>
+
+    <text x="424" y="132" text-anchor="middle" class="tag">SKALA 28PX</text>
+    <g transform="translate(410, 172) scale(0.4375)" color="#ffffff">
+      <use href="#pb-v2" />
+    </g>
+
+    <rect x="24" y="264" width="448" height="152" fill="#000000" stroke="#1f1f1f" />
+    <text x="248" y="302" text-anchor="middle" fill="#ffffff" font-family="Georgia, serif" font-size="16">Każda opowieść ma więcej niż jedną nić.</text>
+    <text x="248" y="324" text-anchor="middle" fill="#777777" font-family="-apple-system, sans-serif" font-size="10">Kiedy słowo, głos i wybór splatają się w jedną żywą księgę.</text>
+    <g transform="translate(226, 348) scale(0.6875)" color="#ffffff">
+      <use href="#pb-v2" />
+    </g>
+  </g>
+
+  <!-- CARD 03 -->
+  <g transform="translate(1128, 96)">
+    <rect width="496" height="440" class="card" />
+    <text x="24" y="34" class="num">03 / LEWA KARTA KSIĘGI + PRAWE SKRZYDŁO PLAY (50/50)</text>
+    <text x="24" y="58" class="title">Równa waga optyczna: miękka strona po lewej, duży Play po prawej</text>
+    <text x="24" y="80" class="desc">Szeroki kanał czystego światła pośrodku — nic się nie styka.</text>
+    <line x1="24" y1="98" x2="472" y2="98" stroke="#222222" stroke-width="1" />
+
+    <text x="96" y="132" text-anchor="middle" class="tag">SAMODZIELNA IKONA WWW</text>
+    <g transform="translate(64, 158)" color="#ffffff">
+      <use href="#pb-v3" />
+    </g>
+
+    <text x="268" y="132" text-anchor="middle" class="tag">IKONA PLIKU .PLAYBOOK</text>
+    <g transform="translate(196, 150)" color="#ffffff">
+      <path d="M 0 0 H 46 L 62 16 V 80 H 0 Z" fill="#0a0a0a" stroke="#ffffff" stroke-width="1.5" />
+      <path d="M 46 0 V 16 H 62" fill="none" stroke="#ffffff" stroke-width="1.5" />
+      <g transform="translate(11, 14) scale(0.625)">
+        <use href="#pb-v3" />
+      </g>
+      <rect x="6" y="60" width="50" height="13" fill="#ffffff" />
+      <text x="31" y="69.5" text-anchor="middle" class="file-badge-inv">.PLAYBOOK</text>
+    </g>
+    <g transform="translate(278, 150)" color="#000000">
+      <path d="M 0 0 H 46 L 62 16 V 80 H 0 Z" fill="#ffffff" stroke="#000000" stroke-width="1.5" />
+      <path d="M 46 0 V 16 H 62" fill="none" stroke="#000000" stroke-width="1.5" />
+      <g transform="translate(11, 14) scale(0.625)">
+        <use href="#pb-v3" />
+      </g>
+      <rect x="6" y="60" width="50" height="13" fill="#000000" />
+      <text x="31" y="69.5" text-anchor="middle" class="file-badge">.PLAYBOOK</text>
+    </g>
+
+    <text x="424" y="132" text-anchor="middle" class="tag">SKALA 28PX</text>
+    <g transform="translate(410, 172) scale(0.4375)" color="#ffffff">
+      <use href="#pb-v3" />
+    </g>
+
+    <rect x="24" y="264" width="448" height="152" fill="#000000" stroke="#1f1f1f" />
+    <text x="248" y="302" text-anchor="middle" fill="#ffffff" font-family="Georgia, serif" font-size="16">Każda opowieść ma więcej niż jedną nić.</text>
+    <text x="248" y="324" text-anchor="middle" fill="#777777" font-family="-apple-system, sans-serif" font-size="10">Kiedy słowo, głos i wybór splatają się w jedną żywą księgę.</text>
+    <g transform="translate(226, 348) scale(0.6875)" color="#ffffff">
+      <use href="#pb-v3" />
+    </g>
+  </g>
+
+  <!-- ===================================================================== -->
+  <!-- ROW 2: WARIANTY 04, 05, 06                                            -->
+  <!-- ===================================================================== -->
+
+  <!-- CARD 04 -->
+  <g transform="translate(56, 568)">
+    <rect width="496" height="440" class="card" />
+    <text x="24" y="34" class="num">04 / OTWARTA KSIĘGA Z WYŁANIAJĄCYM SIĘ DUŻYM PLAY</text>
+    <text x="24" y="58" class="title">Prawa karta otwiera się szeroko, wypuszczając duży znak Play</text>
+    <text x="24" y="80" class="desc">Dynamiczny kierunek w prawo i duża przestrzeń wokół trójkąta.</text>
+    <line x1="24" y1="98" x2="472" y2="98" stroke="#222222" stroke-width="1" />
+
+    <text x="96" y="132" text-anchor="middle" class="tag">SAMODZIELNA IKONA WWW</text>
+    <g transform="translate(64, 158)" color="#ffffff">
+      <use href="#pb-v4" />
+    </g>
+
+    <text x="268" y="132" text-anchor="middle" class="tag">IKONA PLIKU .PLAYBOOK</text>
+    <g transform="translate(196, 150)" color="#ffffff">
+      <path d="M 0 0 H 46 L 62 16 V 80 H 0 Z" fill="#0a0a0a" stroke="#ffffff" stroke-width="1.5" />
+      <path d="M 46 0 V 16 H 62" fill="none" stroke="#ffffff" stroke-width="1.5" />
+      <g transform="translate(11, 14) scale(0.625)">
+        <use href="#pb-v4" />
+      </g>
+      <rect x="6" y="60" width="50" height="13" fill="#ffffff" />
+      <text x="31" y="69.5" text-anchor="middle" class="file-badge-inv">.PLAYBOOK</text>
+    </g>
+    <g transform="translate(278, 150)" color="#000000">
+      <path d="M 0 0 H 46 L 62 16 V 80 H 0 Z" fill="#ffffff" stroke="#000000" stroke-width="1.5" />
+      <path d="M 46 0 V 16 H 62" fill="none" stroke="#000000" stroke-width="1.5" />
+      <g transform="translate(11, 14) scale(0.625)">
+        <use href="#pb-v4" />
+      </g>
+      <rect x="6" y="60" width="50" height="13" fill="#000000" />
+      <text x="31" y="69.5" text-anchor="middle" class="file-badge">.PLAYBOOK</text>
+    </g>
+
+    <text x="424" y="132" text-anchor="middle" class="tag">SKALA 28PX</text>
+    <g transform="translate(410, 172) scale(0.4375)" color="#ffffff">
+      <use href="#pb-v4" />
+    </g>
+
+    <rect x="24" y="264" width="448" height="152" fill="#000000" stroke="#1f1f1f" />
+    <text x="248" y="302" text-anchor="middle" fill="#ffffff" font-family="Georgia, serif" font-size="16">Każda opowieść ma więcej niż jedną nić.</text>
+    <text x="248" y="324" text-anchor="middle" fill="#777777" font-family="-apple-system, sans-serif" font-size="10">Kiedy słowo, głos i wybór splatają się w jedną żywą księgę.</text>
+    <g transform="translate(226, 348) scale(0.6875)" color="#ffffff">
+      <use href="#pb-v4" />
+    </g>
+  </g>
+
+  <!-- CARD 05 -->
+  <g transform="translate(592, 568)">
+    <rect width="496" height="440" class="card" />
+    <text x="24" y="34" class="num">05 / KSIĘGA W PERSPEKTYWIE + UNOSZĄCY SIĘ DUŻY PLAY</text>
+    <text x="24" y="58" class="title">Rozłożone karty w lekkiej perspektywie i duży Play u góry</text>
+    <text x="24" y="80" class="desc">Miękkie łuki stron zamiast sztywnego pudełka, duży Play nad grzbietem.</text>
+    <line x1="24" y1="98" x2="472" y2="98" stroke="#222222" stroke-width="1" />
+
+    <text x="96" y="132" text-anchor="middle" class="tag">SAMODZIELNA IKONA WWW</text>
+    <g transform="translate(64, 158)" color="#ffffff">
+      <use href="#pb-v5" />
+    </g>
+
+    <text x="268" y="132" text-anchor="middle" class="tag">IKONA PLIKU .PLAYBOOK</text>
+    <g transform="translate(196, 150)" color="#ffffff">
+      <path d="M 0 0 H 46 L 62 16 V 80 H 0 Z" fill="#0a0a0a" stroke="#ffffff" stroke-width="1.5" />
+      <path d="M 46 0 V 16 H 62" fill="none" stroke="#ffffff" stroke-width="1.5" />
+      <g transform="translate(11, 14) scale(0.625)">
+        <use href="#pb-v5" />
+      </g>
+      <rect x="6" y="60" width="50" height="13" fill="#ffffff" />
+      <text x="31" y="69.5" text-anchor="middle" class="file-badge-inv">.PLAYBOOK</text>
+    </g>
+    <g transform="translate(278, 150)" color="#000000">
+      <path d="M 0 0 H 46 L 62 16 V 80 H 0 Z" fill="#ffffff" stroke="#000000" stroke-width="1.5" />
+      <path d="M 46 0 V 16 H 62" fill="none" stroke="#000000" stroke-width="1.5" />
+      <g transform="translate(11, 14) scale(0.625)">
+        <use href="#pb-v5" />
+      </g>
+      <rect x="6" y="60" width="50" height="13" fill="#000000" />
+      <text x="31" y="69.5" text-anchor="middle" class="file-badge">.PLAYBOOK</text>
+    </g>
+
+    <text x="424" y="132" text-anchor="middle" class="tag">SKALA 28PX</text>
+    <g transform="translate(410, 172) scale(0.4375)" color="#ffffff">
+      <use href="#pb-v5" />
+    </g>
+
+    <rect x="24" y="264" width="448" height="152" fill="#000000" stroke="#1f1f1f" />
+    <text x="248" y="302" text-anchor="middle" fill="#ffffff" font-family="Georgia, serif" font-size="16">Każda opowieść ma więcej niż jedną nić.</text>
+    <text x="248" y="324" text-anchor="middle" fill="#777777" font-family="-apple-system, sans-serif" font-size="10">Kiedy słowo, głos i wybór splatają się w jedną żywą księgę.</text>
+    <g transform="translate(226, 348) scale(0.6875)" color="#ffffff">
+      <use href="#pb-v5" />
+    </g>
+  </g>
+
+  <!-- CARD 06 -->
+  <g transform="translate(1128, 568)">
+    <rect width="496" height="440" class="card" />
+    <text x="24" y="34" class="num">06 / MIĘKKA SYLWETKA KSIĘGI Z DUŻYM WYCIĘCIEM PLAY</text>
+    <text x="24" y="58" class="title">Zaokrąglone łuki kart i duży Play wycięty w negatywie</text>
+    <text x="24" y="80" class="desc">Miękka, literacka sylwetka z ogromnym znakiem Play w środku.</text>
+    <line x1="24" y1="98" x2="472" y2="98" stroke="#222222" stroke-width="1" />
+
+    <text x="96" y="132" text-anchor="middle" class="tag">SAMODZIELNA IKONA WWW</text>
+    <g transform="translate(64, 158)" color="#ffffff">
+      <use href="#pb-v6" />
+    </g>
+
+    <text x="268" y="132" text-anchor="middle" class="tag">IKONA PLIKU .PLAYBOOK</text>
+    <g transform="translate(196, 150)" color="#ffffff">
+      <path d="M 0 0 H 46 L 62 16 V 80 H 0 Z" fill="#0a0a0a" stroke="#ffffff" stroke-width="1.5" />
+      <path d="M 46 0 V 16 H 62" fill="none" stroke="#ffffff" stroke-width="1.5" />
+      <g transform="translate(11, 14) scale(0.625)">
+        <use href="#pb-v6" />
+      </g>
+      <rect x="6" y="60" width="50" height="13" fill="#ffffff" />
+      <text x="31" y="69.5" text-anchor="middle" class="file-badge-inv">.PLAYBOOK</text>
+    </g>
+    <g transform="translate(278, 150)" color="#000000">
+      <path d="M 0 0 H 46 L 62 16 V 80 H 0 Z" fill="#ffffff" stroke="#000000" stroke-width="1.5" />
+      <path d="M 46 0 V 16 H 62" fill="none" stroke="#000000" stroke-width="1.5" />
+      <g transform="translate(11, 14) scale(0.625)">
+        <use href="#pb-v6" />
+      </g>
+      <rect x="6" y="60" width="50" height="13" fill="#000000" />
+      <text x="31" y="69.5" text-anchor="middle" class="file-badge">.PLAYBOOK</text>
+    </g>
+
+    <text x="424" y="132" text-anchor="middle" class="tag">SKALA 28PX</text>
+    <g transform="translate(410, 172) scale(0.4375)" color="#ffffff">
+      <use href="#pb-v6" />
+    </g>
+
+    <rect x="24" y="264" width="448" height="152" fill="#000000" stroke="#1f1f1f" />
+    <text x="248" y="302" text-anchor="middle" fill="#ffffff" font-family="Georgia, serif" font-size="16">Każda opowieść ma więcej niż jedną nić.</text>
+    <text x="248" y="324" text-anchor="middle" fill="#777777" font-family="-apple-system, sans-serif" font-size="10">Kiedy słowo, głos i wybór splatają się w jedną żywą księgę.</text>
+    <g transform="translate(226, 348) scale(0.6875)" color="#ffffff">
+      <use href="#pb-v6" />
+    </g>
+  </g>
+</svg>

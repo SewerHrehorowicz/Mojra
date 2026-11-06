@@ -8,7 +8,7 @@ html lang: pl
         {if standalone_mode}
             title {active_book_title}
         {else}
-            title "Mojra — Interaktywne Książki i Audiobooki"
+            title "Mojra"
         link
             rel: icon
             type: image/png
@@ -29,32 +29,28 @@ html lang: pl
         {if dev_mode}
             .device-stage#device-stage data-preview: "{preview_mode}"
                 .device-preview-bar
-                    span.preview-bar-label "Widok ekranu:"
-                    button.preview-mode-btn .active?: {preview_mode == "full"}
-                        type: button
-                        action: SetDeviceMode
-                        data-mode: full
-                        "Pełny ekran"
                     button.preview-mode-btn .active?: {preview_mode == "portrait"}
                         type: button
                         action: SetDeviceMode
                         data-mode: portrait
-                        "Telefon (Pionowo)"
-                    button.preview-mode-btn .active?: {preview_mode == "landscape"}
+                        aria-label: "Telefon"
+                        svg.preview-device-icon src: /icons/device-phone.svg
+                    button.preview-mode-btn .active?: {preview_mode == "tablet"}
                         type: button
                         action: SetDeviceMode
-                        data-mode: landscape
-                        "Telefon (Poziomo)"
-                    button.preview-mode-btn
+                        data-mode: tablet
+                        aria-label: "Tablet"
+                        svg.preview-device-icon src: /icons/device-tablet.svg
+                    button.preview-mode-btn .active?: {preview_mode == "full"}
                         type: button
-                        action: ExtractEmbeddedBook
-                        "Wypakuj wbudowaną książkę"
+                        action: SetDeviceMode
+                        data-mode: full
+                        aria-label: "Desktop"
+                        svg.preview-device-icon src: /icons/device-desktop.svg
 
                 .device-frame
-                    .device-notch
                     #app.app-root
                         @app_shell
-                    .device-home-bar
         {else}
             #app.app-root
                 @app_shell

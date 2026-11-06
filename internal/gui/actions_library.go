@@ -12,18 +12,169 @@ import (
 )
 
 func (s *Server) openBook(r *http.Request) string {
+	if !s.isHistoryPreview() && r.FormValue("scene_id") != "" {
+		_ = s.saveSceneFromForm(r)
+	}
 	bookID := book.SanitizeBookID(r.FormValue("book"))
 	targetView := strings.TrimSpace(r.FormValue("view"))
+	if targetView == "" {
+		targetView = strings.TrimSpace(r.FormValue("target_view"))
+	}
 	if targetView != "editor" {
 		targetView = "player"
 	}
 	if b, err := s.findBookByID(bookID); err == nil && b != nil {
-		s.setActiveBook(b)
-		s.Settings.ActiveView = targetView
+		if targetView == "editor" {
+			return s.openBookInStudio(b)
+		}
+		s.setPlayerBook(b)
+		s.Settings.ActiveView = "player"
 		s.closeAllModals()
 		_ = book.SaveAppSettings(s.SavesDir, s.Settings)
 	}
 	return ""
+}
+
+func (s *Server) openBookInStudio(b *book.Book) string {
+	if b == nil {
+		return ""
+	}
+	if b.IsPacked {
+		return s.promptUnpackPlaybookForStudio(b)
+	}
+	s.setActiveBook(b)
+	s.Settings.ActiveView = "editor"
+	s.closeAllModals()
+	_ = book.SaveAppSettings(s.SavesDir, s.Settings)
+	if strings.TrimSpace(b.License) != "" {
+		return fmt.Sprintf("Otwarto projekt w Studio: %s (Licencja: %s)", b.Title, b.License)
+	}
+	return "Otwarto projekt w Studio: " + b.Title
+}
+
+func (s *Server) promptUnpackPlaybookForStudio(b *book.Book) string {
+	if b == nil {
+		return ""
+	}
+	s.closeAllModals()
+	s.Settings.ActiveView = "editor"
+	_ = book.SaveAppSettings(s.SavesDir, s.Settings)
+	author := strings.TrimSpace(b.Author)
+	if author == "" {
+		author = "Autor Nieznany"
+	}
+	s.ConfirmTitle = "Pakiet wydawniczy .playbook (tylko do odczytu)"
+	s.ConfirmMessage = fmt.Sprintf(
+		"Plik „%s” jest zamkniętym pakietem wydawniczym przeznaczonym do odczytu w Czytniku.\nAutor: %s | Licencja: %s\n\nWszelka modyfikacja lub rozpowszechnianie podlegają prawom autorskim twórcy. Czy chcesz wypakować osobną kopię roboczą do edycji w Studio?",
+		b.Title,
+		author,
+		b.EffectiveLicense(),
+	)
+	s.ConfirmPendingAction = "UnpackPlaybookForStudio"
+	s.ConfirmPendingParam = b.RootPath
+	return ""
+}
+
+func (s *Server) unpackPlaybookWorkingCopyForStudio(archivePath string) string {
+	cleanArchive := filepath.Clean(strings.TrimSpace(archivePath))
+	if cleanArchive == "" || cleanArchive == "." {
+		return "Brak ścieżki archiwum .playbook"
+	}
+	packedBook, err := book.LoadBookFromPath(cleanArchive)
+	if err != nil || packedBook == nil {
+		return "Nie udało się odczytać archiwum .playbook"
+	}
+	projectsDir := s.defaultNewBookDir()
+	if projectsDir == "" {
+		projectsDir = s.BooksDir
+	}
+	_ = os.MkdirAll(projectsDir, 0755)
+	baseID := book.SanitizeBookID(packedBook.ID)
+	if baseID == "" {
+		baseID = "projekt"
+	}
+	targetDir := filepath.Join(projectsDir, baseID)
+	if _, statErr := os.Stat(targetDir); statErr == nil {
+		for seq := 1; seq <= 99; seq++ {
+			candID := fmt.Sprintf("%s-kopia", baseID)
+			if seq > 1 {
+				candID = fmt.Sprintf("%s-kopia-%d", baseID, seq)
+			}
+			candDir := filepath.Join(projectsDir, candID)
+			if _, cErr := os.Stat(candDir); os.IsNotExist(cErr) {
+				baseID = candID
+				targetDir = candDir
+				break
+			}
+		}
+	}
+	if err := book.UnpackBookZip(cleanArchive, targetDir); err != nil {
+		return "Błąd wypakowywania kopii roboczej: " + err.Error()
+	}
+	unpacked, err := book.LoadBookFromPath(targetDir)
+	if err != nil || unpacked == nil {
+		return "Błąd wczytywania wypakowanego projektu"
+	}
+	if filepath.Clean(filepath.Dir(unpacked.RootPath)) != filepath.Clean(s.BooksDir) {
+		s.Settings.AddExternalBook(unpacked.RootPath)
+		unpacked.IsExternal = true
+	}
+	s.setActiveBook(unpacked)
+	s.Settings.ActiveView = "editor"
+	s.closeAllModals()
+	_ = book.SaveAppSettings(s.SavesDir, s.Settings)
+	return fmt.Sprintf("Wypakowano kopię roboczą do Studio: %s (%s)", unpacked.Title, unpacked.EffectiveLicense())
+}
+
+func (s *Server) openStudioProjectAction(r *http.Request) string {
+	bookID := book.SanitizeBookID(r.FormValue("book"))
+	if b, err := s.findBookByID(bookID); err == nil && b != nil {
+		return s.openBookInStudio(b)
+	}
+	return "Nie znaleziono projektu"
+}
+
+func (s *Server) browseOpenStudioProject(r *http.Request) string {
+	mode := strings.ToLower(strings.TrimSpace(r.FormValue("mode")))
+	chooseDir := mode != "file"
+	s.mu.Unlock()
+	picked := PickNativeBookPath(chooseDir)
+	s.mu.Lock()
+	if picked != "" {
+		return s.openStudioProjectFromDiskPath(picked)
+	}
+	return ""
+}
+
+func (s *Server) openStudioProjectFromDisk(r *http.Request) string {
+	rawPath := strings.TrimSpace(r.FormValue("path"))
+	return s.openStudioProjectFromDiskPath(rawPath)
+}
+
+func (s *Server) openStudioProjectFromDiskPath(rawPath string) string {
+	resolvedPaths, err := book.ResolveDiskBookPaths(rawPath)
+	if err != nil {
+		return err.Error()
+	}
+	firstPath := filepath.Clean(resolvedPaths[0])
+	loaded, err := book.LoadBookFromPath(firstPath)
+	if err != nil || loaded == nil {
+		if err != nil {
+			return err.Error()
+		}
+		return "Nie udało się otworzyć projektu"
+	}
+	if loaded.IsPacked {
+		return s.promptUnpackPlaybookForStudio(loaded)
+	}
+	if filepath.Clean(filepath.Dir(firstPath)) != filepath.Clean(s.BooksDir) {
+		s.Settings.AddExternalBook(firstPath)
+		loaded.IsExternal = true
+	}
+	if reloaded, rErr := s.findBookByID(loaded.ID); rErr == nil && reloaded != nil && !reloaded.IsPacked {
+		loaded = reloaded
+	}
+	return s.openBookInStudio(loaded)
 }
 
 func (s *Server) browseAddBookFromDisk(r *http.Request) string {
@@ -276,7 +427,7 @@ func (s *Server) addBookFromDiskPath(rawPath string) string {
 		}
 	}
 	if firstAdded != nil {
-		s.setActiveBook(firstAdded)
+		s.setPlayerBook(firstAdded)
 	}
 	_ = book.SaveAppSettings(s.SavesDir, s.Settings)
 
@@ -303,9 +454,9 @@ func (s *Server) addBookFromURL(rawURL string) string {
 	}
 	s.AddBookModalOpen = false
 	if reloaded, rErr := s.findBookByID(downloaded.ID); rErr == nil && reloaded != nil {
-		s.setActiveBook(reloaded)
+		s.setPlayerBook(reloaded)
 	} else {
-		s.setActiveBook(downloaded)
+		s.setPlayerBook(downloaded)
 	}
 	_ = book.SaveAppSettings(s.SavesDir, s.Settings)
 	return "Pobrano książkę z URL: " + downloaded.Title
@@ -388,12 +539,15 @@ func (s *Server) removeBookByID(bookID string) string {
 		msg = "Usunięto książkę: " + b.Title
 	}
 
-	if s.ActiveBook != nil && s.ActiveBook.ID == b.ID {
-		s.ActiveBook = nil
-		s.Save = nil
+	if s.PlayerBook != nil && s.PlayerBook.ID == b.ID {
+		s.setPlayerBook(nil)
 		if remaining, err := s.loadBooks(); err == nil && len(remaining) > 0 {
-			s.setActiveBook(remaining[0])
+			s.setPlayerBook(remaining[0])
 		}
+		_ = book.SaveAppSettings(s.SavesDir, s.Settings)
+	}
+	if s.ActiveBook != nil && s.ActiveBook.ID == b.ID {
+		s.setActiveBook(nil)
 		_ = book.SaveAppSettings(s.SavesDir, s.Settings)
 	}
 	return msg
@@ -404,7 +558,7 @@ func (s *Server) extractEmbeddedDefaultBook() string {
 		return "Brak wbudowanego systemu plików z książką"
 	}
 	const embedPrefix = "books/nie-boj-sie-policji-rzecznej"
-	if _, err := fs.Stat(s.EmbeddedFS, embedPrefix+"/data.txt"); err != nil {
+	if _, err := fs.Stat(s.EmbeddedFS, embedPrefix+"/"+book.BookDataFileName); err != nil {
 		return "Wbudowana książka nie została znaleziona w binarium"
 	}
 

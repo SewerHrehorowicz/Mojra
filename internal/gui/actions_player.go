@@ -11,11 +11,11 @@ import (
 )
 
 func (s *Server) saveAudioTime(r *http.Request) string {
-	if s.ActiveBook != nil && s.Save != nil {
+	if s.PlayerBook != nil && s.Save != nil {
 		if t, err := strconv.ParseFloat(r.FormValue("time"), 64); err == nil && t >= 0 {
 			s.Save.AudioTime = t
 			if !s.isHistoryPreview() {
-				_ = book.UpdateSaveAudioTimeInPlace(s.SavesDir, s.ActiveBook.ID, t, s.ActiveBook.StartSceneID)
+				_ = book.UpdateSaveAudioTimeInPlace(s.SavesDir, s.PlayerBook.ID, t, s.PlayerBook.StartSceneID)
 			}
 		}
 	}
@@ -75,6 +75,9 @@ func (s *Server) focusPresent(_ *http.Request) string {
 func (s *Server) rewindStepNow(r *http.Request) string {
 	if stepIdx, err := strconv.Atoi(r.FormValue("step")); err == nil && s.Save != nil && stepIdx >= 0 && stepIdx < len(s.Save.History) {
 		targetSceneID := s.Save.History[stepIdx].SceneID
+		if len(s.Save.History[stepIdx].Variables) > 0 {
+			s.Save.Variables = book.CloneVariablesMap(s.Save.History[stepIdx].Variables)
+		}
 		s.Save.History = s.Save.History[:stepIdx]
 		s.Save.CurrentSceneID = targetSceneID
 		s.Save.AudioTime = 0
@@ -90,7 +93,7 @@ func (s *Server) promptRewindStep(r *http.Request) string {
 	if stepIdx, err := strconv.Atoi(r.FormValue("step")); err == nil && s.Save != nil && stepIdx >= 0 && stepIdx < len(s.Save.History) {
 		entry := s.Save.History[stepIdx]
 		sceneName := entry.SceneName
-		if sc := s.findScene(entry.SceneID); sc != nil {
+		if sc := s.findPlayerScene(entry.SceneID); sc != nil {
 			sceneName = sc.DisplayName()
 		}
 		if sceneName == "" {
@@ -105,7 +108,7 @@ func (s *Server) promptRewindStep(r *http.Request) string {
 }
 
 func (s *Server) promptResetProgress(r *http.Request) string {
-	targetBook := s.ActiveBook
+	targetBook := s.PlayerBook
 	if reqBookID := strings.TrimSpace(r.FormValue("book")); reqBookID != "" {
 		if found, err := s.findBookByID(book.SanitizeBookID(reqBookID)); err == nil && found != nil {
 			targetBook = found
@@ -175,11 +178,23 @@ func (s *Server) playFromScene(r *http.Request) string {
 	if scID := strings.TrimSpace(r.FormValue("scene")); scID != "" {
 		s.SelectedSceneID = scID
 	}
-	if s.ActiveBook != nil && s.Save != nil && s.SelectedSceneID != "" {
-		s.Save.CurrentSceneID = s.SelectedSceneID
-		s.Save.AudioTime = 0
-		if !s.isHistoryPreview() {
-			_ = book.WriteSaveState(s.SavesDir, s.Save)
+	if s.ActiveBook != nil && s.SelectedSceneID != "" {
+		if !s.isHistoryPreview() && (s.PlayerBook == nil || s.PlayerBook.ID != s.ActiveBook.ID || s.Save == nil) {
+			s.setPlayerBook(s.ActiveBook)
+		} else if s.PlayerBook == nil {
+			s.PlayerBook = s.ActiveBook
+		}
+		if s.Save != nil {
+			s.Save.CurrentSceneID = s.SelectedSceneID
+			s.Save.AudioTime = 0
+			if len(s.SceneTextTestVars) > 0 {
+				s.Save.Variables = book.EnsureSaveVariables(s.PlayerBook, s.SceneTextTestVars)
+			} else {
+				s.Save.Variables = book.EnsureSaveVariables(s.PlayerBook, s.Save.Variables)
+			}
+			if !s.isHistoryPreview() {
+				_ = book.WriteSaveState(s.SavesDir, s.Save)
+			}
 		}
 		s.Settings.ActiveView = "player"
 		s.SceneTextModalID = ""
@@ -189,6 +204,13 @@ func (s *Server) playFromScene(r *http.Request) string {
 }
 
 func (s *Server) executeChoiceTransition(fromScene *book.Scene, choice book.Choice) string {
+	if s.PlayerBook == nil || s.Save == nil {
+		return ""
+	}
+	s.Save.Variables = book.EnsureSaveVariables(s.PlayerBook, s.Save.Variables)
+	if !book.EvaluateCondition(choice.Condition, s.Save.Variables, s.PlayerBook) {
+		return ""
+	}
 	if choice.IsEnding || choice.TargetSceneID == "END" {
 		s.ConfirmTitle = "Zakończenie opowieści"
 		s.ConfirmMessage = "Dotarłeś do zakończenia tej ścieżki. Czy chcesz zresetować postęp i rozpocząć od pierwszej sceny?"
@@ -196,9 +218,17 @@ func (s *Server) executeChoiceTransition(fromScene *book.Scene, choice book.Choi
 		s.ConfirmPendingParam = ""
 		return ""
 	}
-	nextScene := s.findScene(choice.TargetSceneID)
+	nextScene := s.findPlayerScene(choice.TargetSceneID)
 	if nextScene == nil {
 		return "Nie znaleziono docelowej sceny: " + choice.Target
+	}
+
+	prevVarsSnapshot := book.CloneVariablesMap(s.Save.Variables)
+	if choice.Effects != "" {
+		book.ApplyEffects(choice.Effects, s.Save.Variables, s.PlayerBook)
+	}
+	if nextScene.Effects != "" {
+		book.ApplyEffects(nextScene.Effects, s.Save.Variables, s.PlayerBook)
 	}
 
 	s.Save.History = append(s.Save.History, book.HistoryEntry{
@@ -208,10 +238,10 @@ func (s *Server) executeChoiceTransition(fromScene *book.Scene, choice book.Choi
 		Chapter:       fromScene.Chapter,
 		ChoiceLabel:   choice.Label,
 		TargetSceneID: nextScene.ID,
+		Variables:     prevVarsSnapshot,
 	})
 	s.Save.CurrentSceneID = nextScene.ID
 	s.Save.AudioTime = 0
-	s.SelectedSceneID = nextScene.ID
 	s.HistoryRevealed = false
 	s.FocusedHistoryIdx = -1
 	if !s.isHistoryPreview() {

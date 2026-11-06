@@ -50,23 +50,30 @@ func (s *Server) BuildTargetedRenderContext(targetTpl string, books []*book.Book
 	}
 
 	uiScale := s.Settings.UIScale
-	if uiScale != "large" {
+	if uiScale != "large" && uiScale != "zen" {
 		uiScale = "small"
 	}
 	vars["ui_scale"] = uiScale
+	vars["is_small_ui"] = uiScale == "small"
 	vars["is_large_ui"] = uiScale == "large"
-	if uiScale == "large" {
-		vars["ui_scale_toggle_title"] = "Pomniejsz przyciski i kontrolki (- / Ctrl+-)"
-	} else {
+	vars["is_zen_ui"] = uiScale == "zen"
+	vars["is_non_small_ui"] = uiScale != "small"
+	switch uiScale {
+	case "large":
+		vars["ui_scale_toggle_title"] = "Tryb Zen — sama treść"
+	case "zen":
+		vars["ui_scale_toggle_title"] = "Wyjdź z trybu Zen (małe UI)"
+	default:
 		vars["ui_scale_toggle_title"] = "Powiększ przyciski i kontrolki (+ / Ctrl++)"
 	}
 
 	vars["standalone_mode"] = s.StandaloneMode
-	vars["has_active_book"] = s.ActiveBook != nil
+	vars["has_active_book"] = s.PlayerBook != nil
+	vars["has_editor_book"] = s.ActiveBook != nil
 	vars["dev_mode"] = s.DevMode
 	if s.DevMode {
 		previewMode := s.Settings.PreviewMode
-		if previewMode != "portrait" && previewMode != "landscape" {
+		if previewMode != "portrait" && previewMode != "tablet" && previewMode != "landscape" {
 			previewMode = "full"
 		}
 		vars["preview_mode"] = previewMode
@@ -77,7 +84,7 @@ func (s *Server) BuildTargetedRenderContext(targetTpl string, books []*book.Book
 	view := s.Settings.ActiveView
 	if s.StandaloneMode {
 		view = "player"
-	} else if view == "player" && s.ActiveBook == nil {
+	} else if view == "player" && s.PlayerBook == nil {
 		view = "library"
 	}
 	vars["is_view_library"] = view == "library"
@@ -86,20 +93,30 @@ func (s *Server) BuildTargetedRenderContext(targetTpl string, books []*book.Book
 
 	vars["default_new_book_dir"] = s.defaultNewBookDir()
 	vars["default_export_dir"] = s.defaultExportDir()
-	isScreenplay := false
-	if s.ActiveBook != nil {
-		vars["active_book_title"] = s.ActiveBook.Title
-		vars["active_book_save_dir"] = s.ActiveBook.RootPath
-		vars["active_book_export_dir"] = s.ActiveBook.ExportDir
-		isScreenplay = s.ActiveBook.IsScreenplay()
-		vars["is_screenplay_mode"] = isScreenplay
-		vars["script_standard"] = s.ActiveBook.NormalizedStandard()
+	if s.PlayerBook != nil {
+		vars["active_book_title"] = s.PlayerBook.Title
 	} else {
 		vars["active_book_title"] = "Biblioteka"
+	}
+	isScreenplay := false
+	if s.ActiveBook != nil {
+		vars["editor_book_title"] = s.ActiveBook.Title
+		vars["active_book_save_dir"] = s.ActiveBook.RootPath
+		vars["active_book_export_dir"] = s.ActiveBook.ExportDir
+		vars["active_book_license"] = s.ActiveBook.License
+		isScreenplay = s.ActiveBook.IsScreenplay()
+		vars["script_standard"] = s.ActiveBook.NormalizedStandard()
+	} else {
+		vars["editor_book_title"] = ""
 		vars["active_book_save_dir"] = ""
 		vars["active_book_export_dir"] = ""
-		vars["is_screenplay_mode"] = false
+		vars["active_book_license"] = ""
 		vars["script_standard"] = "pl"
+	}
+	if view == "player" && s.PlayerBook != nil {
+		vars["is_screenplay_mode"] = s.PlayerBook.IsScreenplay()
+	} else {
+		vars["is_screenplay_mode"] = isScreenplay
 	}
 	if isScreenplay {
 		vars["editor_title_placeholder"] = "Tytuł scenariusza..."
@@ -117,7 +134,7 @@ func (s *Server) BuildTargetedRenderContext(targetTpl string, books []*book.Book
 		vars["editor_settings_hint"] = "Ustawienia książki"
 	}
 
-	vars["show_reset_progress"] = view == "player" && s.ActiveBook != nil
+	vars["show_reset_progress"] = view == "player" && s.PlayerBook != nil
 	isHistPreview := s.isHistoryPreview()
 	vars["is_history_preview"] = isHistPreview
 	if isHistPreview {
@@ -138,7 +155,12 @@ func (s *Server) BuildTargetedRenderContext(targetTpl string, books []*book.Book
 		s.populateLibraryContext(vars, books)
 	}
 
-	if s.ActiveBook != nil && len(s.ActiveBook.Scenes) > 0 && (needsPlayer || needsEditorFull || needsEditorPanelOnly) {
+	if needsPlayer && s.PlayerBook != nil && len(s.PlayerBook.Scenes) > 0 {
+		s.populatePlayerContext(vars)
+	}
+
+	if s.ActiveBook != nil && len(s.ActiveBook.Scenes) > 0 && (needsEditorFull || needsEditorPanelOnly) {
+		vars["is_screenplay_mode"] = s.ActiveBook.IsScreenplay()
 		warnItems := make([]map[string]any, 0, len(s.ActiveBook.Warnings))
 		for _, w := range s.ActiveBook.Warnings {
 			warnItems = append(warnItems, map[string]any{"text": w})
@@ -170,9 +192,6 @@ func (s *Server) BuildTargetedRenderContext(targetTpl string, books []*book.Book
 			vars["book_imageless_short_label"] = "Z obrazami"
 		}
 
-		if needsPlayer {
-			s.populatePlayerContext(vars)
-		}
 		if needsEditorFull {
 			s.populateEditorContext(vars)
 		} else if needsEditorPanelOnly {
@@ -193,6 +212,7 @@ func (s *Server) BuildTargetedRenderContext(targetTpl string, books []*book.Book
 		vars["book_settings_open"] = false
 		vars["has_selected_chapter"] = false
 		vars["is_node_inspector_hidden"] = false
+		vars["any_editor_panel_open"] = s.EditorVariablesPanelOpen || s.EditorBreakdownPanelOpen || s.EditorHistoryPanelOpen || s.EditorHelpModalOpen
 		s.populateEditorHistoryContext(vars)
 	}
 
@@ -207,7 +227,7 @@ func (s *Server) populateLibraryContext(vars map[string]any, books []*book.Book)
 	bookItems := make([]map[string]any, 0, len(books))
 	for _, b := range books {
 		save := book.LoadSaveState(s.SavesDir, b.ID, b.StartSceneID)
-		if !s.isHistoryPreview() && s.ActiveBook != nil && s.ActiveBook.ID == b.ID && s.Save != nil && s.Save.UpdatedAtUnix >= save.UpdatedAtUnix {
+		if !s.isHistoryPreview() && s.PlayerBook != nil && s.PlayerBook.ID == b.ID && s.Save != nil && s.Save.UpdatedAtUnix >= save.UpdatedAtUnix {
 			save = s.Save
 		}
 		hasProgress := len(save.History) > 0 || (save.CurrentSceneID != "" && save.CurrentSceneID != b.StartSceneID) || save.AudioTime > 0.5

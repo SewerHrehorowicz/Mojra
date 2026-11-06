@@ -7,19 +7,26 @@
   flex-direction column
   align-items center
   justify-content center
-  background --bg-obsidian
+  background
+    radial-gradient(circle at 50% 18%)
+      --preview-stage-glow 0%
+      transparent 72%
+    linear-gradient(180deg)
+      --preview-stage-top 0%
+      --preview-stage-bottom 100%
   padding switch(preview)
-    portrait, landscape 18px
+    full 0
+    portrait, tablet, landscape 0 32px 32px
 
 .device-preview-bar
   display flex
   align-items center
   justify-content center
-  gap 16px
+  gap 14px
   width 100%
-  padding 6px 18px
-  background --bg-topbar
-  border-bottom 1px solid --border-subtle
+  padding 8px 18px
+  background transparent
+  border none
   flex-shrink 0
   z-index 30
   -webkit-app-region drag
@@ -27,28 +34,33 @@
 .device-preview-bar button
   -webkit-app-region no-drag
 
-.preview-bar-label
-  font-size 11px
-  text-transform uppercase
-  letter-spacing 0.8px
-  color --text-muted
-
 .preview-mode-btn
+  display inline-flex
+  align-items center
+  justify-content center
+  width 28px
+  height 24px
   background transparent
   color --text-muted
+  opacity 0.5
   border none
-  border-bottom 1px solid transparent
-  padding 3px 2px
-  font-size 12px
+  padding 0
   cursor pointer
+  transition color 0.15s ease, opacity 0.15s ease
 
 .preview-mode-btn:hover
   color --text-secondary
+  opacity 0.85
 
 .preview-mode-btn.active
-  color --text-secondary
-  border-bottom-color --border-strong
-  font-weight 500
+  color --text-primary
+  opacity 1
+
+.preview-device-icon
+  width 15px
+  height 15px
+  display block
+  pointer-events none
 
 .device-frame
   position relative
@@ -58,54 +70,30 @@
   flex 1
   overflow hidden
   background --bg-surface
+  border none !important
 
   @switch preview
     full
       width 100%
+      height 100%
       flex 1
-    portrait, landscape
-      border 1px solid --border-strong
-      border-radius 40px !important
+      box-shadow none
+    portrait, tablet, landscape
       margin auto
       background --bg-obsidian
+      box-shadow 0 48px 140px --preview-shadow-ambient, 0 18px 52px --preview-shadow-soft
     portrait
       width 393px
+      max-width calc(100vw - 48px)
       height calc(100vh - 76px)
-      max-height 844px
+      max-height 852px
+    tablet
+      width min(834px, calc(100vw - 64px))
+      height calc(100vh - 76px)
+      max-height 1112px
     landscape
-      width min(844px, calc(95vw - 36px))
+      width min(852px, calc(95vw - 48px))
       height 393px
-
-.device-notch, .device-home-bar
-  display none
-  align-items center
-  justify-content center
-  background --bg-obsidian
-  flex-shrink 0
-
-.device-notch::after, .device-home-bar::after
-  content ""
-  height 3px
-  border-radius 999px !important
-  background --border-strong
-
-.device-notch::after
-  width 48px
-
-.device-notch
-  @switch preview
-    portrait
-      display flex
-      height 12px
-
-.device-home-bar::after
-  width 104px
-
-.device-home-bar
-  @switch preview
-    portrait, landscape
-      display flex
-      height 10px
 /* @dev-only-end */
 
 // Core Shell Layout

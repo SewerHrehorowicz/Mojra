@@ -5,14 +5,41 @@ import (
 	"time"
 )
 
+const (
+	BookDataFileName    = "book.playtxt"
+	DefaultStoryFile    = "story.playtxt"
+	DefaultChapterFile  = "rozdzial_1.playtxt"
+	DefaultActFile      = "akt_1.playtxt"
+	EditorStateFileName = ".editor.cfg"
+	PlaytxtExt          = ".playtxt"
+)
+
 type Choice struct {
 	Label           string
 	Target          string
 	TargetSceneID   string
 	TargetChapterID string
+	Condition       string
+	Effects         string
+	ShowWhenLocked  bool
 	IsChapterLink   bool
 	IsImplicit      bool
 	IsEnding        bool
+}
+
+type EnumDef struct {
+	Name   string
+	Values []string
+}
+
+type VariableDef struct {
+	Name     string
+	Kind     string // "bool", "int", "enum"
+	BoolVal  bool
+	IntVal   int
+	EnumName string
+	EnumVal  string
+	Options  []string
 }
 
 type Scene struct {
@@ -21,6 +48,7 @@ type Scene struct {
 	Name           string
 	Slugline       string
 	Synopsis       string
+	Effects        string
 	Chapter        string
 	ChapterID      string
 	Text           string
@@ -120,21 +148,21 @@ func (c Chapter) ReferenceKey() string {
 	return "rozdzial_1"
 }
 
-// FileName returns the preferred .txt file name for this chapter, using its ID primarily.
+// FileName returns the preferred .playtxt file name for this chapter, using its ID primarily.
 func (c Chapter) FileName() string {
-	if expID := SanitizeChapterID(c.ExplicitID); expID != "" {
-		return expID + ".txt"
+	if expID := SanitizeChapterID(c.ExplicitID); expID != "" && expID != "book" {
+		return expID + PlaytxtExt
 	}
-	if id := SanitizeChapterID(c.ID); id != "" {
-		return id + ".txt"
+	if id := SanitizeChapterID(c.ID); id != "" && id != "book" {
+		return id + PlaytxtExt
 	}
-	if sf := strings.TrimSpace(c.SourceFile); sf != "" && !strings.EqualFold(sf, "story.txt") {
+	if sf := strings.TrimSpace(c.SourceFile); sf != "" && !strings.EqualFold(sf, DefaultStoryFile) && !strings.EqualFold(sf, BookDataFileName) {
 		return sf
 	}
-	if nameID := SanitizeChapterID(c.Name); nameID != "" {
-		return nameID + ".txt"
+	if nameID := SanitizeChapterID(c.Name); nameID != "" && nameID != "book" {
+		return nameID + PlaytxtExt
 	}
-	return "rozdzial_1.txt"
+	return DefaultChapterFile
 }
 
 type NodePosition struct {
@@ -164,6 +192,7 @@ type Book struct {
 	ID             string
 	Title          string
 	Author         string
+	License        string
 	Description    string
 	Mode           string
 	ScriptStandard string
@@ -182,6 +211,8 @@ type Book struct {
 	AudioFiles     []string
 	ImageFiles     []string
 	PackedMedia    map[string]PackedMediaEntry
+	Enums          []EnumDef
+	Variables      []VariableDef
 	Chapters       []Chapter
 	Scenes         []*Scene
 	Layout         map[string]NodePosition
@@ -237,6 +268,14 @@ func (b *Book) NormalizedStandard() string {
 	return NormalizeScriptStandard(b.ScriptStandard)
 }
 
+// EffectiveLicense returns the book's explicit license or the default copyright notice.
+func (b *Book) EffectiveLicense() string {
+	if b != nil && strings.TrimSpace(b.License) != "" {
+		return strings.TrimSpace(b.License)
+	}
+	return "Wszelkie prawa zastrzeżone (All Rights Reserved)"
+}
+
 type HistoryEntry struct {
 	Step          int
 	SceneID       string
@@ -244,6 +283,7 @@ type HistoryEntry struct {
 	Chapter       string
 	ChoiceLabel   string
 	TargetSceneID string
+	Variables     map[string]string
 }
 
 type SaveState struct {
@@ -253,6 +293,7 @@ type SaveState struct {
 	PlaybackSpeed      float64
 	AutoChoice         bool
 	AutoChoiceStrategy string
+	Variables          map[string]string
 	History            []HistoryEntry
 	UpdatedAtUnix      int64
 }
@@ -261,6 +302,7 @@ type AppSettings struct {
 	Theme              string
 	PreviewMode        string
 	ActiveBookID       string
+	EditorBookID       string
 	ActiveView         string
 	Imageless          bool
 	UIScale            string

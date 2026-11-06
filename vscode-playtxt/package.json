@@ -1,0 +1,90 @@
+{
+  "name": "mojra-playtxt",
+  "displayName": "Mojra Playtxt (Playbook Studio)",
+  "description": "Kolorowanie składni, nawigacja po scenach (Go to Definition), drzewo rozdziałów i scen (Outline) oraz podpowiedzi dla plików .playtxt i .editor.cfg w Mojra Playbook Studio.",
+  "version": "1.0.7",
+  "publisher": "mojra",
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "activationEvents": [
+    "onLanguage:playtxt"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "playtxt",
+        "aliases": [
+          "Mojra Playtxt",
+          "Playtxt",
+          "playtxt"
+        ],
+        "extensions": [
+          ".playtxt"
+        ],
+        "filenames": [
+          "book.playtxt",
+          "story.playtxt",
+          ".editor.cfg",
+          "editor.cfg"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "playtxt",
+        "scopeName": "source.playtxt",
+        "path": "./syntaxes/playtxt.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "playtxt",
+        "path": "./snippets/playtxt.json"
+      }
+    ],
+    "configurationDefaults": {
+      "[playtxt]": {
+        "editor.wordWrap": "on"
+      },
+      "editor.tokenColorCustomizations": {
+        "textMateRules": [
+          {
+            "scope": [
+              "comment.block.key.playtxt",
+              "comment.block.brace.playtxt",
+              "comment.block.operator.playtxt"
+            ],
+            "settings": {
+              "foreground": "#7d8590",
+              "fontStyle": ""
+            }
+          },
+          {
+            "scope": [
+              "constant.other.value.playtxt"
+            ],
+            "settings": {
+              "foreground": "#58a6ff",
+              "fontStyle": ""
+            }
+          },
+          {
+            "scope": [
+              "meta.title.playtxt"
+            ],
+            "settings": {
+              "foreground": "#ffffff",
+              "fontStyle": ""
+            }
+          }
+        ]
+      }
+    }
+  }
+}

@@ -3,8 +3,8 @@ section.view-panel#view-editor .is-history-preview?: {is_history_preview}
     .studio-workspace-full
         .canvas-toolbar
             .canvas-toolbar-left
-                {if has_active_book}
-                    span.canvas-legend.canvas-book-title#editor-book-title {active_book_title}
+                {if has_editor_book}
+                    span.canvas-legend.canvas-book-title#editor-book-title {editor_book_title}
                 {else}
                     span.canvas-legend "Brak aktywnego projektu"
                 button.top-action-btn
@@ -12,6 +12,11 @@ section.view-panel#view-editor .is-history-preview?: {is_history_preview}
                     action: OpenNewBookModal
                     data-hint: "Utwórz nową książkę lub scenariusz"
                     svg.action-icon src: /icons/book-plus.svg
+                button.top-action-btn#btn-open-studio-project
+                    type: button
+                    action: OpenStudioProjectModal
+                    data-hint: "Otwórz projekt w Studio"
+                    svg.action-icon src: /icons/folder.svg
                 button.top-action-btn#btn-open-export-modal
                     type: button
                     action: OpenExportModal
@@ -48,6 +53,11 @@ section.view-panel#view-editor .is-history-preview?: {is_history_preview}
                     action: ToggleBookSettings
                     data-hint: "{editor_settings_hint}"
                     svg.action-icon src: /icons/settings.svg
+                button.top-action-btn#btn-editor-variables .active?: {show_editor_variables_panel}
+                    type: button
+                    action: ToggleEditorVariablesPanel
+                    data-hint: "Zmienne"
+                    svg.action-icon src: /icons/braces.svg
                 {if is_screenplay_mode}
                     button.top-action-btn#btn-editor-breakdown .active?: {show_editor_breakdown_panel}
                         type: button
@@ -87,6 +97,7 @@ section.view-panel#view-editor .is-history-preview?: {is_history_preview}
 
         .editor-workspace-body#editor-workspace-body
             @editor_context_panel
+            @editor_variables_panel
             @editor_breakdown_panel
             @editor_history_panel
             aside.editor-help-panel#editor-help-panel .hidden?: {!show_editor_help_panel}
@@ -115,6 +126,11 @@ section.view-panel#view-editor .is-history-preview?: {is_history_preview}
                             span.help-shortcut-desc "Przesuwa widok płótna (Pan). Rolka myszy przybliża i oddala widok (Zoom)."
 
             .timeline-scroll-viewport#timeline-scroll-viewport
+                button.scene-text-expand-btn#btn-expand-scene-text
+                    type: button
+                    action: OpenSceneTextModal
+                    data-scene: "{selected_scene_id}"
+                    svg.btn-icon src: /icons/chevrons-right.svg
                 canvas.studio-canvas#studio-canvas
                 .editor-status-bar#editor-status-bar
                     {if has_book_warnings}
@@ -132,7 +148,8 @@ section.view-panel#view-editor .is-history-preview?: {is_history_preview}
                             {else}
                                 .editor-status-warnings-bar.is-single
                                     span.editor-status-warnings-text "⚠ {first_book_warning}"
-                    .editor-perf-overlay.hidden#editor-perf-overlay
+                    {if dev_mode}
+                        .editor-perf-overlay.hidden#editor-perf-overlay
                 pre.hidden#studio-graph-data {studio_graph_payload}
                 input.chapter-group-title-input.canvas-floating-chapter-input.hidden#canvas-chapter-input
                     type: text
@@ -161,11 +178,10 @@ section.view-panel#view-editor .is-history-preview?: {is_history_preview}
                     button.canvas-context-item#btn-context-reset-view
                         type: button
                         "Dopasuj widok do węzłów (Fit)"
-                {if not has_active_book}
+                {if not has_editor_book}
                     .editor-empty-state#editor-empty-state
                         .editor-empty-card
-                            h3.editor-empty-title "Brak otwartej książki"
-                            p.editor-empty-desc "Utwórz nową opowieść w edytorze lub dodaj istniejącą książkę z dysku."
+                            h3.editor-empty-title "Brak otwartego projektu"
                             .editor-empty-actions
                                 button.btn.btn-primary
                                     type: button
@@ -173,5 +189,5 @@ section.view-panel#view-editor .is-history-preview?: {is_history_preview}
                                     "+ Utwórz nową książkę"
                                 button.btn
                                     type: button
-                                    action: OpenAddBookModal
-                                    "Dodaj książkę"
+                                    action: OpenStudioProjectModal
+                                    "Otwórz projekt"

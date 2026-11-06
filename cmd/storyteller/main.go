@@ -26,6 +26,9 @@ import (
 // productionBuild is set to "true" via -ldflags="-X main.productionBuild=true" during production builds.
 var productionBuild string
 
+// previewBuild is set to "true" via -ldflags="-X main.previewBuild=true" during preview builds (--preview).
+var previewBuild string
+
 func isGoRunBinary() bool {
 	exe, err := os.Executable()
 	if err != nil {
@@ -45,7 +48,7 @@ func main() {
 	switch cmd {
 	case "run", "start", "gui":
 		runCmd(args, false)
-	case "dev":
+	case "dev", "preview":
 		runCmd(args, true)
 	case "build":
 		buildCmd(args)
@@ -59,6 +62,8 @@ func main() {
 		bundleLinuxCmd(args)
 	case "bundle-android":
 		bundleAndroidCmd(args)
+	case "www", "build-www":
+		buildCmd(append([]string{"--www"}, args...))
 	case "pack":
 		packCmd(args)
 	case "add", "import":
@@ -88,14 +93,14 @@ Użycie / Usage:
       Buduje binaria oraz paczki dystrybucyjne dla wszystkich platform (macOS, Windows, Linux).
 
   storyteller bundle-app | bundle-macos
-      Tworzy gotową paczkę aplikacji natywnej (dist/StoryTeller.app oraz dist/StoryTeller-macos.zip)
+      Tworzy gotową paczkę aplikacji natywnej (dist/Mojra.app oraz dist/Mojra-macos.zip)
       wraz z binariami dla macOS (arm64/amd64) i przykładową książką.
 
   storyteller bundle-windows
-      Buduje samodzielną paczkę wykonywalną dla systemu Windows (dist/StoryTeller-windows/ + .zip).
+      Buduje samodzielną paczkę wykonywalną dla systemu Windows (dist/Mojra-windows/ + .zip).
 
   storyteller bundle-linux
-      Buduje samodzielną paczkę wykonywalną dla systemu Linux (dist/StoryTeller-linux/ + .zip).
+      Buduje samodzielną paczkę wykonywalną dla systemu Linux (dist/Mojra-linux/ + .zip).
 
   storyteller pack <id-książki>
       Pakuje folder książki z katalogu books/<id> do archiwum dist/<id>.playbook.
@@ -105,7 +110,7 @@ Użycie / Usage:
 }
 
 func printBuildUsage() {
-	fmt.Println(`StoryTeller — Wieloplatformowy System Budowania (Multi-Platform Builder)
+	fmt.Println(`Mojra — Wieloplatformowy System Budowania (Multi-Platform Builder)
 
 Użycie / Usage:
   ./build.sh [opcje] [platformy...]
@@ -124,6 +129,7 @@ Platformy (Platforms):
 Architektura i wyjście (Architecture & Output):
       --arch <arch>          Docelowa architektura: amd64 (x64), arm64 lub all (domyślnie: all)
   -o, --output <ścieżka>     Ścieżka wynikowego pliku wykonywalnego (dla pojedynczego binarium)
+      --preview              Buduj z aktywnym podglądem urządzeń (Telefon / Tablet / Desktop)
       --binaries-only        Buduj wyłącznie pliki wykonywalne (pomiń paczki .app / .zip)
       --no-zip               Alias dla --binaries-only
       --assets-only          Kompiluj tylko szablony .tpl, CSS/JS oraz przykładową książkę
@@ -228,12 +234,13 @@ func runCmd(args []string, forceDev bool) {
 	port := fs.Int("port", 8484, "Port lokalny i sieciowy LAN")
 	headless := fs.Bool("headless", false, "Uruchom bez otwierania natywnego okna (tryb testowy/serwerowy)")
 	devFlag := fs.Bool("dev", false, "Uruchom w trybie deweloperskim (z paskiem podglądu urządzeń)")
+	previewFlag := fs.Bool("preview", false, "Uruchom z paskiem podglądu urządzeń (Telefon / Tablet / Desktop)")
 	prodFlag := fs.Bool("prod", false, "Wymuś tryb produkcyjny (bez narzędzi deweloperskich)")
 	_ = fs.Parse(args)
 
 	devMode := false
 	if !*prodFlag {
-		if forceDev || *devFlag || os.Getenv("ST_DEV") == "1" || (productionBuild != "true" && isGoRunBinary()) {
+		if forceDev || *devFlag || *previewFlag || os.Getenv("ST_DEV") == "1" || os.Getenv("ST_PREVIEW") == "1" || previewBuild == "true" || (productionBuild != "true" && isGoRunBinary()) {
 			devMode = true
 		}
 	}
@@ -253,7 +260,9 @@ type platformTarget struct {
 type buildOptions struct {
 	ShowHelp     bool
 	AssetsOnly   bool
+	WWWOnly      bool
 	BinariesOnly bool
+	Preview      bool
 	OutPath      string
 	Platforms    []string         // ordered unique OS list: "darwin", "windows", "linux"
 	Targets      []platformTarget // ordered unique (OS, Arch) pairs
@@ -372,6 +381,10 @@ func parseBuildArgs(args []string) (buildOptions, error) {
 			opts.OutPath = v
 		case "--assets-only", "-assets-only":
 			opts.AssetsOnly = true
+		case "--www", "-www":
+			opts.WWWOnly = true
+		case "--preview", "-preview", "--dev", "-dev":
+			opts.Preview = true
 		case "--binaries-only", "-binaries-only", "--no-zip", "-no-zip", "--no-bundle", "-no-bundle":
 			opts.BinariesOnly = true
 		case "--no-pause", "-no-pause", "-y", "--yes", "-yes":
@@ -382,6 +395,10 @@ func parseBuildArgs(args []string) (buildOptions, error) {
 			}
 			if strings.EqualFold(arg, "help") || arg == "/?" || strings.EqualFold(arg, "/h") || strings.EqualFold(arg, "/help") {
 				opts.ShowHelp = true
+				continue
+			}
+			if strings.EqualFold(arg, "preview") || strings.EqualFold(arg, "dev") {
+				opts.Preview = true
 				continue
 			}
 			for _, part := range strings.Split(arg, ",") {
@@ -492,11 +509,15 @@ func prepareBuildAssets(rootDir string) error {
 	if err := tpl.BuildApp(appDir); err != nil {
 		return fmt.Errorf("błąd kompilacji .tpl/CSS/JS: %w", err)
 	}
+	if err := tpl.BuildWWW(rootDir); err != nil {
+		return fmt.Errorf("błąd kompilacji strony WWW: %w", err)
+	}
 	_ = os.Remove(filepath.Join(booksDir, "nie-boj-sie-policji-rzecznej.playbook"))
 	_ = os.Remove(filepath.Join(booksDir, "nie-boj-sie-policji-rzecznej.stbook"))
 	fmt.Println("✓ Skompilowano app/templates/*.tpl -> build/app/index.html")
 	fmt.Println("✓ Połączono arkusze CSS -> build/app/style.css")
 	fmt.Println("✓ Połączono moduły JS -> build/app/app.js")
+	fmt.Println("✓ Zbudowano statyczną stronę WWW -> dist/www/")
 	fmt.Println("✓ Zweryfikowano przykładową książkę -> books/nie-boj-sie-policji-rzecznej/")
 	return nil
 }
@@ -554,20 +575,25 @@ func packageBooksForDist(srcBooksDir, dstBooksDir string) error {
 func platformBinaryFilename(target platformTarget) string {
 	switch target.OS {
 	case "darwin":
-		return fmt.Sprintf("StoryTeller-macos-%s", target.Arch)
+		return fmt.Sprintf("Mojra-macos-%s", target.Arch)
 	case "windows":
-		return fmt.Sprintf("StoryTeller-windows-%s.exe", target.Arch)
+		return fmt.Sprintf("Mojra-windows-%s.exe", target.Arch)
 	case "linux":
-		return fmt.Sprintf("StoryTeller-linux-%s", target.Arch)
+		return fmt.Sprintf("Mojra-linux-%s", target.Arch)
 	case "android":
-		return fmt.Sprintf("StoryTeller-android-%s", target.Arch)
+		return fmt.Sprintf("Mojra-android-%s", target.Arch)
 	default:
-		return fmt.Sprintf("StoryTeller-%s-%s", target.OS, target.Arch)
+		return fmt.Sprintf("Mojra-%s-%s", target.OS, target.Arch)
 	}
 }
 
-func buildPlatformBinary(rootDir string, target platformTarget, outPath string) error {
+func buildPlatformBinary(rootDir string, target platformTarget, outPath string, preview ...bool) error {
 	_ = os.MkdirAll(filepath.Dir(outPath), 0755)
+	isPreview := len(preview) > 0 && preview[0]
+	modeFlags := "-X main.productionBuild=true"
+	if isPreview {
+		modeFlags = "-X main.productionBuild=true -X main.previewBuild=true"
+	}
 
 	switch target.OS {
 	case "windows":
@@ -585,7 +611,7 @@ func buildPlatformBinary(rootDir string, target platformTarget, outPath string) 
 			_ = os.Remove(sysoPath)
 		}()
 
-		cmd := exec.Command("go", "build", "-tags=prod_embed", "-trimpath", "-ldflags=-H=windowsgui -X main.productionBuild=true", "-o", outPath, "./cmd/storyteller")
+		cmd := exec.Command("go", "build", "-tags=prod_embed", "-trimpath", "-ldflags=-H=windowsgui "+modeFlags, "-o", outPath, "./cmd/storyteller")
 		cmd.Dir = rootDir
 		cmd.Env = append(os.Environ(), "GOOS=windows", "GOARCH="+target.Arch, "CGO_ENABLED=0")
 		cmd.Stdout = os.Stdout
@@ -598,7 +624,7 @@ func buildPlatformBinary(rootDir string, target platformTarget, outPath string) 
 	case "darwin":
 		// On macOS host, prefer CGO_ENABLED=1 so native Cocoa/WKWebView window support is compiled in.
 		if runtime.GOOS == "darwin" {
-			cmd := exec.Command("go", "build", "-tags=prod_embed", "-trimpath", "-ldflags=-X main.productionBuild=true", "-o", outPath, "./cmd/storyteller")
+			cmd := exec.Command("go", "build", "-tags=prod_embed", "-trimpath", "-ldflags="+modeFlags, "-o", outPath, "./cmd/storyteller")
 			cmd.Dir = rootDir
 			cmd.Env = append(os.Environ(), "GOOS=darwin", "GOARCH="+target.Arch, "CGO_ENABLED=1")
 			var stderr bytes.Buffer
@@ -608,7 +634,7 @@ func buildPlatformBinary(rootDir string, target platformTarget, outPath string) 
 				return nil
 			}
 		}
-		cmd := exec.Command("go", "build", "-tags=prod_embed", "-trimpath", "-ldflags=-s -w -X main.productionBuild=true", "-o", outPath, "./cmd/storyteller")
+		cmd := exec.Command("go", "build", "-tags=prod_embed", "-trimpath", "-ldflags=-s -w "+modeFlags, "-o", outPath, "./cmd/storyteller")
 		cmd.Dir = rootDir
 		cmd.Env = append(os.Environ(), "GOOS=darwin", "GOARCH="+target.Arch, "CGO_ENABLED=0")
 		cmd.Stdout = os.Stdout
@@ -623,7 +649,7 @@ func buildPlatformBinary(rootDir string, target platformTarget, outPath string) 
 		if err != nil {
 			return err
 		}
-		cmd := exec.Command("go", "build", "-tags=prod_embed", "-trimpath", "-ldflags=-s -w -X main.productionBuild=true", "-o", outPath, "./cmd/storyteller")
+		cmd := exec.Command("go", "build", "-tags=prod_embed", "-trimpath", "-ldflags=-s -w "+modeFlags, "-o", outPath, "./cmd/storyteller")
 		cmd.Dir = rootDir
 		cmd.Env = append(os.Environ(), "GOOS=android", "GOARCH="+target.Arch, "CGO_ENABLED=1", "CC="+ndkClang)
 		cmd.Stdout = os.Stdout
@@ -634,7 +660,7 @@ func buildPlatformBinary(rootDir string, target platformTarget, outPath string) 
 		return nil
 
 	default: // linux and others
-		cmd := exec.Command("go", "build", "-tags=prod_embed", "-trimpath", "-ldflags=-s -w -X main.productionBuild=true", "-o", outPath, "./cmd/storyteller")
+		cmd := exec.Command("go", "build", "-tags=prod_embed", "-trimpath", "-ldflags=-s -w "+modeFlags, "-o", outPath, "./cmd/storyteller")
 		cmd.Dir = rootDir
 		cmd.Env = append(os.Environ(), "GOOS="+target.OS, "GOARCH="+target.Arch, "CGO_ENABLED=0")
 		cmd.Stdout = os.Stdout
@@ -660,8 +686,22 @@ func buildCmd(args []string) {
 
 	rootDir := resolveRepoRootDir()
 	fmt.Println("==================================================================")
-	fmt.Println("  StoryTeller — Wieloplatformowy System Budowania")
+	fmt.Println("  Mojra — Wieloplatformowy System Budowania")
 	fmt.Println("==================================================================")
+
+	if opts.WWWOnly {
+		appDir := filepath.Join(rootDir, "app")
+		_ = writeWindowsAppIconICO(filepath.Join(appDir, "icons", "favicon.ico"))
+		if png256, err := encodeStoryTellerIconPNG(256); err == nil {
+			_ = os.WriteFile(filepath.Join(appDir, "icons", "icon.png"), png256, 0644)
+		}
+		if err := tpl.BuildWWW(rootDir); err != nil {
+			fmt.Fprintf(os.Stderr, "błąd kompilacji strony WWW: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Println("✓ Zbudowano statyczną stronę WWW -> dist/www/")
+		return
+	}
 
 	if err := prepareBuildAssets(rootDir); err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
@@ -692,7 +732,7 @@ func buildCmd(args []string) {
 		if !filepath.IsAbs(targetBin) {
 			targetBin = filepath.Join(rootDir, targetBin)
 		}
-		if err := buildPlatformBinary(rootDir, platformTarget{OS: targetOS, Arch: targetArch}, targetBin); err != nil {
+		if err := buildPlatformBinary(rootDir, platformTarget{OS: targetOS, Arch: targetArch}, targetBin, opts.Preview); err != nil {
 			fmt.Fprintf(os.Stderr, "Błąd budowania pliku wykonywalnego: %v\n", err)
 			os.Exit(1)
 		}
@@ -703,12 +743,20 @@ func buildCmd(args []string) {
 	distDir := filepath.Join(rootDir, "dist")
 	_ = os.MkdirAll(distDir, 0755)
 	for _, stale := range []string{
+		"Mojra.app",
+		"Mojra-macos.zip",
+		"Mojra-windows",
+		"Mojra-windows.zip",
+		"Mojra-linux",
+		"Mojra-linux.zip",
 		"StoryTeller.app",
 		"StoryTeller-macos.zip",
 		"StoryTeller-windows",
 		"StoryTeller-windows.zip",
 		"StoryTeller-linux",
 		"StoryTeller-linux.zip",
+		"StoryTeller-macos-arm64",
+		"StoryTeller-macos-amd64",
 		"books",
 		"saves",
 	} {
@@ -725,7 +773,7 @@ func buildCmd(args []string) {
 				outPath = filepath.Join(rootDir, opts.OutPath)
 			}
 		}
-		if err := buildPlatformBinary(rootDir, target, outPath); err != nil {
+		if err := buildPlatformBinary(rootDir, target, outPath, opts.Preview); err != nil {
 			fmt.Fprintf(os.Stderr, "%v\n", err)
 			os.Exit(1)
 		}
@@ -832,7 +880,7 @@ func adhocSignMacOSPath(targetPath string) {
 }
 
 func packageMacOSBundle(rootDir string, archBins map[string]string) error {
-	bundleRoot := filepath.Join(rootDir, "dist", "StoryTeller.app")
+	bundleRoot := filepath.Join(rootDir, "dist", "Mojra.app")
 	contentsDir := filepath.Join(bundleRoot, "Contents")
 	macOSDir := filepath.Join(contentsDir, "MacOS")
 	resourcesDir := filepath.Join(contentsDir, "Resources")
@@ -841,7 +889,7 @@ func packageMacOSBundle(rootDir string, archBins map[string]string) error {
 	_ = os.MkdirAll(macOSDir, 0755)
 	_ = os.MkdirAll(resourcesDir, 0755)
 
-	binPath := filepath.Join(macOSDir, "storyteller")
+	binPath := filepath.Join(macOSDir, "Mojra")
 	arm64Bin := archBins["arm64"]
 	amd64Bin := archBins["amd64"]
 
@@ -902,7 +950,7 @@ func packageMacOSBundle(rootDir string, archBins map[string]string) error {
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleExecutable</key>
-	<string>storyteller</string>
+	<string>Mojra</string>
 	<key>CFBundleIconFile</key>
 	<string>AppIcon</string>
 	<key>NSHighResolutionCapable</key>
@@ -922,8 +970,8 @@ func packageMacOSBundle(rootDir string, archBins map[string]string) error {
 	adhocSignMacOSPath(binPath)
 	adhocSignMacOSPath(bundleRoot)
 
-	zipPath := filepath.Join(rootDir, "dist", "StoryTeller-macos.zip")
-	if err := zipDirRecursive(bundleRoot, zipPath, "StoryTeller.app"); err != nil {
+	zipPath := filepath.Join(rootDir, "dist", "Mojra-macos.zip")
+	if err := zipDirRecursive(bundleRoot, zipPath, "Mojra.app"); err != nil {
 		return err
 	}
 
@@ -934,16 +982,16 @@ func packageMacOSBundle(rootDir string, archBins map[string]string) error {
 
 func packageWindowsBundle(rootDir string, archBins map[string]string) error {
 	booksDir := filepath.Join(rootDir, "books")
-	outDir := filepath.Join(rootDir, "dist", "StoryTeller-windows")
+	outDir := filepath.Join(rootDir, "dist", "Mojra-windows")
 	_ = os.RemoveAll(outDir)
 	_ = os.MkdirAll(outDir, 0755)
 
-	icoPath := filepath.Join(outDir, "StoryTeller.ico")
+	icoPath := filepath.Join(outDir, "Mojra.ico")
 	if err := writeWindowsAppIconICO(icoPath); err != nil {
 		return fmt.Errorf("błąd generowania ikony Windows (.ico): %w", err)
 	}
 
-	exePath := filepath.Join(outDir, "StoryTeller.exe")
+	exePath := filepath.Join(outDir, "Mojra.exe")
 	primaryBin := archBins["amd64"]
 	if primaryBin == "" {
 		primaryBin = archBins["arm64"]
@@ -959,25 +1007,25 @@ func packageWindowsBundle(rootDir string, archBins map[string]string) error {
 	}
 
 	if arm64Bin := archBins["arm64"]; arm64Bin != "" && archBins["amd64"] != "" {
-		_ = copyFileWithMode(arm64Bin, filepath.Join(outDir, "StoryTeller-arm64.exe"), 0755)
+		_ = copyFileWithMode(arm64Bin, filepath.Join(outDir, "Mojra-arm64.exe"), 0755)
 	}
 
 	if runtime.GOOS == "windows" {
-		_ = copyFileWithMode(exePath, filepath.Join(rootDir, "StoryTeller.exe"), 0755)
-		_ = copyFileWithMode(icoPath, filepath.Join(rootDir, "StoryTeller.ico"), 0644)
+		_ = copyFileWithMode(exePath, filepath.Join(rootDir, "Mojra.exe"), 0755)
+		_ = copyFileWithMode(icoPath, filepath.Join(rootDir, "Mojra.ico"), 0644)
 	}
 
 	if err := packageBooksForDist(booksDir, filepath.Join(outDir, "books")); err != nil {
 		return err
 	}
 
-	launcherBat := "@echo off\r\ncd /d \"%~dp0\"\r\nstart \"\" \"%~dp0StoryTeller.exe\"\r\n"
-	if err := os.WriteFile(filepath.Join(outDir, "Uruchom StoryTeller.bat"), []byte(launcherBat), 0644); err != nil {
+	launcherBat := "@echo off\r\ncd /d \"%~dp0\"\r\nstart \"\" \"%~dp0Mojra.exe\"\r\n"
+	if err := os.WriteFile(filepath.Join(outDir, "Uruchom Mojra.bat"), []byte(launcherBat), 0644); err != nil {
 		return err
 	}
 
-	zipPath := filepath.Join(rootDir, "dist", "StoryTeller-windows.zip")
-	if err := zipDirRecursive(outDir, zipPath, "StoryTeller-windows"); err != nil {
+	zipPath := filepath.Join(rootDir, "dist", "Mojra-windows.zip")
+	if err := zipDirRecursive(outDir, zipPath, "Mojra-windows"); err != nil {
 		return fmt.Errorf("błąd tworzenia archiwum ZIP dla Windows: %w", err)
 	}
 
@@ -997,16 +1045,16 @@ func writeLinuxAppIconPNG(outPath string) error {
 
 func packageLinuxBundle(rootDir string, archBins map[string]string) error {
 	booksDir := filepath.Join(rootDir, "books")
-	outDir := filepath.Join(rootDir, "dist", "StoryTeller-linux")
+	outDir := filepath.Join(rootDir, "dist", "Mojra-linux")
 	_ = os.RemoveAll(outDir)
 	_ = os.MkdirAll(outDir, 0755)
 
-	iconPath := filepath.Join(outDir, "StoryTeller.png")
+	iconPath := filepath.Join(outDir, "Mojra.png")
 	if err := writeLinuxAppIconPNG(iconPath); err != nil {
 		return fmt.Errorf("błąd generowania ikony Linux (.png): %w", err)
 	}
 
-	binPath := filepath.Join(outDir, "storyteller")
+	binPath := filepath.Join(outDir, "mojra")
 	primaryBin := archBins["amd64"]
 	if primaryBin == "" {
 		primaryBin = archBins["arm64"]
@@ -1022,7 +1070,7 @@ func packageLinuxBundle(rootDir string, archBins map[string]string) error {
 	}
 
 	if arm64Bin := archBins["arm64"]; arm64Bin != "" && archBins["amd64"] != "" {
-		_ = copyFileWithMode(arm64Bin, filepath.Join(outDir, "storyteller-arm64"), 0755)
+		_ = copyFileWithMode(arm64Bin, filepath.Join(outDir, "mojra-arm64"), 0755)
 	}
 
 	if runtime.GOOS == "linux" {
@@ -1037,8 +1085,8 @@ func packageLinuxBundle(rootDir string, archBins map[string]string) error {
 		return err
 	}
 
-	launcherSh := "#!/usr/bin/env bash\nset -euo pipefail\nDIR=\"$(cd \"$(dirname \"${BASH_SOURCE[0]}\")\" && pwd)\"\ncd \"$DIR\"\nexec \"$DIR/storyteller\" \"$@\"\n"
-	if err := os.WriteFile(filepath.Join(outDir, "Uruchom StoryTeller.sh"), []byte(launcherSh), 0755); err != nil {
+	launcherSh := "#!/usr/bin/env bash\nset -euo pipefail\nDIR=\"$(cd \"$(dirname \"${BASH_SOURCE[0]}\")\" && pwd)\"\ncd \"$DIR\"\nexec \"$DIR/mojra\" \"$@\"\n"
+	if err := os.WriteFile(filepath.Join(outDir, "Uruchom Mojra.sh"), []byte(launcherSh), 0755); err != nil {
 		return err
 	}
 
@@ -1046,17 +1094,17 @@ func packageLinuxBundle(rootDir string, archBins map[string]string) error {
 Type=Application
 Name=Mojra
 Comment=Interaktywny Czytnik & Playbook Studio
-Exec=./storyteller
-Icon=StoryTeller
+Exec=./mojra
+Icon=Mojra
 Terminal=false
 Categories=AudioVideo;Audio;Player;
 `
-	if err := os.WriteFile(filepath.Join(outDir, "StoryTeller.desktop"), []byte(desktopEntry), 0755); err != nil {
+	if err := os.WriteFile(filepath.Join(outDir, "Mojra.desktop"), []byte(desktopEntry), 0755); err != nil {
 		return err
 	}
 
-	zipPath := filepath.Join(rootDir, "dist", "StoryTeller-linux.zip")
-	if err := zipDirRecursive(outDir, zipPath, "StoryTeller-linux"); err != nil {
+	zipPath := filepath.Join(rootDir, "dist", "Mojra-linux.zip")
+	if err := zipDirRecursive(outDir, zipPath, "Mojra-linux"); err != nil {
 		return fmt.Errorf("błąd tworzenia archiwum ZIP dla Linux: %w", err)
 	}
 

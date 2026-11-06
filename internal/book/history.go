@@ -544,6 +544,14 @@ func SaveBookHistory(b *Book, h *BookHistory) error {
 	return os.Rename(tmpPath, indexPath)
 }
 
+func isTrackedBookHistoryFile(name string) bool {
+	lower := strings.ToLower(strings.TrimSpace(name))
+	if strings.HasSuffix(lower, PlaytxtExt) && !strings.HasPrefix(lower, ".") {
+		return true
+	}
+	return lower == EditorStateFileName
+}
+
 func writeHistoryBlob(bookRoot string, data []byte) (string, error) {
 	return writeHistoryBlobWithSet(bookRoot, data, nil)
 }
@@ -626,14 +634,10 @@ func captureBookTextFiles(b *Book) (map[string]string, error) {
 	}
 	filesMap := make(map[string]string)
 	for _, e := range entries {
-		if e.IsDir() || strings.HasPrefix(e.Name(), ".") {
+		if e.IsDir() || !isTrackedBookHistoryFile(e.Name()) {
 			continue
 		}
 		name := e.Name()
-		lower := strings.ToLower(name)
-		if !strings.HasSuffix(lower, ".txt") {
-			continue
-		}
 		raw, rErr := os.ReadFile(filepath.Join(b.RootPath, name))
 		if rErr != nil {
 			continue
@@ -644,16 +648,16 @@ func captureBookTextFiles(b *Book) (map[string]string, error) {
 		}
 		filesMap[name] = hashHex
 	}
-	if _, hasData := filesMap["data.txt"]; !hasData {
+	if _, hasData := filesMap[BookDataFileName]; !hasData {
 		hashHex, wErr := writeHistoryBlobWithSet(b.RootPath, []byte(SerializeDataFile(b)), existingBlobs)
 		if wErr == nil {
-			filesMap["data.txt"] = hashHex
+			filesMap[BookDataFileName] = hashHex
 		}
 	}
-	if _, hasEditor := filesMap["editor.txt"]; !hasEditor {
+	if _, hasEditor := filesMap[EditorStateFileName]; !hasEditor {
 		hashHex, wErr := writeHistoryBlobWithSet(b.RootPath, []byte(SerializeEditorFile(b)), existingBlobs)
 		if wErr == nil {
-			filesMap["editor.txt"] = hashHex
+			filesMap[EditorStateFileName] = hashHex
 		}
 	}
 	return filesMap, nil
@@ -672,7 +676,7 @@ func restoreBookTextFiles(b *Book, rev HistoryRevision) error {
 	expectedLower := make(map[string]bool, len(rev.Files))
 	for fileName, hashHex := range rev.Files {
 		cleanName := filepath.Base(strings.TrimSpace(fileName))
-		if cleanName == "" || cleanName == "." || !strings.HasSuffix(strings.ToLower(cleanName), ".txt") {
+		if cleanName == "" || cleanName == "." || !isTrackedBookHistoryFile(cleanName) {
 			continue
 		}
 		data, err := readHistoryBlob(b.RootPath, hashHex)
@@ -690,15 +694,15 @@ func restoreBookTextFiles(b *Book, rev HistoryRevision) error {
 		}
 	}
 
-	// Remove any top-level .txt files in the book directory that did not exist in this revision.
+	// Remove any top-level tracked book files in the book directory that did not exist in this revision.
 	if entries, err := os.ReadDir(b.RootPath); err == nil {
 		for _, e := range entries {
-			if e.IsDir() || strings.HasPrefix(e.Name(), ".") {
+			if e.IsDir() || !isTrackedBookHistoryFile(e.Name()) {
 				continue
 			}
 			name := e.Name()
 			lower := strings.ToLower(name)
-			if strings.HasSuffix(lower, ".txt") && !expectedLower[lower] {
+			if !expectedLower[lower] {
 				_ = os.Remove(filepath.Join(b.RootPath, name))
 			}
 		}
@@ -920,7 +924,7 @@ func normalizeCoalesceGroup(kind, coalesceKey, selectedSceneID string) string {
 }
 
 func isProseStructuralLine(trimmed string) bool {
-	if trimmed == "" {
+	if trimmed == "" || trimmed == "---" || strings.EqualFold(trimmed, ":end") {
 		return true
 	}
 	if strings.Contains(trimmed, "->") && !strings.Contains(trimmed, `\->`) {
@@ -930,7 +934,7 @@ func isProseStructuralLine(trimmed string) bool {
 	if colonIdx > 0 && colonIdx <= 16 {
 		key := strings.ToLower(strings.TrimSpace(trimmed[:colonIdx]))
 		switch key {
-		case "chapter", "scene", "id", "next", "end", "image", "voice",
+		case "chapter", "scene", "id", "exit", "next", "label", "if", "if?", "else", "endif", "set", "then", "end", "image", "voice",
 			"location", "characters", "slugline", "synopsis", "text",
 			"title", "author", "description", "narrated", "imageless",
 			"start", "cover", "export_dir", "mode", "language", "standard":
@@ -1042,7 +1046,7 @@ func isMajorHistoryDeltaWithCache(bookRoot string, oldFiles, newFiles map[string
 	totalRunes := 0
 	totalLines := 0
 	for fileName, newHash := range newFiles {
-		if strings.EqualFold(fileName, "editor.txt") || strings.EqualFold(fileName, "data.txt") {
+		if strings.EqualFold(fileName, EditorStateFileName) || strings.EqualFold(fileName, "editor.cfg") || strings.EqualFold(fileName, BookDataFileName) {
 			continue
 		}
 		oldHash, exists := oldFiles[fileName]
@@ -1075,7 +1079,7 @@ func isMajorHistoryDeltaWithCache(bookRoot string, oldFiles, newFiles map[string
 		}
 	}
 	for fileName, oldHash := range oldFiles {
-		if strings.EqualFold(fileName, "editor.txt") || strings.EqualFold(fileName, "data.txt") {
+		if strings.EqualFold(fileName, EditorStateFileName) || strings.EqualFold(fileName, "editor.cfg") || strings.EqualFold(fileName, BookDataFileName) {
 			continue
 		}
 		if _, exists := newFiles[fileName]; !exists {
@@ -2025,7 +2029,7 @@ func loadBookFromHistoryRevision(bookRoot string, rev HistoryRevision) (*Book, e
 	for fileName, hashHex := range rev.Files {
 		cleanName := filepath.Base(strings.TrimSpace(fileName))
 		lower := strings.ToLower(cleanName)
-		if !strings.HasSuffix(lower, ".txt") {
+		if !isTrackedBookHistoryFile(cleanName) {
 			continue
 		}
 		rawBytes, err := readHistoryBlob(bookRoot, hashHex)
@@ -2034,9 +2038,9 @@ func loadBookFromHistoryRevision(bookRoot string, rev HistoryRevision) (*Book, e
 		}
 		content := string(rawBytes)
 		switch {
-		case lower == "data.txt":
+		case lower == BookDataFileName:
 			ParseDataFile(content, b)
-		case lower == "editor.txt" || lower == "nodes.txt":
+		case lower == EditorStateFileName || lower == "editor.cfg":
 			ParseEditorFile(content, b)
 		default:
 			textMap[cleanName] = content

@@ -102,7 +102,7 @@ func matchBookMedia(b *Book, audioFiles []string, imageFiles []string) {
 		if matched, ok := findMediaFile(imageFiles, b.CoverFile, "", ""); ok {
 			b.CoverFile = matched
 		} else {
-			b.Warnings = append(b.Warnings, fmt.Sprintf("data.txt: nie znaleziono pliku okładki „%s”", b.CoverFile))
+			b.Warnings = append(b.Warnings, fmt.Sprintf("book.playtxt: nie znaleziono pliku okładki „%s”", b.CoverFile))
 			b.CoverFile = ""
 		}
 	}

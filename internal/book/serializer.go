@@ -26,6 +26,9 @@ func SerializeDataFile(b *Book) string {
 	}
 	fmt.Fprintf(&sb, "title: %s\n", title)
 	fmt.Fprintf(&sb, "author: %s\n", author)
+	if lic := sanitizeSingleLineMeta(b.License); lic != "" {
+		fmt.Fprintf(&sb, "license: %s\n", lic)
+	}
 	if desc := sanitizeSingleLineMeta(b.Description); desc != "" {
 		fmt.Fprintf(&sb, "description: %s\n", desc)
 	}
@@ -61,6 +64,32 @@ func SerializeDataFile(b *Book) string {
 	if startVal != "" {
 		fmt.Fprintf(&sb, "start: %s\n", startVal)
 	}
+	for _, ed := range b.Enums {
+		if ed.Name != "" && len(ed.Values) > 0 {
+			fmt.Fprintf(&sb, "enum: %s = %s\n", ed.Name, strings.Join(ed.Values, ", "))
+		}
+	}
+	for _, vd := range b.Variables {
+		if vd.Name == "" {
+			continue
+		}
+		switch vd.Kind {
+		case VarKindBool:
+			if vd.BoolVal {
+				fmt.Fprintf(&sb, "var: %s = true\n", vd.Name)
+			} else {
+				fmt.Fprintf(&sb, "var: %s = false\n", vd.Name)
+			}
+		case VarKindInt:
+			fmt.Fprintf(&sb, "var: %s = %d\n", vd.Name, vd.IntVal)
+		case VarKindEnum:
+			if vd.EnumName != "" || len(vd.Options) <= 1 {
+				fmt.Fprintf(&sb, "var: %s = %s\n", vd.Name, vd.DefaultValueString())
+			} else {
+				fmt.Fprintf(&sb, "var: %s = %s\n", vd.Name, strings.Join(vd.Options, ", "))
+			}
+		}
+	}
 	return sb.String()
 }
 
@@ -86,7 +115,7 @@ func SerializeScenesForFile(b *Book, sourceFile string) string {
 
 	for i, sc := range scenes {
 		if i > 0 {
-			out.WriteString("\n")
+			out.WriteString("\n---\n\n")
 		}
 		ch := strings.TrimSpace(sc.Chapter)
 		chID := strings.TrimSpace(sc.ChapterID)
@@ -95,15 +124,15 @@ func SerializeScenesForFile(b *Book, sourceFile string) string {
 			chID = chMeta.ExplicitID
 		}
 		if (ch != "" || chID != "") && !strings.EqualFold(ch, lastChapter) {
-			if ch != "" && !strings.EqualFold(ch, chID) {
-				fmt.Fprintf(&out, "chapter: %s\n", ch)
-			} else if chID == "" {
+			if chID != "" {
+				fmt.Fprintf(&out, "chapter: %s\n", chID)
+				if ch != "" && !strings.EqualFold(ch, chID) {
+					fmt.Fprintf(&out, "title: %s\n", ch)
+				}
+			} else if ch != "" {
 				fmt.Fprintf(&out, "chapter: %s\n", ch)
 			} else {
 				out.WriteString("chapter:\n")
-			}
-			if chID != "" {
-				fmt.Fprintf(&out, "id: %s\n", chID)
 			}
 			if chMeta != nil && strings.TrimSpace(chMeta.ExplicitStart) != "" {
 				fmt.Fprintf(&out, "start: %s\n", strings.TrimSpace(chMeta.ExplicitStart))
@@ -112,13 +141,17 @@ func SerializeScenesForFile(b *Book, sourceFile string) string {
 			lastChapter = ch
 		}
 
-		if strings.TrimSpace(sc.Name) != "" {
-			fmt.Fprintf(&out, "scene: %s\n", strings.TrimSpace(sc.Name))
-		} else if strings.TrimSpace(sc.ExplicitID) == "" {
+		scID := strings.TrimSpace(sc.ExplicitID)
+		scTitle := strings.TrimSpace(sc.Name)
+		if scID != "" {
+			fmt.Fprintf(&out, "scene: %s\n", scID)
+			if scTitle != "" && !strings.EqualFold(scTitle, scID) {
+				fmt.Fprintf(&out, "title: %s\n", scTitle)
+			}
+		} else if scTitle != "" {
+			fmt.Fprintf(&out, "scene: %s\n", scTitle)
+		} else {
 			fmt.Fprintf(&out, "scene: Scena %d\n", i+1)
-		}
-		if sc.ExplicitID != "" {
-			fmt.Fprintf(&out, "id: %s\n", strings.TrimSpace(sc.ExplicitID))
 		}
 		if slug := sanitizeSingleLineMeta(sc.Slugline); slug != "" {
 			fmt.Fprintf(&out, "slugline: %s\n", slug)
@@ -126,14 +159,22 @@ func SerializeScenesForFile(b *Book, sourceFile string) string {
 		if syn := sanitizeSingleLineMeta(sc.Synopsis); syn != "" {
 			fmt.Fprintf(&out, "synopsis: %s\n", syn)
 		}
+		if eff := CleanEffectsExpr(sc.Effects); eff != "" {
+			fmt.Fprintf(&out, "set: %s\n", eff)
+		}
 		if !b.IsScreenplay() && sc.ExplicitImage != "" {
 			fmt.Fprintf(&out, "image: %s\n", strings.TrimSpace(sc.ExplicitImage))
 		}
 		if b.Narrated && sc.ExplicitVoice != "" {
 			fmt.Fprintf(&out, "voice: %s\n", strings.TrimSpace(sc.ExplicitVoice))
 		}
+		text := strings.TrimSpace(sc.Text)
+		if text != "" {
+			fmt.Fprintf(&out, "\n%s\n", text)
+		}
+
 		if sc.ExplicitEnd {
-			out.WriteString("end: true\n")
+			out.WriteString("\nend: true\n")
 		} else if len(sc.Choices) == 1 && !sc.Choices[0].IsEnding {
 			chItem := sc.Choices[0]
 			tgt := strings.TrimSpace(chItem.Target)
@@ -142,7 +183,7 @@ func SerializeScenesForFile(b *Book, sourceFile string) string {
 				nextRef = tgt
 			} else if strings.TrimSpace(sc.ExplicitNext) != "" {
 				nextRef = strings.TrimSpace(sc.ExplicitNext)
-			} else if chItem.TargetSceneID != "" && (i+1 >= len(scenes) || chItem.TargetSceneID != scenes[i+1].ID) {
+			} else if chItem.TargetSceneID != "" {
 				for _, cand := range b.Scenes {
 					if cand.ID == chItem.TargetSceneID {
 						if cand.ExplicitID != "" {
@@ -155,29 +196,42 @@ func SerializeScenesForFile(b *Book, sourceFile string) string {
 				}
 			}
 			if nextRef != "" {
-				fmt.Fprintf(&out, "next: %s\n", nextRef)
+				fmt.Fprintf(&out, "\nexit: %s\n", nextRef)
+				if cond := CleanConditionExpr(chItem.Condition); cond != "" {
+					if chItem.ShowWhenLocked {
+						fmt.Fprintf(&out, "if?: %s\n", cond)
+					} else {
+						fmt.Fprintf(&out, "if: %s\n", cond)
+					}
+				}
+				if eff := CleanEffectsExpr(chItem.Effects); eff != "" {
+					fmt.Fprintf(&out, "set: %s\n", eff)
+				}
 			}
-		}
-		text := strings.TrimSpace(sc.Text)
-		if text != "" {
-			fmt.Fprintf(&out, "%s\n", text)
-		}
-
-		if len(sc.Choices) >= 2 {
+		} else if len(sc.Choices) >= 2 {
 			var validChoices []Choice
 			for _, chItem := range sc.Choices {
 				if strings.TrimSpace(chItem.Label) != "" && strings.TrimSpace(chItem.Target) != "" {
 					validChoices = append(validChoices, chItem)
 				}
 			}
-			if len(validChoices) > 0 {
+			for _, chItem := range validChoices {
 				out.WriteString("\n")
-				for _, chItem := range validChoices {
-					fmt.Fprintf(&out, "%s -> %s\n", strings.TrimSpace(chItem.Label), strings.TrimSpace(chItem.Target))
+				fmt.Fprintf(&out, "exit: %s\n", strings.TrimSpace(chItem.Target))
+				fmt.Fprintf(&out, "text: %s\n", sanitizeSingleLineMeta(chItem.Label))
+				if cond := CleanConditionExpr(chItem.Condition); cond != "" {
+					if chItem.ShowWhenLocked {
+						fmt.Fprintf(&out, "if?: %s\n", cond)
+					} else {
+						fmt.Fprintf(&out, "if: %s\n", cond)
+					}
+				}
+				if eff := CleanEffectsExpr(chItem.Effects); eff != "" {
+					fmt.Fprintf(&out, "set: %s\n", eff)
 				}
 			}
 		} else if len(sc.Choices) == 1 && !sc.ExplicitEnd && sc.Choices[0].IsEnding {
-			out.WriteString("\nnext: END\n")
+			out.WriteString("\nexit: END\n")
 		}
 	}
 

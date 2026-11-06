@@ -282,14 +282,306 @@ function updateFeedScrollCue(feed) {
 
 let modalFeedResizeObserver = null;
 
+function parseClientProseBlockDirective(trimmed) {
+  if (!trimmed) return null;
+  if (trimmed.toLowerCase() === ":end") {
+    return { kind: "endif", cond: "" };
+  }
+  const colonIdx = trimmed.indexOf(":");
+  if (colonIdx <= 0) return null;
+  const key = trimmed.slice(0, colonIdx).trim().toLowerCase();
+  const val = trimmed.slice(colonIdx + 1).trim();
+  if (key === "else" && !val) return { kind: "else", cond: "" };
+  if (key === "endif" && !val) return { kind: "endif", cond: "" };
+  if ((key === "elif" || key === "else if") && val) return { kind: "elif", cond: val };
+  if ((key === "if" || key === "if?" || key === "gdy" || key === "warunek") && val) {
+    return { kind: "if", cond: val };
+  }
+  if (key === "set" || key === "then") return { kind: "set", cond: val };
+  return null;
+}
+
+function isProseSyntaxDirectiveLine(line) {
+  const trimmed = (line || "").trim();
+  if (!trimmed) return false;
+  if (trimmed === "---" || trimmed === "***") return true;
+  return parseClientProseBlockDirective(trimmed) !== null;
+}
+
+function parseClientTestVarsMap(ta) {
+  const map = new Map();
+  if (!ta) return map;
+  const form = (ta.closest && ta.closest("#form-scene-text")) || qs("#form-scene-text");
+  const rawSpec = (form && form.getAttribute && form.getAttribute("data-test-vars")) || "";
+  if (!rawSpec) return map;
+  const parts = rawSpec.split(";");
+  for (let i = 0; i < parts.length; i++) {
+    const p = parts[i].trim();
+    const eq = p.indexOf("=");
+    if (eq > 0) {
+      map.set(p.slice(0, eq).trim().toLowerCase(), p.slice(eq + 1).trim());
+    }
+  }
+  return map;
+}
+
+function trimClientOuterParens(s) {
+  let cur = (s || "").trim();
+  while (cur.length >= 2 && cur[0] === "(" && cur[cur.length - 1] === ")") {
+    let depth = 0;
+    let valid = true;
+    for (let i = 0; i < cur.length; i++) {
+      if (cur[i] === "(") depth++;
+      else if (cur[i] === ")") {
+        depth--;
+        if (depth === 0 && i < cur.length - 1) {
+          valid = false;
+          break;
+        }
+      }
+    }
+    if (!valid || depth !== 0) break;
+    cur = cur.slice(1, -1).trim();
+  }
+  return cur;
+}
+
+function splitClientTopLevelLogical(s, op) {
+  const parts = [];
+  let depth = 0;
+  let last = 0;
+  const opLen = op.length;
+  for (let i = 0; i <= s.length - opLen; i++) {
+    if (s[i] === "(") depth++;
+    else if (s[i] === ")" && depth > 0) depth--;
+    else if (depth === 0 && s.slice(i, i + opLen) === op) {
+      parts.push(s.slice(last, i));
+      last = i + opLen;
+      i += opLen - 1;
+    }
+  }
+  if (parts.length === 0) return null;
+  parts.push(s.slice(last));
+  return parts;
+}
+
+function resolveClientOperandString(tok, stateMap) {
+  let clean = (tok || "").trim();
+  if ((clean.startsWith('"') && clean.endsWith('"')) || (clean.startsWith("'") && clean.endsWith("'"))) {
+    return clean.slice(1, -1);
+  }
+  if (/^-?\d+$/.test(clean)) return clean;
+  const lower = clean.toLowerCase();
+  if (lower === "true" || lower === "tak" || lower === "yes") return "true";
+  if (lower === "false" || lower === "nie" || lower === "no") return "false";
+  if (stateMap && stateMap.has(lower)) return stateMap.get(lower);
+  return clean;
+}
+
+function evalClientProseAtom(raw, stateMap) {
+  let s = (raw || "").trim();
+  if (!s) return true;
+  const unwrapped = trimClientOuterParens(s);
+  if (unwrapped !== s) return evalClientProseCondition(unwrapped, stateMap);
+  if (s.startsWith("?")) return evalClientProseAtom(s.slice(1), stateMap);
+  if (s.startsWith("!") && !s.startsWith("!=")) return !evalClientProseAtom(s.slice(1), stateMap);
+  const ops = ["==", "!=", ">=", "\x3c=", ">", "\x3c", "="];
+  for (let i = 0; i < ops.length; i++) {
+    const op = ops[i];
+    const idx = s.indexOf(op);
+    if (idx > 0) {
+      const lhs = s.slice(0, idx).trim();
+      const rhs = s.slice(idx + op.length).trim();
+      const lVal = resolveClientOperandString(lhs, stateMap);
+      const rVal = resolveClientOperandString(rhs, stateMap);
+      if (/^-?\d+$/.test(lVal) && /^-?\d+$/.test(rVal)) {
+        const lInt = parseInt(lVal, 10);
+        const rInt = parseInt(rVal, 10);
+        if (op === "==" || op === "=") return lInt === rInt;
+        if (op === "!=") return lInt !== rInt;
+        if (op === ">=") return lInt >= rInt;
+        if (op === "\x3c=") return lInt <= rInt;
+        if (op === ">") return lInt > rInt;
+        if (op === "\x3c") return lInt < rInt;
+      }
+      if (op === "==" || op === "=") return lVal.toLowerCase() === rVal.toLowerCase();
+      if (op === "!=") return lVal.toLowerCase() !== rVal.toLowerCase();
+      return false;
+    }
+  }
+  const key = s.toLowerCase();
+  const val = stateMap && stateMap.has(key) ? stateMap.get(key) : "";
+  const lower = String(val).toLowerCase();
+  if (lower === "true" || lower === "tak" || lower === "yes") return true;
+  if (lower === "false" || lower === "nie" || lower === "no" || lower === "") return false;
+  if (/^-?\d+$/.test(lower)) return parseInt(lower, 10) !== 0;
+  return true;
+}
+
+function evalClientProseAnd(raw, stateMap) {
+  const s = trimClientOuterParens(raw);
+  const parts = splitClientTopLevelLogical(s, "&&");
+  if (parts && parts.length > 1) {
+    for (let i = 0; i < parts.length; i++) {
+      if (!evalClientProseAtom(parts[i], stateMap)) return false;
+    }
+    return true;
+  }
+  return evalClientProseAtom(s, stateMap);
+}
+
+function evalClientProseCondition(raw, stateMap) {
+  const s = trimClientOuterParens(raw);
+  const parts = splitClientTopLevelLogical(s, "||");
+  if (parts && parts.length > 1) {
+    for (let i = 0; i < parts.length; i++) {
+      if (evalClientProseAnd(parts[i], stateMap)) return true;
+    }
+    return false;
+  }
+  return evalClientProseAnd(s, stateMap);
+}
+
+function buildProseHighlightSegmentsClient(raw, stateMap) {
+  const normalized = String(raw || "").replace(/\r\n/g, "\n");
+  if (!normalized) {
+    return [{ text: "", syn: false }];
+  }
+  const lines = normalized.split("\n");
+  const segs = [];
+  const appendSeg = (txt, syn) => {
+    if (!txt) return;
+    if (segs.length > 0 && segs[segs.length - 1].syn === syn) {
+      segs[segs.length - 1].text += txt;
+      return;
+    }
+    segs.push({ text: txt, syn: Boolean(syn) });
+  };
+
+  const stack = [];
+  const isCurrentlyActive = () => {
+    for (let j = 0; j < stack.length; j++) {
+      if (!stack[j].branchActive) return false;
+    }
+    return true;
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = (line || "").trim();
+    const dir = parseClientProseBlockDirective(trimmed);
+    if (dir) {
+      if (dir.kind === "endif") {
+        if (stack.length > 0) stack.pop();
+      } else if (dir.kind === "else") {
+        if (stack.length > 0) {
+          const top = stack[stack.length - 1];
+          top.branchActive = !top.branchTaken;
+          top.branchTaken = true;
+        }
+      } else if (dir.kind === "elif") {
+        if (stack.length > 0) {
+          const top = stack[stack.length - 1];
+          if (top.branchTaken) {
+            top.branchActive = false;
+          } else {
+            const met = evalClientProseCondition(dir.cond, stateMap);
+            top.branchActive = met;
+            if (met) top.branchTaken = true;
+          }
+        }
+      } else if (dir.kind === "if") {
+        const met = evalClientProseCondition(dir.cond, stateMap);
+        stack.push({ branchTaken: met, branchActive: met });
+      }
+      appendSeg(line, true);
+    } else if (trimmed === "---" || trimmed === "***" || !isCurrentlyActive()) {
+      appendSeg(line, true);
+    } else {
+      let rest = line;
+      while (rest.length > 0) {
+        const openIdx = rest.indexOf("{{");
+        if (openIdx < 0) {
+          appendSeg(rest, false);
+          break;
+        }
+        appendSeg(rest.slice(0, openIdx), false);
+        const afterOpen = rest.slice(openIdx + 2);
+        const closeIdx = afterOpen.indexOf("}}");
+        if (closeIdx < 0) {
+          appendSeg(rest.slice(openIdx), false);
+          break;
+        }
+        appendSeg(rest.slice(openIdx, openIdx + 2 + closeIdx + 2), true);
+        rest = afterOpen.slice(closeIdx + 2);
+      }
+    }
+    if (i < lines.length - 1) {
+      const lastSyn = segs.length > 0 && segs[segs.length - 1].syn;
+      appendSeg("\n", lastSyn);
+    }
+  }
+  if (normalized.endsWith("\n")) {
+    appendSeg("\n", false);
+  }
+  if (segs.length === 0) {
+    return [{ text: "", syn: false }];
+  }
+  return segs;
+}
+
+function syncSceneTextareaHighlight(ta) {
+  if (!ta || typeof document === "undefined") return;
+  const wrap = ta.closest ? ta.closest(".scene-prose-edit-wrap") : null;
+  const hlEl = (wrap && qs("#modal-scene-prose-hl", wrap)) || qs("#modal-scene-prose-hl");
+  if (!hlEl) return;
+  if (hlEl.childNodes) {
+    for (let i = hlEl.childNodes.length - 1; i >= 0; i--) {
+      const cn = hlEl.childNodes[i];
+      if (cn && cn.nodeType === 3) {
+        hlEl.removeChild(cn);
+      }
+    }
+  }
+  const stateMap = parseClientTestVarsMap(ta);
+  const segs = buildProseHighlightSegmentsClient(ta.value || "", stateMap);
+  const firstChild = hlEl.children && hlEl.children.length > 0 ? hlEl.children[0] : null;
+  const proto = firstChild && typeof firstChild.cloneNode === "function" ? firstChild.cloneNode(false) : null;
+  if (!proto) {
+    hlEl.textContent = ta.value || "";
+    return;
+  }
+  while (hlEl.children.length < segs.length) {
+    hlEl.appendChild(proto.cloneNode(false));
+  }
+  for (let i = 0; i < hlEl.children.length; i++) {
+    const child = hlEl.children[i];
+    if (i < segs.length) {
+      const seg = segs[i];
+      if (child.textContent !== seg.text) {
+        child.textContent = seg.text;
+      }
+      child.classList.toggle("is-syntax", seg.syn);
+      child.classList.remove("hidden");
+    } else {
+      if (child.textContent !== "") {
+        child.textContent = "";
+      }
+      child.classList.remove("is-syntax");
+      child.classList.add("hidden");
+    }
+  }
+}
+
 function autoResizeSceneTextarea(ta) {
   if (!ta) return;
+  syncSceneTextareaHighlight(ta);
   const feed = ta.closest(".story-scroll-feed");
   const prevScrollTop = feed ? feed.scrollTop : 0;
   ta.style.minHeight = "0px";
   ta.style.height = "0px";
-  const borderExtra = Math.max(2, (ta.offsetHeight - ta.clientHeight) || 0);
-  const fullH = Math.max(320, ta.scrollHeight + borderExtra + 12);
+  const borderExtra = (ta.offsetHeight - ta.clientHeight) || 0;
+  const fullH = Math.max(320, ta.scrollHeight + borderExtra);
   ta.style.height = fullH + "px";
   ta.style.minHeight = fullH + "px";
   ta.scrollTop = 0;

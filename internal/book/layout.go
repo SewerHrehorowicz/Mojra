@@ -1117,7 +1117,7 @@ func lookupNodePosition(layout map[string]NodePosition, sc *Scene) (NodePosition
 	return NodePosition{}, false
 }
 
-// ParseEditorFile parses editor.txt containing Node Editor canvas viewport, node (x, y) coordinates, and wire control pins.
+// ParseEditorFile parses .editor.cfg containing Node Editor canvas viewport, node (x, y) coordinates, and wire control pins.
 func ParseEditorFile(raw string, b *Book) {
 	if b.Layout == nil {
 		b.Layout = make(map[string]NodePosition)
@@ -1211,10 +1211,10 @@ func ParseWirePinList(raw string) []WirePin {
 	return pins
 }
 
-// SerializeEditorFile serializes Node Editor canvas viewport, node (x, y) positions, and wire pins into editor.txt format.
+// SerializeEditorFile serializes Node Editor canvas viewport, node (x, y) positions, and wire pins into .editor.cfg format.
 func SerializeEditorFile(b *Book) string {
 	var sb strings.Builder
-	sb.WriteString("# StoryTeller — Stan edytora węzłów (editor.txt)\n")
+	sb.WriteString("# StoryTeller — Stan edytora węzłów (.editor.cfg)\n")
 	zoom := b.EditorZoom
 	if zoom < 0.2 || zoom > 3.0 {
 		zoom = 1.0

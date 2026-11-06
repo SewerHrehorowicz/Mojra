@@ -418,6 +418,11 @@
 .choice-btn:hover .choice-arrow, .choice-btn:focus-within .choice-arrow
   color --text-primary
 
+.choice-btn.choice-locked, .choice-btn:disabled
+  color --text-muted
+  opacity 0.42
+  cursor not-allowed
+
 .choice-label-text
   flex 1
   min-width 0
@@ -446,8 +451,8 @@
   transition color 0.15s ease
 
 .choice-branch-icon
-  width 18px
-  height 18px
+  width 15px
+  height 15px
   display block
 
 // Right-edge scene history jump rail
@@ -877,15 +882,15 @@ body[data-ui-scale="large"]
     min-height calc(100% - 35px)
 
   .present-scene-icon
-    width 20px
-    height 20px
+    width 18px
+    height 18px
 
   .contextual-rewind-btn
     padding 8px
 
-  .rewind-icon
-    width 22px
-    height 22px
+  .rewind-icon, .choice-branch-icon
+    width 18px
+    height 18px
 
   .scene-prose
     font-size 19px
@@ -944,5 +949,36 @@ body[data-ui-scale="large"]
     padding 5px 4px
 
   .deck-chip-icon
-    width 22px
-    height 22px
+    width 18px
+    height 18px
+
+// Zen Mode — Pure E-Book Reading (no images, no meta bar, no history rail, no footer, no side/header box borders)
+body[data-ui-scale="zen"]
+  .player-bg-stage, .scene-portrait-frame, .scene-illustration-spacer, #reader-global-meta, .story-history-rail, .reader-progress-footer, .audio-deck
+    display none !important
+
+  .story-scroll-feed
+    width min(680px, 100%)
+    max-width 680px
+    margin-left auto
+    margin-right auto
+    border-left none !important
+    border-right none !important
+
+  .active-scene-stage
+    min-height 100%
+
+  .scene-header-block
+    top 0
+    padding 28px 36px 8px 36px
+    border-top none !important
+    border-bottom none !important
+
+  .scene-body-block
+    padding 12px 36px 32px 36px
+
+  .scene-card + .scene-card, .active-scene-stage > .scene-card
+    border-top 1px solid --border-subtle
+
+  .history-stack:empty + .active-scene-stage > .scene-card
+    border-top none

@@ -346,7 +346,15 @@ func fileLooksLikeBookStory(path string) bool {
 	return looksLikePlainTextStory(string(buf))
 }
 
-// HasBookFilesInDir checks whether a directory contains at least one .txt book file (such as story.txt, data.txt, or a .txt file with StoryTeller headers).
+func isHiddenNonEditorFile(name string) bool {
+	base := filepath.Base(name)
+	if !strings.HasPrefix(base, ".") {
+		return false
+	}
+	return !strings.EqualFold(base, EditorStateFileName)
+}
+
+// HasBookFilesInDir checks whether a directory contains at least one .playtxt book file (such as story.playtxt, book.playtxt, or a .playtxt file with StoryTeller headers).
 func HasBookFilesInDir(dir string) bool {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -357,10 +365,10 @@ func HasBookFilesInDir(dir string) bool {
 			continue
 		}
 		lower := strings.ToLower(e.Name())
-		if lower == "data.txt" || lower == "story.txt" {
+		if lower == BookDataFileName || lower == DefaultStoryFile {
 			return true
 		}
-		if strings.HasSuffix(lower, ".txt") && lower != "editor.txt" && lower != "nodes.txt" {
+		if strings.HasSuffix(lower, PlaytxtExt) {
 			if fileLooksLikeBookStory(filepath.Join(dir, e.Name())) {
 				return true
 			}
@@ -369,7 +377,7 @@ func HasBookFilesInDir(dir string) bool {
 	return false
 }
 
-// ValidateBookZip checks whether a .stbook or .zip archive is a valid zip containing StoryTeller .txt files.
+// ValidateBookZip checks whether a .stbook or .zip archive is a valid zip containing StoryTeller .playtxt files.
 func ValidateBookZip(zipPath string) error {
 	zr, err := zip.OpenReader(zipPath)
 	if err != nil {
@@ -394,15 +402,15 @@ func ValidateBookZip(zipPath string) error {
 			relSlash = strings.TrimPrefix(relSlash, commonPrefix)
 		}
 		relSlash = SanitizeRelativeMediaPath(relSlash)
-		if relSlash == "" || strings.HasPrefix(filepath.Base(relSlash), ".") {
+		if relSlash == "" || isHiddenNonEditorFile(relSlash) {
 			continue
 		}
 		lower := strings.ToLower(relSlash)
-		if lower == "data.txt" || lower == "story.txt" || (!strings.Contains(relSlash, "/") && strings.HasSuffix(lower, ".txt") && lower != "editor.txt" && lower != "nodes.txt") {
+		if lower == BookDataFileName || lower == DefaultStoryFile || (!strings.Contains(relSlash, "/") && strings.HasSuffix(lower, PlaytxtExt)) {
 			return nil
 		}
 	}
-	return fmt.Errorf("archiwum nie zawiera plików opowieści (.txt / story.txt / data.txt)")
+	return fmt.Errorf("archiwum nie zawiera plików opowieści (.playtxt / story.playtxt / book.playtxt)")
 }
 
 // ResolveDiskBookPaths validates and resolves a disk path into one or more book paths (folders or .stbook/.zip files) without copying them.
@@ -424,7 +432,7 @@ func ResolveDiskBookPaths(rawPath string) ([]string, error) {
 			}
 			return []string{absPath}, nil
 		}
-		if strings.HasSuffix(lower, ".txt") {
+		if strings.HasSuffix(lower, PlaytxtExt) {
 			parentDir := filepath.Dir(absPath)
 			if HasBookFilesInDir(parentDir) {
 				return []string{parentDir}, nil
@@ -465,7 +473,7 @@ func ResolveDiskBookPaths(rawPath string) ([]string, error) {
 		sort.Strings(found)
 		return found, nil
 	}
-	return nil, fmt.Errorf("w katalogu „%s” nie znaleziono książki (brak story.txt / data.txt ani archiwów .playbook / .zip)", filepath.Base(absPath))
+	return nil, fmt.Errorf("w katalogu „%s” nie znaleziono książki (brak story.playtxt / book.playtxt ani archiwów .playbook / .zip)", filepath.Base(absPath))
 }
 
 const maxBookDownloadBytes = 250 * 1024 * 1024
@@ -719,14 +727,14 @@ func wrapPlainStoryIntoZip(zipOutPath, storyContent, titleHint string) error {
 		title = "Pobrana Opowieść"
 	}
 	dataContent := fmt.Sprintf("title: %s\nauthor: Autor\nnarrated: false\n", title)
-	dw, err := zw.Create("data.txt")
+	dw, err := zw.Create(BookDataFileName)
 	if err != nil {
 		return err
 	}
 	if _, err := dw.Write([]byte(dataContent)); err != nil {
 		return err
 	}
-	sw, err := zw.Create("rozdzial_1.txt")
+	sw, err := zw.Create(DefaultChapterFile)
 	if err != nil {
 		return err
 	}
@@ -764,25 +772,25 @@ func LoadBookFromDir(bookDir string) (*Book, error) {
 	var imageFiles []string
 
 	for _, e := range entries {
-		if e.IsDir() || e.Type()&os.ModeSymlink != 0 || strings.HasPrefix(e.Name(), ".") {
+		if e.IsDir() || e.Type()&os.ModeSymlink != 0 || isHiddenNonEditorFile(e.Name()) {
 			continue
 		}
 		name := e.Name()
 		lower := strings.ToLower(name)
 
 		switch {
-		case lower == "data.txt":
+		case lower == BookDataFileName:
 			raw, err := readSafeBookTextFile(bookDir, name)
 			if err == nil {
 				ParseDataFile(raw, b)
 			}
-		case lower == "editor.txt" || lower == "nodes.txt":
+		case lower == EditorStateFileName || lower == "editor.cfg":
 			raw, err := readSafeBookTextFile(bookDir, name)
 			if err == nil {
 				ParseEditorFile(raw, b)
 			}
-		case strings.HasSuffix(lower, ".txt"):
-			if lower == "story.txt" {
+		case strings.HasSuffix(lower, PlaytxtExt):
+			if lower == DefaultStoryFile {
 				storyFiles = append(storyFiles, name)
 			} else if raw, err := readSafeBookTextFile(bookDir, name); err == nil && looksLikePlainTextStory(raw) {
 				storyFiles = append(storyFiles, name)
@@ -843,7 +851,7 @@ func LoadBookFromDir(bookDir string) (*Book, error) {
 	}
 
 	if len(b.Scenes) == 0 {
-		b.Warnings = append(b.Warnings, "Błąd parsowania książki: nie znaleziono żadnych scen w plikach .txt (dodaj nagłówek scene: Nazwa sceny).")
+		b.Warnings = append(b.Warnings, "Błąd parsowania książki: nie znaleziono żadnych scen w plikach .playtxt (dodaj nagłówek scene: Nazwa sceny).")
 		b.Scenes = []*Scene{
 			{
 				ID:          "s1",
@@ -852,7 +860,7 @@ func LoadBookFromDir(bookDir string) (*Book, error) {
 				ChapterID:   "rozdzial_1",
 				Text:        "Ta książka nie zawierała żadnych poprawnych scen podczas wczytywania.",
 				HTML:        RenderSafeProseHTML("Ta książka nie zawierała żadnych poprawnych scen podczas wczytywania."),
-				SourceFile:  "rozdzial_1.txt",
+				SourceFile:  DefaultChapterFile,
 				ExplicitEnd: true,
 			},
 		}
@@ -913,13 +921,13 @@ func LoadBookFromZip(zipPath string) (*Book, error) {
 			relSlash = strings.TrimPrefix(relSlash, commonPrefix)
 		}
 		relSlash = SanitizeRelativeMediaPath(relSlash)
-		if relSlash == "" || strings.HasPrefix(filepath.Base(relSlash), ".") {
+		if relSlash == "" || isHiddenNonEditorFile(relSlash) {
 			continue
 		}
 		lower := strings.ToLower(relSlash)
 
 		switch {
-		case lower == "data.txt":
+		case lower == BookDataFileName:
 			content, err := readZipEntryText(f)
 			if err != nil {
 				return nil, err
@@ -929,7 +937,7 @@ func LoadBookFromZip(zipPath string) (*Book, error) {
 				return nil, fmt.Errorf("archiwum ZIP przekracza łączny limit rozmiaru plików tekstowych (32 MB)")
 			}
 			ParseDataFile(content, b)
-		case lower == "editor.txt" || lower == "nodes.txt":
+		case lower == EditorStateFileName || lower == "editor.cfg":
 			content, err := readZipEntryText(f)
 			if err != nil {
 				return nil, err
@@ -939,7 +947,7 @@ func LoadBookFromZip(zipPath string) (*Book, error) {
 				return nil, fmt.Errorf("archiwum ZIP przekracza łączny limit rozmiaru plików tekstowych (32 MB)")
 			}
 			ParseEditorFile(content, b)
-		case !strings.Contains(relSlash, "/") && strings.HasSuffix(lower, ".txt"):
+		case !strings.Contains(relSlash, "/") && strings.HasSuffix(lower, PlaytxtExt):
 			content, err := readZipEntryText(f)
 			if err != nil {
 				return nil, err
@@ -966,7 +974,7 @@ func LoadBookFromZip(zipPath string) (*Book, error) {
 	}
 
 	if len(b.Scenes) == 0 {
-		b.Warnings = append(b.Warnings, "Błąd parsowania archiwum .stbook: nie znaleziono żadnych scen w plikach .txt.")
+		b.Warnings = append(b.Warnings, "Błąd parsowania archiwum .stbook: nie znaleziono żadnych scen w plikach .playtxt.")
 		b.Scenes = []*Scene{
 			{
 				ID:          "s1",
@@ -975,7 +983,7 @@ func LoadBookFromZip(zipPath string) (*Book, error) {
 				ChapterID:   "rozdzial_1",
 				Text:        "Archiwum książki nie zawierało żadnych poprawnych scen.",
 				HTML:        RenderSafeProseHTML("Archiwum książki nie zawierało żadnych poprawnych scen."),
-				SourceFile:  "rozdzial_1.txt",
+				SourceFile:  DefaultChapterFile,
 				ExplicitEnd: true,
 			},
 		}
@@ -1016,11 +1024,11 @@ func UnpackBookZip(zipPath, targetDir string) error {
 			relSlash = strings.TrimPrefix(relSlash, commonPrefix)
 		}
 		relSlash = SanitizeRelativeMediaPath(relSlash)
-		if relSlash == "" || strings.HasPrefix(filepath.Base(relSlash), ".") {
+		if relSlash == "" || isHiddenNonEditorFile(relSlash) {
 			continue
 		}
 		lower := strings.ToLower(relSlash)
-		isRootTxt := !strings.Contains(relSlash, "/") && strings.HasSuffix(lower, ".txt")
+		isRootTxt := !strings.Contains(relSlash, "/") && (strings.HasSuffix(lower, PlaytxtExt) || lower == EditorStateFileName || lower == "editor.cfg")
 		if !isRootTxt && !isAudioFilename(relSlash) && !isRasterImageFilename(relSlash) {
 			continue
 		}
@@ -1065,8 +1073,7 @@ func isIgnoredZipEntry(slashed string) bool {
 	if strings.HasPrefix(slashed, "__MACOSX/") || strings.Contains(slashed, "/__MACOSX/") {
 		return true
 	}
-	base := filepath.Base(slashed)
-	return strings.HasPrefix(base, ".")
+	return isHiddenNonEditorFile(slashed)
 }
 
 func detectZipCommonPrefix(files []*zip.File) string {
@@ -1093,7 +1100,7 @@ func detectZipCommonPrefix(files []*zip.File) string {
 	if prefix == "" {
 		return ""
 	}
-	// Strip top-level folder prefix if a book .txt file lives inside that top folder
+	// Strip top-level folder prefix if a book .playtxt file lives inside that top folder
 	for _, f := range files {
 		slashed := filepath.ToSlash(f.Name)
 		if isIgnoredZipEntry(slashed) {
@@ -1101,7 +1108,7 @@ func detectZipCommonPrefix(files []*zip.File) string {
 		}
 		trimmed := strings.TrimPrefix(slashed, prefix)
 		lower := strings.ToLower(trimmed)
-		if lower == "data.txt" || lower == "story.txt" || (!strings.Contains(trimmed, "/") && strings.HasSuffix(lower, ".txt")) {
+		if lower == BookDataFileName || lower == DefaultStoryFile || (!strings.Contains(trimmed, "/") && strings.HasSuffix(lower, PlaytxtExt)) {
 			return prefix
 		}
 	}
@@ -1151,10 +1158,10 @@ func sortStoryFiles(files []string) {
 	sort.Slice(files, func(i, j int) bool {
 		li := strings.ToLower(files[i])
 		lj := strings.ToLower(files[j])
-		if li == "story.txt" {
+		if li == DefaultStoryFile {
 			return true
 		}
-		if lj == "story.txt" {
+		if lj == DefaultStoryFile {
 			return false
 		}
 		return li < lj

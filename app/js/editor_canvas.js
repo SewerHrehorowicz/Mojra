@@ -469,6 +469,7 @@ function parseStudioGraphPayload(rawText) {
         label: kv.label || "Wybór " + (idx + 1),
         targetId: kv.target_id || "",
         targetChapter: kv.target_chapter || "",
+        isConditional: kv.cond === "1",
         isBottom: false,
         ox: NODE_CARD_WIDTH,
         oy: NODE_HEADER_HEIGHT + idx * NODE_CHOICE_ROW_HEIGHT + NODE_CHOICE_ROW_HEIGHT * 0.5
@@ -1066,6 +1067,52 @@ function resetCanvasToFirstNode(viewport) {
   editorCanvasState.panY = Math.round(72 - fy);
 }
 
+function ensureNodeVisibleInCanvasViewport(nodeId) {
+  if (!nodeId || typeof studioGraphState === "undefined" || !studioGraphState.nodeById) return;
+  const nd = studioGraphState.nodeById.get(String(nodeId));
+  if (!nd) return;
+  const viewport = qs("#timeline-scroll-viewport");
+  const vw = studioGraphState.viewW || (viewport && viewport.clientWidth) || (typeof window !== "undefined" && window.innerWidth) || 1200;
+  const vh = studioGraphState.viewH || (viewport && viewport.clientHeight) || (typeof window !== "undefined" && window.innerHeight) || 700;
+  const z = editorCanvasState.zoom || 1.0;
+  const modalEl = qs("#modal-scene-text");
+  const isHalfModalOpen = Boolean(
+    modalEl &&
+      !modalEl.classList.contains("mode-full") &&
+      (typeof isPortraitPhoneStudioLayout !== "function" || !isPortraitPhoneStudioLayout())
+  );
+  const minScreenX = isHalfModalOpen ? Math.round(vw * 0.5) + 24 : 24;
+  const maxScreenX = vw - 24;
+  const minScreenY = 24;
+  const maxScreenY = vh - 24;
+  if (maxScreenX <= minScreenX + 80 || maxScreenY <= minScreenY + 80) return;
+
+  const nodeW = nd.w || 192;
+  const nodeH = nd.h || 84;
+  const nodeLeft = nd.x * z + editorCanvasState.panX;
+  const nodeRight = (nd.x + nodeW) * z + editorCanvasState.panX;
+  const nodeTop = nd.y * z + editorCanvasState.panY;
+  const nodeBottom = (nd.y + nodeH) * z + editorCanvasState.panY;
+
+  let changed = false;
+  if (nodeLeft < minScreenX || nodeRight > maxScreenX) {
+    const targetCenterX = (minScreenX + maxScreenX) * 0.5;
+    const nodeCenterX = (nd.x + nodeW * 0.5) * z;
+    editorCanvasState.panX = Math.round(targetCenterX - nodeCenterX);
+    changed = true;
+  }
+  if (nodeTop < minScreenY || nodeBottom > maxScreenY) {
+    const targetCenterY = (minScreenY + maxScreenY) * 0.5;
+    const nodeCenterY = (nd.y + nodeH * 0.5) * z;
+    editorCanvasState.panY = Math.round(targetCenterY - nodeCenterY);
+    changed = true;
+  }
+  if (changed) {
+    applyEditorCanvasTransform();
+    scheduleSaveEditorViewport();
+  }
+}
+
 function scheduleSaveEditorViewport() {
   if (viewportSaveTimer) {
     clearTimeout(viewportSaveTimer);
@@ -1580,12 +1627,14 @@ function initNodeEditorCanvas() {
       : "";
   } else {
     studioGraphState.selectedChapterKey = "";
-    const serverSelectedId = contextForm ? contextForm.getAttribute("data-context-scene-id") || "" : "";
+    const modalSceneInput = qs('#modal-scene-text input[name="scene_id"]');
+    const modalSceneId = modalSceneInput ? (modalSceneInput.value || "").trim() : "";
+    const serverSelectedId =
+      modalSceneId ||
+      (contextForm ? (contextForm.getAttribute("data-context-scene-id") || "").trim() : "");
     if (
       !editorSelectionCleared &&
       serverSelectedId &&
-      contextPanel &&
-      !contextPanel.classList.contains("hidden") &&
       selectedNodeIds.size <= 1
     ) {
       selectedNodeIds.clear();

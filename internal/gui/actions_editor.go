@@ -34,6 +34,7 @@ func (s *Server) openBookSettings(r *http.Request) string {
 	s.BookSettingsOpen = true
 	s.SelectedChapter = ""
 	s.EditorBreakdownPanelOpen = false
+	s.EditorVariablesPanelOpen = false
 	s.EditorHistoryPanelOpen = false
 	s.EditorHelpModalOpen = false
 	return ""
@@ -41,6 +42,7 @@ func (s *Server) openBookSettings(r *http.Request) string {
 
 func (s *Server) closeBookSettings(_ *http.Request) string {
 	s.BookSettingsOpen = false
+	s.SelectedChapter = ""
 	return ""
 }
 
@@ -59,8 +61,12 @@ func (s *Server) toggleBookSettings(r *http.Request) string {
 	if s.BookSettingsOpen {
 		s.SelectedChapter = ""
 		s.EditorBreakdownPanelOpen = false
+		s.EditorVariablesPanelOpen = false
 		s.EditorHistoryPanelOpen = false
 		s.EditorHelpModalOpen = false
+		if s.SceneTextModalWidthMode == "full" {
+			s.SceneTextModalWidthMode = "half"
+		}
 	}
 	return ""
 }
@@ -84,6 +90,13 @@ func (s *Server) saveBookSettings(r *http.Request) string {
 				changed = true
 			}
 		}
+		if _, hasLic := r.Form["license"]; hasLic {
+			newLic := book.SanitizePlainText(r.FormValue("license"))
+			if newLic != s.ActiveBook.License {
+				s.ActiveBook.License = newLic
+				changed = true
+			}
+		}
 		if _, hasDesc := r.Form["description"]; hasDesc {
 			newDesc := book.SanitizePlainText(r.FormValue("description"))
 			if newDesc != s.ActiveBook.Description {
@@ -104,7 +117,7 @@ func (s *Server) saveBookSettings(r *http.Request) string {
 			if target := s.findScene(startScID); target != nil && !strings.EqualFold(s.ActiveBook.StartSceneID, target.ID) {
 				s.ActiveBook.StartSceneID = target.ID
 				s.ActiveBook.RawStart = target.ReferenceKey()
-				if s.Save != nil && len(s.Save.History) == 0 && s.Save.AudioTime == 0 {
+				if s.PlayerBook != nil && s.PlayerBook.ID == s.ActiveBook.ID && s.Save != nil && len(s.Save.History) == 0 && s.Save.AudioTime == 0 {
 					s.Save.CurrentSceneID = target.ID
 					_ = book.WriteSaveState(s.SavesDir, s.Save)
 				}
@@ -204,7 +217,7 @@ func (s *Server) setStartScene(r *http.Request) string {
 		if s.SceneTextModalID != "" {
 			s.SceneTextModalID = target.ID
 		}
-		if s.Save != nil && len(s.Save.History) == 0 && s.Save.AudioTime == 0 {
+		if s.PlayerBook != nil && s.PlayerBook.ID == b.ID && s.Save != nil && len(s.Save.History) == 0 && s.Save.AudioTime == 0 {
 			s.Save.CurrentSceneID = target.ID
 			_ = book.WriteSaveState(s.SavesDir, s.Save)
 		}
@@ -249,7 +262,7 @@ func (s *Server) setBookStartChapter(r *http.Request) string {
 		}
 		b.StartSceneID = targetScene.ID
 		b.RawStart = targetScene.ReferenceKey()
-		if s.Save != nil && len(s.Save.History) == 0 && s.Save.AudioTime == 0 {
+		if s.PlayerBook != nil && s.PlayerBook.ID == b.ID && s.Save != nil && len(s.Save.History) == 0 && s.Save.AudioTime == 0 {
 			s.Save.CurrentSceneID = targetScene.ID
 			_ = book.WriteSaveState(s.SavesDir, s.Save)
 		}
@@ -350,8 +363,9 @@ func (s *Server) selectStudioScene(r *http.Request) string {
 	scID := strings.TrimSpace(r.FormValue("scene"))
 	if found := s.findScene(scID); found != nil {
 		s.SelectedSceneID = found.ID
-		s.SelectedChapter = ""
-		s.BookSettingsOpen = false
+		if s.SceneTextModalID != "" {
+			s.SceneTextModalID = found.ID
+		}
 	}
 	return ""
 }
@@ -366,6 +380,7 @@ func (s *Server) selectStudioChapter(r *http.Request) string {
 			s.SelectedChapter = foundCh.Name
 			s.BookSettingsOpen = false
 			s.EditorBreakdownPanelOpen = false
+			s.EditorVariablesPanelOpen = false
 			s.EditorHistoryPanelOpen = false
 			s.EditorHelpModalOpen = false
 		}
@@ -443,7 +458,6 @@ func (s *Server) createSceneAt(r *http.Request) string {
 	if s.isHistoryPreview() {
 		return historyPreviewLockedToast
 	}
-	s.ensureActiveBookUnpackedForStudio()
 	if r.FormValue("scene_id") != "" {
 		_ = s.saveSceneFromForm(r)
 	}
@@ -481,7 +495,6 @@ func (s *Server) autoLayoutNodes(r *http.Request) string {
 	if s.isHistoryPreview() {
 		return historyPreviewLockedToast
 	}
-	s.ensureActiveBookUnpackedForStudio()
 	if r.FormValue("scene_id") != "" {
 		_ = s.saveSceneFromForm(r)
 	}
@@ -507,10 +520,34 @@ func (s *Server) openSceneTextModal(r *http.Request) string {
 	if scID == "" {
 		scID = strings.TrimSpace(r.FormValue("scene_id"))
 	}
+	if scID == "" {
+		scID = s.SelectedSceneID
+	}
+	if scID == "" && s.ActiveBook != nil {
+		scID = s.ActiveBook.StartSceneID
+		if scID == "" && len(s.ActiveBook.Scenes) > 0 {
+			scID = s.ActiveBook.Scenes[0].ID
+		}
+	}
 	if sc := s.findScene(scID); sc != nil {
+		if s.SelectedSceneID != sc.ID {
+			s.SceneTextModalSettingsOpen = false
+		}
+		if s.SceneTextModalID == "" {
+			s.SceneTextModalWidthMode = "half"
+		}
 		s.SelectedSceneID = sc.ID
 		s.SceneTextModalID = sc.ID
-		s.SceneTextModalSettingsOpen = false
+	}
+	return ""
+}
+
+func (s *Server) setSceneTextWidthModeAction(r *http.Request) string {
+	mode := strings.ToLower(strings.TrimSpace(r.FormValue("mode")))
+	if mode == "full" {
+		s.SceneTextModalWidthMode = "full"
+	} else {
+		s.SceneTextModalWidthMode = "half"
 	}
 	return ""
 }
@@ -529,7 +566,7 @@ func (s *Server) closeSceneTextModal(r *http.Request) string {
 		}
 	}
 	s.SceneTextModalID = ""
-	s.SceneTextModalSettingsOpen = false
+	s.SceneTestVarsPopoverOpen = false
 	return ""
 }
 
@@ -765,9 +802,11 @@ func (s *Server) navigateSceneTextModal(r *http.Request) string {
 	if targetID == "" {
 		targetID = strings.TrimSpace(r.FormValue("target_scene"))
 	}
+	var chosenEffects string
 	if choiceIdx, err := strconv.Atoi(strings.TrimSpace(r.FormValue("choice_idx"))); err == nil {
 		if curSc := s.findScene(curID); curSc != nil && choiceIdx >= 0 && choiceIdx < len(curSc.Choices) {
 			ch := curSc.Choices[choiceIdx]
+			chosenEffects = ch.Effects
 			if ch.IsEnding || strings.EqualFold(ch.TargetSceneID, "END") || strings.EqualFold(ch.Target, "END") {
 				if s.ActiveBook != nil {
 					targetID = s.ActiveBook.StartSceneID
@@ -785,6 +824,15 @@ func (s *Server) navigateSceneTextModal(r *http.Request) string {
 		targetID = s.ActiveBook.StartSceneID
 	}
 	if nextSc := s.findScene(targetID); nextSc != nil {
+		if s.ActiveBook != nil && len(s.ActiveBook.Variables) > 0 {
+			s.SceneTextTestVars = book.EnsureSaveVariables(s.ActiveBook, s.SceneTextTestVars)
+			if chosenEffects != "" {
+				book.ApplyEffects(chosenEffects, s.SceneTextTestVars, s.ActiveBook)
+			}
+			if nextSc.Effects != "" {
+				book.ApplyEffects(nextSc.Effects, s.SceneTextTestVars, s.ActiveBook)
+			}
+		}
 		s.SelectedSceneID = nextSc.ID
 		s.SceneTextModalID = nextSc.ID
 	} else if s.ActiveBook != nil && len(s.ActiveBook.Scenes) > 0 && targetID == "" {
@@ -805,8 +853,12 @@ func (s *Server) toggleEditorBreakdownPanel(r *http.Request) string {
 	if s.EditorBreakdownPanelOpen {
 		s.BookSettingsOpen = false
 		s.SelectedChapter = ""
+		s.EditorVariablesPanelOpen = false
 		s.EditorHistoryPanelOpen = false
 		s.EditorHelpModalOpen = false
+		if s.SceneTextModalWidthMode == "full" {
+			s.SceneTextModalWidthMode = "half"
+		}
 	}
 	return ""
 }
@@ -818,6 +870,7 @@ func (s *Server) openEditorBreakdownPanel(r *http.Request) string {
 	s.EditorBreakdownPanelOpen = true
 	s.BookSettingsOpen = false
 	s.SelectedChapter = ""
+	s.EditorVariablesPanelOpen = false
 	s.EditorHistoryPanelOpen = false
 	s.EditorHelpModalOpen = false
 	return ""

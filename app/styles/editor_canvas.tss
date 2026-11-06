@@ -9,20 +9,23 @@
   background --bg-obsidian
 
 .canvas-toolbar
-  padding 6px 18px
+  padding 0 8px
+  height 36px
   min-height 36px
+  max-height 36px
+  box-sizing border-box
   background --bg-topbar
   border-bottom 1px solid --border-subtle
   display flex
   align-items center
   justify-content space-between
-  gap 12px
+  gap 6px
   flex-shrink 0
 
 .canvas-toolbar-left
   display flex
   align-items center
-  gap 10px
+  gap 4px
   flex 1
   min-width 0
 
@@ -40,6 +43,7 @@
   white-space nowrap
   overflow hidden
   text-overflow ellipsis
+  margin-right 4px
 
 .canvas-book-title
   color --text-primary
@@ -66,7 +70,7 @@
   display flex
   align-items center
   justify-content flex-end
-  gap 12px
+  gap 4px
   flex 1
   min-width 0
   flex-wrap nowrap
@@ -80,7 +84,7 @@
 .canvas-zoom-controls
   display inline-flex
   align-items center
-  gap 4px
+  gap 2px
 
 .canvas-zoom-label
   font-family --font-sans
@@ -305,8 +309,11 @@
 
 body[data-ui-scale="large"]
   .canvas-toolbar
-    padding 10px 20px
+    padding 0 20px
+    height 50px
     min-height 50px
+    max-height 50px
+    box-sizing border-box
     gap 16px
 
   .canvas-toolbar-right
@@ -327,48 +334,46 @@ body[data-ui-scale="large"]
 .canvas-toolbar
   @switch preview
     portrait
-      flex-direction column
-      align-items stretch
-      justify-content flex-start
-      padding 6px 8px
+      flex-direction row
+      flex-wrap wrap
+      align-items center
+      justify-content space-between
+      padding 4px 8px
       gap 4px
-    landscape
-      padding 6px 12px
-      gap 8px
+    tablet, landscape
+      padding 4px 8px
+      gap 6px
 
 .canvas-toolbar-left
   @switch preview
     portrait
       width 100%
-      justify-content space-between
-      padding-bottom 4px
+      flex 0 0 100%
+      justify-content flex-start
+      gap 4px
+      padding-bottom 3px
       border-bottom 1px solid --border-subtle
+
+.canvas-toolbar-left .canvas-legend
+  @switch preview
+    portrait
+      margin-right auto
 
 .canvas-toolbar-right
   @switch preview
     portrait
-      width 100%
-      justify-content space-between
+      width auto
+      flex 0 0 auto
+      justify-content flex-end
       flex-wrap nowrap
-      gap 2px
-    landscape
-      gap 8px
-
-.canvas-toolbar-right .top-action-btn
-  @switch preview
-    portrait
-      padding 4px 3px
-
-.canvas-toolbar-right .action-icon
-  @switch preview
-    portrait
-      width 15px
-      height 15px
+      gap 4px
+    tablet, landscape
+      gap 4px
 
 .canvas-zoom-controls
   @switch preview
     portrait
-      gap 1px
+      gap 2px
 
 .canvas-zoom-label
   @switch preview
@@ -380,33 +385,33 @@ body[data-ui-scale="large"]
 
 @media (max-width: 760px)
   .canvas-toolbar
-    flex-direction column
-    align-items stretch
-    justify-content flex-start
-    padding 6px 8px
+    flex-direction row
+    flex-wrap wrap
+    align-items center
+    justify-content space-between
+    padding 4px 8px
     gap 4px
 
   .canvas-toolbar-left
     width 100%
-    justify-content space-between
-    padding-bottom 4px
+    flex 0 0 100%
+    justify-content flex-start
+    gap 4px
+    padding-bottom 3px
     border-bottom 1px solid --border-subtle
 
+  .canvas-toolbar-left .canvas-legend
+    margin-right auto
+
   .canvas-toolbar-right
-    width 100%
-    justify-content space-between
+    width auto
+    flex 0 0 auto
+    justify-content flex-end
     flex-wrap nowrap
-    gap 2px
-
-  .canvas-toolbar-right .top-action-btn
-    padding 4px 3px
-
-  .canvas-toolbar-right .action-icon
-    width 15px
-    height 15px
+    gap 4px
 
   .canvas-zoom-controls
-    gap 1px
+    gap 2px
 
   .canvas-zoom-label
     min-width 32px
@@ -419,17 +424,10 @@ body[data-ui-scale="large"]
       gap 4px
 
     .canvas-toolbar-right
-      gap 2px
-
-    .canvas-toolbar-right .top-action-btn
-      padding 4px 3px
-
-    .canvas-toolbar-right .action-icon
-      width 18px
-      height 18px
+      gap 6px
 
     .canvas-zoom-controls
-      gap 1px
+      gap 2px
 
     .canvas-zoom-label
       min-width 34px

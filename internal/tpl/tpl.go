@@ -1397,6 +1397,9 @@ func TranspileStaticHTML(tpl *ParsedTemplate, components map[string]*ParsedTempl
 const indentSpaces = "                                                                "
 
 func writeLineIndent(buf *bytes.Buffer, indent int) {
+	if indent < 0 {
+		return
+	}
 	if buf.Len() > 0 {
 		buf.WriteByte('\n')
 	}
@@ -1674,9 +1677,14 @@ func renderSingleElementNode(buf *bytes.Buffer, n *Node, components map[string]*
 		return
 	}
 
+	childIndent := indent + 1
+	if indent < 0 || n.Tag == "p" || n.Tag == "span" || n.Tag == "pre" || n.Tag == "code" || n.Tag == "textarea" || n.ID == "modal-scene-prose-hl" {
+		childIndent = -1
+	}
+
 	posAfterOpen := buf.Len()
 	if inlineText != "" {
-		writeLineIndent(buf, indent+1)
+		writeLineIndent(buf, childIndent)
 		if inlineRaw {
 			buf.WriteString(inlineText)
 		} else {
@@ -1684,9 +1692,11 @@ func renderSingleElementNode(buf *bytes.Buffer, n *Node, components map[string]*
 		}
 	}
 	posBeforeChildren := buf.Len()
-	renderNodesToBuffer(buf, n.Children, components, ctx, indent+1)
+	renderNodesToBuffer(buf, n.Children, components, ctx, childIndent)
 	if buf.Len() > posBeforeChildren {
-		writeLineIndent(buf, indent)
+		if childIndent >= 0 {
+			writeLineIndent(buf, indent)
+		}
 		buf.WriteString("</")
 		buf.WriteString(n.Tag)
 		buf.WriteByte('>')
@@ -2542,10 +2552,15 @@ func resolveExternalSVGs(templatesDir string, embeddedFS fs.FS, nodes []*Node) e
 				svgPath := filepath.Join(appDir, rel)
 				raw, err = os.ReadFile(svgPath)
 				if err != nil {
-					altPath := filepath.Join(templatesDir, rel)
-					if altRaw, altErr := os.ReadFile(altPath); altErr == nil {
-						raw = altRaw
-						err = nil
+					for _, altPath := range []string{
+						filepath.Join(templatesDir, rel),
+						filepath.Join(appDir, "app", rel),
+					} {
+						if altRaw, altErr := os.ReadFile(altPath); altErr == nil {
+							raw = altRaw
+							err = nil
+							break
+						}
 					}
 				}
 			} else {

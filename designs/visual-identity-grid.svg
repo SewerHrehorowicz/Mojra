@@ -1,0 +1,594 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1840" height="1480" viewBox="0 0 1840 1480">
+  <defs>
+    <pattern id="grid8" width="8" height="8" patternUnits="userSpaceOnUse">
+      <path d="M 8 0 L 0 0 0 8" fill="none" stroke="#141414" stroke-width="0.6"/>
+    </pattern>
+    <pattern id="grid24" width="24" height="24" patternUnits="userSpaceOnUse">
+      <rect width="24" height="24" fill="url(#grid8)"/>
+      <path d="M 24 0 L 0 0 0 24" fill="none" stroke="#222222" stroke-width="1"/>
+    </pattern>
+    <style>
+      .bg { fill: #000000; }
+      .panel { fill: #050505; stroke: #242424; stroke-width: 1; }
+      .sec-title { fill: #8a8a8a; font-family: "Lato", -apple-system, BlinkMacSystemFont, sans-serif; font-size: 11px; font-weight: 700; letter-spacing: 1.4px; }
+      .sec-right { fill: #ffffff; font-family: "Lato", -apple-system, BlinkMacSystemFont, sans-serif; font-size: 10px; font-weight: 700; letter-spacing: 1.1px; }
+      .lbl-key { fill: #686868; font-family: "Lato", -apple-system, sans-serif; font-size: 11px; }
+      .lbl-val { fill: #ffffff; font-family: "Lato", -apple-system, sans-serif; font-size: 12px; }
+      .lbl-muted { fill: #8a8a8a; font-family: "Lato", -apple-system, sans-serif; font-size: 11px; }
+      .lbl-micro { fill: #686868; font-family: "Lato", -apple-system, sans-serif; font-size: 10px; font-weight: 700; letter-spacing: 0.8px; }
+      .mono { fill: #8a8a8a; font-family: "SF Mono", "Menlo", monospace; font-size: 10px; }
+      .mono-hi { fill: #ffffff; font-family: "SF Mono", "Menlo", monospace; font-size: 10px; font-weight: 700; }
+      .mono-warn { fill: #ff5555; font-family: "SF Mono", "Menlo", monospace; font-size: 10px; font-weight: 700; }
+      .mono-ok { fill: #5ec269; font-family: "SF Mono", "Menlo", monospace; font-size: 10px; font-weight: 700; }
+      .rule-strong { stroke: #383838; stroke-width: 1; }
+      .rule-subtle { stroke: #242424; stroke-width: 1; }
+      .rule-white { stroke: #ffffff; stroke-width: 1; }
+    </style>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1840" height="1480" class="bg"/>
+
+  <!-- HEADER -->
+  <text x="48" y="42" class="sec-title" style="fill:#ffffff;font-size:12px;letter-spacing:2px;">MOJRA — SYSTEM IDENTYFIKACJI WIZUALNEJ I SIATKA MODULARNA (1U = 8PX • 1G = 24PX • SUB-TOR = 6PX)</text>
+  <text x="1792" y="42" text-anchor="end" class="sec-title">AUDYT SPÓJNOŚCI UI + SPECYFIKACJA MODUŁÓW</text>
+  <line x1="48" y1="56" x2="1792" y2="56" class="rule-subtle"/>
+
+  <!-- ===================================================================== -->
+  <!-- SECTION 01: FUNDAMENT SIATKI + BRAND + PALETA + TYPOGRAFIA (TOP LEFT) -->
+  <!-- ===================================================================== -->
+  <text x="48" y="84" class="sec-title">01 / FUNDAMENT SIATKI MODULARNEJ + MARKA MOJRA V6 SLAB</text>
+  <text x="896" y="84" text-anchor="end" class="sec-right">NWW(6, 8) = 24PX • PROMIEŃ 0PX</text>
+  <line x1="48" y1="94" x2="896" y2="94" class="rule-subtle"/>
+
+  <g transform="translate(48, 108)">
+    <rect width="848" height="312" fill="url(#grid24)" stroke="#242424" stroke-width="1"/>
+
+    <!-- Brand Lockup on 24px/8px Grid -->
+    <g transform="translate(24, 24)">
+      <rect width="384" height="120" fill="#000000" fill-opacity="0.82" stroke="#383838" stroke-width="1"/>
+      <!-- Mojra Symbol (3G x 3G = 72x72) -->
+      <g transform="translate(24, 18)">
+        <rect width="72" height="72" fill="none" stroke="#242424" stroke-width="1" stroke-dasharray="2 2"/>
+        <line x1="12" y1="60" x2="12" y2="12" stroke="#ffffff" stroke-width="3" stroke-linecap="round"/>
+        <line x1="12" y1="12" x2="36" y2="39" stroke="#ffffff" stroke-width="3" stroke-linecap="round"/>
+        <line x1="60" y1="16" x2="42" y2="35" stroke="#ffffff" stroke-width="3" stroke-linecap="round"/>
+        <line x1="60" y1="60" x2="60" y2="18" stroke="#ffffff" stroke-width="3" stroke-linecap="round"/>
+        <line x1="36" y1="46" x2="36" y2="60" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round"/>
+        <circle cx="12" cy="12" r="4.5" fill="#ffffff"/>
+        <circle cx="12" cy="60" r="4.5" fill="#ffffff"/>
+        <circle cx="60" cy="60" r="4.5" fill="#ffffff"/>
+        <circle cx="60" cy="12" r="4.5" fill="#000000" stroke="#ffffff" stroke-width="2.6"/>
+        <circle cx="36" cy="39" r="7.5" fill="#000000" stroke="#ffffff" stroke-width="2.6"/>
+        <circle cx="36" cy="39" r="2.6" fill="#ffffff"/>
+      </g>
+      <text x="120" y="62" fill="#ffffff" font-family="Aleo, Georgia, serif" font-size="42" font-weight="700" letter-spacing="0.5">Mojra</text>
+      <text x="122" y="84" fill="#8a8a8a" font-family="Lato, sans-serif" font-size="10" font-weight="700" letter-spacing="3.2">.PLAYBOOK STUDIO</text>
+      <text x="24" y="108" class="mono">Sygnet: 3G×3G (72px) • Odstęp: 1G (24px) • Aleo Bold (462px²)</text>
+    </g>
+
+    <!-- Grid Mathematics Box -->
+    <g transform="translate(432, 24)">
+      <rect width="392" height="120" fill="#050505" stroke="#242424" stroke-width="1"/>
+      <text x="16" y="22" class="lbl-micro" style="fill:#ffffff;">HARMONIA SIATKI: 24PX (1G) SPINA CAŁĄ GEOMETRIĘ</text>
+      <text x="16" y="44" class="mono-hi">• 1G = 24px</text>
+      <text x="104" y="44" class="lbl-muted">Siatka WebGL, wiersz wyboru (24px), ikona (24×24px)</text>
+      <text x="16" y="64" class="mono-hi">• 1u =  8px</text>
+      <text x="104" y="64" class="lbl-muted">Moduł UI (3u = 1G): padding 8/16/24px, węzeł 192px (24u)</text>
+      <text x="16" y="84" class="mono-hi">• 1t =  6px</text>
+      <text x="104" y="84" class="lbl-muted">Sub-tor drutów (4t = 1G): korytarze G+k×6px, kciuk 6×6px</text>
+      <text x="16" y="104" class="mono-hi">• ½u =  4px</text>
+      <text x="104" y="104" class="lbl-muted">Mikro-siatka (6×4px = 1G): szewrony 4px, nawiasy [ ] 5px</text>
+    </g>
+
+    <!-- Color & Surface Tokens (Dark / Light Symmetry) -->
+    <g transform="translate(24, 168)">
+      <rect width="384" height="120" fill="#050505" stroke="#242424" stroke-width="1"/>
+      <text x="16" y="22" class="lbl-micro" style="fill:#ffffff;">TOKENY POWIERZCHNI I KONTRASTU (colors.tss)</text>
+      <g transform="translate(16, 34)">
+        <rect x="0" y="0" width="44" height="24" fill="#000000" stroke="#383838"/>
+        <text x="0" y="38" class="mono">#000000</text>
+        <text x="0" y="50" class="mono" style="fill:#686868;">obsidian</text>
+
+        <rect x="58" y="0" width="44" height="24" fill="#080808" stroke="#383838"/>
+        <text x="58" y="38" class="mono">#080808</text>
+        <text x="58" y="50" class="mono" style="fill:#686868;">surface</text>
+
+        <rect x="116" y="0" width="44" height="24" fill="#242424" stroke="#383838"/>
+        <text x="116" y="38" class="mono">#242424</text>
+        <text x="116" y="50" class="mono" style="fill:#686868;">subtle</text>
+
+        <rect x="174" y="0" width="44" height="24" fill="#383838" stroke="#686868"/>
+        <text x="174" y="38" class="mono">#383838</text>
+        <text x="174" y="50" class="mono" style="fill:#686868;">strong</text>
+
+        <rect x="232" y="0" width="44" height="24" fill="#8a8a8a"/>
+        <text x="232" y="38" class="mono">#8a8a8a</text>
+        <text x="232" y="50" class="mono" style="fill:#686868;">secondary</text>
+
+        <rect x="290" y="0" width="44" height="24" fill="#ffffff"/>
+        <text x="290" y="38" class="mono-hi">#ffffff</text>
+        <text x="290" y="50" class="mono" style="fill:#686868;">primary</text>
+      </g>
+      <text x="16" y="106" class="mono">1 kolor semantyczny: --accent-danger (#ff5555 / #cc2222)</text>
+    </g>
+
+    <!-- Typography Scale -->
+    <g transform="translate(432, 168)">
+      <rect width="392" height="120" fill="#050505" stroke="#242424" stroke-width="1"/>
+      <text x="16" y="22" class="lbl-micro" style="fill:#ffffff;">SKALA TYPOGRAFICZNA (WBUDOWANE TTF + ATLAS MSDF)</text>
+      <text x="16" y="46" fill="#ffffff" font-family="Aleo, Georgia, serif" font-size="15" font-weight="700">Aleo Serif (22 / 18 / 14 / 13px)</text>
+      <text x="248" y="46" class="mono">Logo, tytuły, proza</text>
+      <text x="16" y="70" fill="#ffffff" font-family="Lato, sans-serif" font-size="13" font-weight="700">Lato Sans (13 / 12 / 11 / 10px)</text>
+      <text x="248" y="70" class="mono">UI, formularze, wybory</text>
+      <text x="16" y="94" fill="#8a8a8a" font-family="Courier New, monospace" font-size="12" font-weight="700">Courier (12pt) / Mono (11px)</text>
+      <text x="248" y="94" class="mono">Scenariusz, {{...}}</text>
+    </g>
+  </g>
+
+  <!-- ===================================================================== -->
+  <!-- SECTION 02: PASEK GÓRNY (#TOPBAR) I PASKI NARZĘDZI (TOP RIGHT)        -->
+  <!-- ===================================================================== -->
+  <text x="944" y="84" class="sec-title">02 / PASEK GÓRNY (#TOPBAR) I PASKI NARZĘDZI (36PX = 1.5G)</text>
+  <text x="1792" y="84" text-anchor="end" class="sec-right">3 STREFY #TOPBAR • PRZYCISKI 28×28PX</text>
+  <line x1="944" y1="94" x2="1792" y2="94" class="rule-subtle"/>
+
+  <g transform="translate(944, 108)">
+    <rect width="848" height="312" fill="url(#grid24)" stroke="#242424" stroke-width="1"/>
+
+    <!-- Current Topbar Issue -->
+    <text x="24" y="24" class="mono-warn">✕ STAN OBECNY W KODZIE (topbar.tpl vs projekty mojra-logo-v6-slab i zen-mode):</text>
+    <g transform="translate(24, 34)">
+      <rect width="800" height="36" fill="#000000" stroke="#383838"/>
+      <g transform="translate(14, 9)">
+        <line x1="3" y1="15" x2="3" y2="3" stroke="#fff" stroke-width="1.6"/>
+        <line x1="3" y1="3" x2="9" y2="10" stroke="#fff" stroke-width="1.6"/>
+        <line x1="15" y1="4" x2="10" y2="9" stroke="#fff" stroke-width="1.6"/>
+        <line x1="15" y1="15" x2="15" y2="4" stroke="#fff" stroke-width="1.6"/>
+        <circle cx="3" cy="3" r="1.5" fill="#fff"/>
+        <circle cx="9" cy="10" r="2" fill="#000" stroke="#fff" stroke-width="1.3"/>
+      </g>
+      <line x1="42" y1="11" x2="42" y2="25" stroke="#242424"/>
+      <text x="56" y="22" class="mono" style="fill:#8a8a8a;">[|||\]  [książka]  [ołówek]  ← Brak logotypu „Mojra” (Aleo Bold), brak tytułu na środku, brak [ ] aktywnej zakładki</text>
+    </g>
+
+    <!-- Target Unified Topbar -->
+    <text x="24" y="96" class="mono-ok">✓ DOCELOWY #TOPBAR NA SIATCE (36PX = 1.5G, 3 STREFY Z PROJEKTÓW V6-SLAB + ZEN-MODE):</text>
+    <g transform="translate(24, 106)">
+      <rect width="800" height="36" fill="#000000" stroke="#ffffff" stroke-width="1"/>
+      <!-- Left zone: Mojra mark + Mojra Aleo Bold + Divider + Library Icon L1 -->
+      <g transform="translate(16, 9)">
+        <line x1="3" y1="15" x2="3" y2="3" stroke="#fff" stroke-width="1.7"/>
+        <line x1="3" y1="3" x2="9" y2="10" stroke="#fff" stroke-width="1.7"/>
+        <line x1="15" y1="4" x2="10" y2="9" stroke="#fff" stroke-width="1.7"/>
+        <line x1="15" y1="15" x2="15" y2="4" stroke="#fff" stroke-width="1.7"/>
+        <circle cx="3" cy="3" r="1.5" fill="#fff"/>
+        <circle cx="3" cy="15" r="1.5" fill="#fff"/>
+        <circle cx="15" cy="15" r="1.5" fill="#fff"/>
+        <circle cx="15" cy="3" r="1.5" fill="#000" stroke="#fff" stroke-width="1.3"/>
+        <circle cx="9" cy="10" r="2.2" fill="#000" stroke="#fff" stroke-width="1.3"/>
+      </g>
+      <text x="40" y="23" fill="#ffffff" font-family="Aleo, Georgia, serif" font-size="14" font-weight="700">Mojra</text>
+      <line x1="92" y1="10" x2="92" y2="26" stroke="#242424"/>
+      <!-- Library L1 icon -->
+      <g transform="translate(104, 10)" stroke="#8a8a8a" stroke-width="1.6" stroke-linecap="round">
+        <line x1="2" y1="3" x2="2" y2="14"/>
+        <line x1="5.5" y1="4.5" x2="5.5" y2="14"/>
+        <line x1="9" y1="2.5" x2="9" y2="14"/>
+        <line x1="12" y1="3.5" x2="15" y2="14"/>
+      </g>
+
+      <!-- Center zone: Active Book Title -->
+      <text x="400" y="22" text-anchor="middle" fill="#ffffff" font-family="Lato, sans-serif" font-size="12" font-weight="700">Nie bój się policji rzecznej</text>
+
+      <!-- Right zone: Studio S3 (with [ ] active bracket) + Divider + Monochrome SVG Controls -->
+      <g transform="translate(604, 4)">
+        <path d="M 0 5 L 0 0 L 5 0 M 23 0 L 28 0 L 28 5 M 0 23 L 0 28 L 5 28 M 23 28 L 28 28 L 28 23" fill="none" stroke="#ffffff" stroke-width="1.2"/>
+        <g transform="translate(6, 6)" stroke="#ffffff" stroke-width="1.4" fill="none">
+          <path d="M12 1.5l2.5 2.5L8 10.5H5.5V8L12 1.5z"/>
+          <line x1="5.5" y1="10.5" x2="2" y2="9"/>
+          <line x1="5.5" y1="10.5" x2="7" y2="14"/>
+          <circle cx="1.5" cy="8.8" r="1.3" fill="#ffffff" stroke="none"/>
+          <circle cx="7.4" cy="14.5" r="1.2"/>
+        </g>
+      </g>
+      <line x1="642" y1="10" x2="642" y2="26" stroke="#242424"/>
+      <!-- Monochrome vector icons for controls -->
+      <g transform="translate(654, 11)" stroke="#8a8a8a" stroke-width="1.4" fill="none">
+        <!-- Reset -->
+        <path d="M 2 7 A 5 5 0 1 1 4 11"/>
+        <polyline points="2 3 2 7 6 7"/>
+        <!-- Image -->
+        <rect x="24" y="1" width="12" height="12"/>
+        <circle cx="28" cy="5" r="1" fill="#8a8a8a"/>
+        <!-- Zen stones -->
+        <ellipse cx="54" cy="11" rx="6" ry="2"/>
+        <ellipse cx="54" cy="7" rx="4.2" ry="1.6"/>
+        <ellipse cx="54" cy="3.5" rx="2.5" ry="1.2"/>
+        <!-- Sun/Theme -->
+        <circle cx="78" cy="7" r="3.5"/>
+        <!-- Fullscreen -->
+        <path d="M 96 4 V 1 H 99 M 105 1 H 108 V 4 M 108 10 V 13 H 105 M 99 13 H 96 V 10"/>
+        <!-- Close -->
+        <path d="M 120 3 L 128 11 M 128 3 L 120 11"/>
+      </g>
+    </g>
+
+    <!-- Bar & Icon Button Unification Table -->
+    <g transform="translate(24, 160)">
+      <rect width="800" height="128" fill="#050505" stroke="#242424"/>
+      <text x="16" y="22" class="lbl-micro" style="fill:#ffffff;">UJEDNOLICENIE PASKÓW POZIOMYCH I PRZYCISKÓW IKONOWYCH:</text>
+
+      <text x="16" y="46" class="mono-warn">• Paski dziś:</text>
+      <text x="148" y="46" class="mono">#topbar = 36px | .canvas-toolbar = 38px | .history-panel-header = 37px | .audio-deck = 46px</text>
+      <text x="16" y="64" class="mono-ok">→ Standard (1.5G):</text>
+      <text x="148" y="64" class="mono-hi">Wszystkie paski nagłówkowe = 36px (1.5G), padding 16px (2u) • .audio-deck = 48px (2G)</text>
+
+      <text x="16" y="88" class="mono-warn">• Ikony dziś:</text>
+      <text x="148" y="88" class="mono">#topbar = 28×28px | .canvas-toolbar = 26×26px | .node-icon-btn = 26×26px | .node-close-btn = 24×24px</text>
+      <text x="16" y="106" class="mono-ok">→ Standard:</text>
+      <text x="148" y="106" class="mono-hi">Paski narzędzi = 28×28px (ikona 15px, nawiasy [ ] 5px) • Wiersze formularzy = 24×24px (1G)</text>
+    </g>
+  </g>
+
+  <!-- ===================================================================== -->
+  <!-- SECTION 03: PŁÓTNO WEBGL — KARTA WĘZŁA NA SIATCE 24PX (MIDDLE LEFT)   -->
+  <!-- ===================================================================== -->
+  <text x="48" y="456" class="sec-title">03 / KARTA WĘZŁA NA PŁÓTNIE WEBGL — KOREKTA DO SIATKI 24PX</text>
+  <text x="896" y="456" text-anchor="end" class="sec-right">8G × 3G (192×72PX) • KAŻDY PORT W LINII 24PX</text>
+  <line x1="48" y1="466" x2="896" y2="466" class="rule-subtle"/>
+
+  <g transform="translate(48, 480)">
+    <rect width="848" height="360" fill="url(#grid24)" stroke="#242424" stroke-width="1"/>
+
+    <!-- LEFT: Current Off-Grid Node (74px / +26px) -->
+    <g transform="translate(24, 24)">
+      <text x="0" y="14" class="mono-warn">✕ OBECNIE W editor_webgl.js (POZA SIATKĄ 24PX):</text>
+      <text x="0" y="30" class="mono">Nagłówek 34px • Wybór 26px • Stopka 40px (Baza = 74px)</text>
+
+      <g transform="translate(12, 48)">
+        <rect width="192" height="126" fill="#000000" stroke="#ff5555" stroke-width="1"/>
+        <line x1="0" y1="34" x2="192" y2="34" stroke="#242424"/>
+        <text x="12" y="21" fill="#ffffff" font-family="Aleo, serif" font-size="13">Zatopiona śluza</text>
+        <line x1="0" y1="60" x2="192" y2="60" stroke="#1a1a1a"/>
+        <text x="12" y="51" fill="#8a8a8a" font-family="Lato, sans-serif" font-size="11">Otwórz kratę śluzy...</text>
+        <polygon points="192,41 198,47 192,53 186,47" fill="#ffffff"/>
+        <line x1="0" y1="86" x2="192" y2="86" stroke="#242424"/>
+        <text x="12" y="77" fill="#8a8a8a" font-family="Lato, sans-serif" font-size="11">Wycofaj się w trzciny</text>
+        <circle cx="192" cy="73" r="5" fill="#ffffff"/>
+        <text x="14" y="110" fill="#686868" font-size="12">+</text>
+        <text x="170" y="110" fill="#686868" font-size="11">✎</text>
+
+        <line x1="198" y1="47" x2="234" y2="47" stroke="#ff5555" stroke-dasharray="2 2"/>
+        <text x="240" y="50" class="mono-warn">oy = 47px (mija 48px)</text>
+
+        <line x1="198" y1="73" x2="234" y2="73" stroke="#ff5555" stroke-dasharray="2 2"/>
+        <text x="240" y="76" class="mono-warn">oy = 73px (mija 72px)</text>
+
+        <line x1="192" y1="126" x2="234" y2="126" stroke="#ff5555" stroke-dasharray="2 2"/>
+        <text x="240" y="129" class="mono-warn">h = 126px (mija 120px)</text>
+      </g>
+    </g>
+
+    <!-- RIGHT: Modular 24px Grid Node (72px / +24px) -->
+    <g transform="translate(432, 24)">
+      <text x="0" y="14" class="mono-ok">✓ PO KOREKCIE NA SIATCE 24PX (8G × 3G + n×1G):</text>
+      <text x="0" y="30" class="mono">Nagłówek 36px (1.5G) • Wybór 24px (1G) • Stopka 36px (1.5G)</text>
+
+      <g transform="translate(12, 48)">
+        <rect width="192" height="120" fill="#000000" stroke="#ffffff" stroke-width="1"/>
+        <circle cx="96" cy="0" r="5" fill="#000000" stroke="#ffffff" stroke-width="1.8"/>
+        <line x1="0" y1="36" x2="192" y2="36" stroke="#242424"/>
+        <text x="12" y="22" fill="#ffffff" font-family="Aleo, serif" font-size="13">Zatopiona śluza</text>
+        <line x1="0" y1="60" x2="192" y2="60" stroke="#1a1a1a"/>
+        <text x="12" y="52" fill="#ffffff" font-family="Lato, sans-serif" font-size="11">Otwórz kratę śluzy...</text>
+        <polygon points="192,42 198,48 192,54 186,48" fill="#ffffff"/>
+        <line x1="0" y1="84" x2="192" y2="84" stroke="#242424"/>
+        <text x="12" y="76" fill="#8a8a8a" font-family="Lato, sans-serif" font-size="11">Wycofaj się w trzciny</text>
+        <circle cx="192" cy="72" r="5" fill="#ffffff"/>
+        <text x="14" y="106" fill="#8a8a8a" font-size="12">+</text>
+        <text x="170" y="106" fill="#8a8a8a" font-size="11">✎</text>
+
+        <line x1="198" y1="48" x2="234" y2="48" stroke="#5ec269" stroke-width="1.5"/>
+        <text x="240" y="51" class="mono-ok">oy = 48px (dokładnie 2G)</text>
+
+        <line x1="198" y1="72" x2="234" y2="72" stroke="#5ec269" stroke-width="1.5"/>
+        <text x="240" y="75" class="mono-ok">oy = 72px (dokładnie 3G)</text>
+
+        <line x1="192" y1="120" x2="234" y2="120" stroke="#5ec269" stroke-width="1.5"/>
+        <text x="240" y="123" class="mono-ok">h = 120px (dokładnie 5G)</text>
+      </g>
+    </g>
+
+    <!-- Bottom Summary Box inside 03 -->
+    <g transform="translate(24, 240)">
+      <rect width="800" height="96" fill="#050505" stroke="#242424"/>
+      <text x="16" y="22" class="lbl-micro" style="fill:#ffffff;">ZASADY GEOMETRII PŁÓTNA I DRUTÓW (editor_webgl.js + editor_wires.js):</text>
+      <text x="16" y="44" class="mono-hi">1. Węzeł bazowy (bez wyborów): 192 × 72px (8G × 3G) → dolny port „Dalej” wypada dokładnie na (x + 4G, y + 3G).</text>
+      <text x="16" y="64" class="mono-hi">2. Węzeł z N wyborami: 192 × (72 + N×24)px → każdy prawy port wyboru wypada na (x + 8G, y + (2+i)×G).</text>
+      <text x="16" y="84" class="mono">3. Korytarze przewodów: min. 2G (48px) odstępu między węzłami; sub-tory co 6px (¼G); szewrony 4px; mostki 2.5px.</text>
+    </g>
+  </g>
+
+  <!-- ===================================================================== -->
+  <!-- SECTION 04: KATALOG MODUŁOWYCH KONTROLEK UI (MIDDLE RIGHT)            -->
+  <!-- ===================================================================== -->
+  <text x="944" y="456" class="sec-title">04 / MODUŁOWE PRYMITYWY FORMULARZY I DOKU BOCZNEGO</text>
+  <text x="1792" y="456" text-anchor="end" class="sec-right">KLUCZ 64PX (8U) • LINIA 1PX • DOK 288PX (12G)</text>
+  <line x1="944" y1="466" x2="1792" y2="466" class="rule-subtle"/>
+
+  <g transform="translate(944, 480)">
+    <rect width="848" height="360" fill="url(#grid24)" stroke="#242424" stroke-width="1"/>
+
+    <!-- Left Column: Standard Form Primitives -->
+    <g transform="translate(24, 24)">
+      <rect width="384" height="312" fill="#000000" stroke="#242424"/>
+      <text x="16" y="24" class="lbl-micro" style="fill:#ffffff;">PRYMITYWY WIERSZOWE (KLUCZ 64PX = 8U + KONTROLKA FLEX: 1)</text>
+
+      <!-- 1. Input -->
+      <text x="16" y="56" class="lbl-key">id:</text>
+      <text x="80" y="56" class="lbl-val">zatopiona_sluza</text>
+      <line x1="80" y1="64" x2="368" y2="64" class="rule-strong"/>
+      <text x="304" y="56" class="mono">1px #383838</text>
+
+      <!-- 2. Syntax Input {{ ... }} -->
+      <text x="16" y="96" class="lbl-key">wejście:</text>
+      <text x="80" y="96" class="mono">{{</text>
+      <text x="98" y="96" class="lbl-val">+odwiedzono_sluze, sumienie += 1</text>
+      <text x="352" y="96" class="mono">}}</text>
+      <line x1="80" y1="104" x2="368" y2="104" class="rule-white"/>
+
+      <!-- 3. Toggle -->
+      <text x="16" y="136" class="lbl-key">narracja:</text>
+      <text x="80" y="136" class="lbl-val">Wymagana</text>
+      <rect x="346" y="127" width="22" height="10" fill="#242424"/>
+      <rect x="360" y="129" width="6" height="6" fill="#ffffff"/>
+      <text x="236" y="136" class="mono">brak linii • 6×6px</text>
+
+      <!-- 4. Radio (8x8 square) -->
+      <text x="16" y="176" class="lbl-key">skala:</text>
+      <text x="80" y="176" class="lbl-val" style="font-weight:700;">Domyślna</text>
+      <rect x="142" y="167" width="8" height="8" fill="#ffffff"/>
+      <text x="168" y="176" class="lbl-muted">Powiększona</text>
+      <rect x="246" y="167" width="8" height="8" fill="#242424"/>
+      <text x="272" y="176" class="lbl-muted">Zen</text>
+      <rect x="298" y="167" width="8" height="8" fill="#242424"/>
+
+      <!-- 5. Custom Select (Merged Top Edge) -->
+      <text x="16" y="216" class="lbl-key">format:</text>
+      <text x="80" y="216" class="lbl-val">Scenariusz PDF (.pdf)</text>
+      <path d="M 358 214 L 362 210 L 366 214" fill="none" stroke="#ffffff" stroke-width="1.4"/>
+      <rect x="80" y="224" width="288" height="64" fill="#000000" stroke="#383838"/>
+      <line x1="80" y1="224" x2="368" y2="224" stroke="#ffffff" stroke-width="1"/>
+      <rect x="81" y="225" width="286" height="30" fill="#161616"/>
+      <text x="90" y="244" class="lbl-val" style="font-weight:700;">Scenariusz PDF (.pdf)</text>
+      <text x="90" y="274" class="lbl-muted">Paczka projektu (.stbook)</text>
+    </g>
+
+    <!-- Right Column: Triple-Stack Choice & Dock Panel Standards -->
+    <g transform="translate(432, 24)">
+      <rect width="392" height="312" fill="#000000" stroke="#242424"/>
+      <text x="16" y="24" class="lbl-micro" style="fill:#ffffff;">SCALONY 3-WIERSZOWY WYBÓR ({}) + STANDARD DOKU</text>
+
+      <!-- Triple stack choice -->
+      <g transform="translate(16, 42)">
+        <text x="0" y="38" class="mono">⋮⋮</text>
+        <line x1="16" y1="0" x2="16" y2="72" stroke="#383838" stroke-width="2"/>
+        <line x1="16" y1="72" x2="268" y2="72" stroke="#383838" stroke-width="1"/>
+        <rect x="17" y="0" width="251" height="23" fill="#080808"/>
+        <text x="22" y="15" class="mono">{{</text>
+        <text x="38" y="15" class="mono-hi">cwiczenia_z_wioslem &amp;&amp; sumienie &gt;= 1</text>
+        <text x="252" y="15" class="mono">}}</text>
+        <line x1="17" y1="24" x2="268" y2="24" stroke="#242424"/>
+
+        <text x="22" y="40" class="lbl-val">Rozpędź wiosłem kłusowników</text>
+        <line x1="17" y1="48" x2="268" y2="48" stroke="#242424"/>
+
+        <rect x="17" y="49" width="251" height="22" fill="#080808"/>
+        <text x="22" y="64" class="mono">{{</text>
+        <text x="38" y="64" class="mono-hi">+posluszenstwo, stan_ducha = posluszny</text>
+        <text x="252" y="64" class="mono">}}</text>
+
+        <!-- Right icons: [?] [{}] [◆] [kosz] -->
+        <g transform="translate(276, 24)">
+          <circle cx="10" cy="12" r="8" fill="none" stroke="#8a8a8a"/>
+          <text x="10" y="16" text-anchor="middle" class="mono" style="fill:#ffffff;">?</text>
+          <g transform="translate(24, 0)">
+            <path d="M 0 4 L 0 0 L 4 0 M 20 0 L 24 0 L 24 4 M 0 20 L 0 24 L 4 24 M 20 24 L 24 24 L 24 20" fill="none" stroke="#ffffff"/>
+            <text x="12" y="16" text-anchor="middle" class="mono-hi">{}</text>
+          </g>
+          <polygon points="60,6 66,12 60,18 54,12" fill="#ffffff"/>
+          <g transform="translate(72, 5)" stroke="#8a8a8a" stroke-width="1.3" fill="none">
+            <line x1="1" y1="3" x2="11" y2="3"/>
+            <rect x="2.5" y="3" width="7" height="9"/>
+          </g>
+        </g>
+      </g>
+
+      <!-- Dock Panel Width & Spacing Rules -->
+      <line x1="16" y1="136" x2="376" y2="136" class="rule-subtle"/>
+      <text x="16" y="158" class="lbl-micro" style="fill:#ffffff;">STANDARD PANELI BOCZNYCH (INSPEKTOR / ZMIENNE / OBSADA / HISTORIA):</text>
+      <text x="16" y="180" class="mono-hi">• Szerokość:</text>
+      <text x="116" y="180" class="mono">288px (12G) doki główne • 336px (14G) Historia</text>
+      <text x="16" y="200" class="mono-hi">• Nagłówek:</text>
+      <text x="116" y="200" class="mono">Wysokość 36px (1.5G) • 11px UPPERCASE • X po prawej</text>
+      <text x="16" y="220" class="mono-hi">• Sekcje:</text>
+      <text x="116" y="220" class="mono">Padding 16px (2u) • Linia 1px #242424 • Label 10px</text>
+      <text x="16" y="240" class="mono-hi">• Metryki 2×N:</text>
+      <text x="116" y="240" class="mono">Bez ramki zewnętrznej — tylko krzyż linii #242424</text>
+      <text x="16" y="260" class="mono-warn">• Duplikat CSS:</text>
+      <text x="116" y="260" class="mono">Scalić .toggle-switch i .ui-toggle-track (22×10px)</text>
+    </g>
+  </g>
+
+  <!-- ===================================================================== -->
+  <!-- SECTION 05: CO JEST DO POPRAWY W EKRANACH I SZABLONACH (BOTTOM FULL)  -->
+  <!-- ===================================================================== -->
+  <text x="48" y="876" class="sec-title">05 / WYKRYTE NIESPÓJNOŚCI W EKRANACH I SZABLONACH — PRZED I PO KOREKCIE</text>
+  <text x="1792" y="876" text-anchor="end" class="sec-right">5 OBSZARÓW DO UJEDNOLICENIA</text>
+  <line x1="48" y1="886" x2="1792" y2="886" class="rule-subtle"/>
+
+  <g transform="translate(48, 900)">
+    <!-- CARD A: Modal Dodaj Książkę (#modal-add-book) -->
+    <g transform="translate(0, 0)">
+      <rect width="560" height="536" class="panel"/>
+      <text x="20" y="28" class="lbl-micro" style="fill:#ffffff;">A. MODAL „DODAJ KSIĄŻKĘ” (modals.tpl:241) — STARY STYL PUDEŁKOWY + OPISY</text>
+      <line x1="20" y1="38" x2="540" y2="38" class="rule-subtle"/>
+
+      <!-- Before -->
+      <text x="20" y="60" class="mono-warn">✕ TERAZ: Numerowane sekcje, opisy instruktażowe, pudełkowe inputy i X w nagłówku</text>
+      <g transform="translate(20, 72)">
+        <rect width="520" height="176" fill="#000000" stroke="#383838"/>
+        <text x="16" y="26" fill="#ffffff" font-family="Aleo, serif" font-size="15">Dodaj książkę do biblioteki</text>
+        <text x="496" y="26" class="mono">✕</text>
+        <line x1="0" y1="38" x2="520" y2="38" stroke="#242424"/>
+        <text x="16" y="58" class="mono-hi">1. Z DYSKU (BEZ KOPIOWANIA PLIKÓW)</text>
+        <text x="16" y="74" class="mono" style="fill:#686868;">Wskaż istniejący folder książki lub archiwum .playbook / .zip na dysku...</text>
+        <rect x="16" y="86" width="160" height="24" fill="none" stroke="#383838"/>
+        <text x="26" y="102" class="mono">WYBIERZ FOLDER Z DYSKU...</text>
+        <rect x="16" y="118" width="380" height="28" fill="#080808" stroke="#383838"/>
+        <text x="24" y="136" class="mono">/ścieżka/do/folderu...</text>
+        <rect x="404" y="118" width="100" height="28" fill="#ffffff"/>
+        <text x="420" y="136" class="mono" style="fill:#000000;font-weight:700;">DODAJ Z DYSKU</text>
+      </g>
+
+      <!-- After -->
+      <text x="20" y="276" class="mono-ok">✓ PO KOREKCIE: Czysty formularz key: value (jak „Utwórz książkę” i „Eksport”), zero opisów</text>
+      <g transform="translate(20, 288)">
+        <rect width="520" height="224" fill="#000000" stroke="#ffffff"/>
+        <text x="24" y="34" fill="#ffffff" font-family="Aleo, serif" font-size="18">Dodaj książkę</text>
+        <line x1="0" y1="48" x2="520" y2="48" stroke="#242424"/>
+
+        <text x="24" y="82" class="lbl-key">źródło:</text>
+        <text x="96" y="82" class="lbl-val" style="font-weight:700;">Z dysku</text>
+        <rect x="148" y="73" width="8" height="8" fill="#ffffff"/>
+        <text x="180" y="82" class="lbl-muted">Z adresu URL (.playbook / .zip)</text>
+        <rect x="358" y="73" width="8" height="8" fill="#242424"/>
+
+        <text x="24" y="126" class="lbl-key">ścieżka:</text>
+        <text x="96" y="126" class="lbl-muted">/ścieżka/do/folderu lub pliku .playbook...</text>
+        <line x1="96" y1="134" x2="348" y2="134" stroke="#383838"/>
+        <rect x="356" y="112" width="68" height="24" fill="none" stroke="#383838"/>
+        <text x="390" y="128" text-anchor="middle" class="mono-hi">FOLDER...</text>
+        <rect x="432" y="112" width="64" height="24" fill="none" stroke="#383838"/>
+        <text x="464" y="128" text-anchor="middle" class="mono-hi">PLIK...</text>
+
+        <rect x="332" y="172" width="80" height="32" fill="none" stroke="#383838"/>
+        <text x="372" y="192" text-anchor="middle" class="mono-hi">ANULUJ</text>
+        <rect x="420" y="172" width="76" height="32" fill="#ffffff"/>
+        <text x="458" y="192" text-anchor="middle" class="mono" style="fill:#000000;font-weight:700;">DODAJ</text>
+      </g>
+    </g>
+
+    <!-- CARD B: Panele Doku + Multi-Select + Edytor Treści Sceny -->
+    <g transform="translate(592, 0)">
+      <rect width="560" height="536" class="panel"/>
+      <text x="20" y="28" class="lbl-micro" style="fill:#ffffff;">B. PANELE DOKU, MULTI-SELECT I EDYTOR TREŚCI SCENY (#MODAL-SCENE-TEXT)</text>
+      <line x1="20" y1="38" x2="540" y2="38" class="rule-subtle"/>
+
+      <!-- Issue 1: Variables vs Breakdown Panel Headers -->
+      <text x="20" y="60" class="mono-warn">1. Niespójne nagłówki sekcji w prawym doku (Zmienne vs Raport produkcyjny):</text>
+      <g transform="translate(20, 70)">
+        <rect width="252" height="76" fill="#000000" stroke="#383838"/>
+        <text x="12" y="20" class="mono-warn">Zmienne: 11px + dodatkowa linia</text>
+        <line x1="12" y1="26" x2="240" y2="26" stroke="#242424"/>
+        <text x="12" y="46" class="lbl-muted">latarka</text>
+        <text x="190" y="46" class="lbl-muted">Nie</text>
+        <line x1="12" y1="54" x2="240" y2="54" stroke="#242424"/>
+      </g>
+      <g transform="translate(288, 70)">
+        <rect width="252" height="76" fill="#000000" stroke="#ffffff"/>
+        <text x="12" y="20" class="lbl-micro">FLAGI (TAK / NIE)  ← .node-micro-label</text>
+        <text x="12" y="46" class="lbl-val">latarka</text>
+        <text x="190" y="46" class="lbl-muted">Nie</text>
+        <line x1="12" y1="54" x2="240" y2="54" stroke="#383838"/>
+      </g>
+
+      <!-- Issue 2: Multi-Select Panel (#editor-multi-panel) -->
+      <text x="20" y="172" class="mono-warn">2. Panel wielokrotnego zaznaczenia (#editor-multi-panel): ramki pudełkowe + „✕” Unicode:</text>
+      <g transform="translate(20, 182)">
+        <rect width="252" height="76" fill="#000000" stroke="#383838"/>
+        <rect x="12" y="12" width="228" height="26" fill="#000000" stroke="#242424"/>
+        <text x="20" y="29" class="lbl-val">Zatopiona śluza</text>
+        <text x="224" y="29" class="mono-warn">✕</text>
+        <rect x="12" y="42" width="228" height="26" fill="#000000" stroke="#242424"/>
+        <text x="20" y="59" class="lbl-val">Czarne torfowiska</text>
+        <text x="224" y="59" class="mono-warn">✕</text>
+      </g>
+      <g transform="translate(288, 182)">
+        <rect width="252" height="76" fill="#000000" stroke="#ffffff"/>
+        <text x="12" y="28" class="lbl-val">Zatopiona śluza</text>
+        <text x="152" y="28" class="mono">Rozdział 1</text>
+        <path d="M 228 20 L 236 28 M 236 20 L 228 58" stroke="none"/>
+        <path d="M 228 20 L 236 28 M 236 20 L 228 28" stroke="#8a8a8a" stroke-width="1.5"/>
+        <line x1="12" y1="36" x2="240" y2="36" stroke="#242424"/>
+        <text x="12" y="58" class="lbl-val">Czarne torfowiska</text>
+        <text x="152" y="58" class="mono">Rozdział 2</text>
+        <path d="M 228 50 L 236 58 M 236 50 L 228 58" stroke="#8a8a8a" stroke-width="1.5"/>
+        <line x1="12" y1="66" x2="240" y2="66" stroke="#242424"/>
+      </g>
+
+      <!-- Issue 3: Scene Text Editor (#modal-scene-text) -->
+      <text x="20" y="284" class="mono-warn">3. Edytor treści sceny (#modal-scene-text): niespójny „+ Wybór”, enum i znaki ↑ / ↺:</text>
+      <g transform="translate(20, 296)">
+        <rect width="520" height="216" fill="#000000" stroke="#242424"/>
+        <text x="16" y="24" class="mono-hi">• Pasek STAN TESTOWY (modals.tpl:591):</text>
+        <text x="28" y="44" class="mono">Teraz: pudełkowe przyciski [posluszny] [zwatpienie] [zbuntowany] z ramkami 1px</text>
+        <text x="28" y="62" class="mono-ok">→ Zgodnie z variables-panel.png: kompaktowy .custom-select na linii 1px</text>
+
+        <text x="16" y="94" class="mono-hi">• Przycisk dodawania wyboru na dole sceny (modals.tpl:794):</text>
+        <text x="28" y="114" class="mono">Teraz: samotna mała ikonka [+] (26×26px), a w inspektorze przycisk „+ WYBÓR”</text>
+        <text x="28" y="132" class="mono-ok">→ Ujednolicić do button.btn.btn-sm.node-add-choice-btn „+ WYBÓR”</text>
+
+        <text x="16" y="164" class="mono-hi">• Znaki tekstowe Unicode zamiast ikon SVG (AGENTS.md pkt 4):</text>
+        <text x="28" y="184" class="mono">modals.tpl:347 („↑”), modals.tpl:656 i player_view.tpl:136 („↺”), multi-panel („✕”)</text>
+        <text x="28" y="202" class="mono-ok">→ Zastąpić czystymi ikonami SVG z app/icons/*.svg</text>
+      </g>
+    </g>
+
+    <!-- CARD C: Biblioteka (#view-library) + Zestaw Ikon SVG -->
+    <g transform="translate(1184, 0)">
+      <rect width="560" height="536" class="panel"/>
+      <text x="20" y="28" class="lbl-micro" style="fill:#ffffff;">C. WIDOK BIBLIOTEKI (#VIEW-LIBRARY) + GEOMETRIA IKON SVG (24×24PX)</text>
+      <line x1="20" y1="38" x2="540" y2="38" class="rule-subtle"/>
+
+      <!-- Library View Issues -->
+      <text x="20" y="60" class="mono-warn">1. Widok Biblioteki (library_view.tpl / library.tss):</text>
+      <g transform="translate(20, 72)">
+        <rect width="520" height="164" fill="#000000" stroke="#242424"/>
+        <text x="16" y="24" class="mono-warn">• library_view.tpl:13 — angielski tekst: "No books in library page"</text>
+        <text x="16" y="44" class="mono-warn">• library.tss:19 — ujemny margines .library-top-actions (margin: -18px auto 18px)</text>
+        <text x="16" y="64" class="mono-warn">• library.tss:34 — pudełkowe obramowanie kart 1px + padding 14px (poza siatką 8px)</text>
+        <line x1="16" y1="78" x2="504" y2="78" stroke="#242424"/>
+        <text x="16" y="100" class="mono-ok">✓ Karta książki na siatce modularnej (padding 16px = 2u, postęp 3px):</text>
+        <text x="16" y="122" class="mono">Okładka 3:2 z krawędzią 1px #242424 → #ffffff na hover, pasek postępu 3px,</text>
+        <text x="16" y="140" class="mono">bez pudełkowej ramki wokół metadanych (tylko dolna linia 1px #242424).</text>
+      </g>
+
+      <!-- Iconography Unification -->
+      <text x="20" y="264" class="mono-warn">2. Spójność ikonografii (app/icons/*.svg) ze stylem sygnetu Mojra:</text>
+      <g transform="translate(20, 276)">
+        <rect width="520" height="236" fill="#000000" stroke="#242424"/>
+        <text x="16" y="24" class="lbl-micro" style="fill:#ffffff;">ZASADA IKON MOJRA: VIEWBOX 24×24 • STROKE 2PX • OSTRE NAROŻNIKI • WĘZŁY ● / ○</text>
+
+        <g transform="translate(16, 42)">
+          <rect x="0" y="0" width="228" height="72" fill="#050505" stroke="#383838"/>
+          <text x="12" y="20" class="mono-warn">nodes.svg / fit-nodes.svg (rx="1")</text>
+          <text x="12" y="38" class="mono">Zaokrąglone prostokąty rx="1" i łuki</text>
+          <text x="12" y="56" class="mono-ok">→ Ostre kwadraty 0px + węzły ●</text>
+
+          <rect x="248" y="0" width="240" height="72" fill="#050505" stroke="#383838"/>
+          <text x="260" y="20" class="mono-warn">book-open.svg / cast.svg</text>
+          <text x="260" y="38" class="mono">Miękkie łuki Feather (a 4 4 / r=4)</text>
+          <text x="260" y="56" class="mono-ok">→ Geometryczne cięcia pod kątem 90°</text>
+        </g>
+
+        <text x="16" y="142" class="lbl-micro" style="fill:#ffffff;">PODSUMOWANIE PRIORYTETÓW DO WDROŻENIA:</text>
+        <text x="16" y="164" class="mono-hi">P1. #topbar: przywrócić „Mojra” (Aleo Bold) + 3-strefowy układ z tytułem na środku.</text>
+        <text x="16" y="184" class="mono-hi">P2. Płótno WebGL: wyrównać węzeł do 24px (Baza 72px = 3G, Nagłówek/Stopka 36px, Wybór 24px).</text>
+        <text x="16" y="204" class="mono-hi">P3. Modale i formularze: przebudować #modal-add-book na key: value, usunąć „✕”/„↑”/„↺” Unicode.</text>
+        <text x="16" y="222" class="mono-hi">P4. Paski i doki: ujednolicić paski do 36px (1.5G), Historię do 336px (14G) i nagłówki sekcji.</text>
+      </g>
+    </g>
+  </g>
+</svg>

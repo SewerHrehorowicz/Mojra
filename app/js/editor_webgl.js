@@ -10,9 +10,9 @@ const PORT_RADIUS = 6.5;
 const CHAPTER_PORT_RADIUS = 3.5;
 const CHAPTER_OUT_PORT_PITCH = 37;
 
-// Texture 0: Dedicated 256x64 UI Sprite Atlas (solid white, SDF ports, 90° wire corners, 2x3 grip)
+// Texture 0: Dedicated 256x128 UI Sprite Atlas (solid white, SDF circle/diamond ports, 90° wire corners, 2x3 grip)
 const UI_ATLAS_W = 256;
-const UI_ATLAS_H = 64;
+const UI_ATLAS_H = 128;
 
 // Texture 1: Dedicated 512x512 Font MSDF Texture (/studio-atlas.png)
 const FONT_ATLAS_SIZE = 512;
@@ -140,6 +140,9 @@ const studioGL = {
     portFill: { u0: 16 / UI_ATLAS_W, v0: 2 / UI_ATLAS_H, u1: 48 / UI_ATLAS_W, v1: 34 / UI_ATLAS_H, size: 24 },
     portRing: { u0: 52 / UI_ATLAS_W, v0: 2 / UI_ATLAS_H, u1: 84 / UI_ATLAS_W, v1: 34 / UI_ATLAS_H, size: 24 },
     portHover: { u0: 88 / UI_ATLAS_W, v0: 2 / UI_ATLAS_H, u1: 120 / UI_ATLAS_W, v1: 34 / UI_ATLAS_H, size: 24 },
+    diamondPortFill: { u0: 16 / UI_ATLAS_W, v0: 66 / UI_ATLAS_H, u1: 48 / UI_ATLAS_W, v1: 98 / UI_ATLAS_H, size: 24 },
+    diamondPortRing: { u0: 52 / UI_ATLAS_W, v0: 66 / UI_ATLAS_H, u1: 84 / UI_ATLAS_W, v1: 98 / UI_ATLAS_H, size: 24 },
+    diamondPortHover: { u0: 88 / UI_ATLAS_W, v0: 66 / UI_ATLAS_H, u1: 120 / UI_ATLAS_W, v1: 98 / UI_ATLAS_H, size: 24 },
     smallPortFill: { u0: 16 / UI_ATLAS_W, v0: 36 / UI_ATLAS_H, u1: 40 / UI_ATLAS_W, v1: 60 / UI_ATLAS_H, size: 16 },
     smallPortRing: { u0: 52 / UI_ATLAS_W, v0: 36 / UI_ATLAS_H, u1: 76 / UI_ATLAS_W, v1: 60 / UI_ATLAS_H, size: 16 },
     smallPortHover: { u0: 88 / UI_ATLAS_W, v0: 36 / UI_ATLAS_H, u1: 112 / UI_ATLAS_W, v1: 60 / UI_ATLAS_H, size: 16 },
@@ -195,6 +198,16 @@ function buildUISpriteTextureBytes() {
 
       const bHov = distToByte(PORT_RADIUS + 1.0 - r);
       setPixel(88 + x, 2 + y, bHov, bHov, bHov, bHov);
+
+      const dr = (Math.abs(wx) + Math.abs(wy)) * 0.78;
+      const bDFill = distToByte(PORT_RADIUS - dr);
+      setPixel(16 + x, 66 + y, bDFill, bDFill, bDFill, bDFill);
+
+      const bDRing = distToByte(1.0 - Math.abs(dr - PORT_RADIUS));
+      setPixel(52 + x, 66 + y, bDRing, bDRing, bDRing, bDRing);
+
+      const bDHov = distToByte(PORT_RADIUS + 1.0 - dr);
+      setPixel(88 + x, 66 + y, bDHov, bDHov, bDHov, bDHov);
 
       const cwx = (x + 0.5 - 16.0) * (18.0 / 32.0);
       const cwy = (y + 0.5 - 16.0) * (18.0 / 32.0);
@@ -1056,7 +1069,27 @@ function pushShapedTextQuads(shaped, originX, centerY, packedColor) {
   }
 }
 
+function pushDiamondPortQuads(x, y, isConnected, isHoveredOrActive, theme, isUnreachable) {
+  const fillSp = studioGL.uv.diamondPortFill;
+  const hs = fillSp.size * 0.5;
+  const portColor =
+    typeof isHoveredOrActive === "number"
+      ? isHoveredOrActive
+      : isHoveredOrActive
+        ? theme.textPrimary
+        : isUnreachable
+          ? theme.unreachWire
+          : theme.wireDefault;
+  pushQuadInstance(x - hs, y - hs, fillSp.size, fillSp.size, fillSp.u0, fillSp.v0, fillSp.u1, fillSp.v1, theme.bgObsidian);
+  const sp = isConnected ? studioGL.uv.diamondPortHover : studioGL.uv.diamondPortRing;
+  pushQuadInstance(x - hs, y - hs, sp.size, sp.size, sp.u0, sp.v0, sp.u1, sp.v1, portColor);
+}
+
 function pushPortQuads(x, y, isConnected, isHoveredOrActive, theme, isUnreachable) {
+  if (arguments[6]) {
+    pushDiamondPortQuads(x, y, isConnected, isHoveredOrActive, theme, isUnreachable);
+    return;
+  }
   const fillSp = studioGL.uv.portFill;
   const hs = fillSp.size * 0.5;
   const portColor =
@@ -1594,7 +1627,7 @@ function compileStaticSceneQuads(theme) {
       for (let j = 0; j < nd.ports.length; j++) {
         const pt = nd.ports[j];
         const ptColor = pt.connected && !nd.unreachable ? resolveWireColor(pt.colorIdx, theme) : false;
-        pushPortQuads(nd.x + pt.ox, nd.y + pt.oy, Boolean(pt.connected), ptColor, theme, nd.unreachable);
+        pushPortQuads(nd.x + pt.ox, nd.y + pt.oy, Boolean(pt.connected), ptColor, theme, nd.unreachable, Boolean(pt.isConditional));
       }
     } else if (nd.implicitPort) {
       const impColor =
@@ -1744,7 +1777,7 @@ function appendDynamicOverlayQuads(theme) {
       for (let j = 0; j < nd.ports.length; j++) {
         const pt = nd.ports[j];
         const ptColor = pt.connected && !nd.unreachable ? resolveWireColor(pt.colorIdx, theme) : false;
-        pushPortQuads(nd.x + pt.ox, nd.y + pt.oy, Boolean(pt.connected), ptColor, theme, nd.unreachable);
+        pushPortQuads(nd.x + pt.ox, nd.y + pt.oy, Boolean(pt.connected), ptColor, theme, nd.unreachable, Boolean(pt.isConditional));
       }
     } else if (nd.implicitPort) {
       const impColor =
@@ -1774,7 +1807,7 @@ function appendDynamicOverlayQuads(theme) {
         }
       }
       if (hw.fromNode) {
-        pushPortQuads(hw.x1, hw.y1, true, theme.textSecondary, theme, false);
+        pushPortQuads(hw.x1, hw.y1, true, theme.textSecondary, theme, false, Boolean(hw.fromPort && hw.fromPort.isConditional));
       } else if (hw.fromChapterOutPort) {
         pushSmallPortQuads(hw.fromChapterOutPort.x, hw.fromChapterOutPort.y, true, theme.textSecondary, theme, false);
       } else if (hw.kind === "chapter-in-to-entry" && hw.fromChapterObj) {
@@ -1826,7 +1859,7 @@ function appendDynamicOverlayQuads(theme) {
       const tx = nd.x + nd.w - 24;
       const ty = rowY + (NODE_CHOICE_ROW_HEIGHT - trashSp.size) * 0.5;
       pushQuadInstance(tx, ty, trashSp.size, trashSp.size, trashSp.u0, trashSp.v0, trashSp.u1, trashSp.v1, theme.textSecondary);
-      pushPortQuads(nd.x + pt.ox, nd.y + pt.oy, Boolean(pt.connected), true, theme, nd.unreachable);
+      pushPortQuads(nd.x + pt.ox, nd.y + pt.oy, Boolean(pt.connected), true, theme, nd.unreachable, Boolean(pt.isConditional));
     }
   }
 
@@ -1889,7 +1922,7 @@ function appendDynamicOverlayQuads(theme) {
     if (gesture.type === "chapter-wire-connect") {
       pushSmallPortQuads(gesture.startX, gesture.startY, startConnected, true, theme, false);
     } else {
-      pushPortQuads(gesture.startX, gesture.startY, startConnected, true, theme, false);
+      pushPortQuads(gesture.startX, gesture.startY, startConnected, true, theme, false, Boolean(gesture.sourcePort && gesture.sourcePort.isConditional));
     }
     if (gesture.hoveredSceneNode) {
       const tnd = gesture.hoveredSceneNode;
@@ -1919,7 +1952,7 @@ function appendDynamicOverlayQuads(theme) {
 
   if (hovered) {
     if (hovered.type === "scene-out-port") {
-      pushPortQuads(hovered.x, hovered.y, isHoveredPortItemConnected(hovered), true, theme, false);
+      pushPortQuads(hovered.x, hovered.y, isHoveredPortItemConnected(hovered), true, theme, false, Boolean(hovered.port && hovered.port.isConditional));
     } else if (hovered.type === "chapter-out-port") {
       pushSmallPortQuads(hovered.x, hovered.y, isHoveredPortItemConnected(hovered), true, theme, false);
     } else if (hovered.type === "wire-pin" && hovered.wire && hovered.pinIdx !== undefined) {
@@ -2069,6 +2102,10 @@ function appendDynamicOverlayQuads(theme) {
 }
 
 function renderStudioCanvas() {
+  const sceneModal = qs("#modal-scene-text");
+  if (sceneModal && (sceneModal.classList.contains("mode-full") || sceneModal.classList.contains("has-right-panel"))) {
+    return;
+  }
   const canvas = qs("#studio-canvas");
   if (!canvas) return;
   const gl = initStudioWebGLContext(canvas);

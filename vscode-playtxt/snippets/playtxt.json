@@ -1,0 +1,71 @@
+{
+  "Nowa scena": {
+    "prefix": "scene",
+    "body": [
+      "scene: ${1:id_sceny}",
+      "title: ${2:Tytuł sceny}",
+      "",
+      "${3:Treść sceny...}",
+      "",
+      "exit: ${4:cel}",
+      "text: ${5:Tekst wyboru}"
+    ],
+    "description": "Blok sceny Mojra (.playtxt)"
+  },
+  "Scena końcowa": {
+    "prefix": "scene-end",
+    "body": [
+      "scene: ${1:final}",
+      "title: ${2:Finał}",
+      "",
+      "${3:Treść zakończenia...}",
+      "",
+      "end: true"
+    ],
+    "description": "Scena końcowa z end: true"
+  },
+  "Nowy rozdział": {
+    "prefix": "chapter",
+    "body": [
+      "chapter: ${1:id_rozdzialu}",
+      "title: ${2:Tytuł rozdziału}",
+      "start: ${3:scena_startowa}",
+      ""
+    ],
+    "description": "Nagłówek rozdziału (.playtxt)"
+  },
+  "Wybór z warunkiem i efektem": {
+    "prefix": "exit",
+    "body": [
+      "exit: ${1:cel}",
+      "text: ${2:Tekst wyboru}",
+      "if: ${3:warunek}",
+      "set: ${4:zmienna = wartosc}"
+    ],
+    "description": "Wyjście warunkowe z efektem"
+  },
+  "Blok warunkowy w prozie": {
+    "prefix": "if",
+    "body": [
+      "if: ${1:warunek}",
+      "${2:Tekst gdy spełniony...}",
+      "else:",
+      "${3:Tekst alternatywny...}",
+      "endif:"
+    ],
+    "description": "Blok warunkowy if: / else: / endif:"
+  },
+  "Metadane książki (book.playtxt)": {
+    "prefix": "book",
+    "body": [
+      "title: ${1:Tytuł książki}",
+      "author: ${2:Autor}",
+      "description: ${3:Opis opowieści.}",
+      "narrated: false",
+      "imageless: false",
+      "start: ${4:poczatek}",
+      ""
+    ],
+    "description": "Szablon pliku book.playtxt"
+  }
+}

@@ -18,6 +18,8 @@ import (
 	"storyteller/internal/book"
 )
 
+var nativeWindowDevMode bool
+
 func pidFilePath(rootDir string) string {
 	savesDir := book.ResolveSavesDir(rootDir)
 	_ = os.MkdirAll(savesDir, 0755)
@@ -48,6 +50,7 @@ func Launch(rootDir string, embeddedFS fs.FS, port int, headless bool) error {
 
 // LaunchWithOptions starts the in-process StoryTeller engine and opens the Native OS Window (WKWebView on macOS / Edge WebView2 on Windows).
 func LaunchWithOptions(rootDir string, embeddedFS fs.FS, port int, headless bool, devMode bool) error {
+	nativeWindowDevMode = devMode
 	StopPreviousInstance(rootDir)
 
 	pidPath := pidFilePath(rootDir)
@@ -76,7 +79,7 @@ func LaunchWithOptions(rootDir string, embeddedFS fs.FS, port int, headless bool
 
 	localURL := fmt.Sprintf("http://127.0.0.1:%d", actualPort)
 
-	fmt.Printf("StoryTeller uruchomiony:\n")
+	fmt.Printf("Mojra uruchomiona:\n")
 	fmt.Printf("  • Okno lokalne: %s\n", localURL)
 	if devMode {
 		lanIP := DetectLANIP()

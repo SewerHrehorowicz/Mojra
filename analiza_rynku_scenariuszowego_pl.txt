@@ -1,0 +1,223 @@
+MOJRA — ANALIZA PORÓWNAWCZA RYNKU SCENARIUSZOWEGO W POLSCE (RAPORT)
+================================================================================
+
+1. CZEGO UŻYWA SIĘ W POLSCE DO PISANIA SCENARIUSZY? (MAPA NARZĘDZI)
+--------------------------------------------------------------------------------
+Polski rynek dzieli się na 3 wyraźne segmenty narzędziowe:
+
+A. Film, Serial i Teatr Telewizji (narracja liniowa):
+   • Final Draft (~$199–$250 licencja + płatne aktualizacje ~$99):
+     Twardy standard produkcyjny w domach produkcyjnych (ATM Grupa, Akson Studio,
+     Opus Film, Aurum Film) oraz przy produkcjach dla Netflix PL, Max/TVN i
+     Canal+. Wymagany głównie na etapie oddania pliku roboczego pionowi produkcji.
+   • Fade In ($79.95 jednorazowo, darmowe aktualizacje):
+     Szybko rosnący nr 2 wśród polskich zawodowców i studentów szkół filmowych.
+     Ceniony za stabilność, brak abonamentu, pełną obsługę polskiego UTF-8 oraz
+     natywny odczyt/zapis formatu Final Draft (.fdx) i Fountain (.fountain).
+   • WriterDuet / WriterSolo (SaaS $12/mies. lub $79/rok; WriterSolo darmowy):
+     Podstawowe narzędzie w polskich pokojach scenariuszowych (writers' rooms)
+     przy serialach ze względu na jednoczesną pracę wielu autorów w chmurze.
+   • Celtx (SaaS chmurowy $16–$65/mies.):
+     Historycznie bardzo popularny w Polsce (przez lata figurował w oficjalnych
+     instrukcjach PISF jako „program darmowy”). Dziś masowo porzucany przez
+     autorów z powodu drogiego abonamentu, przyciętego planu darmowego oraz
+     ociężałego działania w przeglądarce.
+   • Microsoft Word / Google Docs (~30–40% realnego użycia na rynku!):
+     Wciąż powszechny u reżyserów starszego pokolenia (szablony stylów/makr, co
+     wprost dopuszcza instrukcja PISF), niemal monopolista na etapie pisania
+     treatmentów, drabinek, biblii seriali, sztuk teatralnych oraz scenariuszy
+     słuchowisk radiowych i audio.
+   • Narzędzia niszowe / darmowe:
+     Story Architect (STARC / dawny Kit Scenarist), Trelby, Arc Studio, Highland.
+
+B. Słuchowiska, Superprodukcje Audio i Podcasty Fabularne:
+   • Brak dedykowanego programu na rynku. Autorzy piszą w MS Word, Google Docs,
+     Final Draft lub Celtx, ręcznie dopisując znaczniki efektów (SFX, AMBIENT,
+     MUZYKA), a studia (Audioteka, Empik Go, Teatr Polskiego Radia) ręcznie
+     przerabiają te pliki na skrypty studyjne dla aktorów i realizatorów.
+
+C. Gamedev i Narrative Design (narracja nieliniowa):
+   • articy:draft X (~€100+/rok dla twórcy, drogie licencje zespołowe):
+     Standard w średnich studiach gamedev (drzewa dialogowe + baza obiektów).
+   • Twine / Ink (Inkle) / Yarn Spinner / Arcweave:
+     Używane do prototypowania gałęzi fabularnych, gier paragrafowych i na
+     kursach narrative designu.
+   • Autorskie edytory węzłowe + Microsoft Excel:
+     Duże polskie studia (CD Projekt RED, Techland, 11 bit studios, Bloober Team)
+     łączą własne edytory grafowe w silniku gry z arkuszami Excela służącymi do
+     rozliczania kwestii lektorskich (Voice-Over) i lokalizacji językowych.
+
+
+2. JAKIE FORMATY OBOWIĄZUJĄ I JAK SIĘ TO „OGARNIA” PRODUKCYJNIE?
+--------------------------------------------------------------------------------
+A. Standard formalny w Polsce (wytyczne PISF i konkursów):
+   • Strona A4, czcionka Courier lub Courier New 12 pkt, interlinia 1,5 (w
+     praktyce produkcyjnej ~54 linie na stronę A4; 1 strona = 1 minuta ekranowa).
+   • Polskie nagłówki scen (sluglines): WN. (Wnętrze), PL. (Plener), WN./PL. +
+     LOKACJA + PORA DNIA (DZIEŃ / NOC), pisane wersalikami od lewej.
+   • Ważna różnica Polska/Europa vs USA: W Polsce sceny numeruje się od razu
+     w egzemplarzach czytelniczych i konkursowych (w USA numeruje się dopiero
+     scenopis produkcyjny — shooting script).
+   • Dialogi w środkowej kolumnie (marginesy ~4 cm z lewej i prawej), imię
+     postaci na środku wersalikami, didaskalia aktorskie w nawiasie pod imieniem.
+
+B. Formaty wymiany i eksportu:
+   • .pdf — jedyny format akceptowany przy składaniu wniosków do PISF (system
+     ISSW), konkursów (Script Pro, Gdańsk Script, ZAiKS, SFP) oraz dla aktorów.
+   • .fdx (Final Draft XML) — roboczy format przekazywany kierownikowi produkcji
+     i I asystentowi reżysera (1st AD) do rozbicia scenariusza na dni zdjęciowe,
+     lokacje i obsadę (w Movie Magic Scheduling, Yamdu, Studiovity lub Excelu).
+   • .fountain — otwarty format tekstowy (plain-text) używany przez świadomych
+     technicznie autorów (Fade In, WriterDuet, Mojra).
+   • .docx — wymagany dla treatmentów (8–15 stron prozą), synopsów, eksplikacji
+     oraz biblli serialowych.
+   • .xlsx / .csv — tabele produkcyjne i listy kwestii nagraniowych (VO) w
+     studiach lektorskich oraz gamedevie.
+
+C. Jak wygląda codzienny workflow („ogarnianie”):
+   • Rozproszenie na 4–5 niespójnych narzędzi: drabinka na karteczkach w Miro,
+     treatment w Wordzie, dialogi w Final Draft/Fade In, rozbicie produkcyjne
+     w Excelu, a wersjonowanie przez ręczne kopiowanie plików na dysku:
+     `Scenariusz_v7_poprawki_producenta_ostateczna2.fdx`.
+
+
+3. CZEGO UŻYWAJĄ UCZELNIE, SZKOŁY FILMOWE I KURSY W POLSCE?
+--------------------------------------------------------------------------------
+   • PWSFTviT w Łodzi (Filmówka — Wydział Reżyserii, Scenariopisarstwo):
+     Studenci pracują na licencjach edukacyjnych Final Draft, Fade In, darmowym
+     WriterSolo/WriterDuet oraz MS Word (nowele, treatmenty). Obowiązuje ścisły
+     format PISF (A4, Courier 12, numerowane sceny WN./PL.).
+   • Szkoła Wajdy (Wajda School) i konkurs Script Pro:
+     Metoda warsztatowa w grupach (treatment -> drabinka -> kolejne drafty).
+     Wymagany rygorystyczny eksport do PDF zgodny ze standardem PISF.
+   • Szkoła Filmowa im. K. Kieślowskiego UŚ (Katowice), Warszawska Szkoła
+     Filmowa (WSF), Gdyńska Szkoła Filmowa (GSF), AMA Film Academy:
+     Miks Fade In, Final Draft, WriterDuet oraz Celtx (wciąż obecny na zajęciach
+     z przyzwyczajenia wykładowców).
+   • StoryLab.pro (metoda I2D2 Agnieszki Kruk), SKVOT, PJATK, CDV, UŚ (Gamedev):
+     Na kursach filmowo-serialowych: Fade In / WriterDuet / Final Draft + Miro.
+     Na kursach Narrative Design: Twine, articy:draft, Arcweave, Yarn Spinner
+     oraz Miro i Google Docs.
+
+
+4. JAK DUŻY JEST TEN RYNEK W POLSCE? (SKALA I PIENIĄDZE 2025–2026)
+--------------------------------------------------------------------------------
+   1. Scenarzyści filmowi i telewizyjni:
+      - Ponad 100 elitarnych scenarzystów zrzeszonych w Gildii Scenarzystów
+        Polskich (GSP) oraz ~800–1 500 aktywnych zawodowo i półzawodowo autorów
+        (SFP, ZAiKS, seriale codzienne, dokumenty, animacja, reklama).
+      - 3 000–5 000 studentów szkół filmowych, słuchaczy kursów (StoryLab.pro,
+        Wajda, WSF, Łódź, Katowice, AMA) i uczestników konkursów (na sam lokalny
+        Gdańsk Script wpływa ~100 pełnych scenariuszy rocznie, na Script Pro i
+        stypendia PISF — setki).
+      - Budżet PISF przekracza 250–300 mln zł/rok; w Polsce powstaje 50–70
+        pełnych metraży fabularnych i kilkadziesiąt seriali premium rocznie.
+   2. Rynek Audio (Słuchowiska, Seriale Audio, Audiobooki):
+      - 228–300 mln zł/rok (+14,7% r/r, 3,7 mln słuchaczy w Polsce).
+      - Sama Audioteka produkuje 35 wieloobsadowych superprodukcji rocznie
+        (+84% r/r), a Empik Go nagrywa ponad 500 audiobooków i ~20 seriali
+        oryginalnych rocznie (+4 000 tytułów self-publishing).
+   3. Polski Gamedev i Interactive Fiction:
+      - Ponad 490 studiów gier w Polsce i >15 000 pracowników (setki narrative
+        designerów, quest designerów i pisarzy niezależnych).
+
+
+5. W CZYM ISTNIEJĄCE ROZWIĄZANIA SĄ „DO DUPY”? (SŁABE PUNKTY KONKURENCJI)
+--------------------------------------------------------------------------------
+   • Final Draft:
+     Drogi (~1 000 zł + płatne aktualizacje), przestarzały interfejs, historyczne
+     problemy z kodowaniem polskich znaków w PDF, domyślnie skrojony pod rynek
+     amerykański (Letter, INT./EXT.), kompletnie ślepy na narrację nieliniową,
+     pozbawiony obsługi nagrań audio i prawdziwej kontroli wersji (brak Gita).
+   • Celtx:
+     Powolny webowy DOM (wyczuwalne opóźnienia przy pisaniu dłuższych tekstów),
+     agresywny model subskrypcyjny ($180–$600/rok), uzależnienie od chmury i
+     brak natywnego polskiego standardu scenariuszowego (WN./PL.).
+   • MS Word / Google Docs:
+     Koszmar ręcznego formatowania wcięć dialogowych, brak automatycznego łamania
+     kwestii między stronami `(WIĘCEJ)` / `(CIĄG DALSZY)`, brak liczenia objętości
+     w 1/8 strony, czasu ekranowego, dni zdjęciowych oraz statystyk obsady.
+   • Twine / Ink / articy:draft:
+     Twine i Ink to surowe narzędzia dla programistów — nie potrafią wygenerować
+     klasycznego polskiego scenariusza PDF (A4, Courier 12) ani raportu
+     produkcyjnego. Z kolei articy:draft działa wyłącznie na Windowsie, ma wysoki
+     próg wejścia i nie posiada wbudowanego czytnika/odtwarzacza dla odbiorcy.
+
+
+6. CZY KONKURENCJA JEST W CZYMŚ LEPSZA OD NAS? (SZCZERA OCENA)
+--------------------------------------------------------------------------------
+Tak — w czterech obszarach tradycyjnej produkcji liniowej konkurencja ma dziś
+przewagę, o której musimy pamiętać:
+   1. Natywna wymiana plików .fdx (Final Draft XML):
+      Kierownicy produkcji w Polsce importują pliki .fdx do programów typu
+      Movie Magic Scheduling czy Yamdu. Final Draft, Fade In i WriterDuet
+      otwierają i zapisują .fdx bezstratnie.
+   2. Synchroniczna praca wielu osób w chmurze (Real-time Co-writing):
+      WriterDuet i Google Docs pozwalają kilku scenarzystom pisać jednocześnie
+      w tym samym dokumencie z czatem i komentarzami na marginesie.
+   3. Rewizje na planie zdjęciowym (Production Revisions):
+      Final Draft i Fade In obsługują blokowanie numerów scen (np. dodanie sceny
+      `14A` bez zmiany numeracji pozostałych), blokowanie stron A/B oraz
+      oznaczanie zmienionych linijek gwiazdkami `*` na kolorowych kartkach.
+   4. Bezpośrednie wtyczki do Unreal Engine / Unity:
+      articy:draft posiada gotowe pluginy eksportujące strukturę bezpośrednio do
+      silników 3D.
+
+
+7. W CZYM MY (MOJRA) WYGRYWAMY JUŻ DZIŚ?
+--------------------------------------------------------------------------------
+   1. Natywny Polski Standard Scenariuszowy PISF (`standard: pl`) od zera:
+      - Automatyczne rozpoznawanie `WN.` / `PL.` / `WN./PL.` oraz pór dnia,
+        format A4 (54 linie/str.), Courier 12 pkt, polska numeracja scen,
+        automatyczne łamanie dialogów `(WIĘCEJ)` i `(CIĄG DALSZY)`, ochrona przed
+        sierotami nagłówków na dole strony.
+      - Błyskawiczny eksport PDF w czystym Go z idealnym kodowaniem polskich
+        znaków (ToUnicode CMap) oraz automatyczną 2. stroną zawierającą
+        `LISTĘ POSTACI / ZESTAWIENIE LOKACJI`.
+   2. Wbudowany „Git dla pisarzy” i wizualny graf wariantów (`history.go`):
+      - Koniec z plikami `scenariusz_v9_ostateczny.fdx`. Autor jednym kliknięciem
+        tworzy nowy wariant fabuły na osi czasu, przełącza się między wersjami
+        w ułamku sekundy i po najechaniu kursorem widzi dokładny diff produkcyjny
+        (o ile scen i stron różnią się warianty).
+   3. Raport Produkcyjny i Obsada na żywo (`#editor-breakdown-panel`):
+      - Automatyczne wyliczanie w czasie rzeczywistym: objętości w 1/8 strony,
+        czasu trwania, szacowanych dni zdjęciowych/nagraniowych, proporcji
+        `WN./PL.` i `DZIEŃ/NOC`, balansu aktów oraz dokładnej liczby kwestii i
+        słów każdego aktora (z globalną zmianą nazwy postaci lub lokacji w całym
+        projekcie jednym ruchem).
+   4. Silnik WebGL 120fps łączący scenariusz liniowy i nieliniowy:
+      - Płótno węzłów działa w 120 klatkach na sekundę na macOS, Windows i Linux.
+      - Pozwala utrzymywać alternatywne ścieżki scen bezpośrednio na grafie i
+        jednym kliknięciem promować wybrany wariant do głównej ścieżki liniowego
+        eksportu PDF / Fountain (`PromoteSceneToPrimaryPath`), a jednocześnie
+        obsługuje zmienne i warunki (`var:`, `enum:`, `{{...}}`) dla gier i
+        interaktywnych słuchowisk.
+   5. Jedyny na rynku pomost Tekst + Głos Aktorów + Czytnik (`.playbook`):
+      - W żadnym innym programie scenariuszowym nie podepniesz nagrań głosowych
+        (`.flac`/`.ogg`/`.mp3`) pod sceny i nie wyeksportujesz gotowego do
+        odsłuchu i czytania pakietu `.playbook` (z trybem `Auto-Choice`).
+   6. 100% Offline, czytelny format tekstowy `.playtxt` i zero abonamentu:
+      - Pełne bezpieczeństwo IP na dysku autora, zero opóźnień sieciowych i
+        dedykowane rozszerzenie `vscode-playtxt`.
+
+
+8. W CZYM JESZCZE MOŻEMY WYGRAĆ? (4 KROKI DO ZDOMINOWANIA NISZY W POLSCE)
+--------------------------------------------------------------------------------
+   1. Importer i Eksporter `.fdx` (Final Draft XML) oraz Importer `.fountain`:
+      Usunie jedyną barierę wejścia dla zawodowych scenarzystów filmowych i
+      studentów Filmówki/Wajdy — pozwoli wczytać każdy istniejący scenariusz do
+      Mojry i oddać kierownikowi produkcji plik `.fdx`.
+   2. Eksport Studyjnej Tabeli Nagraniowej VO (`.csv`) + Indywidualnych Skryptów
+      Aktorskich PDF (wyciąg kwestii dla wybranej roli):
+      Natychmiast uczyni Mojrę bezkonkurencyjnym narzędziem nr 1 dla polskiego
+      rynku słuchowisk i audiobooków wieloobsadowych (Audioteka, Empik Go, studia
+      lektorskie i dubbingowe) oraz studiów gamedev nagrywających polski dubbing.
+   3. Jednoklikowy Eksport Drabinki / Treatmentu PDF pod wnioski PISF:
+      Każdy polski konkurs i wniosek do PISF wymaga oprócz scenariusza oddania
+      treatmentu lub drabinki scen. Wygenerowanie czystego dokumentu PDF ze
+      streszczeń scen (`synopsis`) i struktury aktów zaoszczędzi autorom
+      dziesiątki godzin ręcznego przepisywania w Wordzie.
+   4. Tryb Rewizji Produkcyjnych (zablokowane numery scen `14A` + gwiazdki `*`):
+      Pozwoli używać Mojry nie tylko podczas pisania i developmentu, ale również
+      bezpośrednio na planie zdjęciowym między kolejnymi dniami zdjęciowymi.
+================================================================================

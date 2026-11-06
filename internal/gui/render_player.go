@@ -12,6 +12,29 @@ func extractFirstSentence(raw string) string {
 	if cleaned == "" {
 		return "Kliknij, aby wpisać treść sceny..."
 	}
+	if book.HasDynamicProse(cleaned) {
+		var proseLines []string
+		for _, ln := range strings.Split(strings.ReplaceAll(cleaned, "\r\n", "\n"), "\n") {
+			t := strings.TrimSpace(ln)
+			if t == "" || t == "---" || t == "***" {
+				continue
+			}
+			lower := strings.ToLower(t)
+			if lower == ":end" {
+				continue
+			}
+			if colonIdx := strings.IndexByte(t, ':'); colonIdx > 0 {
+				k := strings.ToLower(strings.TrimSpace(t[:colonIdx]))
+				if k == "if" || k == "if?" || k == "gdy" || k == "warunek" || k == "elif" || k == "else if" || k == "else" || k == "endif" || k == "set" || k == "then" {
+					continue
+				}
+			}
+			proseLines = append(proseLines, t)
+		}
+		if len(proseLines) > 0 {
+			cleaned = strings.Join(proseLines, " ")
+		}
+	}
 	flat := strings.Join(strings.Fields(cleaned), " ")
 	runes := []rune(flat)
 	for i, r := range runes {
@@ -24,12 +47,18 @@ func extractFirstSentence(raw string) string {
 	return flat
 }
 
-func buildPlayerScreenplayBlocks(sc *book.Scene, sceneNum int, standard string) []map[string]any {
+func buildPlayerScreenplayBlocks(sc *book.Scene, state map[string]string, b *book.Book, sceneNum int, standard string) []map[string]any {
 	if sc == nil {
 		return nil
 	}
+	evalSc := sc
+	if book.HasDynamicProse(sc.Text) {
+		clone := *sc
+		clone.Text = book.EvaluateProseText(sc.Text, state, b)
+		evalSc = &clone
+	}
 	normStd := book.NormalizeScriptStandard(standard)
-	blocks := book.ParseScreenplaySceneBlocks(sc, normStd)
+	blocks := book.ParseScreenplaySceneBlocks(evalSc, normStd)
 	if len(blocks) == 0 {
 		return nil
 	}
@@ -59,20 +88,35 @@ func buildPlayerScreenplayBlocks(sc *book.Scene, sceneNum int, standard string) 
 }
 
 func (s *Server) populatePlayerContext(vars map[string]any) {
+	if s.PlayerBook == nil || len(s.PlayerBook.Scenes) == 0 {
+		return
+	}
 	curScene := s.currentScene()
 	if curScene == nil {
-		curScene = s.ActiveBook.Scenes[0]
+		curScene = s.PlayerBook.Scenes[0]
 	}
 
-	isScreenplay := s.ActiveBook != nil && s.ActiveBook.IsScreenplay()
-	normStd := "pl"
-	if s.ActiveBook != nil {
-		normStd = s.ActiveBook.NormalizedStandard()
-	}
+	isScreenplay := s.PlayerBook.IsScreenplay()
+	normStd := s.PlayerBook.NormalizedStandard()
+	vars["is_screenplay_mode"] = isScreenplay
 
 	histCount := 0
 	if s.Save != nil {
 		histCount = len(s.Save.History)
+		if len(s.Save.Variables) == 0 && len(s.PlayerBook.Variables) > 0 {
+			s.Save.Variables = book.EnsureSaveVariables(s.PlayerBook, s.Save.Variables)
+			if histCount == 0 && curScene != nil && curScene.Effects != "" {
+				book.ApplyEffects(curScene.Effects, s.Save.Variables, s.PlayerBook)
+			}
+		} else {
+			s.Save.Variables = book.EnsureSaveVariables(s.PlayerBook, s.Save.Variables)
+		}
+	}
+	var curVars map[string]string
+	if s.Save != nil {
+		curVars = s.Save.Variables
+	} else {
+		curVars = book.DefaultVariablesMap(s.PlayerBook)
 	}
 	vars["has_history"] = histCount > 0
 
@@ -81,7 +125,7 @@ func (s *Server) populatePlayerContext(vars map[string]any) {
 	if histCount > 0 {
 		histList := make([]map[string]any, 0, histCount)
 		for idx, entry := range s.Save.History {
-			pastScene := s.findScene(entry.SceneID)
+			pastScene := s.findPlayerScene(entry.SceneID)
 			if pastScene == nil {
 				continue
 			}
@@ -92,15 +136,20 @@ func (s *Server) populatePlayerContext(vars map[string]any) {
 			if !imageless && pastScene.ImageURL != "" {
 				pastImgURL = pastScene.ImageURL
 			}
-			pastHeaderMeta := s.ActiveBook.Title
+			pastHeaderMeta := s.PlayerBook.Title
 			if pastScene.Chapter != "" {
-				pastHeaderMeta = s.ActiveBook.Title + " • " + pastScene.Chapter
+				pastHeaderMeta = s.PlayerBook.Title + " • " + pastScene.Chapter
 			}
 			pastHasTitle := strings.TrimSpace(pastScene.Name) != ""
+			pastVars := entry.Variables
+			if len(pastVars) == 0 {
+				pastVars = curVars
+			}
 			var pastBlocks []map[string]any
 			if isScreenplay {
-				pastBlocks = buildPlayerScreenplayBlocks(pastScene, pastScene.OrderIndex+1, normStd)
+				pastBlocks = buildPlayerScreenplayBlocks(pastScene, pastVars, s.PlayerBook, pastScene.OrderIndex+1, normStd)
 			}
+			pastHTML := book.RenderSceneProseHTML(pastScene, pastVars, s.PlayerBook)
 			histList = append(histList, map[string]any{
 				"idx":               idx,
 				"header_meta":       pastHeaderMeta,
@@ -108,7 +157,7 @@ func (s *Server) populatePlayerContext(vars map[string]any) {
 				"slugline":          pastScene.Slugline,
 				"rail_title":        pastScene.DisplayName(),
 				"has_title":         pastHasTitle,
-				"html":              pastScene.EnsureHTML(),
+				"html":              pastHTML,
 				"screenplay_blocks": pastBlocks,
 				"has_image":         pastImgURL != "",
 				"image_url":         pastImgURL,
@@ -121,6 +170,10 @@ func (s *Server) populatePlayerContext(vars map[string]any) {
 	hasMultipleChoices := len(curScene.Choices) > 1
 	curChoices := make([]map[string]any, 0, len(curScene.Choices))
 	for idx, ch := range curScene.Choices {
+		condMet := book.EvaluateCondition(ch.Condition, curVars, s.PlayerBook)
+		if !condMet && !ch.ShowWhenLocked {
+			continue
+		}
 		label := ch.Label
 		if !hasMultipleChoices {
 			label = "Dalej"
@@ -136,6 +189,7 @@ func (s *Server) populatePlayerContext(vars map[string]any) {
 			"arrow":       arrow,
 			"is_branch":   hasMultipleChoices && !ch.IsEnding,
 			"is_implicit": isImplicitNext,
+			"is_locked":   !condMet && ch.ShowWhenLocked,
 		})
 	}
 
@@ -144,15 +198,16 @@ func (s *Server) populatePlayerContext(vars map[string]any) {
 		curImgURL = curScene.ImageURL
 		lastImageURL = curScene.ImageURL
 	}
-	curHeaderMeta := s.ActiveBook.Title
+	curHeaderMeta := s.PlayerBook.Title
 	if curScene.Chapter != "" {
-		curHeaderMeta = s.ActiveBook.Title + " • " + curScene.Chapter
+		curHeaderMeta = s.PlayerBook.Title + " • " + curScene.Chapter
 	}
 	curHasTitle := strings.TrimSpace(curScene.Name) != ""
 	var curBlocks []map[string]any
 	if isScreenplay {
-		curBlocks = buildPlayerScreenplayBlocks(curScene, curScene.OrderIndex+1, normStd)
+		curBlocks = buildPlayerScreenplayBlocks(curScene, curVars, s.PlayerBook, curScene.OrderIndex+1, normStd)
 	}
+	curHTML := book.RenderSceneProseHTML(curScene, curVars, s.PlayerBook)
 
 	vars["current_scene"] = map[string]any{
 		"name":              curScene.Name,
@@ -160,7 +215,7 @@ func (s *Server) populatePlayerContext(vars map[string]any) {
 		"rail_title":        curScene.DisplayName(),
 		"has_title":         curHasTitle,
 		"header_meta":       curHeaderMeta,
-		"html":              curScene.EnsureHTML(),
+		"html":              curHTML,
 		"screenplay_blocks": curBlocks,
 		"has_image":         curImgURL != "",
 		"image_url":         curImgURL,
@@ -171,7 +226,7 @@ func (s *Server) populatePlayerContext(vars map[string]any) {
 		"choices":           curChoices,
 	}
 
-	narrated := s.ActiveBook != nil && s.ActiveBook.Narrated
+	narrated := s.PlayerBook.Narrated
 	vars["show_audio_deck"] = narrated
 
 	seenURLs := make(map[string]bool, 16)
@@ -193,7 +248,7 @@ func (s *Server) populatePlayerContext(vars map[string]any) {
 		if ch.IsEnding || ch.TargetSceneID == "" || ch.TargetSceneID == "END" || seenScenes[ch.TargetSceneID] {
 			continue
 		}
-		target := s.findScene(ch.TargetSceneID)
+		target := s.findPlayerScene(ch.TargetSceneID)
 		if target == nil {
 			continue
 		}
@@ -207,7 +262,7 @@ func (s *Server) populatePlayerContext(vars map[string]any) {
 			if ch.IsEnding || ch.TargetSceneID == "" || ch.TargetSceneID == "END" || seenScenes[ch.TargetSceneID] {
 				continue
 			}
-			target := s.findScene(ch.TargetSceneID)
+			target := s.findPlayerScene(ch.TargetSceneID)
 			if target == nil {
 				continue
 			}
@@ -236,7 +291,7 @@ func (s *Server) populatePlayerContext(vars map[string]any) {
 	vars["prefetch_media_urls"] = strings.Join(prefetchURLs, ";")
 
 	progressPct := 0
-	if len(s.ActiveBook.Scenes) > 0 {
+	if len(s.PlayerBook.Scenes) > 0 {
 		visited := make(map[string]bool)
 		if s.Save != nil {
 			for _, h := range s.Save.History {
@@ -248,7 +303,7 @@ func (s *Server) populatePlayerContext(vars map[string]any) {
 		if curScene != nil && curScene.ID != "" {
 			visited[curScene.ID] = true
 		}
-		progressPct = (len(visited) * 100) / len(s.ActiveBook.Scenes)
+		progressPct = (len(visited) * 100) / len(s.PlayerBook.Scenes)
 		if progressPct < 1 {
 			progressPct = 1
 		}

@@ -115,7 +115,33 @@ func (s *Server) populateModalsContext(vars map[string]any) {
 	vars["show_new_book_modal"] = s.NewBookModalOpen
 	vars["show_export_modal"] = s.ExportModalOpen
 	vars["show_add_book_modal"] = s.AddBookModalOpen
+	vars["show_studio_project_modal"] = s.StudioProjectModalOpen
 	vars["show_editor_help_modal"] = s.EditorHelpModalOpen
+
+	if s.StudioProjectModalOpen && !s.StandaloneMode {
+		allBooks, _ := s.loadBooks()
+		studioProjects := make([]map[string]any, 0, len(allBooks))
+		for _, b := range allBooks {
+			kindBadge := "PROJEKT"
+			if b.IsPacked {
+				kindBadge = ".PLAYBOOK (TYLKO ODCZYT)"
+			}
+			isCurrent := s.ActiveBook != nil && s.ActiveBook.ID == b.ID && !b.IsPacked
+			studioProjects = append(studioProjects, map[string]any{
+				"id":         b.ID,
+				"title":      b.Title,
+				"author":     b.Author,
+				"license":    b.EffectiveLicense(),
+				"is_packed":  b.IsPacked,
+				"kind_badge": kindBadge,
+				"is_current": isCurrent,
+			})
+		}
+		vars["has_studio_projects"] = len(studioProjects) > 0
+		vars["studio_projects"] = studioProjects
+	} else {
+		vars["has_studio_projects"] = false
+	}
 
 	isScreenplayBook := s.ActiveBook != nil && s.ActiveBook.IsScreenplay()
 	exportFmt, exportFmtLabel, exportFmtOpts := buildExportFormatOptions(s.ExportModalFormat, isScreenplayBook)
@@ -253,8 +279,89 @@ func (s *Server) populateModalsContext(vars map[string]any) {
 			if s.SceneTextModalSettingsOpen {
 				settingsOpenVal = "true"
 			}
+			hasBookVars := s.ActiveBook != nil && len(s.ActiveBook.Variables) > 0
+			vars["has_book_variables"] = hasBookVars
+			isContextPanelHidden := !s.BookSettingsOpen && (s.SelectedChapter == "" || s.ActiveBook == nil || s.ActiveBook.FindChapter(s.SelectedChapter) == nil)
+			vars["scene_text_has_right_panel"] = !isContextPanelHidden || s.EditorVariablesPanelOpen || s.EditorBreakdownPanelOpen || s.EditorHistoryPanelOpen || s.EditorHelpModalOpen
+			isFullWidth := s.SceneTextModalWidthMode == "full"
+			vars["scene_text_is_full_width"] = isFullWidth
+			vars["scene_text_is_half_width"] = !isFullWidth
 			vars["scene_text_modal_settings_open"] = s.SceneTextModalSettingsOpen
 			vars["scene_text_modal_settings_open_val"] = settingsOpenVal
+			effModalStr := book.CleanEffectsExpr(modalSc.Effects)
+			effModalErr := ""
+			if effModalStr != "" {
+				effModalErr = book.ExplainEffectsExprError(modalSc.Effects, s.ActiveBook)
+			}
+			vars["scene_text_modal_effects"] = effModalStr
+			vars["scene_text_modal_has_effects"] = effModalStr != ""
+			vars["scene_text_modal_effects_invalid"] = effModalErr != ""
+			vars["scene_text_modal_effects_error_hint"] = effModalErr
+			vars["scene_text_modal_effects_disabled"] = s.isHistoryPreview() || !hasBookVars
+			vars["book_vars_spec"] = book.EncodeBookVariablesSpec(s.ActiveBook)
+			vars["book_var_suggestions"] = buildBookVarSuggestions(s.ActiveBook)
+			vars["book_enum_suggestions"] = buildBookEnumValueSuggestions(s.ActiveBook)
+			vars["book_target_suggestions"] = s.buildBookTargetSuggestions(modalSc)
+			vars["show_syntax_help_popover"] = hasBookVars && s.SyntaxHelpPopoverOpen
+			vars["syn_open"] = "{{"
+			vars["syn_close"] = "}}"
+			vars["syntax_help_title"] = "Składnia exit: / if: / set:"
+			vars["syntax_help_cond_rows"] = []map[string]any{
+				{"code": "if: odkryta_prawda && sumienie >= 2", "desc": "bool / int / enum (&&, ||, !, ==, !=, >=, <=)"},
+				{"code": "set: odkryta_prawda = true; sumienie++", "desc": "efekty rozdzielone średnikiem ; (=, +=, -=, ++, --)"},
+				{"code": "exit: ogien_w_kaplicy", "desc": "wyjście do sceny, chapter:<id> lub END"},
+			}
+			vars["syntax_help_eff_rows"] = []map[string]any{
+				{"code": "set: !klucz; klucz = false", "desc": "bool toggle (!zmienna) lub jawnie (= true / false)"},
+				{"code": "set: naboje -= 2; frakcja = rzeczni", "desc": "int (+=, -=, ++, --) lub enum (=)"},
+			}
+
+			previewMode := s.SceneTextPreviewMode
+			if !hasBookVars || (previewMode != "highlight" && previewMode != "output") {
+				previewMode = "normal"
+			}
+			vars["scene_text_preview_mode"] = previewMode
+			vars["is_scene_preview_normal"] = previewMode == "normal"
+			vars["is_scene_preview_highlight"] = previewMode == "highlight"
+			vars["is_scene_preview_output"] = previewMode == "output"
+
+			testState := book.EnsureSaveVariables(s.ActiveBook, s.SceneTextTestVars)
+			s.SceneTextTestVars = testState
+			var testVarItems []map[string]any
+			if s.ActiveBook != nil {
+				book.ResolveBookVariableTypes(s.ActiveBook)
+				for _, vd := range s.ActiveBook.Variables {
+					curVal := testState[vd.Name]
+					isTrue := curVal == "true"
+					var enumOpts []map[string]any
+					if vd.Kind == book.VarKindEnum {
+						for _, opt := range vd.Options {
+							enumOpts = append(enumOpts, map[string]any{
+								"value":     opt,
+								"label":     opt,
+								"is_active": strings.EqualFold(opt, curVal),
+							})
+						}
+					}
+					testVarItems = append(testVarItems, map[string]any{
+						"name":         vd.Name,
+						"kind":         vd.Kind,
+						"is_bool":      vd.Kind == book.VarKindBool,
+						"is_int":       vd.Kind == book.VarKindInt,
+						"is_enum":      vd.Kind == book.VarKindEnum,
+						"bool_val":     isTrue,
+						"value":        curVal,
+						"enum_options": enumOpts,
+					})
+				}
+			}
+			vars["scene_test_vars"] = testVarItems
+			vars["has_scene_test_vars"] = len(testVarItems) > 0
+			vars["show_scene_test_vars_bar"] = s.SceneTestVarsPopoverOpen || (previewMode == "highlight" && len(testVarItems) > 0)
+			vars["scene_test_vars_spec"] = book.EncodeVariablesStateSpec(testState, s.ActiveBook)
+			vars["scene_text_modal_hl_segments"] = book.BuildSceneProseHighlightSegments(modalSc.Text, testState, s.ActiveBook)
+			vars["scene_text_modal_preview_paragraphs"] = book.BuildSceneProsePreviewParagraphs(modalSc.Text, previewMode, testState, s.ActiveBook)
+			vars["scene_text_modal_output_html"] = book.RenderSceneProseHTML(modalSc, testState, s.ActiveBook)
 
 			modalHeaderMeta := ""
 			if s.ActiveBook != nil {
@@ -270,7 +377,13 @@ func (s *Server) populateModalsContext(vars map[string]any) {
 			vars["scene_text_modal_header_meta"] = modalHeaderMeta
 
 			imageless := s.isEffectiveImageless()
-			modalImgURL := modalSc.ImageURL
+			modalImgURL := ""
+			if !imageless {
+				modalImgURL = modalSc.ImageURL
+				if modalImgURL == "" {
+					modalImgURL = s.resolveInheritedSceneImageURL(modalSc)
+				}
+			}
 			vars["scene_text_modal_has_image"] = modalImgURL != ""
 			vars["scene_text_modal_image_url"] = modalImgURL
 			vars["scene_text_modal_is_imageless"] = imageless || modalImgURL == ""
@@ -308,36 +421,14 @@ func (s *Server) populateModalsContext(vars map[string]any) {
 			vars["scene_text_modal_incoming"] = incomingScenes
 			vars["scene_text_modal_has_incoming"] = len(incomingScenes) > 0
 
-			hasMulti := len(modalSc.Choices) > 1
-			modalChoices := make([]map[string]any, 0, len(modalSc.Choices))
-			for idx, ch := range modalSc.Choices {
-				lbl := ch.Label
-				if !hasMulti {
-					lbl = "Dalej"
+			startID := ""
+			if s.ActiveBook != nil {
+				startID = s.ActiveBook.StartSceneID
+				if startID == "" && len(s.ActiveBook.Scenes) > 0 {
+					startID = s.ActiveBook.Scenes[0].ID
 				}
-				arr := "»"
-				if ch.IsEnding {
-					arr = "↺"
-				}
-				selectedVal, selectedLabel, targetOptions := s.buildChoiceTargetOptions(modalSc, ch)
-				isFilled := !ch.IsEnding &&
-				((ch.TargetSceneID != "" && !strings.EqualFold(ch.TargetSceneID, "END")) ||
-					(ch.IsChapterLink && ch.TargetChapterID != "")) &&
-				!strings.EqualFold(selectedVal, "END")
-				modalChoices = append(modalChoices, map[string]any{
-					"idx":             idx,
-					"label":           lbl,
-					"arrow":           arr,
-					"is_branch":       hasMulti && !ch.IsEnding,
-					"is_editable":     hasMulti,
-					"target_scene_id": ch.TargetSceneID,
-					"selected_value":  selectedVal,
-					"selected_label":  selectedLabel,
-					"is_filled":       isFilled,
-					"target_options":  targetOptions,
-				})
 			}
-			vars["scene_text_modal_choices"] = modalChoices
+			vars["scene_text_modal_start_id"] = startID
 			isTerminal := len(modalSc.Choices) == 0 || modalSc.ExplicitEnd
 			vars["scene_text_modal_is_terminal"] = isTerminal
 			termVal, termLabel, termOpts := s.buildChoiceTargetOptions(
@@ -348,16 +439,161 @@ func (s *Server) populateModalsContext(vars map[string]any) {
 			vars["scene_text_modal_terminal_selected_label"] = termLabel
 			vars["scene_text_modal_terminal_port_filled"] = termVal != "" && !strings.EqualFold(termVal, "END")
 			vars["scene_text_modal_terminal_target_options"] = termOpts
-			startID := ""
-			if s.ActiveBook != nil {
-				startID = s.ActiveBook.StartSceneID
-				if startID == "" && len(s.ActiveBook.Scenes) > 0 {
-					startID = s.ActiveBook.Scenes[0].ID
+
+			choicesSource := modalSc.Choices
+			if isTerminal {
+				choicesSource = []book.Choice{
+					{
+						Label:      "Dalej",
+						Target:     "END",
+						IsEnding:   true,
+						IsImplicit: true,
+					},
 				}
 			}
-			vars["scene_text_modal_start_id"] = startID
+			hasMulti := len(choicesSource) > 1
+			modalChoices := make([]map[string]any, 0, len(choicesSource))
+			for idx, ch := range choicesSource {
+				lbl := ch.Label
+				if !hasMulti && lbl == "" {
+					lbl = "Dalej"
+				}
+				arr := "»"
+				if ch.IsEnding {
+					arr = "↺"
+				}
+				selectedVal, selectedLabel, targetOptions := s.buildChoiceTargetOptions(modalSc, ch)
+				isFilled := !ch.IsEnding &&
+					((ch.TargetSceneID != "" && !strings.EqualFold(ch.TargetSceneID, "END")) ||
+						(ch.IsChapterLink && ch.TargetChapterID != "")) &&
+					!strings.EqualFold(selectedVal, "END")
+				condInputVal := book.CleanConditionExpr(ch.Condition)
+				if ch.ShowWhenLocked && condInputVal != "" && !strings.HasPrefix(condInputVal, "?") {
+					condInputVal = "? " + condInputVal
+				}
+				effInputVal := book.CleanEffectsExpr(ch.Effects)
+				hasCond := condInputVal != ""
+				hasEff := effInputVal != ""
+				hasRule := hasCond || hasEff
+				ruleKey := fmt.Sprintf("%s:%d", modalSc.ID, idx)
+				isRuleOpen := hasBookVars
+				if hasBookVars && s.ChoiceRulesOpen != nil {
+					if expOpen, exists := s.ChoiceRulesOpen[ruleKey]; exists {
+						isRuleOpen = expOpen
+					}
+				}
+				condMet := book.EvaluateCondition(ch.Condition, testState, s.ActiveBook)
+				if previewMode == "output" && hasCond && !condMet && !ch.ShowWhenLocked {
+					continue
+				}
+				condErrHint := ""
+				if hasCond {
+					condErrHint = book.ExplainConditionExprError(ch.Condition, s.ActiveBook)
+				}
+				effErrHint := ""
+				if hasEff {
+					effErrHint = book.ExplainEffectsExprError(ch.Effects, s.ActiveBook)
+				}
+				arrowSuffix := ""
+				if isFilled && selectedVal != "" && !strings.EqualFold(selectedVal, "END") {
+					arrowSuffix = " -> " + selectedVal
+				}
+				inlineVal := lbl + arrowSuffix
+				targetScID := ch.TargetSceneID
+				if ch.IsEnding && targetScID == "" {
+					targetScID = startID
+				}
+				modalChoices = append(modalChoices, map[string]any{
+					"idx":               idx,
+					"label":             lbl,
+					"arrow_suffix":      arrowSuffix,
+					"inline_value":      inlineVal,
+					"arrow":             arr,
+					"is_branch":         !ch.IsEnding,
+					"is_editable":       true,
+					"target_scene_id":   targetScID,
+					"selected_value":    selectedVal,
+					"selected_label":    selectedLabel,
+					"is_filled":         isFilled,
+					"target_options":    targetOptions,
+					"condition":         condInputVal,
+					"effects":           effInputVal,
+					"has_condition":     hasCond,
+					"has_effects":       hasEff,
+					"has_rule":          hasRule,
+					"is_rule_open":      isRuleOpen,
+					"is_cond_invalid":   condErrHint != "",
+					"is_eff_invalid":    effErrHint != "",
+					"cond_error_hint":   condErrHint,
+					"eff_error_hint":    effErrHint,
+					"is_cond_unmet":     previewMode == "highlight" && hasCond && !condMet,
+					"is_locked_preview": previewMode == "output" && hasCond && !condMet && ch.ShowWhenLocked,
+				})
+			}
+			vars["scene_text_modal_choices"] = modalChoices
 		} else {
 			s.SceneTextModalID = ""
 		}
 	}
+}
+
+func (s *Server) resolveInheritedSceneImageURL(target *book.Scene) string {
+	if target == nil || s.ActiveBook == nil || len(s.ActiveBook.Scenes) == 0 {
+		return ""
+	}
+	if target.ImageURL != "" {
+		return target.ImageURL
+	}
+	startSc := s.findScene(s.ActiveBook.StartSceneID)
+	if startSc == nil {
+		startSc = s.ActiveBook.Scenes[0]
+	}
+	type bfsItem struct {
+		sc  *book.Scene
+		img string
+	}
+	visited := make(map[string]bool, len(s.ActiveBook.Scenes))
+	queue := []bfsItem{{sc: startSc, img: startSc.ImageURL}}
+	visited[startSc.ID] = true
+	for len(queue) > 0 {
+		cur := queue[0]
+		queue = queue[1:]
+		curImg := cur.img
+		if cur.sc.ImageURL != "" {
+			curImg = cur.sc.ImageURL
+		}
+		if cur.sc.ID == target.ID {
+			if curImg != "" {
+				return curImg
+			}
+			break
+		}
+		for _, ch := range cur.sc.Choices {
+			if ch.IsEnding || ch.TargetSceneID == "" || strings.EqualFold(ch.TargetSceneID, "END") {
+				continue
+			}
+			nextSc := s.findScene(ch.TargetSceneID)
+			if nextSc != nil && !visited[nextSc.ID] {
+				visited[nextSc.ID] = true
+				nextImg := curImg
+				if nextSc.ImageURL != "" {
+					nextImg = nextSc.ImageURL
+				}
+				queue = append(queue, bfsItem{sc: nextSc, img: nextImg})
+			}
+		}
+	}
+	lastImg := ""
+	for _, sc := range s.ActiveBook.Scenes {
+		if sc == nil {
+			continue
+		}
+		if sc.ImageURL != "" {
+			lastImg = sc.ImageURL
+		}
+		if sc.ID == target.ID && lastImg != "" {
+			return lastImg
+		}
+	}
+	return lastImg
 }

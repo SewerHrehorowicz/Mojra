@@ -4,27 +4,32 @@ header.topbar#topbar
             span.brand-logo {active_book_title}
         {else}
             svg.brand-mark src: /icons/mojra.svg
-            span.brand-logo "Mojra"
-            span.brand-logo.brand-logo-short "M"
-            button.topbar-tab .active?: {is_view_library}
+            span.topbar-divider
+            button.topbar-tab.topbar-icon-tab#tab-library .active?: {is_view_library}
                 type: button
                 action: SwitchView
                 data-view: library
+                data-hint: "Biblioteka"
+                aria-label: "Biblioteka"
                 svg.tab-icon src: /icons/library.svg
-                span.tab-label "Biblioteka"
+
+    {if !standalone_mode}
+        .topbar-center
             {if has_active_book}
-                button.topbar-tab#tab-player .active?: {is_view_player}
+                button.topbar-tab.topbar-icon-tab#tab-player .active?: {is_view_player}
                     type: button
                     action: SwitchView
                     data-view: player
-                    svg.tab-icon src: /icons/book.svg
-                    span.tab-label {active_book_title}
-            button.topbar-tab .active?: {is_view_editor}
+                    data-hint: "{active_book_title}"
+                    aria-label: "{active_book_title}"
+                    svg.tab-icon src: /icons/playbook.svg
+            button.topbar-tab.topbar-icon-tab#tab-editor .active?: {is_view_editor}
                 type: button
                 action: SwitchView
                 data-view: editor
-                svg.tab-icon src: /icons/nodes.svg
-                span.tab-label "Playbook Studio"
+                data-hint: "Studio"
+                aria-label: "Studio"
+                svg.tab-icon src: /icons/studio.svg
 
     .topbar-right#topbar-right
         button.top-action-btn.topbar-hamburger-btn#btn-topbar-menu
@@ -46,12 +51,13 @@ header.topbar#topbar
                 data-hint: "{imageless_toggle_title}"
                 svg.action-icon#icon-imageless-off .hidden?: {imageless_mode} src: /icons/image.svg
                 svg.action-icon#icon-imageless-on .hidden?: {!imageless_mode} src: /icons/image-off.svg
-            button.top-action-btn#btn-toggle-ui-scale
+            button.top-action-btn#btn-toggle-ui-scale .active?: {is_zen_ui}
                 type: button
                 action: ToggleUIScale
                 data-hint: "{ui_scale_toggle_title}"
-                svg.action-icon#icon-zoom-in .hidden?: {is_large_ui} src: /icons/zoom.svg
-                svg.action-icon#icon-zoom-out .hidden?: {!is_large_ui} src: /icons/zoom-out.svg
+                svg.action-icon#icon-zoom-in .hidden?: {is_non_small_ui} src: /icons/zoom.svg
+                svg.action-icon#icon-zoom-zen .hidden?: {!is_large_ui} src: /icons/zen.svg
+                svg.action-icon#icon-zoom-out .hidden?: {!is_zen_ui} src: /icons/zoom-out.svg
             button.top-action-btn
                 type: button
                 action: ToggleTheme

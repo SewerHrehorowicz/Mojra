@@ -10,7 +10,7 @@ import (
 var (
 	inlineBoldRe   = regexp.MustCompile(`\*\*([^*]+)\*\*`)
 	inlineItalicRe = regexp.MustCompile(`\*([^*]+)\*`)
-	htmlTagStripRe = regexp.MustCompile(`<[^>]*>`)
+	htmlTagStripRe = regexp.MustCompile(`<[a-zA-Z/!?][^>]*>`)
 	safeIDRe       = regexp.MustCompile(`^[\p{L}\p{N}_\-]+$`)
 	headerKeyRe    = regexp.MustCompile(`^[a-zA-ZąćęłńóśźżĄĆĘŁŃÓŚŹŻ_]+$`)
 )
@@ -22,8 +22,32 @@ func SanitizePlainText(s string) string {
 	s = htmlTagStripRe.ReplaceAllString(s, "")
 	var b strings.Builder
 	b.Grow(len(s))
-	for _, r := range s {
+	runes := []rune(s)
+	inDoubleBraces := 0
+	for i := 0; i < len(runes); i++ {
+		r := runes[i]
+		if r == '{' && i+1 < len(runes) && runes[i+1] == '{' {
+			inDoubleBraces++
+			b.WriteRune('{')
+			b.WriteRune('{')
+			i++
+			continue
+		}
+		if r == '}' && i+1 < len(runes) && runes[i+1] == '}' && inDoubleBraces > 0 {
+			inDoubleBraces--
+			b.WriteRune('}')
+			b.WriteRune('}')
+			i++
+			continue
+		}
+		if r == '\n' {
+			inDoubleBraces = 0
+		}
 		if r == '<' || r == '>' {
+			if inDoubleBraces > 0 {
+				b.WriteRune(r)
+				continue
+			}
 			if r == '>' && b.Len() > 0 && strings.HasSuffix(b.String(), "-") {
 				b.WriteRune(r)
 			} else if r == '>' {

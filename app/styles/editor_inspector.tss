@@ -1,3 +1,9 @@
+@keyframes rightPanelSlideIn
+  from
+    transform translateX(100%)
+  to
+    transform translateX(0)
+
 // Contextual Right Inspector Panel & Multi-Selection
 .editor-context-panel
   order 3
@@ -17,23 +23,7 @@
 .editor-context-panel:not(:has(> :not(.hidden)))
   display none
 
-body[data-android="true"] .editor-context-panel
-  display none !important
-
-/* @dev-only-start */
-.device-stage[data-preview="portrait"] .editor-context-panel, .device-stage[data-preview="landscape"] .editor-context-panel
-  display none !important
-/* @dev-only-end */
-
-@media (max-width: 900px)
-  .editor-context-panel
-    display none !important
-
-@media (hover: none) and (pointer: coarse)
-  .editor-context-panel
-    display none !important
-
-// Right-Side Breakdown, Version History & Help Panels
+// Right-Side Breakdown, Variables, Version History & Help Panels
 .editor-history-panel, .editor-help-panel
   order 3
   width 320px
@@ -42,21 +32,17 @@ body[data-android="true"] .editor-context-panel
   height 100%
   background --bg-obsidian
   border-left 1px solid --border-subtle
-  overflow-y auto
-  overflow-x hidden
+  overflow hidden
   display flex
   flex-direction column
   flex-shrink 0
   z-index 35
-
-.editor-history-panel, .editor-help-panel
-  overflow hidden
 
 .help-panel-list
   display flex
   flex-direction column
 
-.editor-breakdown-panel
+.editor-breakdown-panel, .editor-variables-panel
   order 3
   width 320px
   min-width 320px
@@ -70,6 +56,34 @@ body[data-android="true"] .editor-context-panel
   flex-direction column
   flex-shrink 0
   z-index 35
+
+.editor-context-panel.is-entering, .editor-history-panel.is-entering, .editor-help-panel.is-entering, .editor-breakdown-panel.is-entering, .editor-variables-panel.is-entering
+  will-change transform
+  animation rightPanelSlideIn 0.2s cubic-bezier(0.22, 1, 0.36, 1)
+
+/* @dev-only-start */
+.device-stage[data-preview="portrait"]
+  .editor-context-panel, .editor-history-panel, .editor-help-panel, .editor-breakdown-panel, .editor-variables-panel
+    width 100%
+    min-width 0
+    max-width none
+    flex 1
+    border-left none
+
+  .editor-workspace-body:has(> aside:not(.hidden)) .timeline-scroll-viewport
+    display none !important
+/* @dev-only-end */
+
+@media (max-width: 760px) and (orientation: portrait)
+  .editor-context-panel, .editor-history-panel, .editor-help-panel, .editor-breakdown-panel, .editor-variables-panel
+    width 100%
+    min-width 0
+    max-width none
+    flex 1
+    border-left none
+
+  .editor-workspace-body:has(> aside:not(.hidden)) .timeline-scroll-viewport
+    display none !important
 
 .node-meta-static-val
   flex 1
@@ -326,7 +340,11 @@ body[data-android="true"] .editor-context-panel
   align-items center
   justify-content space-between
   gap 8px
-  padding 10px 14px
+  height 36px
+  min-height 36px
+  max-height 36px
+  padding 0 14px
+  box-sizing border-box
   border-bottom 1px solid --border-subtle
   background --bg-topbar
   flex-shrink 0
@@ -1037,8 +1055,8 @@ body[data-android="true"] .editor-context-panel
   color --text-primary
 
 .choice-grip-icon
-  width 14px
-  height 14px
+  width 15px
+  height 15px
   pointer-events none
 
 .context-choice-item .node-choice-label
@@ -1068,8 +1086,8 @@ body[data-android="true"] .editor-context-panel
   background --bg-obsidian
 
 .btn.context-delete-btn .btn-icon
-  width 13px
-  height 13px
+  width 15px
+  height 15px
   color currentColor
 
 .btn.context-delete-btn:hover
@@ -1213,10 +1231,41 @@ body[data-android="true"] .editor-context-panel
 
 .node-meta-key
   font-family --font-sans
-  font-size 10px
+  font-size 12px
+  line-height 1.4
   color --text-muted
-  width 42px
+  width 58px
   flex-shrink 0
+
+.node-media-picker-row, .add-book-input-row
+  flex 1
+  min-width 0
+  display flex
+  align-items center
+  gap 6px
+
+.node-folder-btn
+  width 28px
+  height 28px
+  padding 0
+  display inline-flex
+  align-items center
+  justify-content center
+  flex-shrink 0
+  background transparent
+  border none !important
+  color --text-muted
+  cursor pointer
+  transition color 0.15s ease
+
+.node-folder-btn:hover
+  color --text-primary
+
+.folder-browse-icon
+  width 15px
+  height 15px
+  display block
+  pointer-events none
 
 .node-meta-input
   flex 1
@@ -1226,7 +1275,8 @@ body[data-android="true"] .editor-context-panel
   border-bottom 1px solid --border-strong
   color --text-primary
   font-family --font-sans
-  font-size 11px
+  font-size 12px
+  line-height 1.4
   padding 3px 0
   transition border-color 0.15s ease
 
@@ -1331,20 +1381,419 @@ body[data-android="true"] .editor-context-panel
 .choice-port-icon.port-filled
   background currentColor
 
+.choice-port-icon.port-diamond
+  width 10px
+  height 10px
+  border-radius 0 !important
+  transform rotate(45deg)
+
+// Variables Panel & Unified 3-Row Choice Rule Stack
+.breakdown-section-header
+  display flex
+  align-items center
+  justify-content space-between
+  gap 8px
+
+.var-section-add-btn
+  width 28px
+  height 28px
+  padding 0
+  display inline-flex
+  align-items center
+  justify-content center
+  color --text-muted
+  flex-shrink 0
+
+.var-section-add-btn:hover
+  color --text-primary
+
+.var-section-add-btn .media-plus-icon
+  width 15px
+  height 15px
+  display block
+  pointer-events none
+
+.var-panel-row
+  display flex
+  align-items center
+  gap 8px
+  padding 4px 0
+
+.var-panel-inline-form
+  flex 1
+  min-width 0
+  display flex
+  align-items center
+  gap 8px
+
+.var-panel-inline-form:has(+ .var-bool-toggle-btn)
+  flex 0 0 108px
+  width 108px
+
+.var-name-input
+  width 108px
+  flex 0 0 108px
+  font-family --font-mono
+  font-size 12px
+  color --text-secondary
+
+.var-name-input:focus
+  color --text-primary
+
+.var-val-input
+  flex 1
+  min-width 0
+  font-family --font-mono
+  font-size 12px
+
+.var-options-input
+  font-family --font-sans
+
+.var-bool-toggle-btn
+  flex 1
+  min-width 0
+  display flex
+  align-items center
+  justify-content flex-start
+  gap 8px
+  background transparent
+  border none !important
+  padding 3px 0 4px 0
+  color --text-secondary
+  font-family --font-mono
+  font-size 12px
+  cursor pointer
+
+.var-bool-toggle-btn:hover, .var-bool-toggle-btn.active
+  color --text-primary
+
+.ui-toggle-track
+  width 22px
+  height 10px
+  background --toggle-track
+  display inline-flex
+  align-items center
+  padding 2px
+  flex-shrink 0
+  pointer-events none
+  transition background 0.15s ease
+
+.ui-toggle-thumb
+  width 6px
+  height 6px
+  background --toggle-thumb-off
+  transform translateX(0)
+  pointer-events none
+  transition transform 0.15s ease, background 0.15s ease
+
+.var-bool-toggle-btn.active .ui-toggle-track, .test-var-bool-btn.active .ui-toggle-track
+  background --toggle-track-on
+
+.var-bool-toggle-btn.active .ui-toggle-thumb, .test-var-bool-btn.active .ui-toggle-thumb
+  background --text-primary
+  transform translateX(12px)
+
+.var-remove-btn
+  width 28px
+  height 28px
+  padding 0
+  display inline-flex
+  align-items center
+  justify-content center
+  color --text-muted
+  flex-shrink 0
+
+.var-remove-btn:hover
+  color --accent-danger
+
+.var-panel-add-row
+  display flex
+  flex-wrap wrap
+  gap 6px
+  padding 12px 14px
+
+.syn-input-wrap
+  position relative
+  flex 1
+  min-width 0
+  display flex
+  align-items center
+  gap 4px
+  border-bottom 1px solid --border-strong
+  transition border-color 0.15s ease
+
+.syn-input-wrap:has(> .syn-autocomplete-dropdown:not(.hidden))
+  z-index 85
+
+.syn-input-wrap:focus-within
+  border-bottom-color --text-primary
+
+.syn-input-wrap.is-invalid, .syn-input-wrap.is-invalid:focus-within
+  border-bottom-color --accent-danger !important
+
+.syn-input-wrap.is-invalid .syn-inner-input, .syn-input-wrap.is-invalid .syn-brace
+  color --accent-danger !important
+
+.syn-input-wrap.is-disabled
+  opacity 0.35
+  cursor not-allowed
+
+.choice-rule-toggle-btn:disabled, .choice-syntax-help-btn:disabled, .scene-preview-mode-btn:disabled
+  opacity 0.28
+  cursor not-allowed
+  pointer-events none
+
+.syn-inner-input
+  border-bottom none !important
+  font-family --font-mono
+  font-size 12px
+  color --text-secondary
+
+.syn-inner-input:focus
+  color --text-primary
+
+.syn-brace
+  font-family --font-mono
+  font-size 12px
+  line-height 1.4
+  color --text-muted
+  user-select none
+  flex-shrink 0
+  pointer-events none
+
+.context-choice-item.is-rule-expanded
+  align-items center
+
+.choice-triple-stack
+  flex 1
+  min-width 0
+  display flex
+  flex-direction column
+  border-top 1px solid --border-strong
+  border-bottom 1px solid --border-strong
+  background transparent
+  transition border-color 0.15s ease
+
+.choice-triple-stack:focus-within
+  border-top-color --text-primary
+  border-bottom-color --text-primary
+
+.choice-triple-row
+  position relative
+  display flex
+  align-items center
+  gap 6px
+  min-height 26px
+  height 26px
+  line-height 1.4
+  padding 0
+  border-bottom 1px solid --border-subtle
+
+.choice-triple-row.choice-triple-label
+  height auto
+  min-height 26px
+  align-items flex-start
+  padding 3px 0
+
+.choice-row-key
+  font-family --font-mono
+  font-size 12px
+  line-height 1.4
+  color --text-muted
+  width 42px
+  min-width 42px
+  flex-shrink 0
+  user-select none
+
+.choice-triple-row.is-empty-rule:not(:focus-within) .choice-row-key, .node-meta-row.is-empty-rule:not(:focus-within) .node-meta-key, .scene-settings-row.is-empty-rule:not(:focus-within) .node-meta-key
+  opacity 0.45
+
+.choice-triple-row:has(> .syn-autocomplete-dropdown:not(.hidden))
+  z-index 85
+
+.choice-triple-row:last-child
+  border-bottom none
+
+.choice-triple-row.is-invalid .choice-rule-input, .choice-triple-row.is-invalid .choice-row-key, .choice-triple-row.is-invalid .syn-brace
+  color --accent-danger !important
+
+.choice-triple-row .node-choice-label
+  flex 1
+  min-width 0
+  border none !important
+  border-bottom none !important
+  background transparent
+  color --text-primary
+  font-family --font-sans
+  font-size 12px
+  line-height 1.4
+  padding 0
+  margin 0
+  resize none !important
+  overflow hidden !important
+
+.choice-exit-input, .choice-rule-input
+  flex 1
+  min-width 0
+  height 100%
+  background transparent
+  border none !important
+  border-bottom none !important
+  color --text-secondary
+  font-family --font-mono
+  font-size 12px
+  line-height 1.4
+  padding 0
+
+.choice-exit-input:focus, .choice-rule-input:focus
+  outline none
+  color --text-primary
+
+.choice-exit-input::placeholder, .choice-rule-input::placeholder
+  color --text-muted
+  opacity 0.65
+
+.choice-rule-toggle-btn, .choice-syntax-help-btn
+  width 28px
+  height 28px
+  padding 0
+  display inline-flex
+  align-items center
+  justify-content center
+  color --text-muted
+  flex-shrink 0
+
+.syn-dropdown-top-btn
+  width 22px
+  height 22px
+  padding 0
+  display inline-flex
+  align-items center
+  justify-content center
+  color --text-muted
+  flex-shrink 0
+
+.syn-dropdown-top-btn:hover, .syn-dropdown-top-btn.active
+  color --text-primary
+
+.choice-braces-icon, .choice-help-icon
+  width 15px
+  height 15px
+  display block
+  pointer-events none
+
+.syn-dropdown-top-btn .choice-help-icon, .syn-dropdown-top-btn .media-plus-icon
+  width 13px
+  height 13px
+  display block
+  pointer-events none
+
+.syn-autocomplete-dropdown
+  position absolute
+  top 100%
+  left 0
+  right auto
+  width 240px
+  z-index 90
+  background --dropdown-bg
+  border-top 1px solid --text-primary
+  border-left 1px solid --dropdown-border
+  border-right 1px solid --dropdown-border
+  border-bottom 1px solid --dropdown-border
+  display flex
+  flex-direction column
+  box-shadow 0 6px 16px rgba(0, 0, 0, 0.45)
+  box-shadow switch(theme)
+    light 0 2px 8px rgba(0, 0, 0, 0.05)
+
+.syn-dropdown-list
+  max-height 182px
+  overflow-y auto
+  scrollbar-width thin
+  scrollbar-color --dropdown-border transparent
+  display flex
+  flex-direction column
+
+.syn-dropdown-list::-webkit-scrollbar
+  width 4px
+
+.syn-dropdown-list::-webkit-scrollbar-track
+  background transparent
+
+.syn-dropdown-list::-webkit-scrollbar-thumb
+  background --dropdown-border
+
+.syn-dropdown-item
+  width 100%
+  height 26px
+  flex-shrink 0
+  display flex
+  align-items center
+  justify-content space-between
+  gap 10px
+  padding 0 10px
+  background transparent
+  border none
+  color --dropdown-item-fg
+  font-family --font-mono
+  font-size 12px
+  line-height 1.4
+  text-align left
+  cursor pointer
+
+.syn-dropdown-item:hover, .syn-dropdown-item.active
+  background --dropdown-hover-bg
+  color --text-primary
+
+.syn-dropdown-var-name
+  color inherit
+  font-weight 400
+
+.syn-dropdown-var-meta
+  color --dropdown-meta-fg
+  font-size 0.85em
+  white-space nowrap
+  overflow hidden
+  text-overflow ellipsis
+
+.syntax-help-section
+  display flex
+  flex-direction column
+  gap 4px
+
+.syntax-help-row
+  display flex
+  align-items baseline
+  justify-content space-between
+  gap 8px
+  font-size 10px
+
+.syntax-help-code
+  font-family --font-mono
+  color --text-primary
+  white-space nowrap
+  flex-shrink 0
+
+.syntax-help-desc
+  font-family --font-sans
+  color --text-muted
+  text-align right
+
 .book-setting-toggle-btn, .form-toggle-btn
   flex 1
   min-width 0
   width 100%
   display flex
   align-items center
-  justify-content space-between
+  justify-content flex-start
   gap 8px
   background transparent
   border none !important
   border-bottom none !important
   color --text-secondary
   font-family --font-sans
-  font-size 11px
+  font-size 12px
+  line-height 1.4
   padding 3px 0
   cursor pointer
   text-align left
@@ -1363,8 +1812,8 @@ body[data-android="true"] .editor-context-panel
   pointer-events none
 
 .book-setting-toggle-btn .action-icon, .form-toggle-btn .action-icon
-  width 13px
-  height 13px
+  width 15px
+  height 15px
   color --text-muted
   flex-shrink 0
   pointer-events none
@@ -1430,7 +1879,8 @@ body[data-android="true"] .editor-context-panel
   border none !important
   color --text-muted
   font-family --font-sans
-  font-size 11px
+  font-size 12px
+  line-height 1.4
   cursor pointer
   text-align left
   transition color 0.15s ease
@@ -1487,7 +1937,8 @@ body[data-android="true"] .editor-context-panel
   border-bottom 1px solid --border-strong
   color --text-primary
   font-family --font-sans
-  font-size 11px
+  font-size 12px
+  line-height 1.4
   padding 3px 0
   cursor pointer
   text-align left
@@ -1536,11 +1987,11 @@ body[data-android="true"] .editor-context-panel
   min-width 190px
   max-height 210px
   overflow-y auto
-  background --bg-obsidian
+  background --dropdown-bg
   border-top 1px solid --text-primary
-  border-left 1px solid --border-strong
-  border-right 1px solid --border-strong
-  border-bottom 1px solid --border-strong
+  border-left 1px solid --dropdown-border
+  border-right 1px solid --dropdown-border
+  border-bottom 1px solid --dropdown-border
   z-index 60
   display flex
   flex-direction column
@@ -1550,12 +2001,11 @@ body[data-android="true"] .editor-context-panel
 
 .custom-select-option
   width 100%
-  background --bg-obsidian
+  background transparent
   border none
-  border-bottom 1px solid --border-subtle
-  color --text-secondary
+  color --dropdown-item-fg
   font-family --font-sans
-  font-size 10px
+  font-size 12px
   padding 6px 8px
   text-align left
   cursor pointer
@@ -1564,15 +2014,59 @@ body[data-android="true"] .editor-context-panel
   text-overflow ellipsis
   flex-shrink 0
 
-.custom-select-option:last-child
-  border-bottom none
-
 .custom-select-option:hover, .custom-select-option.active
-  background --bg-elevated
+  background --dropdown-hover-bg
   color --text-primary
 
 .custom-select-option.active
   font-weight 600
+
+.choice-inline-wrap
+  position relative
+  flex 1
+  min-width 0
+  height 100%
+  display flex
+  align-items center
+
+.choice-inline-wrap:has(> .syn-autocomplete-dropdown:not(.hidden))
+  z-index 85
+
+.choice-inline-hl
+  position absolute
+  inset 0
+  display flex
+  align-items center
+  white-space pre
+  overflow hidden
+  pointer-events none
+  user-select none
+  font-family --font-sans
+  font-size 11px
+  line-height 1.4
+  padding 3px 0
+
+.choice-triple-row .choice-inline-hl
+  font-size 12px
+  padding 0
+
+.choice-hl-label
+  color --text-primary
+
+.choice-hl-arrow
+  color --text-muted
+  font-family --font-mono
+
+.choice-inline-wrap > input.node-choice-label, .choice-inline-wrap > input.choice-label-text
+  position relative
+  z-index 1
+  width 100%
+  color transparent !important
+  caret-color --text-primary
+
+.choice-inline-wrap > input.node-choice-label::selection, .choice-inline-wrap > input.choice-label-text::selection
+  background rgba(128, 128, 140, 0.28)
+  color transparent !important
 
 .node-micro-label
   font-size 9px
@@ -1639,8 +2133,8 @@ body[data-android="true"] .editor-context-panel
   pointer-events none
 
 .node-media-add-btn
-  width 22px
-  height 22px
+  width 28px
+  height 28px
   display inline-flex
   align-items center
   justify-content center
@@ -1657,19 +2151,58 @@ body[data-android="true"] .editor-context-panel
   color --text-primary
 
 .node-media-add-btn .media-plus-icon
-  width 13px
-  height 13px
+  width 15px
+  height 15px
 
 body[data-ui-scale="large"]
-  .node-media-add-btn .media-plus-icon
-    width 15px
-    height 15px
+  .history-panel-header
+    height 42px
+    min-height 42px
+    max-height 42px
+
+  .var-name-input
+    width 118px
+    flex 0 0 118px
+    font-size 13px
+
+  .var-val-input, .syn-inner-input, .syn-brace, .choice-row-key
+    font-size 13px
+
+  .var-panel-inline-form:has(+ .var-bool-toggle-btn)
+    flex 0 0 118px
+    width 118px
+
+  .var-bool-toggle-btn
+    font-size 13px
+    padding 5px 0
+
+  .ui-toggle-track, .toggle-switch
+    width 26px
+    height 12px
+
+  .ui-toggle-thumb, .toggle-thumb
+    width 8px
+    height 8px
+
+  .var-bool-toggle-btn.active .ui-toggle-thumb, .test-var-bool-btn.active .ui-toggle-thumb, .book-setting-toggle-btn.active .toggle-thumb, .form-toggle-btn.active .toggle-thumb
+    transform translateX(14px)
+
+  .node-media-add-btn .media-plus-icon, .folder-browse-icon, .choice-braces-icon, .choice-help-icon, .choice-grip-icon, .book-setting-toggle-btn .action-icon, .form-toggle-btn .action-icon
+    width 18px
+    height 18px
+  .choice-rule-toggle-btn, .choice-syntax-help-btn, .var-remove-btn, .node-folder-btn
+    width 32px
+    height 32px
   .node-chapter-caret-btn
     font-size 12px
     padding 5px 8px
 
+  .node-meta-key
+    font-size 13px
+    width 64px
+
   .node-meta-input, .custom-select-trigger, .book-setting-toggle-btn, .form-toggle-btn, .form-radio-option
-    font-size 12px
+    font-size 13px
     padding 5px 0
 
   .custom-select-trigger.choice-port-trigger
@@ -1682,7 +2215,7 @@ body[data-ui-scale="large"]
     height 15px
 
   .custom-select-option
-    font-size 12px
+    font-size 13px
     padding 8px 10px
 
   .node-choice-btn
@@ -1691,10 +2224,10 @@ body[data-ui-scale="large"]
     font-size 15px
 
   .choice-trash-icon
-    width 17px
-    height 17px
+    width 18px
+    height 18px
 
   .node-media-add-btn
-    width 28px
-    height 28px
+    width 32px
+    height 32px
     font-size 15px

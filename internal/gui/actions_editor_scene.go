@@ -10,6 +10,18 @@ import (
 	"storyteller/internal/book"
 )
 
+func splitInlineChoiceLabelAndTarget(raw string) (label string, target string, hasArrow bool) {
+	cleaned := book.SanitizePlainText(raw)
+	if idx := strings.LastIndex(cleaned, "->"); idx >= 0 {
+		if idx == 0 || cleaned[idx-1] != '\\' {
+			lbl := strings.TrimSpace(cleaned[:idx])
+			tgt := strings.TrimSpace(cleaned[idx+2:])
+			return lbl, tgt, true
+		}
+	}
+	return strings.TrimSpace(cleaned), "", false
+}
+
 func (s *Server) hasSceneTextModalChanges(curSc *book.Scene, r *http.Request) bool {
 	if curSc == nil {
 		return false
@@ -37,6 +49,11 @@ func (s *Server) hasSceneTextModalChanges(curSc *book.Scene, r *http.Request) bo
 	}
 	if _, hasSyn := r.Form["synopsis"]; hasSyn {
 		if strings.TrimSpace(book.SanitizePlainText(r.FormValue("synopsis"))) != curSc.Synopsis {
+			return true
+		}
+	}
+	if _, hasEff := r.Form["scene_effects"]; hasEff {
+		if book.StripOuterDoubleBraces(r.FormValue("scene_effects")) != curSc.Effects {
 			return true
 		}
 	}
@@ -68,8 +85,11 @@ func (s *Server) hasSceneTextModalChanges(curSc *book.Scene, r *http.Request) bo
 	}
 	for i, ch := range curSc.Choices {
 		lblKey := fmt.Sprintf("choice_label_%d", i)
+		var inlineTgt string
+		var hasArrow bool
 		if _, hasLbl := r.Form[lblKey]; hasLbl {
-			newLbl := book.SanitizePlainText(r.FormValue(lblKey))
+			var newLbl string
+			newLbl, inlineTgt, hasArrow = splitInlineChoiceLabelAndTarget(r.FormValue(lblKey))
 			if newLbl == "" {
 				newLbl = fmt.Sprintf("Wybór %d", i+1)
 			}
@@ -78,9 +98,29 @@ func (s *Server) hasSceneTextModalChanges(curSc *book.Scene, r *http.Request) bo
 			}
 		}
 		tgtKey := fmt.Sprintf("choice_target_%d", i)
-		if _, hasTgt := r.Form[tgtKey]; hasTgt {
-			newTgt := book.SanitizePlainText(r.FormValue(tgtKey))
-			if newTgt != "" && !strings.EqualFold(newTgt, ch.Target) && !strings.EqualFold(newTgt, ch.TargetSceneID) {
+		newTgt := ""
+		if hasArrow && inlineTgt != "" {
+			newTgt = inlineTgt
+		} else if _, hasTgt := r.Form[tgtKey]; hasTgt {
+			newTgt = book.SanitizePlainText(r.FormValue(tgtKey))
+		}
+		if newTgt != "" && !strings.EqualFold(newTgt, ch.Target) && !strings.EqualFold(newTgt, ch.TargetSceneID) {
+			return true
+		}
+		condKey := fmt.Sprintf("choice_cond_%d", i)
+		if _, hasCond := r.Form[condKey]; hasCond {
+			rawCond := book.StripOuterDoubleBraces(r.FormValue(condKey))
+			showLocked := strings.HasPrefix(rawCond, "?")
+			if showLocked {
+				rawCond = strings.TrimSpace(rawCond[1:])
+			}
+			if rawCond != ch.Condition || showLocked != ch.ShowWhenLocked {
+				return true
+			}
+		}
+		effKey := fmt.Sprintf("choice_effects_%d", i)
+		if _, hasEff := r.Form[effKey]; hasEff {
+			if book.StripOuterDoubleBraces(r.FormValue(effKey)) != ch.Effects {
 				return true
 			}
 		}
@@ -119,6 +159,9 @@ func (s *Server) applySceneFormFields(target *book.Scene, r *http.Request) {
 	}
 	if _, hasSyn := r.Form["synopsis"]; hasSyn {
 		target.Synopsis = strings.TrimSpace(book.SanitizePlainText(r.FormValue("synopsis")))
+	}
+	if _, hasEff := r.Form["scene_effects"]; hasEff {
+		target.Effects = book.CleanEffectsExpr(r.FormValue("scene_effects"))
 	}
 	if _, hasImg := r.Form["explicit_image"]; hasImg {
 		target.ExplicitImage = book.SanitizeRelativeMediaPath(r.FormValue("explicit_image"))
@@ -163,7 +206,7 @@ func (s *Server) applySceneFormFields(target *book.Scene, r *http.Request) {
 			target.SourceFile = s.ActiveBook.ChapterFileNameFor(target.Chapter, target.ChapterID)
 		}
 	}
-	if target.SourceFile == "" || target.SourceFile == "." || strings.EqualFold(target.SourceFile, "story.txt") {
+	if target.SourceFile == "" || target.SourceFile == "." || strings.EqualFold(target.SourceFile, book.DefaultStoryFile) || strings.EqualFold(target.SourceFile, book.BookDataFileName) {
 		target.SourceFile = s.ActiveBook.ChapterFileNameFor(target.Chapter, target.ChapterID)
 	}
 	if _, hasExplicitEnd := r.Form["explicit_end"]; hasExplicitEnd {
@@ -177,19 +220,45 @@ func (s *Server) applySceneFormFields(target *book.Scene, r *http.Request) {
 		if count, err := strconv.Atoi(countStr); err == nil && count >= 2 {
 			var parsedChoices []book.Choice
 			for i := 0; i < count; i++ {
-				lbl := book.SanitizePlainText(r.FormValue(fmt.Sprintf("choice_label_%d", i)))
+				lbl, inlineTgt, hasArrow := splitInlineChoiceLabelAndTarget(r.FormValue(fmt.Sprintf("choice_label_%d", i)))
 				tgt := book.SanitizePlainText(r.FormValue(fmt.Sprintf("choice_target_%d", i)))
+				if hasArrow && inlineTgt != "" {
+					tgt = inlineTgt
+				}
 				if tgt == "" && i < len(target.Choices) {
 					tgt = target.Choices[i].Target
 				}
 				if lbl == "" && tgt != "" {
 					lbl = fmt.Sprintf("Wybór %d", i+1)
 				}
+				var cond, eff string
+				var showLocked bool
+				if i < len(target.Choices) {
+					cond = target.Choices[i].Condition
+					eff = target.Choices[i].Effects
+					showLocked = target.Choices[i].ShowWhenLocked
+				}
+				condKey := fmt.Sprintf("choice_cond_%d", i)
+				if _, hasCond := r.Form[condKey]; hasCond {
+					rawCond := book.CleanConditionExpr(r.FormValue(condKey))
+					showLocked = strings.HasPrefix(rawCond, "?")
+					if showLocked {
+						rawCond = strings.TrimSpace(rawCond[1:])
+					}
+					cond = rawCond
+				}
+				effKey := fmt.Sprintf("choice_effects_%d", i)
+				if _, hasEff := r.Form[effKey]; hasEff {
+					eff = book.CleanEffectsExpr(r.FormValue(effKey))
+				}
 				if lbl != "" && tgt != "" {
 					parsedChoices = append(parsedChoices, book.Choice{
-						Label:    lbl,
-						Target:   tgt,
-						IsEnding: strings.EqualFold(tgt, "END"),
+						Label:          lbl,
+						Target:         tgt,
+						Condition:      cond,
+						Effects:        eff,
+						ShowWhenLocked: showLocked,
+						IsEnding:       strings.EqualFold(tgt, "END"),
 					})
 				}
 			}
@@ -205,13 +274,17 @@ func (s *Server) applySceneFormFields(target *book.Scene, r *http.Request) {
 		for _, line := range strings.Split(rawChoices, "\n") {
 			trimmed := strings.TrimSpace(line)
 			if idx := strings.Index(trimmed, " -> "); idx > 0 {
-				lbl := book.SanitizePlainText(trimmed[:idx])
+				lbl, cond, eff, showLocked := book.ParseChoiceRuleTokens(trimmed[:idx])
+				lbl = book.SanitizePlainText(lbl)
 				tgt := book.SanitizePlainText(trimmed[idx+4:])
 				if lbl != "" && tgt != "" {
 					parsedChoices = append(parsedChoices, book.Choice{
-						Label:    lbl,
-						Target:   tgt,
-						IsEnding: strings.EqualFold(tgt, "END"),
+						Label:          lbl,
+						Target:         tgt,
+						Condition:      cond,
+						Effects:        eff,
+						ShowWhenLocked: showLocked,
+						IsEnding:       strings.EqualFold(tgt, "END"),
 					})
 				}
 			}
@@ -220,22 +293,64 @@ func (s *Server) applySceneFormFields(target *book.Scene, r *http.Request) {
 	} else if len(target.Choices) >= 2 {
 		for i := range target.Choices {
 			lblKey := fmt.Sprintf("choice_label_%d", i)
+			var inlineTgt string
+			var hasArrow bool
 			if _, hasLbl := r.Form[lblKey]; hasLbl {
-				lbl := book.SanitizePlainText(r.FormValue(lblKey))
+				var lbl string
+				lbl, inlineTgt, hasArrow = splitInlineChoiceLabelAndTarget(r.FormValue(lblKey))
 				if lbl == "" {
 					lbl = fmt.Sprintf("Wybór %d", i+1)
 				}
 				target.Choices[i].Label = lbl
 			}
 			tgtKey := fmt.Sprintf("choice_target_%d", i)
-			if _, hasTgt := r.Form[tgtKey]; hasTgt {
-				if tgt := book.SanitizePlainText(r.FormValue(tgtKey)); tgt != "" {
-					target.Choices[i].Target = tgt
-					target.Choices[i].IsEnding = strings.EqualFold(tgt, "END")
+			tgt := ""
+			if hasArrow && inlineTgt != "" {
+				tgt = inlineTgt
+			} else if _, hasTgt := r.Form[tgtKey]; hasTgt {
+				tgt = book.SanitizePlainText(r.FormValue(tgtKey))
+			}
+			if tgt != "" {
+				target.Choices[i].Target = tgt
+				target.Choices[i].IsEnding = strings.EqualFold(tgt, "END")
+			}
+			condKey := fmt.Sprintf("choice_cond_%d", i)
+			if _, hasCond := r.Form[condKey]; hasCond {
+				rawCond := book.CleanConditionExpr(r.FormValue(condKey))
+				showLocked := strings.HasPrefix(rawCond, "?")
+				if showLocked {
+					rawCond = strings.TrimSpace(rawCond[1:])
 				}
+				target.Choices[i].Condition = rawCond
+				target.Choices[i].ShowWhenLocked = showLocked
+			}
+			effKey := fmt.Sprintf("choice_effects_%d", i)
+			if _, hasEff := r.Form[effKey]; hasEff {
+				target.Choices[i].Effects = book.CleanEffectsExpr(r.FormValue(effKey))
 			}
 		}
 	} else if _, hasTgt0 := r.Form["choice_target_0"]; hasTgt0 {
+		prevCond := ""
+		prevLocked := false
+		prevEff := ""
+		if len(target.Choices) > 0 {
+			prevCond = target.Choices[0].Condition
+			prevLocked = target.Choices[0].ShowWhenLocked
+			prevEff = target.Choices[0].Effects
+		}
+		if _, hasCond := r.Form["choice_cond_0"]; hasCond {
+			condRaw := book.CleanConditionExpr(r.FormValue("choice_cond_0"))
+			if strings.HasPrefix(condRaw, "?") {
+				prevLocked = true
+				prevCond = strings.TrimSpace(condRaw[1:])
+			} else {
+				prevLocked = false
+				prevCond = condRaw
+			}
+		}
+		if _, hasEff := r.Form["choice_effects_0"]; hasEff {
+			prevEff = book.CleanEffectsExpr(r.FormValue("choice_effects_0"))
+		}
 		if tgt := book.SanitizePlainText(r.FormValue("choice_target_0")); tgt != "" {
 			if strings.EqualFold(tgt, "END") {
 				target.Choices = nil
@@ -246,12 +361,19 @@ func (s *Server) applySceneFormFields(target *book.Scene, r *http.Request) {
 				target.ExplicitNext = tgt
 				target.Choices = []book.Choice{
 					{
-						Label:      "Dalej",
-						Target:     tgt,
-						IsImplicit: true,
+						Label:          "Dalej",
+						Target:         tgt,
+						Condition:      prevCond,
+						ShowWhenLocked: prevLocked,
+						Effects:        prevEff,
+						IsImplicit:     true,
 					},
 				}
 			}
+		} else if len(target.Choices) == 1 {
+			target.Choices[0].Condition = prevCond
+			target.Choices[0].ShowWhenLocked = prevLocked
+			target.Choices[0].Effects = prevEff
 		}
 	}
 
@@ -326,6 +448,9 @@ func (s *Server) materializeChoicesForEdit(sc *book.Scene) []book.Choice {
 			list = append(list, book.Choice{
 				Label:           lbl,
 				Target:          tgt,
+				Condition:       ch.Condition,
+				Effects:         ch.Effects,
+				ShowWhenLocked:  ch.ShowWhenLocked,
 				TargetSceneID:   ch.TargetSceneID,
 				TargetChapterID: ch.TargetChapterID,
 				IsChapterLink:   ch.IsChapterLink,
@@ -865,7 +990,7 @@ func (s *Server) deleteScenesByIDs(rawIDs string) string {
 	firstChapter := s.ActiveBook.Scenes[0].Chapter
 	firstChapterID := s.ActiveBook.Scenes[0].ChapterID
 	firstSourceFile := s.ActiveBook.Scenes[0].SourceFile
-	if firstSourceFile == "" || strings.EqualFold(firstSourceFile, "story.txt") {
+	if firstSourceFile == "" || strings.EqualFold(firstSourceFile, book.DefaultStoryFile) || strings.EqualFold(firstSourceFile, book.BookDataFileName) {
 		firstSourceFile = s.ActiveBook.ChapterFileNameFor(firstChapter, firstChapterID)
 	}
 

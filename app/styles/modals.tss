@@ -117,15 +117,15 @@
   width 100%
 
 .modal-meta-fields .node-meta-key
-  width 62px
-  font-size 12px
+  width 64px
+  font-size 13px
 
 .modal-meta-fields .node-meta-input, .modal-meta-fields .custom-select-trigger, .modal-meta-fields .book-setting-toggle-btn, .modal-meta-fields .form-toggle-btn, .modal-meta-fields .form-radio-option
   font-size 13px
   padding 4px 0
 
 .modal-meta-fields .custom-select-option
-  font-size 12px
+  font-size 13px
   padding 7px 10px
 
 .modal-meta-fields .node-meta-row
@@ -169,6 +169,57 @@
 .add-book-inline-form .field-input
   flex 1
 
+.studio-projects-list
+  display flex
+  flex-direction column
+  max-height 220px
+  overflow-y auto
+
+.studio-project-row
+  display flex
+  align-items center
+  justify-content space-between
+  gap 12px
+  width 100%
+  padding 8px 0
+  background transparent
+  border none
+  border-bottom 1px solid --border-subtle
+  color --text-primary
+  font-family --font-sans
+  text-align left
+  cursor pointer
+
+.studio-project-row:hover, .studio-project-row.active
+  border-bottom-color --text-primary
+
+.studio-project-main
+  display flex
+  align-items baseline
+  gap 10px
+  min-width 0
+  flex 1
+
+.studio-project-title
+  font-size 13px
+  font-weight 500
+  color --text-primary
+  overflow hidden
+  text-overflow ellipsis
+  white-space nowrap
+
+.studio-project-author
+  font-size 11px
+  color --text-muted
+  white-space nowrap
+
+.studio-project-badge
+  font-family --font-mono
+  font-size 10px
+  letter-spacing 0.5px
+  color --text-secondary
+  flex-shrink 0
+
 .help-shortcuts-list
   display flex
   flex-direction column
@@ -197,13 +248,73 @@
   line-height 1.45
   color --text-secondary
 
+@keyframes sceneTextSlideInLeft
+  from
+    transform translateX(-100%)
+  to
+    transform translateX(0)
+
 .modal-backdrop.scene-text-fullscreen-backdrop
+  top 36px
+  left 0
+  right 0
+  bottom 0
   padding 0
   background --bg-obsidian
   backdrop-filter none
   align-items stretch
   justify-content stretch
   overflow hidden
+  will-change transform, right
+  transition right 0.22s cubic-bezier(0.22, 1, 0.36, 1), transform 0.22s cubic-bezier(0.22, 1, 0.36, 1)
+
+.modal-backdrop.scene-text-fullscreen-backdrop.is-entering
+  animation sceneTextSlideInLeft 0.22s cubic-bezier(0.22, 1, 0.36, 1)
+
+.modal-backdrop.scene-text-fullscreen-backdrop.is-collapsing
+  transform translateX(-100%)
+  pointer-events none
+
+.modal-backdrop.scene-text-fullscreen-backdrop.mode-half
+  right 50%
+  border-right 1px solid --border-subtle
+
+.modal-backdrop.scene-text-fullscreen-backdrop.mode-half .player-bg-stage,
+.modal-backdrop.scene-text-fullscreen-backdrop.mode-half .scene-illustration-spacer
+  display none !important
+
+.modal-backdrop.scene-text-fullscreen-backdrop.mode-half .story-scroll-feed.scene-text-editor-feed
+  width min(960px, 100%)
+  max-width 960px
+  min-width 0
+  margin-left auto
+  margin-right auto
+  border-left 1px solid --border-subtle
+  border-right 1px solid --border-subtle
+
+.modal-backdrop.scene-text-fullscreen-backdrop.mode-half.has-right-panel,
+.workspace:has(#editor-workspace-body > aside:not(.hidden)) + .modals-root .modal-backdrop.scene-text-fullscreen-backdrop.mode-half
+  right 320px
+  border-right 1px solid --border-subtle
+
+.modal-backdrop.scene-text-fullscreen-backdrop.mode-full
+  right 0
+  border-right none
+
+@media (max-width: 760px)
+  .modal-backdrop.scene-text-fullscreen-backdrop.mode-half,
+  .modal-backdrop.scene-text-fullscreen-backdrop.mode-half.has-right-panel,
+  .workspace:has(#editor-workspace-body > aside:not(.hidden)) + .modals-root .modal-backdrop.scene-text-fullscreen-backdrop.mode-half
+    right 0
+    border-right none
+
+/* @dev-only-start */
+.device-stage[data-preview="portrait"] .modal-backdrop.scene-text-fullscreen-backdrop.mode-half,
+.device-stage[data-preview="portrait"] .modal-backdrop.scene-text-fullscreen-backdrop.mode-half.has-right-panel,
+.device-stage[data-preview="portrait"] .workspace:has(#editor-workspace-body > aside:not(.hidden)) + .modals-root .modal-backdrop.scene-text-fullscreen-backdrop.mode-half
+  right 0
+  border-right none
+/* @dev-only-end */
 
 .scene-text-book-layout
   width 100%
@@ -214,11 +325,46 @@
   height 100%
   min-height 0
 
+.scene-text-expand-btn
+  position absolute
+  top 0
+  left 0
+  z-index 30
+  display inline-flex
+  align-items center
+  justify-content center
+  width 32px
+  height 28px
+  padding 0
+  border none
+  border-right 1px solid --border-subtle
+  border-bottom 1px solid --border-subtle
+  background --bg-obsidian
+  color --text-secondary
+  cursor pointer
+  transition color 0.15s ease, background 0.15s ease
+
+.scene-text-expand-btn .btn-icon
+  width 14px
+  height 14px
+  display block
+  flex-shrink 0
+  pointer-events none
+
+.scene-text-expand-btn:hover
+  color --text-primary
+  background --bg-elevated
+
 .scene-text-editor-feed .reader-global-meta
   display flex
   align-items center
   justify-content space-between
   gap 12px
+  height 36px
+  min-height 36px
+  max-height 36px
+  padding 0 36px
+  box-sizing border-box
 
 .scene-text-editor-feed .scene-chapter-pill
   flex 1
@@ -228,15 +374,17 @@
   display flex
   align-items center
   height 100%
-  gap 8px
+  gap 6px
   flex-shrink 0
 
 .scene-text-back-btn
   display inline-flex
   align-items center
+  justify-content center
   gap 6px
-  height 100%
-  padding 0 2px
+  width 28px
+  height 28px
+  padding 0
   border none
   background transparent
   color --text-secondary
@@ -250,8 +398,16 @@
   cursor pointer
   transition color 0.15s ease
 
+.scene-text-back-btn .btn-icon
+  display block
+  flex-shrink 0
+  pointer-events none
+
 .scene-text-back-btn:hover
   color --text-primary
+
+.scene-text-back-btn.scene-text-delete-btn:hover
+  color --accent-danger
 
 .scene-incoming-list
   display flex
@@ -305,8 +461,8 @@
 
 .scene-settings-toggle-btn
   position relative
-  width 30px
-  height 30px
+  width 28px
+  height 28px
   padding 0
   display inline-flex
   align-items center
@@ -319,8 +475,8 @@
   color --text-primary
 
 .scene-settings-icon
-  width 16px
-  height 16px
+  width 15px
+  height 15px
   display block
   pointer-events none
 
@@ -348,14 +504,14 @@
   min-width 0
 
 .scene-settings-row .node-meta-key
-  width 48px
-  font-size 11px
+  width 58px
+  font-size 13px
 
 .scene-settings-row .node-meta-input
   flex 1
   min-width 0
   height 30px
-  font-size 12px
+  font-size 13px
   padding 0
   background transparent
   border none
@@ -370,22 +526,26 @@
   border-bottom-color --text-primary
   outline none
 
+.scene-settings-row .syn-inner-input, .scene-settings-row .syn-inner-input:hover, .scene-settings-row .syn-inner-input:focus
+  border-bottom none !important
+  font-size 13px
+
 .scene-settings-row .custom-select.node-media-select
   flex 1
   min-width 0
 
 .scene-settings-row .custom-select-trigger
   height 30px
-  font-size 12px
+  font-size 13px
   padding 0
 
 .scene-settings-row .custom-select-option
-  font-size 12px
+  font-size 13px
   padding 7px 10px
 
 .scene-settings-row .node-media-add-btn
-  width 30px
-  height 30px
+  width 28px
+  height 28px
   padding 0
 
 .scene-star-icon, .scene-settings-row .media-plus-icon, .modal-add-choice-btn .media-plus-icon
@@ -402,23 +562,60 @@
   height auto
   gap 18px
 
-.modal-scene-textarea
+.scene-prose-edit-wrap
+  position relative
+  width 100%
+  flex 0 0 auto
+
+.modal-scene-prose-hl, .modal-scene-textarea
   display block
   width 100%
   min-height 320px
   flex 0 0 auto
   padding 16px 0 24px
+  margin 0
   background transparent
   border none
+  white-space pre-wrap
+  overflow-wrap break-word
+  word-wrap break-word
+  tab-size 4
+
+.modal-scene-prose-hl.is-screenplay, .modal-scene-textarea.is-screenplay
+  font-family --font-screenplay
+  font-size 15px
+  line-height 1.5
+
+.modal-scene-prose-hl
+  position absolute
+  inset 0
   color --text-primary
+  pointer-events none
+  user-select none
+  overflow hidden
+
+.prose-hl-seg
+  color --text-primary
+
+.prose-hl-seg.is-syntax
+  color --text-muted
+
+.modal-scene-textarea
+  position relative
+  z-index 1
+  color transparent !important
+  caret-color --text-primary
   resize none
   overflow-y hidden
   outline none
 
-.modal-scene-textarea.is-screenplay
-  font-family --font-screenplay
-  font-size 15px
-  line-height 1.5
+.modal-scene-textarea::placeholder
+  color --text-muted
+  opacity 0.65
+
+.modal-scene-textarea::selection
+  background rgba(128, 128, 140, 0.28)
+  color transparent !important
 
 .modal-screenplay-meta-bar
   display flex
@@ -467,21 +664,30 @@
   padding 5px 0
   font-size 13px
 
+.scene-text-editor-card .scene-choices-list
+  border-top none
+
 .modal-choice-row
   gap 10px
   padding 7px 4px
   cursor default
+  border-top 1px solid --border-subtle
+  border-bottom 1px solid --border-subtle
+
+.modal-choice-row + .modal-choice-row
+  margin-top -1px
 
 .modal-choice-row.is-dragging-choice
   background --bg-elevated
 
-.modal-choice-row input.choice-label-text
+.modal-choice-row input.choice-label-text, .modal-choice-row textarea.choice-label-text
   font-family --font-sans
   font-size inherit
   line-height inherit
   font-weight 400
   color --text-primary
   padding 2px 0
+  border-bottom none !important
 
 .modal-choice-lead-btn
   flex 1
@@ -540,7 +746,196 @@
   padding 0
   align-self flex-end
 
+.scene-title-right-controls
+  display flex
+  align-items center
+  gap 6px
+  flex-shrink 0
+
+.scene-preview-mode-btn
+  width 28px
+  height 28px
+  padding 0
+  display inline-flex
+  align-items center
+  justify-content center
+
+.scene-test-vars-popover
+  position absolute
+  top calc(100% + 4px)
+  right 36px
+  z-index 45
+  width 310px
+  min-width 310px
+  max-width 340px
+  padding 0
+  background --bg-obsidian
+  border 1px solid --border-strong
+  display flex
+  flex-direction column
+  gap 0
+  box-shadow 0 8px 24px rgba(0, 0, 0, 0.5)
+  box-shadow switch(theme)
+    light 0 4px 14px rgba(0, 0, 0, 0.08)
+
+.scene-test-vars-items
+  padding 12px 14px
+  display flex
+  flex-direction column
+  gap 8px
+
+.scene-test-vars-empty
+  font-family --font-sans
+  font-size 12px
+  color --text-muted
+  padding 2px 0
+
+.test-var-row
+  display flex
+  align-items center
+  gap 8px
+  min-height 26px
+
+.test-var-key
+  width 132px
+  min-width 132px
+  max-width 132px
+  flex-shrink 0
+  font-family --font-mono
+  font-size 12px
+  color --text-muted
+  overflow hidden
+  text-overflow ellipsis
+  white-space nowrap
+
+.test-var-bool-btn, .test-var-int-input, .test-var-enum-select .custom-select-trigger, .test-var-enum-select .custom-select-option
+  font-family --font-mono
+  font-size 12px
+
+.test-var-enum-select .custom-select-menu
+  min-width 100%
+
+.scene-prose-preview-stage
+  display flex
+  flex-direction column
+  width 100%
+  min-height 320px
+  flex 0 0 auto
+  padding 16px 0 24px
+  gap 1.62em
+
+.scene-prose-preview-stage.is-screenplay
+  font-family --font-screenplay
+  font-size 15px
+  line-height 1.5
+  gap 1.5em
+
+.scene-prose-preview-stage p, .scene-prose .scene-preview-para
+  margin 0 !important
+  padding 0
+  line-height inherit
+  white-space pre-wrap
+
+.scene-prose .scene-preview-para.is-cond-active-block
+  border-left 2px solid --text-primary
+  padding-left 10px
+
+.scene-prose .scene-preview-para.is-cond-inactive-block
+  border-left 1px solid --border-subtle
+  padding-left 10px
+  opacity 0.42
+
+.prose-syn-brace
+  font-family --font-mono
+  font-size 0.85em
+  color --text-muted
+
+.prose-cond-active
+  color --text-primary
+
+.prose-cond-inactive
+  color --text-muted
+  opacity 0.45
+
+.prose-var-val
+  font-family --font-mono
+  font-size 0.82em
+  color --text-secondary
+  margin-left 2px
+
+.modal-choice-row.choice-cond-unmet
+  opacity 0.42
+
+.modal-choice-triple-stack
+  background transparent
+  border-top none
+  border-bottom none
+
+.modal-choice-triple-stack .choice-triple-row
+  min-height 28px
+  height 28px
+  line-height 1.48
+  padding 0
+
+.modal-choice-triple-stack .choice-triple-row.choice-triple-label
+  height auto
+  min-height 28px
+  align-items flex-start
+  padding 3px 0
+
+.modal-choice-triple-stack .choice-row-key
+  width 48px
+  min-width 48px
+  font-size 15px
+  line-height 1.48
+
+.modal-choice-triple-stack .choice-triple-row:last-child
+  border-bottom none
+
+.modal-choice-triple-stack .choice-exit-input, .modal-choice-triple-stack .choice-rule-input, .modal-choice-triple-stack .syn-brace, .modal-choice-triple-stack .choice-label-text
+  font-size 15px
+  line-height 1.48
+  padding 0
+  border none !important
+  border-bottom none !important
+
+.modal-choice-row .choice-inline-hl
+  font-family --font-serif
+  font-size 15px
+  line-height 1.48
+  padding 0
+
+.modal-choice-row .syn-autocomplete-dropdown, .modal-choice-triple-stack .syn-autocomplete-dropdown, .scene-settings-row .syn-autocomplete-dropdown
+  width 280px
+
+.modal-choice-row .syn-dropdown-list, .modal-choice-triple-stack .syn-dropdown-list, .scene-settings-row .syn-dropdown-list
+  max-height 196px
+
+.modal-choice-row .syn-dropdown-item, .modal-choice-triple-stack .syn-dropdown-item, .scene-settings-row .syn-dropdown-item
+  height 28px
+  font-size 15px
+  line-height 1.48
+  padding 0 10px
+
+.modal-choice-row:focus-within, .modal-choice-row:has(.syn-autocomplete-dropdown:not(.hidden))
+  position relative
+  z-index 40
+  border-top-color --text-primary
+  border-bottom-color --text-primary
+
 body[data-ui-scale="large"]
+  .modal-backdrop.scene-text-fullscreen-backdrop
+    top 50px
+
+  .scene-text-editor-feed .reader-global-meta
+    height 42px
+    min-height 42px
+    max-height 42px
+
+  .scene-text-expand-btn
+    width 36px
+    height 42px
+
   .modal-card
     max-width 560px
     padding 28px
@@ -552,6 +947,8 @@ body[data-ui-scale="large"]
     font-size 16px
 
   .scene-text-back-btn
+    width 32px
+    height 32px
     font-size 12px
 
   .incoming-choice-btn
@@ -570,21 +967,48 @@ body[data-ui-scale="large"]
   .scene-text-editor-card .scene-title-row
     padding 13px 36px
 
-  .modal-choice-nav-btn, .scene-settings-toggle-btn, .scene-settings-row .node-media-add-btn, .modal-add-choice-btn
-    width 34px
-    height 34px
+  .modal-choice-nav-btn, .scene-settings-toggle-btn, .scene-preview-mode-btn, .scene-settings-row .node-media-add-btn, .modal-add-choice-btn
+    width 32px
+    height 32px
 
   .scene-settings-icon, .scene-star-icon, .scene-settings-row .media-plus-icon, .modal-add-choice-btn .media-plus-icon
-    width 17px
-    height 17px
+    width 18px
+    height 18px
 
   .scene-settings-row .node-meta-key
-    font-size 13px
-    width 56px
+    font-size 14px
+    width 64px
 
-  .scene-settings-row .node-meta-input, .scene-settings-row .custom-select-trigger
+  .scene-settings-row .node-meta-input, .scene-settings-row .custom-select-trigger, .scene-settings-row .syn-inner-input
     height 34px
     font-size 14px
 
   .scene-settings-row .custom-select-option
     font-size 14px
+
+  .scene-test-vars-popover
+    width 336px
+    min-width 336px
+    max-width 360px
+
+  .test-var-key
+    width 144px
+    min-width 144px
+    max-width 144px
+    font-size 13px
+
+  .test-var-bool-btn, .test-var-int-input, .test-var-enum-select .custom-select-trigger, .test-var-enum-select .custom-select-option
+    font-size 13px
+
+body[data-ui-scale="zen"]
+  .scene-text-editor-feed .reader-global-meta
+    display flex !important
+
+  .scene-text-editor-card .scene-header-block
+    top 27px
+    padding 0
+    border-top 1px solid --border-subtle !important
+    border-bottom 1px solid --border-subtle !important
+
+  .active-scene-stage > .scene-card.scene-text-editor-card
+    border-top none

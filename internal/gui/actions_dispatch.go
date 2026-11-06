@@ -70,6 +70,11 @@ var actionSpecs = map[string]ActionSpec{
 	"ExportProject":           {StandaloneForbidden: true, KeepScroll: true, Target: targetModals, Handler: (*Server).exportProjectAction},
 	"OpenAddBookModal":        {StandaloneForbidden: true, KeepScroll: true, Target: targetModals, Handler: (*Server).openAddBookModal},
 	"CloseAddBookModal":       {StandaloneForbidden: true, KeepScroll: true, Target: targetModals, Handler: (*Server).closeAddBookModal},
+	"OpenStudioProjectModal":    {StandaloneForbidden: true, KeepScroll: true, Target: targetModals, Handler: (*Server).openStudioProjectModal},
+	"CloseStudioProjectModal":   {StandaloneForbidden: true, KeepScroll: true, Target: targetModals, Handler: (*Server).closeStudioProjectModal},
+	"OpenStudioProject":         {StandaloneForbidden: true, ResetCanvas: true, Target: targetAppShell, Handler: (*Server).openStudioProjectAction},
+	"BrowseOpenStudioProject":   {StandaloneForbidden: true, ResetCanvas: true, Target: targetAppShell, Handler: (*Server).browseOpenStudioProject},
+	"OpenStudioProjectFromDisk": {StandaloneForbidden: true, ResetCanvas: true, Target: targetAppShell, Handler: (*Server).openStudioProjectFromDisk},
 	"PromptRewindStep":        {KeepScroll: true, Target: targetModals, Handler: (*Server).promptRewindStep},
 	"PromptResetProgress":     {KeepScroll: true, Target: targetModals, Handler: (*Server).promptResetProgress},
 	"PromptRemoveBook":        {StandaloneForbidden: true, Target: targetModals, Handler: (*Server).promptRemoveBook},
@@ -159,8 +164,8 @@ var actionSpecs = map[string]ActionSpec{
 	"ToggleEditorBreakdownPanel": {StandaloneForbidden: true, Target: targetActiveWorkspace, Handler: (*Server).toggleEditorBreakdownPanel},
 	"OpenEditorBreakdownPanel":   {StandaloneForbidden: true, Target: targetActiveWorkspace, Handler: (*Server).openEditorBreakdownPanel},
 	"CloseEditorBreakdownPanel":  {StandaloneForbidden: true, Target: targetActiveWorkspace, Handler: (*Server).closeEditorBreakdownPanel},
-	"RenameCharacter":            {StandaloneForbidden: true, Target: targetActiveWorkspace, Handler: (*Server).renameCharacterAction},
-	"RenameLocation":             {StandaloneForbidden: true, Target: targetActiveWorkspace, Handler: (*Server).renameLocationAction},
+	"RenameCharacter":            {StandaloneForbidden: true, Target: targetUndoRedoWorkspaceOrAppShell, Handler: (*Server).renameCharacterAction},
+	"RenameLocation":             {StandaloneForbidden: true, Target: targetUndoRedoWorkspaceOrAppShell, Handler: (*Server).renameLocationAction},
 	"ExportScreenplayPDF":        {StandaloneForbidden: true, Target: targetNone, Handler: (*Server).exportScreenplayPDFAction},
 	"ExportScreenplayFountain":   {StandaloneForbidden: true, Target: targetNone, Handler: (*Server).exportScreenplayFountainAction},
 	"BrowseBookExportFolder":     {StandaloneForbidden: true, KeepScroll: true, Target: targetActiveWorkspace, Handler: (*Server).browseBookExportFolder},
@@ -168,6 +173,19 @@ var actionSpecs = map[string]ActionSpec{
 	"SelectPrimaryBranchScene":   {StandaloneForbidden: true, KeepScroll: true, Target: targetActiveWorkspace, Handler: (*Server).selectPrimaryBranchScene},
 	"ApplySluglineToken":         {StandaloneForbidden: true, Target: targetActiveWorkspaceOrModalsWhenSceneTextOpen, Handler: (*Server).applySluglineTokenAction},
 	"InsertScreenplayBlock":      {StandaloneForbidden: true, Target: targetActiveWorkspaceOrModalsWhenSceneTextOpen, Handler: (*Server).insertScreenplayBlockAction},
+	"ToggleEditorVariablesPanel": {StandaloneForbidden: true, Target: targetActiveWorkspace, Handler: (*Server).toggleEditorVariablesPanel},
+	"OpenEditorVariablesPanel":   {StandaloneForbidden: true, Target: targetActiveWorkspace, Handler: (*Server).openEditorVariablesPanel},
+	"CloseEditorVariablesPanel":  {StandaloneForbidden: true, Target: targetActiveWorkspace, Handler: (*Server).closeEditorVariablesPanel},
+	"AddBookVariable":            {StandaloneForbidden: true, KeepScroll: true, Target: targetActiveWorkspaceOrModalsWhenSceneTextOpen, Handler: (*Server).addBookVariableAction},
+	"ToggleBookVariableBool":     {StandaloneForbidden: true, KeepScroll: true, Target: targetUndoRedoWorkspaceOrAppShell, Handler: (*Server).toggleBookVariableBoolAction},
+	"UpdateBookVariable":         {StandaloneForbidden: true, KeepScroll: true, Target: targetUndoRedoWorkspaceOrAppShell, Handler: (*Server).updateBookVariableAction},
+	"RemoveBookVariable":         {StandaloneForbidden: true, KeepScroll: true, Target: targetUndoRedoWorkspaceOrAppShell, Handler: (*Server).removeBookVariableAction},
+	"ToggleChoiceRule":           {StandaloneForbidden: true, KeepScroll: true, Target: targetActiveWorkspaceOrModalsWhenSceneTextOpen, Handler: (*Server).toggleChoiceRuleAction},
+	"ToggleSyntaxHelp":           {StandaloneForbidden: true, KeepScroll: true, Target: targetActiveWorkspaceOrModalsWhenSceneTextOpen, Handler: (*Server).toggleSyntaxHelpAction},
+	"SetSceneTextPreviewMode":     {StandaloneForbidden: true, KeepScroll: true, Target: targetModals, Handler: (*Server).setSceneTextPreviewModeAction},
+	"SetSceneTextWidthMode":       {StandaloneForbidden: true, KeepScroll: true, Target: targetModals, Handler: (*Server).setSceneTextWidthModeAction},
+	"ToggleSceneTestVarsPopover":  {StandaloneForbidden: true, KeepScroll: true, Target: targetModals, Handler: (*Server).toggleSceneTestVarsPopoverAction},
+	"UpdateSceneTextTestVar":      {StandaloneForbidden: true, KeepScroll: true, Target: targetModals, Handler: (*Server).updateSceneTextTestVarAction},
 }
 
 func isStandaloneForbiddenAction(action string) bool {
@@ -199,6 +217,9 @@ func (s *Server) resolveActionChunkTarget(action, prevConfirmAction string, hasF
 		return s.activeWorkspaceTemplateName(), "#workspace"
 	case targetActiveWorkspaceOrModalsWhenSceneTextOpen:
 		if s.SceneTextModalID != "" {
+			if action == "AddBookVariable" && s.EditorVariablesPanelOpen {
+				return "app_shell", "#app"
+			}
 			return "modals", "#modals-root"
 		}
 		return s.activeWorkspaceTemplateName(), "#workspace"
@@ -232,6 +253,9 @@ func (s *Server) resolveActionChunkTarget(action, prevConfirmAction string, hasF
 		return "modals", "#modals-root"
 	case targetSelectStudioScene:
 		if !s.StandaloneMode {
+			if s.SceneTextModalID != "" {
+				return "app_shell", "#app"
+			}
 			if hasFormSceneID {
 				return "editor_view", "#workspace"
 			}
@@ -278,13 +302,18 @@ func validateSameOriginAction(r *http.Request) bool {
 }
 
 func (s *Server) switchView(r *http.Request) string {
+	if !s.isHistoryPreview() && r.FormValue("scene_id") != "" {
+		_ = s.saveSceneFromForm(r)
+	}
 	view := strings.TrimSpace(r.FormValue("view"))
 	if view == "library" && s.isHistoryPreview() {
 		s.exitHistoryPreview()
 	}
-	if (view == "player" || view == "editor") && s.ActiveBook == nil {
-		if books, err := s.loadBooks(); err == nil && len(books) > 0 {
-			s.setActiveBook(books[0])
+	if view == "player" && s.PlayerBook == nil {
+		if s.ActiveBook != nil {
+			s.setPlayerBook(s.ActiveBook)
+		} else if books, err := s.loadBooks(); err == nil && len(books) > 0 {
+			s.setPlayerBook(books[0])
 		}
 	}
 	if view == "library" || view == "player" || view == "editor" {
@@ -326,12 +355,17 @@ func (s *Server) toggleUIScale(r *http.Request) string {
 			reqScale = "small"
 		}
 	}
-	if reqScale == "large" || reqScale == "small" {
+	if reqScale == "large" || reqScale == "small" || reqScale == "zen" {
 		s.Settings.UIScale = reqScale
-	} else if s.Settings.UIScale == "large" {
-		s.Settings.UIScale = "small"
 	} else {
-		s.Settings.UIScale = "large"
+		switch s.Settings.UIScale {
+		case "large":
+			s.Settings.UIScale = "zen"
+		case "zen":
+			s.Settings.UIScale = "small"
+		default:
+			s.Settings.UIScale = "large"
+		}
 	}
 	_ = book.SaveAppSettings(s.SavesDir, s.Settings)
 	return ""
@@ -339,8 +373,16 @@ func (s *Server) toggleUIScale(r *http.Request) string {
 
 func (s *Server) setDeviceMode(r *http.Request) string {
 	if s.DevMode {
-		mode := strings.TrimSpace(r.FormValue("mode"))
-		if mode == "full" || mode == "portrait" || mode == "landscape" {
+		mode := strings.ToLower(strings.TrimSpace(r.FormValue("mode")))
+		switch mode {
+		case "phone":
+			mode = "portrait"
+		case "ipad":
+			mode = "tablet"
+		case "desktop":
+			mode = "full"
+		}
+		if mode == "full" || mode == "portrait" || mode == "tablet" || mode == "landscape" {
 			s.Settings.PreviewMode = mode
 			_ = book.SaveAppSettings(s.SavesDir, s.Settings)
 		}
@@ -374,6 +416,7 @@ func (s *Server) openEditorHelpModal(_ *http.Request) string {
 		s.BookSettingsOpen = false
 		s.SelectedChapter = ""
 		s.EditorBreakdownPanelOpen = false
+		s.EditorVariablesPanelOpen = false
 		s.EditorHistoryPanelOpen = false
 	}
 	return ""
@@ -438,12 +481,27 @@ func (s *Server) closeNewBookModal(_ *http.Request) string {
 func (s *Server) openAddBookModal(_ *http.Request) string {
 	s.QRModalOpen = false
 	s.NewBookModalOpen = false
+	s.StudioProjectModalOpen = false
 	s.AddBookModalOpen = true
 	return ""
 }
 
 func (s *Server) closeAddBookModal(_ *http.Request) string {
 	s.AddBookModalOpen = false
+	return ""
+}
+
+func (s *Server) openStudioProjectModal(_ *http.Request) string {
+	s.QRModalOpen = false
+	s.NewBookModalOpen = false
+	s.AddBookModalOpen = false
+	s.ExportModalOpen = false
+	s.StudioProjectModalOpen = true
+	return ""
+}
+
+func (s *Server) closeStudioProjectModal(_ *http.Request) string {
+	s.StudioProjectModalOpen = false
 	return ""
 }
 
@@ -490,17 +548,17 @@ func (s *Server) acceptConfirmModal() (toast, nativeCmd string) {
 		}
 	case "ResetProgress":
 		targetID := param
-		if targetID == "" && s.ActiveBook != nil {
-			targetID = s.ActiveBook.ID
+		if targetID == "" && s.PlayerBook != nil {
+			targetID = s.PlayerBook.ID
 		}
 		if targetID != "" {
-			if s.isHistoryPreview() && s.ActiveBook != nil && s.ActiveBook.ID == targetID {
-				startSceneID := s.ActiveBook.StartSceneID
-				if s.findScene(startSceneID) == nil && len(s.ActiveBook.Scenes) > 0 {
-					startSceneID = s.ActiveBook.Scenes[0].ID
+			if s.isHistoryPreview() && s.PlayerBook != nil && s.PlayerBook.ID == targetID {
+				startSceneID := s.PlayerBook.StartSceneID
+				if s.findPlayerScene(startSceneID) == nil && len(s.PlayerBook.Scenes) > 0 {
+					startSceneID = s.PlayerBook.Scenes[0].ID
 				}
 				s.Save = &book.SaveState{
-					BookID:             s.ActiveBook.ID,
+					BookID:             s.PlayerBook.ID,
 					CurrentSceneID:     startSceneID,
 					PlaybackSpeed:      s.Settings.PlaybackSpeed,
 					AutoChoice:         s.Settings.AutoChoice,
@@ -510,14 +568,16 @@ func (s *Server) acceptConfirmModal() (toast, nativeCmd string) {
 				s.FocusedHistoryIdx = -1
 			} else {
 				_ = book.DeleteSaveState(s.SavesDir, targetID)
-				if s.ActiveBook != nil && s.ActiveBook.ID == targetID {
-					s.Save = book.LoadSaveState(s.SavesDir, s.ActiveBook.ID, s.ActiveBook.StartSceneID)
+				if s.PlayerBook != nil && s.PlayerBook.ID == targetID {
+					s.Save = book.LoadSaveState(s.SavesDir, s.PlayerBook.ID, s.PlayerBook.StartSceneID)
 					s.HistoryRevealed = false
 					s.FocusedHistoryIdx = -1
 				}
 			}
 			toast = "Postęp został zresetowany do początku."
 		}
+	case "UnpackPlaybookForStudio":
+		toast = s.unpackPlaybookWorkingCopyForStudio(param)
 	case "RemoveBook":
 		toast = s.removeBookByID(param)
 	case "DeleteScene":
@@ -569,16 +629,17 @@ func (s *Server) handleAction(w http.ResponseWriter, r *http.Request) {
 	toast := ""
 	nativeCmd := ""
 	prevConfirmAction := s.ConfirmPendingAction
-	hadActiveBook := s.ActiveBook != nil
+	hadPlayerBook := s.PlayerBook != nil
+	hadEditorBook := s.ActiveBook != nil
 
-	// If the client sends its current audio_time along with a navigation/switch action, persist it for the active book before switching.
-	if action != "SaveAudioTime" && s.ActiveBook != nil && s.Save != nil {
+	// If the client sends its current audio_time along with a navigation/switch action, persist it for the active player book before switching.
+	if action != "SaveAudioTime" && s.PlayerBook != nil && s.Save != nil {
 		if rawAudioTime := strings.TrimSpace(r.FormValue("audio_time")); rawAudioTime != "" {
 			if t, err := strconv.ParseFloat(rawAudioTime, 64); err == nil && t >= 0 {
 				if t > 0.2 || s.Save.UpdatedAtUnix > 0 || len(s.Save.History) > 0 {
 					s.Save.AudioTime = t
 					if !s.isHistoryPreview() {
-						_ = book.UpdateSaveAudioTimeInPlace(s.SavesDir, s.ActiveBook.ID, t, s.ActiveBook.StartSceneID)
+						_ = book.UpdateSaveAudioTimeInPlace(s.SavesDir, s.PlayerBook.ID, t, s.PlayerBook.StartSceneID)
 					}
 				}
 			}
@@ -605,7 +666,7 @@ func (s *Server) handleAction(w http.ResponseWriter, r *http.Request) {
 	}
 
 	targetTpl, targetSelector := s.resolveActionChunkTarget(action, prevConfirmAction, strings.TrimSpace(r.FormValue("scene_id")) != "")
-	if !hadActiveBook && s.ActiveBook != nil && targetSelector == "#workspace" {
+	if ((!hadPlayerBook && s.PlayerBook != nil) || (!hadEditorBook && s.ActiveBook != nil)) && targetSelector == "#workspace" {
 		targetTpl = "app_shell"
 		targetSelector = "#app"
 	}
@@ -646,9 +707,12 @@ func (s *Server) writeActionResponseHeaders(w http.ResponseWriter, action, targe
 	} else {
 		w.Header().Set("X-Imageless-Locked", "false")
 	}
-	if s.Settings.UIScale == "large" {
+	switch s.Settings.UIScale {
+	case "large":
 		w.Header().Set("X-UI-Scale", "large")
-	} else {
+	case "zen":
+		w.Header().Set("X-UI-Scale", "zen")
+	default:
 		w.Header().Set("X-UI-Scale", "small")
 	}
 	if s.Settings.PlaybackSpeed > 0 {

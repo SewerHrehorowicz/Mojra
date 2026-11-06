@@ -26,18 +26,22 @@ func (s *Server) exitHistoryPreview() {
 		s.ActiveBook = s.LiveBook
 		s.LiveBook = nil
 	}
+	if s.LivePlayerBook != nil {
+		s.PlayerBook = s.LivePlayerBook
+		s.LivePlayerBook = nil
+	}
 	s.reloadActiveBook()
 	if s.LiveSave != nil {
 		s.Save = s.LiveSave
 		s.LiveSave = nil
-	} else if s.ActiveBook != nil {
-		s.Save = book.LoadSaveState(s.SavesDir, s.ActiveBook.ID, s.ActiveBook.StartSceneID)
+	} else if s.PlayerBook != nil {
+		s.Save = book.LoadSaveState(s.SavesDir, s.PlayerBook.ID, s.PlayerBook.StartSceneID)
 	}
-	if s.ActiveBook != nil && s.Save != nil {
-		if s.findScene(s.Save.CurrentSceneID) == nil && len(s.ActiveBook.Scenes) > 0 {
-			s.Save.CurrentSceneID = s.ActiveBook.StartSceneID
-			if s.findScene(s.Save.CurrentSceneID) == nil {
-				s.Save.CurrentSceneID = s.ActiveBook.Scenes[0].ID
+	if s.PlayerBook != nil && s.Save != nil {
+		if s.findPlayerScene(s.Save.CurrentSceneID) == nil && len(s.PlayerBook.Scenes) > 0 {
+			s.Save.CurrentSceneID = s.PlayerBook.StartSceneID
+			if s.findPlayerScene(s.Save.CurrentSceneID) == nil {
+				s.Save.CurrentSceneID = s.PlayerBook.Scenes[0].ID
 			}
 		}
 	}
@@ -114,38 +118,18 @@ func (s *Server) reloadActiveBook() {
 				book.RebindBookID(reloaded, prevID)
 			}
 			s.ActiveBook = reloaded
+			if !s.isHistoryPreview() && s.PlayerBook != nil && s.PlayerBook.ID == reloaded.ID {
+				s.PlayerBook = reloaded
+			}
 			return
 		}
 	}
 	if reloaded, err := s.findBookByID(prevID); err == nil && reloaded != nil {
 		reloaded.ExportDir = prevExportDir
 		s.ActiveBook = reloaded
-	}
-}
-
-func (s *Server) ensureActiveBookUnpackedForStudio() {
-	if s.StandaloneMode || s.ActiveBook == nil || !s.ActiveBook.IsPacked || s.ActiveBook.IsExternal {
-		return
-	}
-	if strings.TrimSpace(s.BooksDir) == "" || strings.TrimSpace(s.ActiveBook.RootPath) == "" {
-		return
-	}
-	if filepath.Clean(filepath.Dir(s.ActiveBook.RootPath)) != filepath.Clean(s.BooksDir) {
-		return
-	}
-	targetDir := filepath.Join(s.BooksDir, s.ActiveBook.ID)
-	if err := book.UnpackBookZip(s.ActiveBook.RootPath, targetDir); err != nil {
-		return
-	}
-	if unpacked, err := book.LoadBookFromPath(targetDir); err == nil && unpacked != nil {
-		if s.ActiveBook.ID != "" && unpacked.ID != s.ActiveBook.ID {
-			book.RebindBookID(unpacked, s.ActiveBook.ID)
+		if !s.isHistoryPreview() && s.PlayerBook != nil && s.PlayerBook.ID == reloaded.ID {
+			s.PlayerBook = reloaded
 		}
-		s.ActiveBook = unpacked
-		if s.LiveBook != nil && s.LiveBook.ID == unpacked.ID {
-			s.LiveBook = unpacked
-		}
-		s.invalidateHistoryCache()
 	}
 }
 
@@ -153,7 +137,6 @@ func (s *Server) ensureHistoryBaselineBeforeMutation() {
 	if s.isHistoryPreview() {
 		return
 	}
-	s.ensureActiveBookUnpackedForStudio()
 	if s.ActiveBook != nil && !s.ActiveBook.IsPacked && !s.StandaloneMode {
 		_ = book.EnsureBookHistoryBaseline(s.ActiveBook, s.SelectedSceneID)
 		s.invalidateHistoryCache()
@@ -195,7 +178,6 @@ func (s *Server) withBookMutation(r *http.Request, flushFormScene bool, fn func(
 	if s.isHistoryPreview() {
 		return historyPreviewLockedToast
 	}
-	s.ensureActiveBookUnpackedForStudio()
 	if flushFormScene && r != nil && r.FormValue("scene_id") != "" {
 		_ = s.saveSceneFromForm(r)
 	}
@@ -322,7 +304,11 @@ func (s *Server) toggleEditorHistoryPanel(r *http.Request) string {
 		s.BookSettingsOpen = false
 		s.SelectedChapter = ""
 		s.EditorBreakdownPanelOpen = false
+		s.EditorVariablesPanelOpen = false
 		s.EditorHelpModalOpen = false
+		if s.SceneTextModalWidthMode == "full" {
+			s.SceneTextModalWidthMode = "half"
+		}
 		s.ensureHistoryBaselineBeforeMutation()
 	}
 	return ""
@@ -336,6 +322,7 @@ func (s *Server) openEditorHistoryPanel(r *http.Request) string {
 	s.BookSettingsOpen = false
 	s.SelectedChapter = ""
 	s.EditorBreakdownPanelOpen = false
+	s.EditorVariablesPanelOpen = false
 	s.EditorHelpModalOpen = false
 	s.ensureHistoryBaselineBeforeMutation()
 	return ""
@@ -350,7 +337,6 @@ func (s *Server) saveHistoryVersion(r *http.Request) string {
 	if s.isHistoryPreview() {
 		return historyPreviewLockedToast
 	}
-	s.ensureActiveBookUnpackedForStudio()
 	if r.FormValue("scene_id") != "" {
 		_ = s.saveSceneFromForm(r)
 	}
@@ -371,7 +357,6 @@ func (s *Server) saveHistoryVersion(r *http.Request) string {
 }
 
 func (s *Server) previewHistoryRevision(r *http.Request) string {
-	s.ensureActiveBookUnpackedForStudio()
 	if !s.isHistoryPreview() && r != nil && r.FormValue("scene_id") != "" {
 		_ = s.saveSceneFromForm(r)
 	}
@@ -418,12 +403,14 @@ func (s *Server) previewHistoryRevision(r *http.Request) string {
 
 	if !s.isHistoryPreview() {
 		s.LiveBook = s.ActiveBook
+		s.LivePlayerBook = s.PlayerBook
 		s.LiveSave = s.Save
 		s.LiveSelectedSceneID = s.SelectedSceneID
 	}
 	s.PreviewRevisionID = targetRev.ID
 	s.PreviewRevisionLabel = targetRev.Label
 	s.ActiveBook = previewBook
+	s.PlayerBook = previewBook
 
 	if targetRev.SelectedSceneID != "" {
 		if sc := s.findScene(targetRev.SelectedSceneID); sc != nil {
@@ -483,6 +470,7 @@ func (s *Server) playHistoryRevision(r *http.Request) string {
 		}
 	}
 	if s.ActiveBook != nil {
+		s.PlayerBook = s.ActiveBook
 		if s.Save == nil {
 			startSceneID := s.ActiveBook.StartSceneID
 			if s.findScene(startSceneID) == nil && len(s.ActiveBook.Scenes) > 0 {
@@ -512,7 +500,6 @@ func (s *Server) playHistoryRevision(r *http.Request) string {
 }
 
 func (s *Server) restoreHistoryRevision(r *http.Request) string {
-	s.ensureActiveBookUnpackedForStudio()
 	if r != nil && strings.TrimSpace(r.FormValue("target_branch")) != "" {
 		return s.copyHistoryRevisionToBranchAction(r)
 	}
@@ -538,7 +525,6 @@ func (s *Server) restoreHistoryRevision(r *http.Request) string {
 }
 
 func (s *Server) copyHistoryRevisionToBranchAction(r *http.Request) string {
-	s.ensureActiveBookUnpackedForStudio()
 	if !s.isHistoryPreview() && r != nil && r.FormValue("scene_id") != "" {
 		_ = s.saveSceneFromForm(r)
 	}
@@ -573,7 +559,6 @@ func (s *Server) copyHistoryRevisionToBranchAction(r *http.Request) string {
 }
 
 func (s *Server) promptCreateHistoryBranchAction(r *http.Request) string {
-	s.ensureActiveBookUnpackedForStudio()
 	if !s.isHistoryPreview() && r != nil && r.FormValue("scene_id") != "" {
 		_ = s.saveSceneFromForm(r)
 	}
@@ -630,7 +615,6 @@ func (s *Server) promptCreateHistoryBranchAction(r *http.Request) string {
 }
 
 func (s *Server) createHistoryBranchByName(branchName, fromRev string) string {
-	s.ensureActiveBookUnpackedForStudio()
 	if s.ActiveBook == nil || s.ActiveBook.IsPacked {
 		return ""
 	}
@@ -652,7 +636,6 @@ func (s *Server) createHistoryBranchByName(branchName, fromRev string) string {
 }
 
 func (s *Server) createHistoryBranchAction(r *http.Request) string {
-	s.ensureActiveBookUnpackedForStudio()
 	if !s.isHistoryPreview() && r.FormValue("scene_id") != "" {
 		_ = s.saveSceneFromForm(r)
 	}
@@ -665,7 +648,6 @@ func (s *Server) createHistoryBranchAction(r *http.Request) string {
 }
 
 func (s *Server) switchHistoryBranchAction(r *http.Request) string {
-	s.ensureActiveBookUnpackedForStudio()
 	if !s.isHistoryPreview() && r.FormValue("scene_id") != "" {
 		_ = s.saveSceneFromForm(r)
 	}
@@ -688,7 +670,6 @@ func (s *Server) switchHistoryBranchAction(r *http.Request) string {
 }
 
 func (s *Server) deleteHistoryBranchAction(r *http.Request) string {
-	s.ensureActiveBookUnpackedForStudio()
 	if s.ActiveBook != nil && !s.ActiveBook.IsPacked {
 		branchName := strings.TrimSpace(r.FormValue("branch"))
 		if branchName == "" {

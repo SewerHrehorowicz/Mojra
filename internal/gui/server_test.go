@@ -239,7 +239,7 @@ func TestServerActionLifecycleAndSecurity(t *testing.T) {
 	if !strings.Contains(string(saveModalHTML), "modal-scene-text") || srv.SceneTextModalID != "poczatek" {
 		t.Fatalf("expected SaveSceneTextModal to keep modal-scene-text open on poczatek, got:\n%s", string(saveModalHTML))
 	}
-	if !strings.Contains(string(saveModalHTML), `value="Początek Przygody"`) || !strings.Contains(string(saveModalHTML), `value="Wejdź do zamku"`) {
+	if !strings.Contains(string(saveModalHTML), `value="Początek Przygody"`) || !strings.Contains(string(saveModalHTML), `>Wejdź do zamku</textarea>`) {
 		t.Fatalf("expected SaveSceneTextModal to persist updated title and choice label in modal HTML, got:\n%s", string(saveModalHTML))
 	}
 	if !strings.Contains(string(saveModalHTML), `class="node-icon-btn node-media-add-btn modal-add-choice-btn"`) || !strings.Contains(string(saveModalHTML), `name="choice_target_0"`) {
@@ -273,16 +273,17 @@ func TestServerActionLifecycleAndSecurity(t *testing.T) {
 	}
 	editTargetModalHTML, _ := io.ReadAll(editTargetModalResp.Body)
 	_ = editTargetModalResp.Body.Close()
-	if !strings.Contains(string(editTargetModalHTML), `value="Wycofaj się"`) {
+	if !strings.Contains(string(editTargetModalHTML), `>Wycofaj się</textarea>`) {
 		t.Fatalf("expected updated choice_label_2 in modal HTML")
 	}
-	if !strings.Contains(string(editTargetModalHTML), "choice-port-icon port-filled") ||
-		!strings.Contains(string(editTargetModalHTML), `<span class="choice-port-icon"></span>`) ||
+	if !strings.Contains(string(editTargetModalHTML), "choice-exit-input") ||
+		!strings.Contains(string(editTargetModalHTML), `value="Nowa scena 3"`) ||
+		strings.Contains(string(editTargetModalHTML), "choice-port-trigger") ||
 		!strings.Contains(string(editTargetModalHTML), "choice-trash-icon") ||
 		!strings.Contains(string(editTargetModalHTML), `action="PromptRemoveChoice"`) ||
 		strings.Contains(string(editTargetModalHTML), "BranchChoiceScene") ||
 		strings.Contains(string(editTargetModalHTML), "node-choice-arrow") {
-		t.Fatalf("expected port circle icons (filled for connected, empty for END), trash icon with PromptRemoveChoice, and no plus/arrow in modal choices, got:\n%s", string(editTargetModalHTML))
+		t.Fatalf("expected choice-exit-input, no choice-port-trigger, and trash icon with PromptRemoveChoice in modal choices, got:\n%s", string(editTargetModalHTML))
 	}
 
 	promptRemChoiceForm := url.Values{}
@@ -337,7 +338,7 @@ func TestServerActionLifecycleAndSecurity(t *testing.T) {
 		t.Fatalf("expected Nowa scena 4 after InsertSceneBefore")
 	}
 
-	// 2e. Save node position and viewport to editor.txt via SaveEditorState and connect wire via ConnectChoice
+	// 2e. Save node position and viewport to .editor.cfg via SaveEditorState and connect wire via ConnectChoice
 	edStateForm := url.Values{}
 	edStateForm.Set("action", "SaveEditorState")
 	edStateForm.Set("scene_id", "poczatek")
@@ -351,12 +352,12 @@ func TestServerActionLifecycleAndSecurity(t *testing.T) {
 		t.Fatalf("POST /api/action SaveEditorState failed: %v", err)
 	}
 	_ = edStateResp.Body.Close()
-	editorTxtBytes, err := os.ReadFile(filepath.Join(rootDir, "books", "tajemnica-zamku", "editor.txt"))
+	editorTxtBytes, err := os.ReadFile(filepath.Join(rootDir, "books", "tajemnica-zamku", ".editor.cfg"))
 	if err != nil {
-		t.Fatalf("expected editor.txt in book directory: %v", err)
+		t.Fatalf("expected .editor.cfg in book directory: %v", err)
 	}
 	if !strings.Contains(string(editorTxtBytes), "540, 120") || !strings.Contains(string(editorTxtBytes), "zoom: 1.15") {
-		t.Fatalf("unexpected editor.txt content:\n%s", string(editorTxtBytes))
+		t.Fatalf("unexpected .editor.cfg content:\n%s", string(editorTxtBytes))
 	}
 
 	// 2f. Batch SaveEditorState with negative coordinates (no canvas bounds)
@@ -368,9 +369,9 @@ func TestServerActionLifecycleAndSecurity(t *testing.T) {
 		t.Fatalf("POST /api/action batch SaveEditorState failed: %v", err)
 	}
 	_ = batchResp.Body.Close()
-	batchEditorBytes, _ := os.ReadFile(filepath.Join(rootDir, "books", "tajemnica-zamku", "editor.txt"))
+	batchEditorBytes, _ := os.ReadFile(filepath.Join(rootDir, "books", "tajemnica-zamku", ".editor.cfg"))
 	if !strings.Contains(string(batchEditorBytes), "-240, -120") || !strings.Contains(string(batchEditorBytes), "480, 240") {
-		t.Fatalf("expected negative and batch coordinates in editor.txt, got:\n%s", string(batchEditorBytes))
+		t.Fatalf("expected negative and batch coordinates in .editor.cfg, got:\n%s", string(batchEditorBytes))
 	}
 
 	// 2g. Rename chapter group and run AutoLayoutNodes
@@ -541,8 +542,8 @@ func TestMultiBookLibraryDiskURLAndPerBookProgress(t *testing.T) {
 	// Create an external book on disk outside rootDir/books
 	diskBookPath := filepath.Join(externalDir, "nocny-pociag")
 	_ = os.MkdirAll(diskBookPath, 0755)
-	_ = os.WriteFile(filepath.Join(diskBookPath, "data.txt"), []byte("title: Nocny Pociąg\nauthor: Marek H.\nnarrated: false\nstart: peron\n"), 0644)
-	_ = os.WriteFile(filepath.Join(diskBookPath, "story.txt"), []byte(`chapter: Odjazd
+	_ = os.WriteFile(filepath.Join(diskBookPath, "book.playtxt"), []byte("title: Nocny Pociąg\nauthor: Marek H.\nnarrated: false\nstart: peron\n"), 0644)
+	_ = os.WriteFile(filepath.Join(diskBookPath, "story.playtxt"), []byte(`chapter: Odjazd
 
 scene: Peron we mgle
 id: peron
@@ -558,9 +559,9 @@ Zająłeś miejsce przy oknie.
 	// Prepare a downloadable .stbook archive served over HTTP
 	var stbookBuf bytes.Buffer
 	zw := zip.NewWriter(&stbookBuf)
-	fData, _ := zw.Create("data.txt")
+	fData, _ := zw.Create("book.playtxt")
 	_, _ = fData.Write([]byte("title: Echo Głębin\nauthor: Klara M.\nnarrated: false\nstart: zanurzenie\n"))
-	fStory, _ := zw.Create("story.txt")
+	fStory, _ := zw.Create("story.playtxt")
 	_, _ = fStory.Write([]byte(`chapter: Głębia
 
 scene: Zanurzenie
@@ -725,7 +726,7 @@ end: true
 	r9, _ := http.PostForm(ts.URL+"/api/action", confirmRem)
 	_ = r9.Body.Close()
 
-	if _, err := os.Stat(filepath.Join(diskBookPath, "story.txt")); err != nil {
+	if _, err := os.Stat(filepath.Join(diskBookPath, "story.playtxt")); err != nil {
 		t.Fatalf("expected original files of external book on disk to remain untouched after removing from library: %v", err)
 	}
 }
@@ -792,6 +793,40 @@ func TestDevicePreviewStrippedInProductionAndEnabledInDev(t *testing.T) {
 	if !strings.Contains(string(devHTML), "device-preview-bar") || !strings.Contains(string(devHTML), "SetDeviceMode") || !strings.Contains(string(devHTML), `action="OpenQRModal"`) {
 		t.Fatalf("expected device-preview-bar and OpenQRModal in dev mode GET /")
 	}
+	for _, wantPreviewAttr := range []string{`data-mode="portrait"`, `data-mode="tablet"`, `data-mode="full"`} {
+		if !strings.Contains(string(devHTML), wantPreviewAttr) {
+			t.Fatalf("expected %s in dev mode GET /", wantPreviewAttr)
+		}
+	}
+	for _, forbiddenChrome := range []string{"device-notch", "device-home-bar", "Widok ekranu:", "iPhone", "iPad"} {
+		if strings.Contains(string(devHTML), forbiddenChrome) {
+			t.Fatalf("expected minimalist generic device preview without %q in dev mode GET /", forbiddenChrome)
+		}
+	}
+	devCSSResp, err := http.Get(devTS.URL + "/style.css")
+	if err != nil {
+		t.Fatalf("GET /style.css in dev mode failed: %v", err)
+	}
+	devCSS, _ := io.ReadAll(devCSSResp.Body)
+	_ = devCSSResp.Body.Close()
+	for _, wantCSS := range []string{"--preview-stage-top", "--preview-shadow-ambient", `.device-stage[data-preview="tablet"]`} {
+		if !strings.Contains(string(devCSS), wantCSS) {
+			t.Fatalf("expected %q in dev mode /style.css", wantCSS)
+		}
+	}
+
+	tabletForm := url.Values{
+		"action": {"SetDeviceMode"},
+		"mode":   {"tablet"},
+	}
+	tabletResp, err := http.PostForm(devTS.URL+"/api/action", tabletForm)
+	if err != nil {
+		t.Fatalf("POST /api/action SetDeviceMode(tablet) failed: %v", err)
+	}
+	_ = tabletResp.Body.Close()
+	if gotHdr := tabletResp.Header.Get("X-Device-Mode"); gotHdr != "tablet" {
+		t.Fatalf("expected X-Device-Mode=tablet in dev mode, got %q", gotHdr)
+	}
 
 	devQRModalResp, err := http.PostForm(devTS.URL+"/api/action", qrModalForm)
 	if err != nil {
@@ -825,8 +860,8 @@ func TestLibraryCoverCardAndBranchingChoicesGuard(t *testing.T) {
 	if err := os.MkdirAll(sampleBookDir, 0755); err != nil {
 		t.Fatalf("MkdirAll failed: %v", err)
 	}
-	_ = os.WriteFile(filepath.Join(sampleBookDir, "data.txt"), []byte("title: Nie bój się policji rzecznej\nauthor: Autor\nnarrated: false\nstart: warsztat\n"), 0644)
-	_ = os.WriteFile(filepath.Join(sampleBookDir, "story.txt"), []byte(`chapter: Wioskowe dziwadło
+	_ = os.WriteFile(filepath.Join(sampleBookDir, "book.playtxt"), []byte("title: Nie bój się policji rzecznej\nauthor: Autor\nnarrated: false\nstart: warsztat\n"), 0644)
+	_ = os.WriteFile(filepath.Join(sampleBookDir, "story.playtxt"), []byte(`chapter: Wioskowe dziwadło
 
 scene: Wstyd w warsztacie
 id: warsztat
@@ -860,8 +895,9 @@ Dopiero kapitan Arvo wszystko mu wytłumaczył.
 	_ = r1.Body.Close()
 	libHTML := string(libHTMLBytes)
 
-	if !strings.Contains(libHTML, `<span class="brand-logo">Mojra</span>`) ||
-		!strings.Contains(libHTML, `<span class="brand-logo brand-logo-short">M</span>`) ||
+	if !strings.Contains(libHTML, `class="brand-mark"`) ||
+		strings.Contains(libHTML, `<span class="brand-logo">Mojra</span>`) ||
+		strings.Contains(libHTML, `<span class="brand-logo brand-logo-short">M</span>`) ||
 		!strings.Contains(libHTML, `data-view="library"`) ||
 		!strings.Contains(libHTML, `id="tab-player"`) ||
 		!strings.Contains(libHTML, `data-view="editor"`) ||
@@ -870,7 +906,7 @@ Dopiero kapitan Arvo wszystko mu wytłumaczył.
 		!strings.Contains(libHTML, `id="icon-theme-sun"`) ||
 		!strings.Contains(libHTML, `id="icon-theme-moon"`) ||
 		strings.Contains(libHTML, `action="OpenQRModal"`) {
-		t.Fatalf("expected responsive topbar with ST short logo, tab icons, hamburger menu, sun/moon theme icons, and no gear icon in prod, got:\n%s", libHTML)
+		t.Fatalf("expected responsive topbar with symbol-only brand-mark, tab icons, hamburger menu, sun/moon theme icons, and no gear icon in prod, got:\n%s", libHTML)
 	}
 
 	secStart := strings.Index(libHTML, `<section class="view-panel" id="view-library">`)
@@ -930,8 +966,22 @@ Dopiero kapitan Arvo wszystko mu wytłumaczył.
 		t.Fatalf("expected implicit next to render 'Dalej' and '»' arrow, got:\n%s", playerHTML)
 	}
 
-	// 3. Clear title of scene "sikawa_kapitana" (which has explicit_id="sikawa_kapitana") via SaveScene,
-	// then verify player renders it with .scene-untitled and without .scene-header-block (single separator line)
+	// 3. Verify opening a book in player view did NOT automatically open it in Studio,
+	// then explicitly open it in Studio via OpenStudioProject, clear title of scene "sikawa_kapitana" via SaveScene,
+	// and verify player renders it with .scene-untitled and without .scene-header-block (single separator line)
+	if srv.ActiveBook != nil {
+		t.Fatalf("expected OpenBook(view=player) not to auto-open book in Studio, got ActiveBook=%+v", srv.ActiveBook)
+	}
+	openStudio := url.Values{
+		"action": {"OpenStudioProject"},
+		"book":   {"nie-boj-sie-policji-rzecznej"},
+	}
+	rOpenStudio, err := http.PostForm(ts.URL+"/api/action", openStudio)
+	if err != nil {
+		t.Fatalf("OpenStudioProject failed: %v", err)
+	}
+	_ = rOpenStudio.Body.Close()
+
 	saveUntitled := url.Values{}
 	saveUntitled.Set("action", "SaveScene")
 	saveUntitled.Set("scene_id", "sikawa_kapitana")
@@ -1001,8 +1051,17 @@ Dopiero kapitan Arvo wszystko mu wytłumaczył.
 	if len(scaleBytes) != 0 || rScale.StatusCode != http.StatusNoContent {
 		t.Fatalf("expected 204 No Content with empty body for ToggleUIScale, got status=%d len=%d", rScale.StatusCode, len(scaleBytes))
 	}
-	if !strings.Contains(libHTML, `id="btn-toggle-ui-scale"`) {
-		t.Fatalf("expected #btn-toggle-ui-scale in topbar HTML")
+	if !strings.Contains(libHTML, `id="btn-toggle-ui-scale"`) || !strings.Contains(libHTML, `id="icon-zoom-zen"`) || !strings.Contains(libHTML, `class="topbar-center"`) {
+		t.Fatalf("expected #btn-toggle-ui-scale, #icon-zoom-zen, and .topbar-center in topbar HTML")
+	}
+
+	rScaleZen, err := http.PostForm(ts.URL+"/api/action", scaleForm)
+	if err != nil {
+		t.Fatalf("ToggleUIScale to zen failed: %v", err)
+	}
+	_ = rScaleZen.Body.Close()
+	if rScaleZen.Header.Get("X-UI-Scale") != "zen" {
+		t.Fatalf("expected X-UI-Scale=zen on second ToggleUIScale, got %q", rScaleZen.Header.Get("X-UI-Scale"))
 	}
 
 	setSmallForm := url.Values{}
@@ -1339,6 +1398,15 @@ func TestSecurityCSRFMediaMagicBytesAndExternalTxtValidation(t *testing.T) {
 	_ = os.WriteFile(extAudPath, []byte("fLaC\x80\x00\x00\x22"), 0644)
 	_ = os.WriteFile(extWavPath, []byte("RIFF\x24\x00\x00\x00WAVEfmt "), 0644)
 
+	rOpenEd, err := http.PostForm(ts.URL+"/api/action", url.Values{
+		"action": {"OpenStudioProject"},
+		"book":   {createdBook.ID},
+	})
+	if err != nil {
+		t.Fatalf("OpenStudioProject failed: %v", err)
+	}
+	_ = rOpenEd.Body.Close()
+
 	firstSceneID := srv.ActiveBook.Scenes[0].ID
 	addImgForm := url.Values{
 		"action": {"AddBookMediaFromDisk"},
@@ -1462,6 +1530,25 @@ func TestTopbarAlwaysVisibleIncludingSceneTextEditor(t *testing.T) {
 	if !strings.Contains(backdropBlock, "position: absolute") || strings.Contains(backdropBlock, "position: fixed") {
 		t.Fatalf(".modal-backdrop must use position: absolute inside row 2 (.modals-root) and NEVER position: fixed over #topbar, got:\n%s", backdropBlock)
 	}
+	if !strings.Contains(css, `body[data-ui-scale="zen"] .scene-text-editor-feed .reader-global-meta`) {
+		t.Fatalf("expected .scene-text-editor-feed .reader-global-meta to remain visible in zen mode")
+	}
+	for _, panelSel := range []string{".editor-context-panel {", ".editor-history-panel,\n.editor-help-panel {", ".editor-breakdown-panel,\n.editor-variables-panel {"} {
+		idx := strings.Index(css, panelSel)
+		if idx < 0 {
+			t.Fatalf("missing base rule %s in style.css", panelSel)
+		}
+		block := css[idx:]
+		if end := strings.Index(block, "}"); end > 0 {
+			block = block[:end]
+		}
+		if !strings.Contains(block, "width: 320px") || strings.Contains(block, "width: 100%") {
+			t.Fatalf("expected %s to stay a 320px right-side column on desktop (never width: 100%%), got:\n%s", panelSel, block)
+		}
+	}
+	if strings.Contains(css, "\n.editor-workspace-body:has(> aside:not(.hidden)) .timeline-scroll-viewport {") {
+		t.Fatalf(".timeline-scroll-viewport must NEVER be hidden globally by :has(> aside:not(.hidden)) outside portrait phone media queries")
+	}
 
 	// 3. Verify runtime behavior when opening #modal-scene-text and clicking topbar navigation tabs
 	rootDir := t.TempDir()
@@ -1501,6 +1588,10 @@ func TestTopbarAlwaysVisibleIncludingSceneTextEditor(t *testing.T) {
 		!strings.Contains(openFullHTML, `id="modal-scene-text"`) {
 		t.Fatalf("expected #topbar with all navigation tabs to remain present when #modal-scene-text is open, got:\n%s", openFullHTML)
 	}
+	modalPart := openFullHTML[strings.Index(openFullHTML, `id="modal-scene-text"`):]
+	if strings.Contains(modalPart, "Graj od tej sceny") || strings.Contains(modalPart, "Usuń scenę") || strings.Contains(modalPart, "Wróć do edytora") {
+		t.Fatalf("expected icon-only buttons without text descriptions in .scene-text-editor-top-bar, got:\n%s", modalPart)
+	}
 
 	// Clicking a topbar tab (SwitchView) while #modal-scene-text is open must close #modal-scene-text and switch cleanly
 	swForm := url.Values{
@@ -1513,6 +1604,9 @@ func TestTopbarAlwaysVisibleIncludingSceneTextEditor(t *testing.T) {
 	}
 	swBytes, _ := io.ReadAll(rSw.Body)
 	_ = rSw.Body.Close()
+	if strings.Contains(string(swBytes), `class="timeline-scroll-viewport hidden"`) {
+		t.Fatalf("#timeline-scroll-viewport must never be hidden on desktop when an editor panel is open")
+	}
 	swHTML := string(swBytes)
 	if srv.SceneTextModalID != "" || strings.Contains(swHTML, `id="modal-scene-text"`) {
 		t.Fatalf("expected SwitchView from #topbar to close #modal-scene-text, got SceneTextModalID=%q", srv.SceneTextModalID)
@@ -1579,10 +1673,10 @@ func TestBookImagelessSettingAndTopbarLock(t *testing.T) {
 		t.Fatalf("expected #btn-toggle-imageless to show no-image icon (#icon-imageless-on) when imageless book is open")
 	}
 
-	// Verify data.txt persisted imageless: true
-	dataBytes, err := os.ReadFile(filepath.Join(srv.ActiveBook.RootPath, "data.txt"))
+	// Verify book.playtxt persisted imageless: true
+	dataBytes, err := os.ReadFile(filepath.Join(srv.ActiveBook.RootPath, "book.playtxt"))
 	if err != nil || !strings.Contains(string(dataBytes), "imageless: true") {
-		t.Fatalf("expected data.txt to contain 'imageless: true', got:\n%s", string(dataBytes))
+		t.Fatalf("expected book.playtxt to contain 'imageless: true', got:\n%s", string(dataBytes))
 	}
 
 	// 3. Attempting ToggleImageless while imageless book is open must NOT disable imageless mode
@@ -1711,9 +1805,9 @@ func TestNodeEditorEmptyLibraryRenameFitAndRootScene(t *testing.T) {
 	if !strings.Contains(renameHTML, `value="Nowa Kronika Rzeki"`) {
 		t.Fatalf("expected updated book title in #editor-book-title-input, got:\n%s", renameHTML)
 	}
-	dataTxtBytes, err := os.ReadFile(filepath.Join(srv.ActiveBook.RootPath, "data.txt"))
+	dataTxtBytes, err := os.ReadFile(filepath.Join(srv.ActiveBook.RootPath, "book.playtxt"))
 	if err != nil || !strings.Contains(string(dataTxtBytes), "title: Nowa Kronika Rzeki") {
-		t.Fatalf("expected data.txt to persist 'title: Nowa Kronika Rzeki', got:\n%s", string(dataTxtBytes))
+		t.Fatalf("expected book.playtxt to persist 'title: Nowa Kronika Rzeki', got:\n%s", string(dataTxtBytes))
 	}
 
 	// 4. Select second scene ("rozdroze") and set it as root/start scene via SetStartScene
@@ -1734,9 +1828,9 @@ func TestNodeEditorEmptyLibraryRenameFitAndRootScene(t *testing.T) {
 	if !strings.Contains(startHTML, `class="node-start-indicator"`) {
 		t.Fatalf("expected active start scene indicator in inspector after SetStartScene, got:\n%s", startHTML)
 	}
-	dataTxtAfterStart, err := os.ReadFile(filepath.Join(srv.ActiveBook.RootPath, "data.txt"))
+	dataTxtAfterStart, err := os.ReadFile(filepath.Join(srv.ActiveBook.RootPath, "book.playtxt"))
 	if err != nil || !strings.Contains(string(dataTxtAfterStart), "start: rozdroze") {
-		t.Fatalf("expected data.txt to persist 'start: rozdroze', got:\n%s", string(dataTxtAfterStart))
+		t.Fatalf("expected book.playtxt to persist 'start: rozdroze', got:\n%s", string(dataTxtAfterStart))
 	}
 
 	// 5. Open Book Settings via ToggleBookSettings and Chapter Settings via SelectStudioChapter / SetChapterStartScene
@@ -1775,9 +1869,9 @@ func TestNodeEditorEmptyLibraryRenameFitAndRootScene(t *testing.T) {
 	if len(srv.ActiveBook.Chapters) == 0 || srv.ActiveBook.Chapters[0].StartSceneID != "poczatek" {
 		t.Fatalf("expected Chapter[0].StartSceneID='poczatek', got %+v", srv.ActiveBook.Chapters)
 	}
-	chFileBytes, err := os.ReadFile(filepath.Join(srv.ActiveBook.RootPath, "rozdzial_1.txt"))
+	chFileBytes, err := os.ReadFile(filepath.Join(srv.ActiveBook.RootPath, "rozdzial_1.playtxt"))
 	if err != nil || !strings.Contains(string(chFileBytes), "start: poczatek") {
-		t.Fatalf("expected rozdzial_1.txt to persist chapter 'start: poczatek', got:\n%s", string(chFileBytes))
+		t.Fatalf("expected rozdzial_1.playtxt to persist chapter 'start: poczatek', got:\n%s", string(chFileBytes))
 	}
 }
 
@@ -1803,7 +1897,7 @@ func TestNarrationlessAllOrNothingAndMinimalProgressBar(t *testing.T) {
 	edHTML := string(edBytes)
 
 	// Verify narrationless book has no voice files or voice headers on disk
-	textFileName := "story.txt"
+	textFileName := "story.playtxt"
 	if len(srv.ActiveBook.TextFiles) > 0 && srv.ActiveBook.TextFiles[0] != "" {
 		textFileName = srv.ActiveBook.TextFiles[0]
 	}
@@ -1812,7 +1906,7 @@ func TestNarrationlessAllOrNothingAndMinimalProgressBar(t *testing.T) {
 		t.Fatalf("failed to read %s: %v", textFileName, err)
 	}
 	if strings.Contains(string(storyBytes), "voice:") {
-		t.Fatalf("expected narrationless story.txt to have no voice: headers, got:\n%s", string(storyBytes))
+		t.Fatalf("expected narrationless story.playtxt to have no voice: headers, got:\n%s", string(storyBytes))
 	}
 	for _, sc := range srv.ActiveBook.Scenes {
 		if sc.ExplicitVoice != "" || sc.AudioFile != "" || sc.AudioURL != "" {
@@ -2322,7 +2416,7 @@ func TestChapterPortsAndOneWayChapterConnectionsInStudio(t *testing.T) {
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
-	// 1. Create a new book -> must create rozdzial_1.txt (not story.txt)
+	// 1. Create a new book -> must create rozdzial_1.playtxt (not story.playtxt)
 	_, err := http.PostForm(ts.URL+"/api/action", url.Values{
 		"action": {"CreateNewBook"},
 		"title":  {"Rzeka Czasu"},
@@ -2331,11 +2425,11 @@ func TestChapterPortsAndOneWayChapterConnectionsInStudio(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateNewBook failed: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(srv.ActiveBook.RootPath, "rozdzial_1.txt")); err != nil {
-		t.Fatalf("expected mandatory split chapter file rozdzial_1.txt on disk: %v", err)
+	if _, err := os.Stat(filepath.Join(srv.ActiveBook.RootPath, "rozdzial_1.playtxt")); err != nil {
+		t.Fatalf("expected mandatory split chapter file rozdzial_1.playtxt on disk: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(srv.ActiveBook.RootPath, "story.txt")); !os.IsNotExist(err) {
-		t.Fatalf("expected no story.txt in newly created book")
+	if _, err := os.Stat(filepath.Join(srv.ActiveBook.RootPath, "story.playtxt")); !os.IsNotExist(err) {
+		t.Fatalf("expected no story.playtxt in newly created book")
 	}
 
 	// 2. Create a second chapter group ("Rozdział 2")
@@ -2346,8 +2440,8 @@ func TestChapterPortsAndOneWayChapterConnectionsInStudio(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateChapterGroup failed: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(srv.ActiveBook.RootPath, "rozdzial_2.txt")); err != nil {
-		t.Fatalf("expected rozdzial_2.txt on disk after CreateChapterGroup: %v", err)
+	if _, err := os.Stat(filepath.Join(srv.ActiveBook.RootPath, "rozdzial_2.playtxt")); err != nil {
+		t.Fatalf("expected rozdzial_2.playtxt on disk after CreateChapterGroup: %v", err)
 	}
 
 	// 3. Connect rozdroze (in Rozdział 1) to chapter:rozdzial_2 via ConnectChoice
@@ -2395,8 +2489,8 @@ func TestPlayerSequentialTwoHopPrefetchAndFullAudioPreload(t *testing.T) {
 	_ = os.MkdirAll(filepath.Join(bookDir, "images"), 0755)
 	_ = os.MkdirAll(filepath.Join(bookDir, "voice"), 0755)
 
-	_ = os.WriteFile(filepath.Join(bookDir, "data.txt"), []byte("title: Prefetch\nauthor: Autor\nnarrated: true\nstart: s1\n"), 0644)
-	_ = os.WriteFile(filepath.Join(bookDir, "rozdzial_1.txt"), []byte(`chapter: Rozdział 1
+	_ = os.WriteFile(filepath.Join(bookDir, "book.playtxt"), []byte("title: Prefetch\nauthor: Autor\nnarrated: true\nstart: s1\n"), 0644)
+	_ = os.WriteFile(filepath.Join(bookDir, "rozdzial_1.playtxt"), []byte(`chapter: Rozdział 1
 id: rozdzial_1
 
 scene: Scena 1
@@ -2554,8 +2648,8 @@ func TestScreenplayModeEndToEndFlow(t *testing.T) {
 	if filepath.Clean(srv.ActiveBook.RootPath) != filepath.Clean(expectedDiskRoot) {
 		t.Fatalf("expected screenplay saved at %s, got %s", expectedDiskRoot, srv.ActiveBook.RootPath)
 	}
-	if _, statErr := os.Stat(filepath.Join(expectedDiskRoot, "data.txt")); statErr != nil {
-		t.Fatalf("expected data.txt on disk at %s: %v", expectedDiskRoot, statErr)
+	if _, statErr := os.Stat(filepath.Join(expectedDiskRoot, "book.playtxt")); statErr != nil {
+		t.Fatalf("expected book.playtxt on disk at %s: %v", expectedDiskRoot, statErr)
 	}
 	if !srv.ActiveBook.Imageless {
 		t.Fatalf("expected screenplay to always have Imageless=true")
@@ -3033,6 +3127,12 @@ function matchesCompoundSelector(el, compound) {
     return "";
   });
 
+  const notClassMatches = [];
+  rem = rem.replace(/:not\(\.([A-Za-z0-9_-]+)\)/g, (_, cls) => {
+    notClassMatches.push(cls);
+    return "";
+  });
+
   const classMatches = [];
   rem = rem.replace(/\.([A-Za-z0-9_-]+)/g, (_, cls) => {
     classMatches.push(cls);
@@ -3054,6 +3154,9 @@ function matchesCompoundSelector(el, compound) {
   }
   for (let i = 0; i < classMatches.length; i++) {
     if (!el.classList.contains(classMatches[i])) return false;
+  }
+  for (let i = 0; i < notClassMatches.length; i++) {
+    if (el.classList.contains(notClassMatches[i])) return false;
   }
   for (let i = 0; i < attrMatches.length; i++) {
     const expr = attrMatches[i];
@@ -3291,6 +3394,20 @@ class DOMElement {
     this.children.push(child);
     this.childNodes = this.children;
     return child;
+  }
+
+  get firstElementChild() {
+    return this.children.length > 0 ? this.children[0] : null;
+  }
+
+  cloneNode(deep) {
+    const copy = new DOMElement(this.tagName, this.ownerDocument);
+    this._attrs.forEach((v, k) => copy.setAttribute(k, v));
+    if (deep) {
+      copy._text = this._text;
+      this.children.forEach((ch) => copy.appendChild(ch.cloneNode(true)));
+    }
+    return copy;
   }
 
   get textContent() {
@@ -3532,7 +3649,7 @@ const VOID_TAGS = new Set(["area", "base", "br", "col", "embed", "hr", "img", "i
 function parseHTMLFragment(html, doc) {
   const root = new DOMElement("fragment", doc);
   const stack = [root];
-  const tagRe = /<!--[\s\S]*?-->|<!DOCTYPE[^>]*>|<\/([A-Za-z0-9_-]+)\s*>|<([A-Za-z0-9_-]+)\b([^>]*?)>|([^<]+)/gi;
+  const tagRe = /<!--[\s\S]*?-->|<!DOCTYPE[^>]*>|<\/([A-Za-z0-9_-]+)\s*>|<([A-Za-z0-9_-]+)\b((?:"[^"]*"|'[^']*'|[^>"'])*)>|([^<]+)/gi;
   const attrRe = /([^\s/>=]+)(?:=(?:"([^"]*)"|'([^']*)'|([^\s"'>]+)))?/g;
 
   let m;
@@ -4001,9 +4118,22 @@ function makeEvent(type, props) {
     throw new Error("Expected double-clicking wire-pin to remove it, got " + pinCountAfterDblClick);
   }
 
-  // 8. Double-click node card on WebGL canvas to open #modal-scene-text
+  // 8. Add 2 bool variables in Variables panel, then double-click node card on WebGL canvas to open #modal-scene-text
+  await clickEl("#btn-editor-variables");
+  await clickEl('button.var-section-add-btn[data-kind="bool"]');
+  const firstVarInp = doc.querySelector("input.var-name-input");
+  firstVarInp.value = "cwiczenia_z_wioslem";
+  firstVarInp.dispatchEvent(makeEvent("change", { target: firstVarInp }));
+  await waitForActions();
+  await clickEl('button.var-section-add-btn[data-kind="bool"]');
+  const allVarInps = doc.querySelectorAll("input.var-name-input");
+  allVarInps[1].value = "wypil_gorzalke";
+  allVarInps[1].dispatchEvent(makeEvent("change", { target: allVarInps[1] }));
+  await waitForActions();
+
+  const canvasForDbl = doc.querySelector("#studio-canvas");
   const afterMovePt = vm.runInContext("(() => { const n = studioGraphState.nodes[0]; const z = editorCanvasState.zoom; return { x: Math.round((n.x + 60) * z + editorCanvasState.panX), y: Math.round((n.y + 20) * z + editorCanvasState.panY) }; })()", win);
-  canvas.dispatchEvent(makeEvent("dblclick", { button: 0, clientX: afterMovePt.x, clientY: afterMovePt.y, target: canvas }));
+  canvasForDbl.dispatchEvent(makeEvent("dblclick", { button: 0, clientX: afterMovePt.x, clientY: afterMovePt.y, target: canvasForDbl }));
   await waitForActions();
   const modalTa = doc.querySelector("#modal-scene-textarea");
   if (!modalTa) {
@@ -4016,8 +4146,67 @@ function makeEvent(type, props) {
   if (!settingsBlock || settingsBlock.classList.contains("hidden")) {
     throw new Error("Expected [data-scene-settings-toggle] to unhide #modal-scene-settings-block");
   }
+  if (modalTa.getAttribute("autocorrect") !== "off" || modalTa.getAttribute("spellcheck") !== "false") {
+    throw new Error("Expected #modal-scene-textarea to disable autocorrect and spellcheck");
+  }
+  modalTa.value = "Akapit wstępu.\nif: wypil_gorzalke\nKakakakaka\nelse:\nAktywna gałąź\nendif:";
+  modalTa.dispatchEvent(makeEvent("input", { target: modalTa }));
+  const synSegs = doc.querySelectorAll("#modal-scene-prose-hl .prose-hl-seg.is-syntax:not(.hidden)");
+  const activeSegs = doc.querySelectorAll("#modal-scene-prose-hl .prose-hl-seg:not(.is-syntax):not(.hidden)");
+  if (synSegs.length !== 2 || !synSegs[0].textContent.includes("if: wypil_gorzalke\nKakakakaka\nelse:") || !synSegs[1].textContent.includes("endif:")) {
+    throw new Error("Expected #modal-scene-prose-hl to gray out if:/else:/endif: and inactive branch text, got count=" + synSegs.length);
+  }
+  if (activeSegs.length !== 2 || !activeSegs[1].textContent.includes("Aktywna gałąź")) {
+    throw new Error("Expected #modal-scene-prose-hl to keep active branch text bright, got count=" + activeSegs.length);
+  }
   modalTa.value = "Treść zapisana przez mostek JS.";
   modalTa.dispatchEvent(makeEvent("input", { target: modalTa }));
+
+  // 9b. Test .syn-autocomplete-dropdown ArrowDown/ArrowUp + Enter, excluding already-used variables, and automatic space insertion before next variable in set:
+  const effInp = doc.querySelector('#modal-scene-text input.choice-rule-input[name="choice_effects_0"]');
+  if (!effInp) {
+    throw new Error("Expected #modal-scene-text input.choice-rule-input[name=choice_effects_0]");
+  }
+  effInp.value = "cwiczenia_z_wioslem = false?";
+  effInp.selectionStart = effInp.value.length;
+  effInp.selectionEnd = effInp.value.length;
+  effInp.dispatchEvent(makeEvent("input", { target: effInp }));
+  const synDrop = doc.querySelector("#modal-syn-autocomplete-dropdown");
+  if (!synDrop || synDrop.classList.contains("hidden")) {
+    throw new Error("Expected #modal-syn-autocomplete-dropdown to open when typing '?' in set:");
+  }
+  const visibleVarBtns = synDrop.querySelectorAll(".syn-dropdown-item:not(.hidden)");
+  if (visibleVarBtns.length !== 1 || visibleVarBtns[0].getAttribute("data-syn-var-name") !== "wypil_gorzalke") {
+    throw new Error("Expected already-used variable 'cwiczenia_z_wioslem' to be hidden from suggestions, leaving 'wypil_gorzalke'");
+  }
+  effInp.dispatchEvent(makeEvent("keydown", { key: "Enter", target: effInp }));
+  if (effInp.value !== "cwiczenia_z_wioslem = false wypil_gorzalke") {
+    throw new Error("Expected Enter on 'cwiczenia_z_wioslem = false?' to auto-insert space and select 'wypil_gorzalke', got: " + effInp.value);
+  }
+  // Also verify ArrowDown/ArrowUp navigation when both variables are available on empty input
+  effInp.value = "?";
+  effInp.selectionStart = 1;
+  effInp.selectionEnd = 1;
+  effInp.dispatchEvent(makeEvent("input", { target: effInp }));
+  effInp.dispatchEvent(makeEvent("keydown", { key: "ArrowDown", target: effInp }));
+  effInp.dispatchEvent(makeEvent("keydown", { key: "Enter", target: effInp }));
+  if (effInp.value !== "wypil_gorzalke") {
+    throw new Error("Expected ArrowDown + Enter on '?' to select 2nd variable 'wypil_gorzalke', got: " + effInp.value);
+  }
+
+  const openModalScId = doc.querySelector('#modal-scene-text input[name="scene_id"]').value;
+  if (doc.querySelector("#editor-context-form").getAttribute("data-context-scene-id") !== openModalScId) {
+    throw new Error("Expected canvas context selection to be synced with open #modal-scene-text scene_id: " + openModalScId);
+  }
+  const navNextBtn = doc.querySelector('#modal-scene-text button[action="NavigateSceneTextModal"]');
+  if (navNextBtn) {
+    await clickEl('#modal-scene-text button[action="NavigateSceneTextModal"]');
+    const nextModalScId = doc.querySelector('#modal-scene-text input[name="scene_id"]').value;
+    if (doc.querySelector("#editor-context-form").getAttribute("data-context-scene-id") !== nextModalScId) {
+      throw new Error("Expected NavigateSceneTextModal to sync canvas selection to " + nextModalScId);
+    }
+  }
+
   await clickEl('button.scene-text-back-btn[action="CloseSceneTextModal"]');
   if (doc.querySelector("#modal-scene-text")) {
     throw new Error("Expected CloseSceneTextModal to close #modal-scene-text");
@@ -4029,8 +4218,16 @@ function makeEvent(type, props) {
     throw new Error("Expected #btn-topbar-menu to open #topbar-actions-menu");
   }
   await clickEl("#btn-toggle-ui-scale");
-  if (doc.body.getAttribute("data-ui-scale") !== "large") {
-    throw new Error("Expected #btn-toggle-ui-scale to set data-ui-scale=large");
+  if (doc.body.getAttribute("data-ui-scale") !== "large" || doc.querySelector("#icon-zoom-zen").classList.contains("hidden")) {
+    throw new Error("Expected #btn-toggle-ui-scale to set data-ui-scale=large and show #icon-zoom-zen for next step");
+  }
+  await clickEl("#btn-toggle-ui-scale");
+  if (doc.body.getAttribute("data-ui-scale") !== "zen" || doc.querySelector("#icon-zoom-out").classList.contains("hidden")) {
+    throw new Error("Expected second click on #btn-toggle-ui-scale to set data-ui-scale=zen and show #icon-zoom-out");
+  }
+  await clickEl("#btn-toggle-ui-scale");
+  if (doc.body.getAttribute("data-ui-scale") !== "small" || doc.querySelector("#icon-zoom-in").classList.contains("hidden")) {
+    throw new Error("Expected third click on #btn-toggle-ui-scale to return to data-ui-scale=small");
   }
   await clickEl('button[action="ToggleTheme"]');
   if (doc.body.getAttribute("data-theme") !== "light") {
@@ -4121,6 +4318,15 @@ function makeEvent(type, props) {
   newLocInp.dispatchEvent(makeEvent("blur", { target: newLocInp }));
   await waitForActions();
 
+  const f12Evt = makeEvent("keydown", { key: "F12", code: "F12", target: doc.body });
+  doc.dispatchEvent(f12Evt);
+  if (process.env.ST_TEST_BUNDLE_NAME === "prod_app_js" && !f12Evt.defaultPrevented) {
+    throw new Error("Expected F12 keydown to be blocked (defaultPrevented) in production bundle");
+  }
+  if (process.env.ST_TEST_BUNDLE_NAME === "dev_app_js" && f12Evt.defaultPrevented) {
+    throw new Error("Expected F12 keydown NOT to be blocked in dev bundle");
+  }
+
   console.log("STATUS=OK");
   console.log("ACTIONS=" + actionLog.join(","));
 })().catch((err) => {
@@ -4144,6 +4350,7 @@ function makeEvent(type, props) {
 		cmd.Env = append(os.Environ(),
 			"ST_TEST_BASE_URL="+ts.URL,
 			"ST_TEST_APP_JS="+bundleCase.code,
+			"ST_TEST_BUNDLE_NAME="+bundleCase.name,
 		)
 		out, err := cmd.CombinedOutput()
 		ts.Close()
@@ -4176,7 +4383,7 @@ func TestMultiChapterAutoIDAndCollisionOnConnectChoice(t *testing.T) {
 	if err := os.MkdirAll(bookDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(bookDir, "data.txt"), []byte("title: Test Rzeki\nnarrated: false\nimageless: true\nstart: s_root\n"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(bookDir, "book.playtxt"), []byte("title: Test Rzeki\nnarrated: false\nimageless: true\nstart: s_root\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	// Note: w_gore_umierajacej_rzeki.txt sorts alphabetically BEFORE wioskowe_dziwadlo.txt,
@@ -4221,7 +4428,7 @@ scene: Nowa scena 120
 end: true
 Tekst sceny 120 bez jawnego id.
 `
-	editorContent := `# StoryTeller — Stan edytora węzłów (editor.txt)
+	editorContent := `# StoryTeller — Stan edytora węzłów (.editor.cfg)
 pan_x: 0
 pan_y: 0
 zoom: 1.00
@@ -4233,13 +4440,13 @@ node: b1_wejscie -> 552, 1872
 node: b1_nocleg -> 552, 2712
 node: Nowa scena 120 -> 336, 2568
 `
-	if err := os.WriteFile(filepath.Join(bookDir, "wioskowe_dziwadlo.txt"), []byte(ch1Content), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(bookDir, "wioskowe_dziwadlo.playtxt"), []byte(ch1Content), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(bookDir, "w_gore_umierajacej_rzeki.txt"), []byte(ch2Content), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(bookDir, "w_gore_umierajacej_rzeki.playtxt"), []byte(ch2Content), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(bookDir, "editor.txt"), []byte(editorContent), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(bookDir, ".editor.cfg"), []byte(editorContent), 0644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -4388,11 +4595,11 @@ func TestWFPProtocolAndZeroRepoSavesOrAppState(t *testing.T) {
 	if err := os.MkdirAll(repoBookDir, 0755); err != nil {
 		t.Fatalf("MkdirAll failed: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(repoBookDir, "data.txt"), []byte("title: Repo Book\nstart: s1\n"), 0644); err != nil {
-		t.Fatalf("WriteFile data.txt failed: %v", err)
+	if err := os.WriteFile(filepath.Join(repoBookDir, "book.playtxt"), []byte("title: Repo Book\nstart: s1\n"), 0644); err != nil {
+		t.Fatalf("WriteFile book.playtxt failed: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(repoBookDir, "story.txt"), []byte("scene: Scena 1\nid: s1\nend: true\nTekst.\n"), 0644); err != nil {
-		t.Fatalf("WriteFile story.txt failed: %v", err)
+	if err := os.WriteFile(filepath.Join(repoBookDir, "story.playtxt"), []byte("scene: Scena 1\nid: s1\nend: true\nTekst.\n"), 0644); err != nil {
+		t.Fatalf("WriteFile story.playtxt failed: %v", err)
 	}
 
 	StopPreviousInstance(fakeRepo)
@@ -4425,6 +4632,442 @@ func TestWFPProtocolAndZeroRepoSavesOrAppState(t *testing.T) {
 				t.Fatalf("forbidden generated state/saves directory found in repository: %s", forbiddenPath)
 			}
 		}
+	}
+}
+
+func TestVariablesPanelChoiceTripleStackAndThreeStateScenePreview(t *testing.T) {
+	rootDir := t.TempDir()
+	srv := NewServer(rootDir, storyteller.AppFS)
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	// 1. Create a new interactive book in Playbook Studio
+	customDir := filepath.Join(t.TempDir(), "TestVariablesBook")
+	_, err := http.PostForm(ts.URL+"/api/action", url.Values{
+		"action":    {"CreateNewBook"},
+		"title":     {"Zatopiona Śluza"},
+		"author":    {"Autor"},
+		"mode":      {"book"},
+		"save_path": {customDir},
+	})
+	if err != nil {
+		t.Fatalf("CreateNewBook failed: %v", err)
+	}
+
+	// 2. Open Variables Panel (#editor-variables-panel) and add bool, int, and enum variables
+	resp, err := http.PostForm(ts.URL+"/api/action", url.Values{
+		"action": {"ToggleEditorVariablesPanel"},
+	})
+	if err != nil {
+		t.Fatalf("ToggleEditorVariablesPanel failed: %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if !strings.Contains(string(body), `id="editor-variables-panel"`) || !strings.Contains(string(body), `data-kind="bool"`) || !strings.Contains(string(body), `data-kind="int"`) || !strings.Contains(string(body), `data-kind="enum"`) {
+		t.Fatalf("expected #editor-variables-panel to be rendered and visible")
+	}
+
+	for _, kind := range []string{"bool", "int", "enum"} {
+		_, err = http.PostForm(ts.URL+"/api/action", url.Values{
+			"action": {"AddBookVariable"},
+			"kind":   {kind},
+		})
+		if err != nil {
+			t.Fatalf("AddBookVariable(%s) failed: %v", kind, err)
+		}
+	}
+	if len(srv.ActiveBook.Variables) != 3 {
+		t.Fatalf("expected 3 variables in ActiveBook, got %d", len(srv.ActiveBook.Variables))
+	}
+
+	// Rename and configure variables: latarka (bool), zaufanie (int=0), frakcja (enum=neutralny, rzeczni)
+	_, _ = http.PostForm(ts.URL+"/api/action", url.Values{
+		"action":   {"UpdateBookVariable"},
+		"var_idx":  {"0"},
+		"var_name": {"latarka"},
+	})
+	_, _ = http.PostForm(ts.URL+"/api/action", url.Values{
+		"action":    {"UpdateBookVariable"},
+		"var_idx":   {"1"},
+		"var_name":  {"zaufanie"},
+		"var_value": {"0"},
+	})
+	_, _ = http.PostForm(ts.URL+"/api/action", url.Values{
+		"action":    {"UpdateBookVariable"},
+		"var_idx":   {"2"},
+		"var_name":  {"frakcja"},
+		"var_value": {"neutralny, rzeczni"},
+	})
+
+	// 3. Add a second choice to the start scene and verify automatic 4-row exit:/label:/if:/set: choice stack + syntax help
+	startID := srv.ActiveBook.StartSceneID
+	resp, _ = http.PostForm(ts.URL+"/api/action", url.Values{
+		"action": {"AddChoice"},
+		"scene":  {startID},
+	})
+	body, _ = io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if !strings.Contains(string(body), "choice-triple-stack") || !strings.Contains(string(body), `name="choice_target_0"`) || !strings.Contains(string(body), `name="choice_label_0"`) || !strings.Contains(string(body), `name="choice_cond_0"`) || !strings.Contains(string(body), `name="choice_effects_0"`) {
+		t.Fatalf("expected unified 4-row choice-triple-stack (exit:, label:, if:, set:) when variables exist")
+	}
+
+	resp, _ = http.PostForm(ts.URL+"/api/action", url.Values{
+		"action": {"ToggleSyntaxHelp"},
+	})
+	body, _ = io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if !strings.Contains(string(body), `id="syntax-help-popover"`) || !strings.Contains(string(body), "sumienie &gt;= 2") {
+		t.Fatalf("expected syntax help popover with exit:/if:/set: cheat sheet")
+	}
+
+	// 4. Open Scene Text Modal, save conditional prose & choice condition, and test 3 preview modes (normal / highlight / output)
+	_, _ = http.PostForm(ts.URL+"/api/action", url.Values{
+		"action": {"OpenSceneTextModal"},
+		"scene":  {startID},
+	})
+	_, _ = http.PostForm(ts.URL+"/api/action", url.Values{
+		"action":           {"SaveSceneTextModal"},
+		"scene_id":         {startID},
+		"name":             {"Zatopiona śluza"},
+		"scene_effects":    {"zaufanie += 1"},
+		"text":             {"if: zaufanie >= 2\nStrażnik patrzy z szacunkiem.\nelse:\nStrażnik patrzy podejrzliwie.\nendif:\nif: latarka\nSnop światła przebija wodę.\nendif:"},
+		"choice_count":     {"2"},
+		"choice_label_0":   {"Otwórz kratę"},
+		"choice_target_0":  {srv.ActiveBook.Scenes[1].ID},
+		"choice_cond_0":    {"latarka && zaufanie >= 1"},
+		"choice_effects_0": {"frakcja = rzeczni"},
+		"choice_label_1":   {"Wycofaj się"},
+		"choice_target_1":  {"END"},
+	})
+
+	// Switch to 'highlight' preview mode (2nd icon)
+	resp, _ = http.PostForm(ts.URL+"/api/action", url.Values{
+		"action": {"SetSceneTextPreviewMode"},
+		"mode":   {"highlight"},
+	})
+	body, _ = io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	html := string(body)
+	if !strings.Contains(html, `id="scene-test-vars-bar"`) || !strings.Contains(html, `id="scene-prose-preview-stage"`) || !strings.Contains(html, "prose-syn-brace") {
+		t.Fatalf("expected highlight preview mode to show #scene-test-vars-bar and highlighted syntax spans")
+	}
+
+	// Toggle test variable latarka=true and increment zaufanie to 2 in the live test bar
+	_, _ = http.PostForm(ts.URL+"/api/action", url.Values{
+		"action":   {"UpdateSceneTextTestVar"},
+		"var_name": {"latarka"},
+		"toggle":   {"true"},
+	})
+	_, _ = http.PostForm(ts.URL+"/api/action", url.Values{
+		"action":   {"UpdateSceneTextTestVar"},
+		"var_name": {"zaufanie"},
+		"delta":    {"2"},
+	})
+
+	// Switch to 'output' preview mode (3rd icon: tylko wynikowy tekst)
+	resp, _ = http.PostForm(ts.URL+"/api/action", url.Values{
+		"action": {"SetSceneTextPreviewMode"},
+		"mode":   {"output"},
+	})
+	body, _ = io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	html = string(body)
+	stageIdx := strings.Index(html, `id="scene-prose-preview-stage"`)
+	if stageIdx < 0 {
+		t.Fatalf("expected #scene-prose-preview-stage in output preview mode")
+	}
+	stageEnd := strings.Index(html[stageIdx:], "</div>")
+	stageHTML := html[stageIdx : stageIdx+stageEnd]
+	if !strings.Contains(stageHTML, "Strażnik patrzy z szacunkiem.") || !strings.Contains(stageHTML, "Snop światła przebija wodę.") || strings.Contains(stageHTML, "endif:") {
+		t.Fatalf("expected output preview stage to show only evaluated text without if:/endif: syntax, got:\n%s", stageHTML)
+	}
+	if strings.Contains(stageHTML, "<p class=\"scene-preview-para\">\n") {
+		t.Fatalf("expected .scene-preview-para to have zero leading newline/indentation inside <p>, got:\n%s", stageHTML)
+	}
+
+	// Clicking eye toggle again (SetSceneTextPreviewMode without mode) returns to editable mode, and ToggleSceneTestVarsPopover opens popup
+	resp, _ = http.PostForm(ts.URL+"/api/action", url.Values{
+		"action": {"SetSceneTextPreviewMode"},
+	})
+	body, _ = io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if strings.Contains(string(body), `id="scene-prose-preview-stage"`) {
+		t.Fatalf("expected clicking eye toggle again to return to normal editable mode")
+	}
+	resp, _ = http.PostForm(ts.URL+"/api/action", url.Values{
+		"action": {"ToggleSceneTestVarsPopover"},
+	})
+	body, _ = io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if !strings.Contains(string(body), `class="scene-test-vars-popover" id="scene-test-vars-bar"`) {
+		t.Fatalf("expected ToggleSceneTestVarsPopover to open .scene-test-vars-popover#scene-test-vars-bar")
+	}
+
+	// Verify Play mode (#view-player) evaluates if:/else:/endif: blocks using the exact same RenderSceneProseHTML pipeline
+	resp, _ = http.PostForm(ts.URL+"/api/action", url.Values{
+		"action": {"PlayFromScene"},
+		"scene":  {startID},
+	})
+	body, _ = io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	playHTML := string(body)
+	if !strings.Contains(playHTML, "Strażnik patrzy z szacunkiem.") || !strings.Contains(playHTML, "Snop światła przebija wodę.") || strings.Contains(playHTML, "endif:") || strings.Contains(playHTML, "else:") || strings.Contains(playHTML, "if: zaufanie") {
+		t.Fatalf("expected Play mode (#view-player) to render evaluated conditional prose without raw if:/else:/endif: lines, got:\n%s", playHTML)
+	}
+}
+
+func TestSeparatePlayerAndStudioBooksAndPlaybookUnpackWarning(t *testing.T) {
+	rootDir := t.TempDir()
+	booksDir := filepath.Join(rootDir, "books")
+	_ = os.MkdirAll(booksDir, 0755)
+
+	// 1. Create a book in the library to read (Book A) and pack a .playbook distribution archive (Book C)
+	bookA, err := book.CreateNewBook(booksDir, "Kroniki Czytnika", "Jan Czytelnik", false)
+	if err != nil {
+		t.Fatalf("CreateNewBook A failed: %v", err)
+	}
+	bookCSrc, err := book.CreateNewBook(t.TempDir(), "Zamknięty Tom", "Anna Twórczyni", false)
+	if err != nil {
+		t.Fatalf("CreateNewBook C failed: %v", err)
+	}
+	bookCSrc.License = "CC BY-NC-ND 4.0 — Zakaz modyfikacji komercyjnej"
+	if err := book.SaveBookMetadataToDisk(bookCSrc); err != nil {
+		t.Fatalf("SaveBookMetadataToDisk C failed: %v", err)
+	}
+	playbookPath := filepath.Join(booksDir, "zamkniety-tom.playbook")
+	if err := book.PackBookToZip(bookCSrc.RootPath, playbookPath); err != nil {
+		t.Fatalf("PackBookToZip C failed: %v", err)
+	}
+
+	srv := NewServer(rootDir, storyteller.AppFS)
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	// 2. Open Book A in library for reading (view=player) -> must NOT open Book A in Studio
+	rOpenA, err := http.PostForm(ts.URL+"/api/action", url.Values{
+		"action": {"OpenBook"},
+		"book":   {bookA.ID},
+		"view":   {"player"},
+	})
+	if err != nil {
+		t.Fatalf("OpenBook A failed: %v", err)
+	}
+	_ = rOpenA.Body.Close()
+	if srv.PlayerBook == nil || srv.PlayerBook.ID != bookA.ID {
+		t.Fatalf("expected PlayerBook=%q, got %+v", bookA.ID, srv.PlayerBook)
+	}
+	if srv.ActiveBook != nil {
+		t.Fatalf("expected Studio ActiveBook to remain nil after opening library book in player, got %+v", srv.ActiveBook)
+	}
+
+	// 3. Switch to Studio (view=editor): must show #editor-empty-state, NOT Book A, and must NOT render #editor-perf-overlay in prod
+	rEd, err := http.PostForm(ts.URL+"/api/action", url.Values{
+		"action": {"SwitchView"},
+		"view":   {"editor"},
+	})
+	if err != nil {
+		t.Fatalf("SwitchView editor failed: %v", err)
+	}
+	edBytes, _ := io.ReadAll(rEd.Body)
+	_ = rEd.Body.Close()
+	edHTML := string(edBytes)
+	if !strings.Contains(edHTML, `id="editor-empty-state"`) {
+		t.Fatalf("expected #editor-empty-state when switching to Studio with no Studio project open")
+	}
+	if strings.Contains(edHTML, `id="editor-perf-overlay"`) {
+		t.Fatalf("expected #editor-perf-overlay to be omitted in production mode")
+	}
+	if strings.Contains(edHTML, `id="editor-book-title"`) {
+		t.Fatalf("expected no #editor-book-title in Studio before a Studio project is opened")
+	}
+
+	// Verify production /app.js also strips M1 Max perf overlay
+	rJS, err := http.Get(ts.URL + "/app.js")
+	if err != nil {
+		t.Fatalf("GET /app.js failed: %v", err)
+	}
+	jsBytes, _ := io.ReadAll(rJS.Body)
+	_ = rJS.Body.Close()
+	if strings.Contains(string(jsBytes), "M1 Max (10c/32g)") {
+		t.Fatalf("expected production /app.js to strip M1 Max perf overlay")
+	}
+
+	// 4. Create Book B in Studio while Book A remains open in Player
+	rCreateB, err := http.PostForm(ts.URL+"/api/action", url.Values{
+		"action": {"CreateNewBook"},
+		"title":  {"Projekt Studio"},
+		"author": {"Piotr Redaktor"},
+	})
+	if err != nil {
+		t.Fatalf("CreateNewBook B failed: %v", err)
+	}
+	bBytes, _ := io.ReadAll(rCreateB.Body)
+	_ = rCreateB.Body.Close()
+	bHTML := string(bBytes)
+	if srv.ActiveBook == nil || srv.ActiveBook.Title != "Projekt Studio" {
+		t.Fatalf("expected Studio ActiveBook='Projekt Studio', got %+v", srv.ActiveBook)
+	}
+	if srv.PlayerBook == nil || srv.PlayerBook.ID != bookA.ID {
+		t.Fatalf("expected PlayerBook to remain Book A (%q) while editing Book B in Studio, got %+v", bookA.ID, srv.PlayerBook)
+	}
+	if !strings.Contains(bHTML, `id="tab-player"`) || !strings.Contains(bHTML, `data-hint="Kroniki Czytnika"`) || !strings.Contains(bHTML, `id="editor-book-title">Projekt Studio</span>`) {
+		t.Fatalf("expected topbar to show PlayerBook 'Kroniki Czytnika' and Studio toolbar to show 'Projekt Studio', got:\n%s", bHTML)
+	}
+
+	// 5. Save license in Book B settings and verify it persists in book.playtxt
+	rSaveSettings, err := http.PostForm(ts.URL+"/api/action", url.Values{
+		"action":  {"SaveBookSettings"},
+		"title":   {"Projekt Studio"},
+		"author":  {"Piotr Redaktor"},
+		"license": {"Wszelkie prawa zastrzeżone 2026"},
+	})
+	if err != nil {
+		t.Fatalf("SaveBookSettings failed: %v", err)
+	}
+	_ = rSaveSettings.Body.Close()
+	if srv.ActiveBook.License != "Wszelkie prawa zastrzeżone 2026" {
+		t.Fatalf("expected ActiveBook.License to be updated, got %q", srv.ActiveBook.License)
+	}
+
+	// 6. Attempt to open packed .playbook (Book C) in Studio -> must NOT open directly; must trigger UnpackPlaybookForStudio confirm modal with license warning
+	rOpenPacked, err := http.PostForm(ts.URL+"/api/action", url.Values{
+		"action": {"OpenStudioProject"},
+		"book":   {"zamkniety-tom"},
+	})
+	if err != nil {
+		t.Fatalf("OpenStudioProject on .playbook failed: %v", err)
+	}
+	packedBytes, _ := io.ReadAll(rOpenPacked.Body)
+	_ = rOpenPacked.Body.Close()
+	packedHTML := string(packedBytes)
+	if srv.ConfirmPendingAction != "UnpackPlaybookForStudio" {
+		t.Fatalf("expected ConfirmPendingAction='UnpackPlaybookForStudio', got %q", srv.ConfirmPendingAction)
+	}
+	if !strings.Contains(packedHTML, "CC BY-NC-ND 4.0") || !strings.Contains(packedHTML, "Anna Twórczyni") {
+		t.Fatalf("expected unpack confirmation modal to display author and license warning, got:\n%s", packedHTML)
+	}
+	if srv.ActiveBook.ID == "zamkniety-tom" {
+		t.Fatalf("expected packed .playbook not to be opened in Studio before confirmation")
+	}
+
+	// 7. Accept confirmation -> unpacks working copy into Studio while keeping PlayerBook on Book A
+	rAccept, err := http.PostForm(ts.URL+"/api/action", url.Values{
+		"action": {"ConfirmModalAccept"},
+	})
+	if err != nil {
+		t.Fatalf("ConfirmModalAccept failed: %v", err)
+	}
+	_ = rAccept.Body.Close()
+	if srv.ActiveBook == nil || srv.ActiveBook.IsPacked || srv.ActiveBook.Title != "Zamknięty Tom" {
+		t.Fatalf("expected unpacked working copy of 'Zamknięty Tom' in Studio, got %+v", srv.ActiveBook)
+	}
+	if srv.PlayerBook == nil || srv.PlayerBook.ID != bookA.ID {
+		t.Fatalf("expected PlayerBook to still be Book A (%q), got %+v", bookA.ID, srv.PlayerBook)
+	}
+}
+
+func TestSceneTextSlideOutPanelUnifiedChoicesAndSyntaxHoverTooltip(t *testing.T) {
+	rootDir := t.TempDir()
+	srv := NewServer(rootDir, storyteller.AppFS)
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	customDir := filepath.Join(t.TempDir(), "SlideOutBook")
+	_, err := http.PostForm(ts.URL+"/api/action", url.Values{
+		"action":    {"CreateNewBook"},
+		"title":     {"Rzeczny Patrol"},
+		"author":    {"Autor"},
+		"mode":      {"book"},
+		"save_path": {customDir},
+	})
+	if err != nil {
+		t.Fatalf("CreateNewBook failed: %v", err)
+	}
+
+	// 1. Open Variables Panel (#editor-variables-panel) and add enum & bool variables
+	_, _ = http.PostForm(ts.URL+"/api/action", url.Values{
+		"action": {"ToggleEditorVariablesPanel"},
+	})
+	_, _ = http.PostForm(ts.URL+"/api/action", url.Values{
+		"action": {"AddBookVariable"},
+		"kind":   {"enum"},
+	})
+	_, _ = http.PostForm(ts.URL+"/api/action", url.Values{
+		"action":    {"UpdateBookVariable"},
+		"var_idx":   {"0"},
+		"var_name":  {"stan_ducha"},
+		"var_value": {"spokojny, czujny, zbuntowany"},
+	})
+	_, _ = http.PostForm(ts.URL+"/api/action", url.Values{
+		"action": {"AddBookVariable"},
+		"kind":   {"bool"},
+	})
+	_, _ = http.PostForm(ts.URL+"/api/action", url.Values{
+		"action":   {"UpdateBookVariable"},
+		"var_idx":  {"1"},
+		"var_name": {"cwiczenia_z_wioslem"},
+	})
+
+	// 2. Open Scene Text Editor on a scene with NO branching choices (single transition) -> must still use .choice-triple-stack (exit:, text:, if:, set:) AND have .has-right-panel when variables panel is open
+	startID := srv.ActiveBook.StartSceneID
+	resp, err := http.PostForm(ts.URL+"/api/action", url.Values{
+		"action": {"OpenSceneTextModal"},
+		"scene":  {startID},
+	})
+	if err != nil {
+		t.Fatalf("OpenSceneTextModal failed: %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	html := string(body)
+	if !strings.Contains(html, `class="modal-backdrop scene-text-fullscreen-backdrop mode-half has-right-panel" id="modal-scene-text"`) {
+		t.Fatalf("expected #modal-scene-text to have .mode-half .has-right-panel when #editor-variables-panel is open, got:\n%s", html)
+	}
+	if !strings.Contains(html, `id="btn-collapse-scene-text"`) || !strings.Contains(html, `id="btn-expand-scene-text-full"`) || !strings.Contains(html, "choice-triple-stack") || !strings.Contains(html, `name="choice_target_0"`) || !strings.Contains(html, `name="choice_label_0"`) {
+		t.Fatalf("expected unified .choice-triple-stack template (exit:, text:, if:, set:) and 3-stage << / >> buttons, got:\n%s", html)
+	}
+	if strings.Contains(html, "choice-port-trigger") || strings.Contains(html, "modal-choice-lead-btn") {
+		t.Fatalf("expected no legacy choice-port-trigger or modal-choice-lead-btn in #modal-scene-text")
+	}
+
+	// 2b. Expand to full width (Stage 2: mode-full)
+	respFull, err := http.PostForm(ts.URL+"/api/action", url.Values{
+		"action": {"SetSceneTextWidthMode"},
+		"mode":   {"full"},
+	})
+	if err != nil {
+		t.Fatalf("SetSceneTextWidthMode failed: %v", err)
+	}
+	fullBody, _ := io.ReadAll(respFull.Body)
+	_ = respFull.Body.Close()
+	if !strings.Contains(string(fullBody), `class="modal-backdrop scene-text-fullscreen-backdrop mode-full has-right-panel" id="modal-scene-text"`) {
+		t.Fatalf("expected #modal-scene-text to switch to .mode-full on SetSceneTextWidthMode=full, got:\n%s", string(fullBody))
+	}
+
+	// 3. Save an invalid condition expression (stan_ducha = zbuntowany && cwiczenia_z_wioslem++) and verify hover popup data-hint explains the syntax error
+	resp, err = http.PostForm(ts.URL+"/api/action", url.Values{
+		"action":           {"SaveSceneTextModal"},
+		"scene_id":         {startID},
+		"name":             {"Odprawa przed wyprawą"},
+		"text":             {"Stało się więc.\nif: cwiczenia_z_wioslem\nKakakakaka\nendif:"},
+		"choice_target_0":  {srv.ActiveBook.Scenes[1].ID},
+		"choice_cond_0":    {"stan_ducha = zbuntowany && cwiczenia_z_wioslem++"},
+		"choice_effects_0": {"cwiczenia_z_wioslem = false stan_ducha = zbuntowany"},
+	})
+	if err != nil {
+		t.Fatalf("SaveSceneTextModal failed: %v", err)
+	}
+	body, _ = io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	html = string(body)
+	if !strings.Contains(html, "is-invalid") || !strings.Contains(html, "Błąd w if: operator") || !strings.Contains(html, "służy do zmiany wartości w polu set:") {
+		t.Fatalf("expected syntax error data-hint tooltip on invalid if: expression, got:\n%s", html)
+	}
+	if !strings.Contains(html, `id="modal-scene-prose-hl"`) || !strings.Contains(html, `prose-hl-seg is-syntax`) {
+		t.Fatalf("expected #modal-scene-prose-hl with .prose-hl-seg.is-syntax in #modal-scene-text, got:\n%s", html)
+	}
+	if strings.Contains(html, `Błąd typu: zmienna &#39;cwiczenia_z_wioslem&#39;`) {
+		t.Fatalf("expected space-separated set: clauses ('cwiczenia_z_wioslem = false stan_ducha = zbuntowany') to be valid, got:\n%s", html)
 	}
 }
 

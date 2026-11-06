@@ -136,11 +136,12 @@ section.view-panel#view-player
                                     span.choice-arrow "↺"
                             {else}
                                 {for ch in current_scene.choices}
-                                    button.choice-btn
+                                    button.choice-btn .choice-locked?: {ch.is_locked}
                                         type: button
                                         action: ChooseBranch
                                         data-choice-idx: "{ch.idx}"
                                         data-implicit-next: "{ch.is_implicit}"
+                                        disabled?: {ch.is_locked}
                                         @scene_choice_arrow
 
             .scroll-more-cue.hidden

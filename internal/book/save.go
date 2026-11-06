@@ -111,11 +111,20 @@ func LoadAppSettings(savesDir string) *AppSettings {
 				cfg.Theme = "dark"
 			}
 		case "display.preview_mode", ".preview_mode":
-			if val == "portrait" || val == "landscape" || val == "full" {
-				cfg.PreviewMode = val
+			switch val {
+			case "phone", "portrait":
+				cfg.PreviewMode = "portrait"
+			case "tablet", "ipad":
+				cfg.PreviewMode = "tablet"
+			case "landscape":
+				cfg.PreviewMode = "landscape"
+			case "full", "desktop":
+				cfg.PreviewMode = "full"
 			}
 		case "display.active_book", ".active_book":
 			cfg.ActiveBookID = SanitizeBookID(val)
+		case "display.editor_book", ".editor_book":
+			cfg.EditorBookID = SanitizeBookID(val)
 		case "display.active_view", ".active_view":
 			if val == "library" || val == "player" || val == "editor" {
 				cfg.ActiveView = val
@@ -125,6 +134,8 @@ func LoadAppSettings(savesDir string) *AppSettings {
 		case "display.ui_scale", ".ui_scale":
 			if strings.EqualFold(val, "large") {
 				cfg.UIScale = "large"
+			} else if strings.EqualFold(val, "zen") {
+				cfg.UIScale = "zen"
 			} else {
 				cfg.UIScale = "small"
 			}
@@ -206,13 +217,19 @@ func SaveAppSettings(savesDir string, cfg *AppSettings) error {
 	if cfg.Theme != "light" {
 		cfg.Theme = "dark"
 	}
-	if cfg.PreviewMode != "portrait" && cfg.PreviewMode != "landscape" {
+	switch cfg.PreviewMode {
+	case "phone":
+		cfg.PreviewMode = "portrait"
+	case "ipad":
+		cfg.PreviewMode = "tablet"
+	case "portrait", "tablet", "landscape":
+	default:
 		cfg.PreviewMode = "full"
 	}
 	if cfg.ActiveView != "player" && cfg.ActiveView != "editor" {
 		cfg.ActiveView = "library"
 	}
-	if cfg.UIScale != "large" {
+	if cfg.UIScale != "large" && cfg.UIScale != "zen" {
 		cfg.UIScale = "small"
 	}
 	if math.IsNaN(cfg.PlaybackSpeed) || math.IsInf(cfg.PlaybackSpeed, 0) || cfg.PlaybackSpeed < 0.5 || cfg.PlaybackSpeed > 3.0 {
@@ -230,6 +247,9 @@ func SaveAppSettings(savesDir string, cfg *AppSettings) error {
 	fmt.Fprintf(&sb, "imageless = %t\n", cfg.Imageless)
 	fmt.Fprintf(&sb, "ui_scale = %s\n", cfg.UIScale)
 	fmt.Fprintf(&sb, "active_book = %s\n", cfg.ActiveBookID)
+	if cfg.EditorBookID != "" {
+		fmt.Fprintf(&sb, "editor_book = %s\n", cfg.EditorBookID)
+	}
 	fmt.Fprintf(&sb, "active_view = %s\n\n", cfg.ActiveView)
 
 	sb.WriteString("[audio]\n")
@@ -378,6 +398,49 @@ func LoadSaveState(savesDir, bookID string, defaultStartSceneID string) *SaveSta
 		})
 	}
 
+	if r.Len() >= 4 {
+		var varCount uint32
+		if err := binary.Read(r, binary.LittleEndian, &varCount); err == nil && varCount <= 4096 {
+			if varCount > 0 {
+				st.Variables = make(map[string]string, varCount)
+			}
+			for i := uint32(0); i < varCount; i++ {
+				k, err1 := readLengthPrefixedString(r)
+				v, err2 := readLengthPrefixedString(r)
+				if err1 != nil || err2 != nil {
+					break
+				}
+				if k != "" {
+					st.Variables[k] = v
+				}
+			}
+		}
+	}
+	if r.Len() >= 4 {
+		var histVarSteps uint32
+		if err := binary.Read(r, binary.LittleEndian, &histVarSteps); err == nil && int(histVarSteps) <= len(st.History) {
+			for i := uint32(0); i < histVarSteps; i++ {
+				var stepVarCount uint32
+				if err := binary.Read(r, binary.LittleEndian, &stepVarCount); err != nil || stepVarCount > 4096 {
+					break
+				}
+				if stepVarCount > 0 {
+					st.History[i].Variables = make(map[string]string, stepVarCount)
+					for j := uint32(0); j < stepVarCount; j++ {
+						k, err1 := readLengthPrefixedString(r)
+						v, err2 := readLengthPrefixedString(r)
+						if err1 != nil || err2 != nil {
+							break
+						}
+						if k != "" {
+							st.History[i].Variables[k] = v
+						}
+					}
+				}
+			}
+		}
+	}
+
 	return st
 }
 
@@ -426,6 +489,12 @@ func WriteSaveState(savesDir string, state *SaveState) error {
 		writeLengthPrefixedString(&buf, SanitizePlainText(h.Chapter))
 		writeLengthPrefixedString(&buf, SanitizePlainText(h.ChoiceLabel))
 		writeLengthPrefixedString(&buf, SanitizePlainText(h.TargetSceneID))
+	}
+
+	writeVariablesMapBinary(&buf, state.Variables)
+	_ = binary.Write(&buf, binary.LittleEndian, uint32(len(state.History)))
+	for _, h := range state.History {
+		writeVariablesMapBinary(&buf, h.Variables)
 	}
 
 	target := saveFilePath(savesDir, state.BookID)
@@ -527,6 +596,25 @@ func DecodeLayoutBinary(raw []byte) map[string]NodePosition {
 		}
 	}
 	return out
+}
+
+func writeVariablesMapBinary(buf *bytes.Buffer, vars map[string]string) {
+	if len(vars) == 0 {
+		_ = binary.Write(buf, binary.LittleEndian, uint32(0))
+		return
+	}
+	keys := make([]string, 0, len(vars))
+	for k := range vars {
+		if k != "" {
+			keys = append(keys, k)
+		}
+	}
+	sort.Strings(keys)
+	_ = binary.Write(buf, binary.LittleEndian, uint32(len(keys)))
+	for _, k := range keys {
+		writeLengthPrefixedString(buf, k)
+		writeLengthPrefixedString(buf, vars[k])
+	}
 }
 
 func writeLengthPrefixedString(buf *bytes.Buffer, s string) {

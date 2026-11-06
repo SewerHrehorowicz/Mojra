@@ -44,7 +44,7 @@ WN. KORYTARZ WAGONU - NOC
 
 ŁUKASZ stoi przy oknie.
 `
-	ParseStoryFile(storyRaw, "akt_1.txt", b)
+	ParseStoryFile(storyRaw, "akt_1.playtxt", b)
 	FinalizeBook(b)
 
 	if len(b.Scenes) != 2 {
@@ -91,7 +91,7 @@ WN. KORYTARZ WAGONU - NOC
 	if !strings.Contains(serializedData, "mode: screenplay\n") || !strings.Contains(serializedData, "standard: pl\n") {
 		t.Fatalf("serialized data.txt missing mode/standard:\n%s", serializedData)
 	}
-	serializedStory := SerializeScenesForFile(b, "akt_1.txt")
+	serializedStory := SerializeScenesForFile(b, "akt_1.playtxt")
 	if !strings.Contains(serializedStory, "slugline: WN. PRZEDZIAŁ POCIĄGU - NOC\n") {
 		t.Fatalf("serialized story missing slugline:\n%s", serializedStory)
 	}
@@ -101,7 +101,7 @@ WN. KORYTARZ WAGONU - NOC
 
 	b2 := &Book{ID: "test-script-2"}
 	ParseDataFile(serializedData, b2)
-	ParseStoryFile(serializedStory, "akt_1.txt", b2)
+	ParseStoryFile(serializedStory, "akt_1.playtxt", b2)
 	FinalizeBook(b2)
 	if !b2.IsScreenplay() || len(b2.Scenes) != 2 || b2.Scenes[0].Slugline != sc1.Slugline || b2.Scenes[0].Synopsis != sc1.Synopsis {
 		t.Fatalf("round-trip failed: %+v", b2.Scenes[0])

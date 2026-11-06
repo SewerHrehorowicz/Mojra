@@ -1,5 +1,6 @@
 "use strict";
 
+/* @dev-only-start */
 // Set to false (or remove editor_perf.js from internal/tpl/bundle.go) to disable the perf overlay completely.
 const EDITOR_PERF_OVERLAY_ENABLED = true;
 
@@ -164,3 +165,4 @@ const LOWEND_ANDROID_MULTIPLIER = 6.0;
     };
   }
 })();
+/* @dev-only-end */

@@ -4,3 +4,10 @@ description: Mroczna, rozgałęziona opowieść o prostodusznym Krzysiu, który 
 narrated: false
 imageless: false
 start: warsztat
+enum: postawy = posluszny, zwatpienie, zbuntowany
+var: cwiczenia_z_wioslem = false
+var: wypil_gorzalke = false
+var: odkryta_prawda = false
+var: posluszenstwo = 1
+var: sumienie = 0
+var: stan_ducha = posluszny

@@ -3,6 +3,7 @@ aside.editor-context-panel#editor-context-panel .hidden?: {is_context_panel_hidd
         form.editor-context-form#editor-context-form .hidden?: {is_node_inspector_hidden}
             action: SaveScene
             data-context-scene-id: "{selected_node.id}"
+            data-book-vars: "{book_vars_spec}"
             input
                 type: hidden
                 name: scene_id
@@ -60,14 +61,35 @@ aside.editor-context-panel#editor-context-panel .hidden?: {is_context_panel_hidd
             .context-panel-section
                 .node-meta-fields
                     .node-meta-row
-                        span.node-meta-key "id:"
-                        input.node-meta-input
+                        span.node-meta-key "scene:"
+                        input.node-meta-input#context-scene-id-input
                             type: text
                             name: explicit_id
                             value: "{selected_node.explicit_id}"
-                            placeholder: "opcjonalne id (np. warsztat)"
+                            placeholder: "id sceny (np. warsztat)"
+                            spellcheck: "false"
+                            autocorrect: "off"
+                            autocapitalize: "off"
+                            autocomplete: "off"
                             disabled?: {is_history_preview}
                             readonly?: {is_history_preview}
+                    {if has_book_variables}
+                        .node-meta-row.node-meta-row-effects .is-empty-rule?: {!selected_node.has_effects}
+                            span.node-meta-key "set:"
+                            .syn-input-wrap .is-invalid?: {selected_node.is_effects_invalid}
+                                data-hint?: {selected_node.effects_error_hint}
+                                input.node-meta-input.syn-inner-input
+                                    type: text
+                                    name: scene_effects
+                                    value: "{selected_node.effects}"
+                                    placeholder: "odkryta_prawda = true; sumienie++"
+                                    spellcheck: "false"
+                                    autocorrect: "off"
+                                    autocapitalize: "off"
+                                    autocomplete: "off"
+                                    data-hint?: {selected_node.effects_error_hint}
+                                    disabled?: {is_history_preview}
+                                    readonly?: {is_history_preview}
                     {if is_screenplay_mode}
                         .node-meta-row
                             span.node-meta-key "scena:"
@@ -185,48 +207,119 @@ aside.editor-context-panel#editor-context-panel .hidden?: {is_context_panel_hidd
                         li {nw.text}
 
             .context-panel-section.context-choices-section
-                {if selected_node.has_choices}
-                    .context-choices-list
-                        {for pt in selected_node.ports}
-                            .context-choice-item
-                                {if not is_history_preview}
-                                    span.choice-drag-grip
-                                        data-choice-grip: "true"
-                                        data-choice-idx: "{pt.idx}"
-                                        svg.choice-grip-icon src: /icons/grip.svg
-                                input.node-choice-label
-                                    type: text
-                                    name: "choice_label_{pt.idx}"
+                .context-choices-list
+                    {for pt in selected_node.inspector_ports}
+                        .context-choice-item .is-rule-expanded?: {pt.is_rule_open} .has-active-rule?: {pt.has_rule}
+                            {if not is_history_preview}
+                                span.choice-drag-grip
+                                    data-choice-grip: "true"
                                     data-choice-idx: "{pt.idx}"
-                                    value: "{pt.raw_label}"
-                                    placeholder: "Tekst wyboru..."
-                                    disabled?: {is_history_preview}
-                                    readonly?: {is_history_preview}
-                                .custom-select.node-choice-select
-                                    input.custom-select-input
-                                        type: hidden
+                                    svg.choice-grip-icon src: /icons/grip.svg
+                            .choice-triple-stack
+                                .choice-triple-row.choice-triple-exit
+                                    span.choice-row-key "exit:"
+                                    input.choice-exit-input
+                                        type: text
                                         name: "choice_target_{pt.idx}"
-                                        value: "{pt.selected_value}"
-                                    button.custom-select-trigger.choice-port-trigger
-                                        type: button
-                                        data-select-toggle: "true"
-                                        data-hint: "{pt.selected_label}"
-                                        disabled?: {is_history_preview}
-                                        span.choice-port-icon .port-filled?: {pt.is_filled}
-                                    .custom-select-menu.hidden
-                                        {for opt in pt.target_options}
-                                            button.custom-select-option .active?: {opt.is_active}
-                                                type: button
-                                                data-select-value: "{opt.value}"
-                                                data-select-label: "{opt.short_label}"
-                                                {opt.label}
-                                {if not is_history_preview}
-                                    button.node-icon-btn.node-choice-btn.node-choice-remove
-                                        type: button
-                                        action: PromptRemoveChoice
-                                        data-scene: "{selected_node.id}"
                                         data-choice-idx: "{pt.idx}"
-                                        svg.choice-trash-icon src: /icons/trash.svg
+                                        value: "{pt.selected_value}"
+                                        placeholder: "cel (id lub END)"
+                                        spellcheck: "false"
+                                        autocorrect: "off"
+                                        autocapitalize: "off"
+                                        autocomplete: "off"
+                                        disabled?: {is_history_preview}
+                                        readonly?: {is_history_preview}
+                                .choice-triple-row.choice-triple-label
+                                    span.choice-row-key "text:"
+                                    textarea.node-meta-input.node-meta-textarea.node-choice-label
+                                        name: "choice_label_{pt.idx}"
+                                        data-choice-idx: "{pt.idx}"
+                                        rows: 1
+                                        placeholder: "Tekst wyboru..."
+                                        disabled?: {is_history_preview}
+                                        readonly?: {is_history_preview}
+                                        {pt.raw_label}
+                                {if pt.is_rule_open}
+                                    .choice-triple-row.choice-triple-cond .is-empty-rule?: {!pt.has_condition} .is-invalid?: {pt.is_cond_invalid}
+                                        data-hint?: {pt.cond_error_hint}
+                                        span.choice-row-key "if:"
+                                        input.choice-rule-input
+                                            type: text
+                                            name: "choice_cond_{pt.idx}"
+                                            data-choice-idx: "{pt.idx}"
+                                            value: "{pt.condition}"
+                                            placeholder: ""
+                                            spellcheck: "false"
+                                            autocorrect: "off"
+                                            autocapitalize: "off"
+                                            autocomplete: "off"
+                                            data-hint?: {pt.cond_error_hint}
+                                            disabled?: {is_history_preview}
+                                            readonly?: {is_history_preview}
+                                    .choice-triple-row.choice-triple-eff .is-empty-rule?: {!pt.has_effects} .is-invalid?: {pt.is_eff_invalid}
+                                        data-hint?: {pt.eff_error_hint}
+                                        span.choice-row-key "set:"
+                                        input.choice-rule-input
+                                            type: text
+                                            name: "choice_effects_{pt.idx}"
+                                            data-choice-idx: "{pt.idx}"
+                                            value: "{pt.effects}"
+                                            placeholder: ""
+                                            spellcheck: "false"
+                                            autocorrect: "off"
+                                            autocapitalize: "off"
+                                            autocomplete: "off"
+                                            data-hint?: {pt.eff_error_hint}
+                                            disabled?: {is_history_preview}
+                                            readonly?: {is_history_preview}
+                                {else}
+                                    input
+                                        type: hidden
+                                        name: "choice_cond_{pt.idx}"
+                                        value: "{pt.condition}"
+                                    input
+                                        type: hidden
+                                        name: "choice_effects_{pt.idx}"
+                                        value: "{pt.effects}"
+                            {if not is_history_preview}
+                                button.node-icon-btn.node-choice-btn.node-choice-remove
+                                    type: button
+                                    action: PromptRemoveChoice
+                                    data-scene: "{selected_node.id}"
+                                    data-choice-idx: "{pt.idx}"
+                                    svg.choice-trash-icon src: /icons/trash.svg
+                .syn-autocomplete-dropdown#inspector-syn-autocomplete-dropdown .hidden?: {!show_syntax_help_popover}
+                        {if show_syntax_help_popover}
+                            .syn-dropdown-help-box#syntax-help-popover
+                                .syntax-help-section
+                                    {for sh in syntax_help_cond_rows}
+                                        .syntax-help-row
+                                            span.syntax-help-code {sh.code}
+                                            span.syntax-help-desc {sh.desc}
+                        .syn-dropdown-list
+                            {for vsug in book_var_suggestions}
+                                button.syn-dropdown-item
+                                    type: button
+                                    data-syn-kind: "var"
+                                    data-syn-var-name: "{vsug.name}"
+                                    span.syn-dropdown-var-name {vsug.name}
+                                    span.syn-dropdown-var-meta {vsug.kind}
+                            {for esug in book_enum_suggestions}
+                                button.syn-dropdown-item.hidden
+                                    type: button
+                                    data-syn-kind: "enum_val"
+                                    data-syn-enum-var: "{esug.var_name}"
+                                    data-syn-var-name: "{esug.value}"
+                                    span.syn-dropdown-var-name {esug.value}
+                                    span.syn-dropdown-var-meta {esug.meta}
+                            {for tsug in book_target_suggestions}
+                                button.syn-dropdown-item.hidden
+                                    type: button
+                                    data-syn-kind: "target"
+                                    data-syn-target-value: "{tsug.value}"
+                                    span.syn-dropdown-var-name {tsug.value}
+                                    span.syn-dropdown-var-meta {tsug.meta}
                 {if not is_history_preview}
                     button.btn.btn-sm.node-add-choice-btn
                         type: button
@@ -307,7 +400,7 @@ aside.editor-context-panel#editor-context-panel .hidden?: {is_context_panel_hidd
                             span.breakdown-metric-label "Wyjścia"
                             span.breakdown-metric-value {selected_chapter.exit_count}
 
-    {if has_active_book}
+    {if has_editor_book}
         form.editor-book-form#editor-book-form .hidden?: {!book_settings_open}
             action: SaveBookSettings
             .history-panel-header
@@ -321,8 +414,8 @@ aside.editor-context-panel#editor-context-panel .hidden?: {is_context_panel_hidd
                     input.node-inline-title#book-settings-title-input
                         type: text
                         name: title
-                        value: "{active_book_title}"
-                        data-old-title: "{active_book_title}"
+                        value: "{editor_book_title}"
+                        data-old-title: "{editor_book_title}"
                         placeholder: "{editor_title_placeholder}"
                         disabled?: {is_history_preview}
                         readonly?: {is_history_preview}
@@ -394,14 +487,14 @@ aside.editor-context-panel#editor-context-panel .hidden?: {is_context_panel_hidd
                                     action: ToggleBookNarrated
                                     data-hint: "{book_narrated_label}"
                                     disabled?: {is_history_preview}
-                                    span.custom-select-label {book_narrated_short_label}
                                     span.toggle-right
+                                        span.toggle-switch
+                                            span.toggle-thumb
                                         {if book_narrated}
                                             svg.action-icon src: /icons/mic.svg
                                         {else}
                                             svg.action-icon src: /icons/mic-off.svg
-                                        span.toggle-switch
-                                            span.toggle-thumb
+                                    span.custom-select-label {book_narrated_short_label}
                             .node-meta-row
                                 span.node-meta-key "obrazy:"
                                 button.book-setting-toggle-btn .active?: {!book_imageless} .is-disabled?: {is_history_preview}
@@ -409,14 +502,14 @@ aside.editor-context-panel#editor-context-panel .hidden?: {is_context_panel_hidd
                                     action: ToggleBookImageless
                                     data-hint: "{book_imageless_label}"
                                     disabled?: {is_history_preview}
-                                    span.custom-select-label {book_imageless_short_label}
                                     span.toggle-right
+                                        span.toggle-switch
+                                            span.toggle-thumb
                                         {if book_imageless}
                                             svg.action-icon src: /icons/image-off.svg
                                         {else}
                                             svg.action-icon src: /icons/image.svg
-                                        span.toggle-switch
-                                            span.toggle-thumb
+                                    span.custom-select-label {book_imageless_short_label}
                         .node-meta-row
                             span.node-meta-key "autor:"
                             input.node-meta-input
@@ -424,6 +517,15 @@ aside.editor-context-panel#editor-context-panel .hidden?: {is_context_panel_hidd
                                 name: author
                                 value: "{active_book_author}"
                                 placeholder: "{editor_author_placeholder}"
+                                disabled?: {is_history_preview}
+                                readonly?: {is_history_preview}
+                        .node-meta-row
+                            span.node-meta-key "licencja:"
+                            input.node-meta-input#book-settings-license-input
+                                type: text
+                                name: license
+                                value: "{active_book_license}"
+                                placeholder: "Wszelkie prawa zastrzeżone"
                                 disabled?: {is_history_preview}
                                 readonly?: {is_history_preview}
                         .node-meta-row.node-meta-row-textarea
@@ -445,11 +547,11 @@ aside.editor-context-panel#editor-context-panel .hidden?: {is_context_panel_hidd
                                     placeholder: "{default_new_book_dir}"
                                     readonly: true
                                 {if not is_history_preview}
-                                    button.node-icon-btn.node-media-add-btn
+                                    button.node-icon-btn.node-folder-btn
                                         type: button
                                         action: BrowseBookSaveFolder
                                         data-hint: "Zmień katalog projektu"
-                                        svg.media-plus-icon src: /icons/folder.svg
+                                        svg.folder-browse-icon src: /icons/folder.svg
                         .node-meta-row
                             span.node-meta-key "eksport:"
                             .node-media-picker-row
@@ -461,11 +563,11 @@ aside.editor-context-panel#editor-context-panel .hidden?: {is_context_panel_hidd
                                     disabled?: {is_history_preview}
                                     readonly?: {is_history_preview}
                                 {if not is_history_preview}
-                                    button.node-icon-btn.node-media-add-btn
+                                    button.node-icon-btn.node-folder-btn
                                         type: button
                                         action: BrowseBookExportFolder
                                         data-hint: "Zmień katalog eksportu"
-                                        svg.media-plus-icon src: /icons/folder.svg
+                                        svg.folder-browse-icon src: /icons/folder.svg
 
     .editor-multi-panel.hidden#editor-multi-panel
         .context-panel-section

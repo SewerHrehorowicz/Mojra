@@ -1,0 +1,480 @@
+*
+  box-sizing border-box
+  margin 0
+  padding 0
+  border-radius 0 !important
+
+html, body
+  width 100%
+  height 100%
+  background --bg-obsidian
+  color --text-primary
+  font-family --font-sans, -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif
+  -webkit-font-smoothing antialiased
+  -moz-osx-font-smoothing grayscale
+  overflow hidden
+  user-select none
+
+.stage
+  position relative
+  width 100vw
+  height 100vh
+  display flex
+  flex-direction column
+  align-items center
+  justify-content center
+  padding 24px
+  background-color --bg-obsidian
+  background-image radial-gradient(circle at 50% 48%, rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 0.35) 45%, rgba(0, 0, 0, 0.88) 72%, rgba(0, 0, 0, 1) 92%), linear-gradient(to right, #151515 1px, transparent 1px), linear-gradient(to bottom, #151515 1px, transparent 1px)
+  background-size 100% 100%, 24px 24px, 24px 24px
+  background-position center center
+
+.loom-canvas
+  position absolute
+  inset 0
+  width 100%
+  height 100%
+  pointer-events none
+  z-index 1
+
+.hero
+  position relative
+  z-index 2
+  display flex
+  flex-direction column
+  align-items center
+  text-align center
+  transform translateY(-12px)
+  transition opacity 0.28s ease, transform 0.28s ease
+
+body.wasm-open .hero, body.beta-open .hero
+  opacity 0
+  pointer-events none
+  transform translateY(-22px) scale(0.985)
+
+.brand-lockup
+  display inline-flex
+  align-items center
+  justify-content center
+  margin-bottom 30px
+
+.brand-logo-svg
+  width 244px
+  height 66px
+  display block
+  color --text-primary
+
+.brand-subtitle
+  font-family --font-sans, sans-serif
+  font-size 11px
+  font-weight 500
+  letter-spacing 4.4px
+  color #787878
+  text-transform uppercase
+  margin-bottom 34px
+
+.brand-subtitle .plus
+  color #3d3d3d
+  margin 0 8px
+
+.hero-divider
+  width 36px
+  height 1px
+  background #292929
+  margin-bottom 32px
+
+.tagline
+  font-family --font-serif, Georgia, "Times New Roman", serif
+  font-size 25px
+  font-weight 400
+  letter-spacing 0.4px
+  line-height 1.35
+  color --text-primary
+  margin-bottom 14px
+
+.description
+  font-family --font-sans, sans-serif
+  font-size 14.5px
+  font-weight 300
+  letter-spacing 0.4px
+  line-height 1.75
+  color #808080
+  margin-bottom 0px
+  max-width 640px
+
+.description.last
+  margin-bottom 48px
+
+@keyframes playbook-idle-pulse
+  0%, 58%, 100%
+    transform scale(1)
+    filter drop-shadow(0 0 0 rgba(255, 255, 255, 0))
+    opacity 0.88
+  70%
+    transform scale(1.08)
+    filter drop-shadow(0 0 14px rgba(255, 255, 255, 0.38))
+    opacity 1
+  79%
+    transform scale(1.02)
+    filter drop-shadow(0 0 6px rgba(255, 255, 255, 0.16))
+    opacity 0.94
+  88%
+    transform scale(1.06)
+    filter drop-shadow(0 0 11px rgba(255, 255, 255, 0.28))
+    opacity 1
+
+.playbook-trigger
+  appearance none
+  background transparent
+  border none
+  padding 8px
+  margin-bottom 36px
+  cursor pointer
+  color --text-primary
+  display inline-flex
+  align-items center
+  justify-content center
+  animation playbook-idle-pulse 4.2s cubic-bezier(0.22, 1, 0.36, 1) infinite
+  transition transform 0.22s cubic-bezier(0.16, 1, 0.3, 1), filter 0.22s ease, opacity 0.22s ease
+
+.playbook-trigger svg
+  width 64px
+  height 64px
+  display block
+
+.playbook-trigger:hover
+  animation none
+  opacity 1
+  transform translateY(-2px) scale(1.06)
+  filter drop-shadow(0 0 14px rgba(255, 255, 255, 0.36))
+
+.playbook-trigger:active
+  transform translateY(0) scale(0.96)
+
+.playbook-trigger:focus-visible
+  outline 1px solid --border-strong
+  outline-offset 6px
+
+.beta-trigger
+  position relative
+  appearance none
+  background transparent
+  border none
+  padding 10px 20px
+  font-family --font-sans, sans-serif
+  font-size 10px
+  font-weight 600
+  letter-spacing 2.8px
+  color #888888
+  cursor pointer
+  transition color 0.2s ease, background 0.2s ease
+
+.beta-trigger .dot
+  color #383838
+  margin 0 8px
+
+.beta-trigger .accent
+  color --text-primary
+
+.beta-trigger::before, .beta-trigger::after, .beta-trigger span.corners::before, .beta-trigger span.corners::after
+  content ""
+  position absolute
+  width 6px
+  height 6px
+  border-color #484848
+  border-style solid
+  transition border-color 0.2s ease, width 0.2s ease, height 0.2s ease
+
+.beta-trigger::before
+  top 0
+  left 0
+  border-width 1px 0 0 1px
+
+.beta-trigger::after
+  top 0
+  right 0
+  border-width 1px 1px 0 0
+
+.beta-trigger span.corners::before
+  bottom 0
+  left 0
+  border-width 0 0 1px 1px
+
+.beta-trigger span.corners::after
+  bottom 0
+  right 0
+  border-width 0 1px 1px 0
+
+.beta-trigger:hover
+  color --text-primary
+  background rgba(255, 255, 255, 0.03)
+
+.beta-trigger:hover::before, .beta-trigger:hover::after, .beta-trigger:hover span.corners::before, .beta-trigger:hover span.corners::after
+  border-color --text-primary
+  width 8px
+  height 8px
+
+.status-footer
+  position fixed
+  bottom 42px
+  left 50%
+  transform translateX(-50%)
+  z-index 2
+  padding 10px 22px
+  font-size 10px
+  font-weight 600
+  letter-spacing 3.2px
+  color #555555
+  white-space nowrap
+  pointer-events none
+
+.status-footer::before, .status-footer::after, .status-footer span.corners::before, .status-footer span.corners::after
+  content ""
+  position absolute
+  width 6px
+  height 6px
+  border-color #383838
+  border-style solid
+
+.status-footer::before
+  top 0
+  left 0
+  border-width 1px 0 0 1px
+
+.status-footer::after
+  top 0
+  right 0
+  border-width 1px 1px 0 0
+
+.status-footer span.corners::before
+  bottom 0
+  left 0
+  border-width 0 0 1px 1px
+
+.status-footer span.corners::after
+  bottom 0
+  right 0
+  border-width 0 1px 1px 0
+
+.status-footer .dot
+  color #303030
+  margin 0 8px
+
+.status-footer .soon
+  color #a8a8a8
+
+.wasm-overlay, .beta-overlay
+  position fixed
+  inset 0
+  display flex
+  align-items center
+  justify-content center
+  padding 48px
+  background rgba(0, 0, 0, 0.88)
+  opacity 0
+  pointer-events none
+  transition opacity 0.25s ease
+  z-index 50
+
+body.wasm-open .wasm-overlay, body.beta-open .beta-overlay
+  opacity 1
+  pointer-events auto
+
+.wasm-window
+  width min(1080px, 100%)
+  height min(680px, calc(100vh - 120px))
+  background --bg-obsidian
+  border 1px solid --border-subtle
+  display grid
+  grid-template-rows 36px 1fr
+
+.wasm-topbar, .beta-header
+  display flex
+  align-items center
+  justify-content space-between
+  padding 0 12px
+  height 36px
+  border-bottom 1px solid --border-subtle
+  background #050505
+
+.wasm-topbar-left, .beta-header-left
+  display flex
+  align-items center
+  gap 8px
+  font-size 10.5px
+  font-weight 600
+  letter-spacing 1.8px
+  color #888888
+
+.wasm-topbar-left svg, .beta-header-left svg
+  width 15px
+  height 15px
+  color --text-primary
+
+.wasm-close-btn
+  appearance none
+  background transparent
+  border none
+  color #808080
+  width 24px
+  height 24px
+  display inline-flex
+  align-items center
+  justify-content center
+  cursor pointer
+
+.wasm-close-btn:hover
+  color --text-primary
+
+.wasm-close-btn svg
+  width 15px
+  height 15px
+
+.wasm-viewport
+  display flex
+  flex-direction column
+  align-items center
+  justify-content center
+  gap 18px
+  padding 24px
+  text-align center
+  background-image linear-gradient(to right, #0d0d0d 1px, transparent 1px), linear-gradient(to bottom, #0d0d0d 1px, transparent 1px)
+  background-size 24px 24px
+
+.wasm-viewport svg
+  width 44px
+  height 44px
+  color --text-primary
+  opacity 0.9
+
+.wasm-status-title
+  font-family --font-serif, Georgia, serif
+  font-size 18px
+  font-weight 400
+  color --text-primary
+
+.wasm-status-code
+  font-family "SF Mono", Menlo, Consolas, monospace
+  font-size 11px
+  letter-spacing 2px
+  color #666666
+
+.beta-modal
+  width min(460px, 100%)
+  background --bg-obsidian
+  border 1px solid --border-subtle
+  user-select text
+
+.beta-form
+  display flex
+  flex-direction column
+  gap 24px
+  padding 28px 24px 24px
+
+.beta-intro
+  font-family --font-serif, Georgia, serif
+  font-size 15px
+  line-height 1.5
+  color #d0d0d0
+
+.beta-field
+  display flex
+  flex-direction column
+  gap 8px
+
+.beta-label
+  font-size 9.5px
+  font-weight 700
+  letter-spacing 2px
+  color #787878
+
+.beta-input, .beta-textarea
+  width 100%
+  background transparent
+  border none
+  border-bottom 1px solid --border-strong
+  padding 8px 0
+  color --text-primary
+  font-family --font-sans, sans-serif
+  font-size 14px
+  line-height 1.5
+  outline none
+  transition border-color 0.18s ease
+
+.beta-input::placeholder, .beta-textarea::placeholder
+  color #444444
+
+.beta-input:focus, .beta-textarea:focus
+  border-bottom-color --text-primary
+
+.beta-textarea
+  overflow hidden !important
+  resize none !important
+  min-height 34px
+
+.beta-rodo
+  font-size 11px
+  line-height 1.5
+  color #5c5c5c
+
+.beta-actions
+  display flex
+  justify-content flex-end
+  padding-top 4px
+
+.beta-submit
+  position relative
+  appearance none
+  background transparent
+  border none
+  padding 10px 22px
+  font-family --font-sans, sans-serif
+  font-size 10.5px
+  font-weight 700
+  letter-spacing 2.4px
+  color --text-primary
+  cursor pointer
+  transition background 0.2s ease
+
+.beta-submit::before, .beta-submit::after, .beta-submit span.corners::before, .beta-submit span.corners::after
+  content ""
+  position absolute
+  width 6px
+  height 6px
+  border-color --text-primary
+  border-style solid
+
+.beta-submit::before
+  top 0
+  left 0
+  border-width 1px 0 0 1px
+
+.beta-submit::after
+  top 0
+  right 0
+  border-width 1px 1px 0 0
+
+.beta-submit span.corners::before
+  bottom 0
+  left 0
+  border-width 0 0 1px 1px
+
+.beta-submit span.corners::after
+  bottom 0
+  right 0
+  border-width 0 1px 1px 0
+
+.beta-submit:hover
+  background rgba(255, 255, 255, 0.06)
+
+@media (max-width: 640px)
+  .brand-logo-svg
+    width 196px
+    height 53px
+  .tagline
+    font-size 21px
+  .description
+    font-size 13.5px
+    margin-bottom 36px
+  .wasm-overlay, .beta-overlay
+    padding 16px

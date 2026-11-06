@@ -110,6 +110,7 @@ func (s *Server) setChapterStartScene(r *http.Request) string {
 		s.SelectedChapter = ch.Name
 		s.BookSettingsOpen = false
 		s.EditorBreakdownPanelOpen = false
+		s.EditorVariablesPanelOpen = false
 		s.EditorHistoryPanelOpen = false
 		s.EditorHelpModalOpen = false
 		if b.IsScreenplay() {

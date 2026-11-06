@@ -149,6 +149,14 @@ func TestParseBuildArgs(t *testing.T) {
 		t.Fatalf("unexpected platforms for -y --yes --macos: %v", optsYes.Platforms)
 	}
 
+	optsPreview, err := parseBuildArgs([]string{"--macos", "--preview"})
+	if err != nil {
+		t.Fatalf("parseBuildArgs(--macos --preview) failed: %v", err)
+	}
+	if !optsPreview.Preview || len(optsPreview.Platforms) != 1 || optsPreview.Platforms[0] != "darwin" {
+		t.Fatalf("expected Preview=true and darwin platform for --macos --preview, got %+v", optsPreview)
+	}
+
 	if _, err := parseBuildArgs([]string{"--platform", "solaris"}); err == nil {
 		t.Fatalf("expected error for unsupported platform")
 	}
@@ -257,11 +265,11 @@ func TestPackageBooksForDistPacksOnlyStbook(t *testing.T) {
 	if err := os.MkdirAll(sampleSrc, 0755); err != nil {
 		t.Fatalf("MkdirAll failed: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(sampleSrc, "data.txt"), []byte("title: Nie bój się policji rzecznej\nstart: s1\n"), 0644); err != nil {
-		t.Fatalf("WriteFile data.txt failed: %v", err)
+	if err := os.WriteFile(filepath.Join(sampleSrc, "book.playtxt"), []byte("title: Nie bój się policji rzecznej\nstart: s1\n"), 0644); err != nil {
+		t.Fatalf("WriteFile book.playtxt failed: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(sampleSrc, "story.txt"), []byte("scene: Scena 1\nid: s1\nend: true\nTreść.\n"), 0644); err != nil {
-		t.Fatalf("WriteFile story.txt failed: %v", err)
+	if err := os.WriteFile(filepath.Join(sampleSrc, "story.playtxt"), []byte("scene: Scena 1\nid: s1\nend: true\nTreść.\n"), 0644); err != nil {
+		t.Fatalf("WriteFile story.playtxt failed: %v", err)
 	}
 
 	if err := packageBooksForDist(srcBooks, dstBooks); err != nil {
@@ -291,11 +299,11 @@ func TestResolveDistRuntimeDirNeverReturnsRepoRoot(t *testing.T) {
 	if err := os.MkdirAll(sampleSrc, 0755); err != nil {
 		t.Fatalf("MkdirAll failed: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(sampleSrc, "data.txt"), []byte("title: Test\nstart: s1\n"), 0644); err != nil {
-		t.Fatalf("WriteFile data.txt failed: %v", err)
+	if err := os.WriteFile(filepath.Join(sampleSrc, "book.playtxt"), []byte("title: Test\nstart: s1\n"), 0644); err != nil {
+		t.Fatalf("WriteFile book.playtxt failed: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(sampleSrc, "story.txt"), []byte("scene: Scena 1\nid: s1\nend: true\nTreść.\n"), 0644); err != nil {
-		t.Fatalf("WriteFile story.txt failed: %v", err)
+	if err := os.WriteFile(filepath.Join(sampleSrc, "story.playtxt"), []byte("scene: Scena 1\nid: s1\nend: true\nTreść.\n"), 0644); err != nil {
+		t.Fatalf("WriteFile story.playtxt failed: %v", err)
 	}
 
 	resolved := resolveDistRuntimeDir(fakeRepo)

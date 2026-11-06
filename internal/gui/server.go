@@ -20,6 +20,7 @@ import (
 // ModalState groups all active modal/overlay state for the Server while keeping promoted fields accessible.
 type ModalState struct {
 	SceneTextModalID           string
+	SceneTextModalWidthMode    string
 	SceneTextModalSettingsOpen bool
 	QRModalOpen                bool
 	NewBookModalOpen           bool
@@ -34,10 +35,17 @@ type ModalState struct {
 	ExportModalFormat          string
 	ExportModalDir             string
 	AddBookModalOpen           bool
+	StudioProjectModalOpen     bool
 	EditorHelpModalOpen        bool
 	EditorHistoryPanelOpen     bool
 	EditorBreakdownPanelOpen   bool
+	EditorVariablesPanelOpen   bool
 	BookSettingsOpen           bool
+	ChoiceRulesOpen            map[string]bool
+	SyntaxHelpPopoverOpen      bool
+	SceneTextPreviewMode       string
+	SceneTestVarsPopoverOpen   bool
+	SceneTextTestVars          map[string]string
 	ConfirmTitle               string
 	ConfirmMessage             string
 	ConfirmPendingAction       string
@@ -52,6 +60,7 @@ type historyCacheState struct {
 	PreviewRevisionID    string
 	PreviewRevisionLabel string
 	LiveBook             *book.Book
+	LivePlayerBook       *book.Book
 	LiveSave             *book.SaveState
 	LiveSelectedSceneID  string
 }
@@ -83,6 +92,7 @@ type Server struct {
 
 	// Server-side application state (persisted in saves/settings.ini and saves/<book>.sav)
 	Settings          *book.AppSettings
+	PlayerBook        *book.Book
 	ActiveBook        *book.Book
 	Save              *book.SaveState
 	HistoryRevealed   bool
@@ -111,12 +121,16 @@ func (s *Server) closeAllModals() {
 	s.ExportModalFormat = ""
 	s.ExportModalDir = ""
 	s.AddBookModalOpen = false
+	s.StudioProjectModalOpen = false
 	s.ConfirmPendingAction = ""
 	s.ConfirmPendingParam = ""
 }
 
 func (s *Server) loadBooks() ([]*book.Book, error) {
 	if s.StandaloneMode {
+		if s.PlayerBook != nil {
+			return []*book.Book{s.PlayerBook}, nil
+		}
 		if s.ActiveBook != nil {
 			return []*book.Book{s.ActiveBook}, nil
 		}
@@ -197,6 +211,7 @@ func (s *Server) ensureTemplatesLoaded() {
 			delete(s.Templates, "editor_context_panel")
 			delete(s.Templates, "editor_history_panel")
 			delete(s.Templates, "editor_breakdown_panel")
+			delete(s.Templates, "editor_variables_panel")
 		}
 		if (!s.DevMode || s.StandaloneMode) && s.Templates != nil {
 			tpl.StripDevNodesFromTemplates(s.Templates)
@@ -266,12 +281,17 @@ func NewServerWithOptions(rootDir string, embeddedFS fs.FS, devMode bool) *Serve
 
 	if settings.ActiveBookID != "" {
 		if b, err := s.findBookByID(settings.ActiveBookID); err == nil && b != nil {
-			s.setActiveBook(b)
+			s.setPlayerBook(b)
 		}
 	}
-	if s.ActiveBook == nil {
+	if s.PlayerBook == nil {
 		if books, err := s.loadBooks(); err == nil && len(books) > 0 {
-			s.setActiveBook(books[0])
+			s.setPlayerBook(books[0])
+		}
+	}
+	if settings.EditorBookID != "" {
+		if b, err := s.findBookByID(settings.EditorBookID); err == nil && b != nil && !b.IsPacked {
+			s.setActiveBook(b)
 		}
 	}
 
@@ -416,10 +436,39 @@ func (s *Server) saveAppSettings() error {
 	return book.SaveAppSettings(s.SavesDir, s.Settings)
 }
 
+func (s *Server) setPlayerBook(b *book.Book) {
+	if s.isHistoryPreview() {
+		s.exitHistoryPreview()
+	}
+	s.PlayerBook = b
+	if b == nil {
+		if s.Settings != nil {
+			s.Settings.ActiveBookID = ""
+		}
+		s.Save = nil
+		s.HistoryRevealed = false
+		s.FocusedHistoryIdx = -1
+		return
+	}
+	if s.Settings != nil {
+		s.Settings.ActiveBookID = b.ID
+	}
+	s.Save = book.LoadSaveState(s.SavesDir, b.ID, b.StartSceneID)
+	if s.findPlayerScene(s.Save.CurrentSceneID) == nil && len(b.Scenes) > 0 {
+		s.Save.CurrentSceneID = b.StartSceneID
+		if s.findPlayerScene(s.Save.CurrentSceneID) == nil {
+			s.Save.CurrentSceneID = b.Scenes[0].ID
+		}
+	}
+	s.HistoryRevealed = false
+	s.FocusedHistoryIdx = -1
+}
+
 func (s *Server) setActiveBook(b *book.Book) {
 	s.PreviewRevisionID = ""
 	s.PreviewRevisionLabel = ""
 	s.LiveBook = nil
+	s.LivePlayerBook = nil
 	s.LiveSave = nil
 	s.LiveSelectedSceneID = ""
 	if b != nil && s.Settings != nil && strings.TrimSpace(b.ExportDir) == "" {
@@ -427,43 +476,54 @@ func (s *Server) setActiveBook(b *book.Book) {
 	}
 	s.ActiveBook = b
 	s.invalidateHistoryCache()
-	s.Settings.ActiveBookID = b.ID
-	s.Save = book.LoadSaveState(s.SavesDir, b.ID, b.StartSceneID)
-	if s.findScene(s.Save.CurrentSceneID) == nil && len(b.Scenes) > 0 {
-		s.Save.CurrentSceneID = b.StartSceneID
-		if s.findScene(s.Save.CurrentSceneID) == nil {
-			s.Save.CurrentSceneID = b.Scenes[0].ID
+	if b == nil {
+		if s.Settings != nil {
+			s.Settings.EditorBookID = ""
 		}
+		s.EditorHistoryPanelOpen = false
+		s.EditorBreakdownPanelOpen = false
+		s.BookSettingsOpen = false
+		s.SelectedChapter = ""
+		s.SelectedSceneID = ""
+		return
 	}
-	s.HistoryRevealed = false
-	s.FocusedHistoryIdx = -1
+	if s.Settings != nil {
+		s.Settings.EditorBookID = b.ID
+	}
 	s.EditorHistoryPanelOpen = false
 	s.EditorBreakdownPanelOpen = false
 	s.BookSettingsOpen = false
 	s.SelectedChapter = ""
 	if len(b.Scenes) > 0 {
-		s.SelectedSceneID = s.Save.CurrentSceneID
+		s.SelectedSceneID = b.StartSceneID
 		if s.findScene(s.SelectedSceneID) == nil {
 			s.SelectedSceneID = b.Scenes[0].ID
 		}
+	} else {
+		s.SelectedSceneID = ""
+	}
+	if s.StandaloneMode || s.PlayerBook == nil {
+		s.setPlayerBook(b)
+	} else if s.PlayerBook.ID == b.ID {
+		s.PlayerBook = b
 	}
 }
 
 func (s *Server) currentScene() *book.Scene {
-	if s.ActiveBook == nil || len(s.ActiveBook.Scenes) == 0 {
+	if s.PlayerBook == nil || len(s.PlayerBook.Scenes) == 0 {
 		return nil
 	}
 	if s.Save != nil {
-		if sc := s.findScene(s.Save.CurrentSceneID); sc != nil {
+		if sc := s.findPlayerScene(s.Save.CurrentSceneID); sc != nil {
 			return sc
 		}
 	}
-	if s.ActiveBook.StartSceneID != "" {
-		if sc := s.findScene(s.ActiveBook.StartSceneID); sc != nil {
+	if s.PlayerBook.StartSceneID != "" {
+		if sc := s.findPlayerScene(s.PlayerBook.StartSceneID); sc != nil {
 			return sc
 		}
 	}
-	return s.ActiveBook.Scenes[0]
+	return s.PlayerBook.Scenes[0]
 }
 
 func (s *Server) currentAudioTime() float64 {
@@ -473,8 +533,19 @@ func (s *Server) currentAudioTime() float64 {
 	return 0
 }
 
+func (s *Server) contextBookForTopbar() *book.Book {
+	if !s.StandaloneMode && s.Settings != nil && s.Settings.ActiveView == "editor" && s.ActiveBook != nil {
+		return s.ActiveBook
+	}
+	if s.PlayerBook != nil {
+		return s.PlayerBook
+	}
+	return s.ActiveBook
+}
+
 func (s *Server) isBookImageless() bool {
-	return s.ActiveBook != nil && (s.ActiveBook.Imageless || s.ActiveBook.IsScreenplay())
+	b := s.contextBookForTopbar()
+	return b != nil && (b.Imageless || b.IsScreenplay())
 }
 
 func (s *Server) isEffectiveImageless() bool {
@@ -484,32 +555,40 @@ func (s *Server) isEffectiveImageless() bool {
 	return s.Settings != nil && s.Settings.Imageless
 }
 
-func (s *Server) findScene(sceneID string) *book.Scene {
-	if s.ActiveBook == nil {
+func findSceneInBook(b *book.Book, sceneID string) *book.Scene {
+	if b == nil {
 		return nil
 	}
-	for _, sc := range s.ActiveBook.Scenes {
+	for _, sc := range b.Scenes {
 		if sc.ID == sceneID {
 			return sc
 		}
 	}
-	for _, sc := range s.ActiveBook.Scenes {
+	for _, sc := range b.Scenes {
 		if strings.EqualFold(sc.ID, sceneID) || (sc.ExplicitID != "" && strings.EqualFold(sc.ExplicitID, sceneID)) {
 			return sc
 		}
 	}
 	normKey := book.NormalizeLookupKey(sceneID)
-	for _, sc := range s.ActiveBook.Scenes {
+	for _, sc := range b.Scenes {
 		if sc.Name != "" && (strings.EqualFold(sc.Name, sceneID) || (normKey != "" && book.NormalizeLookupKey(sc.Name) == normKey)) {
 			return sc
 		}
 	}
-	for i, sc := range s.ActiveBook.Scenes {
+	for i, sc := range b.Scenes {
 		if fmt.Sprintf("s%d", i+1) == sceneID {
 			return sc
 		}
 	}
 	return nil
+}
+
+func (s *Server) findScene(sceneID string) *book.Scene {
+	return findSceneInBook(s.ActiveBook, sceneID)
+}
+
+func (s *Server) findPlayerScene(sceneID string) *book.Scene {
+	return findSceneInBook(s.PlayerBook, sceneID)
 }
 
 func (s *Server) TriggerShutdown() {
@@ -554,7 +633,7 @@ func (s *Server) activeWorkspaceView() string {
 	if s.StandaloneMode {
 		return "player"
 	}
-	if view == "player" && s.ActiveBook == nil {
+	if view == "player" && s.PlayerBook == nil {
 		return "library"
 	}
 	if view != "player" && view != "editor" {
@@ -677,7 +756,7 @@ func (s *Server) isStandaloneMediaUnlocked(b *book.Book, reqURLPath, rawRel stri
 	}
 	if s.Save != nil {
 		for _, h := range s.Save.History {
-			if matchScene(s.findScene(h.SceneID)) {
+			if matchScene(findSceneInBook(b, h.SceneID)) {
 				return true
 			}
 		}
@@ -696,7 +775,10 @@ func (s *Server) handleBookMediaRoute(w http.ResponseWriter, r *http.Request) {
 
 	if s.StandaloneMode {
 		s.mu.RLock()
-		active := s.ActiveBook
+		active := s.PlayerBook
+		if active == nil {
+			active = s.ActiveBook
+		}
 		allowed := active != nil && active.ID == bookID && s.isStandaloneMediaUnlocked(active, r.URL.Path, parts[1])
 		s.mu.RUnlock()
 		if active == nil || active.ID != bookID {
@@ -712,10 +794,15 @@ func (s *Server) handleBookMediaRoute(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.mu.RLock()
-	active := s.ActiveBook
+	activeEditor := s.ActiveBook
+	activePlayer := s.PlayerBook
 	s.mu.RUnlock()
-	if active != nil && active.ID == bookID {
-		book.ServeBookMedia(w, r, active, parts[1])
+	if activePlayer != nil && activePlayer.ID == bookID {
+		book.ServeBookMedia(w, r, activePlayer, parts[1])
+		return
+	}
+	if activeEditor != nil && activeEditor.ID == bookID {
+		book.ServeBookMedia(w, r, activeEditor, parts[1])
 		return
 	}
 
@@ -866,38 +953,36 @@ func (s *Server) serveUIAsset(w http.ResponseWriter, r *http.Request, relAppPath
 		}
 	}
 
-	if !s.DevMode || s.StandaloneMode {
-		s.assetMu.RLock()
-		if s.staticAssets != nil {
-			if cached, ok := s.staticAssets[relAppPath]; ok {
-				s.assetMu.RUnlock()
-				_, _ = w.Write(cached)
-				return
-			}
+	s.assetMu.RLock()
+	if s.staticAssets != nil {
+		if cached, ok := s.staticAssets[relAppPath]; ok {
+			s.assetMu.RUnlock()
+			_, _ = w.Write(cached)
+			return
 		}
-		s.assetMu.RUnlock()
 	}
+	s.assetMu.RUnlock()
 
 	writeAsset := func(data []byte) {
 		if (!s.DevMode || s.StandaloneMode) && (strings.HasSuffix(relAppPath, ".css") || strings.HasSuffix(relAppPath, ".js")) {
 			data = []byte(tpl.StripDevOnlyBlocks(string(data)))
 		}
-		if !s.DevMode || s.StandaloneMode {
-			s.assetMu.Lock()
-			if s.staticAssets == nil {
-				s.staticAssets = make(map[string][]byte)
-			}
-			s.staticAssets[relAppPath] = data
-			s.assetMu.Unlock()
+		s.assetMu.Lock()
+		if s.staticAssets == nil {
+			s.staticAssets = make(map[string][]byte)
 		}
+		s.staticAssets[relAppPath] = data
+		s.assetMu.Unlock()
 		_, _ = w.Write(data)
 	}
 
 	if !s.StandaloneMode {
-		buildDiskPath := filepath.Join(s.RootDir, "build", "app", filepath.FromSlash(relAppPath))
-		if data, err := os.ReadFile(buildDiskPath); err == nil {
-			writeAsset(data)
-			return
+		if !s.DevMode || (relAppPath != "style.css" && relAppPath != "app.js") {
+			buildDiskPath := filepath.Join(s.RootDir, "build", "app", filepath.FromSlash(relAppPath))
+			if data, err := os.ReadFile(buildDiskPath); err == nil {
+				writeAsset(data)
+				return
+			}
 		}
 		diskPath := filepath.Join(s.AppDir, filepath.FromSlash(relAppPath))
 		if data, err := os.ReadFile(diskPath); err == nil {
@@ -907,13 +992,27 @@ func (s *Server) serveUIAsset(w http.ResponseWriter, r *http.Request, relAppPath
 	}
 	if s.EmbeddedFS != nil {
 		cleanSlash := strings.TrimPrefix(filepath.ToSlash(relAppPath), "/")
+		stripDev := !s.DevMode || s.StandaloneMode
+		if !stripDev {
+			switch cleanSlash {
+			case "style.css":
+				if bundled, err := tpl.BundleCSSFromFS(s.EmbeddedFS, false); err == nil {
+					writeAsset([]byte(bundled))
+					return
+				}
+			case "app.js":
+				if bundled, err := tpl.BundleJSFromFS(s.EmbeddedFS, false); err == nil {
+					writeAsset([]byte(bundled))
+					return
+				}
+			}
+		}
 		for _, embedPath := range []string{"build/app/" + cleanSlash, "app/" + cleanSlash} {
 			if data, err := fs.ReadFile(s.EmbeddedFS, embedPath); err == nil {
 				writeAsset(data)
 				return
 			}
 		}
-		stripDev := !s.DevMode || s.StandaloneMode
 		switch cleanSlash {
 		case "style.css":
 			if bundled, err := tpl.BundleCSSFromFS(s.EmbeddedFS, stripDev); err == nil {

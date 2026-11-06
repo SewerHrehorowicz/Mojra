@@ -581,9 +581,13 @@ func ctlCompletedInvoke(this, hr, ctlPtr uintptr) uintptr {
 	_, _, _ = syscall.SyscallN(wvVtbl[3], wvPtr, uintptr(unsafe.Pointer(&settingsPtr)))
 	if settingsPtr != 0 {
 		sVtbl := *(*[20]uintptr)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(settingsPtr))))
-		// Disable default context menu & status bar for native app feel
-		_, _, _ = syscall.SyscallN(sVtbl[8], settingsPtr, 0) // put_AreDefaultContextMenusEnabled(FALSE)
+		// Disable default dialogs, status bar, and (outside dev mode) context menu & DevTools for native app feel
+		_, _, _ = syscall.SyscallN(sVtbl[8], settingsPtr, 0)  // put_AreDefaultScriptDialogsEnabled(FALSE)
 		_, _, _ = syscall.SyscallN(sVtbl[10], settingsPtr, 0) // put_IsStatusBarEnabled(FALSE)
+		if !nativeWindowDevMode {
+			_, _, _ = syscall.SyscallN(sVtbl[12], settingsPtr, 0) // put_AreDevToolsEnabled(FALSE)
+			_, _, _ = syscall.SyscallN(sVtbl[14], settingsPtr, 0) // put_AreDefaultContextMenusEnabled(FALSE)
+		}
 
 		iidSettings9 := winGUID{
 			Data1: 0x0528a73b,
@@ -944,7 +948,7 @@ func PickNativeBookPath(chooseDir bool) string {
 	}
 
 	var dispBuf [260]uint16
-	title, _ := syscall.UTF16PtrFromString("Wybierz folder książki (zawierający story.txt / data.txt)")
+	title, _ := syscall.UTF16PtrFromString("Wybierz folder książki (zawierający pliki .playtxt)")
 	bi := browseInfoW{
 		HwndOwner:      owner,
 		PszDisplayName: &dispBuf[0],

@@ -1,78 +1,129 @@
-chapter: Ucieczka przez szuwary
-id: ucieczka_przez_szuwary
+chapter: ucieczka_przez_szuwary
+title: Ucieczka przez szuwary
 
-scene: Ściana dymu i trzcin
-id: sciana_dymu_i_trzcin
-next: pod_wywrocona_lodzia
+scene: sciana_dymu_i_trzcin
+title: Ściana dymu i trzcin
+
 Za płonącymi opłotkami osady zaczynał się zalany wodą labirynt wysokich trzcin i wykrotów. Gęsty, gryzący dym z pożaru kładł się nisko nad bagnem, mieszając się z mgłą, tak że na dwa kroki widać było jedynie drżące cienie i czerwoną łunę.
 
 Krzyś brnął po kolana w ciepłej od popiołu wodzie, trzymając wiosło w pogotowiu i nasłuchując plusku uciekających mieszkańców.
 
-scene: Pod wywróconą łodzią
-id: pod_wywrocona_lodzia
+exit: pod_wywrocona_lodzia
+
+---
+
+scene: pod_wywrocona_lodzia
+title: Pod wywróconą łodzią
+
 Przy kępie karłowatych olch zauważył przewróconą dnem do góry dłubankę, pod którą w szlamie kuliła się młoda dziewczyna, zatykając dłonią usta kilkuletniemu braciszkowi. Oboje byli cali umazani sadzą i patrzyli na błyszczącą blachę na piersi Krzysia z niemym przerażeniem.
 
 W oddali słychać już było nawoływania obławy przeczesującej brzeg.
 
-Zatrzyj wiosłem ślady na mule i pozwól im odpłynąć -> zatarcie_sladow
-Zadmij w mosiężny gwizdek alarmowy -> gwizdek_alarmowy
+exit: zatarcie_sladow
+text: Zatrzyj wiosłem ślady na mule i pozwól im odpłynąć
+set: sumienie++; stan_ducha = zbuntowany
 
-scene: Zatarcie śladów
-id: zatarcie_sladow
-next: spotkanie_z_niedzwiedziem
+exit: gwizdek_alarmowy
+text: Zadmij w mosiężny gwizdek alarmowy
+set: posluszenstwo++
+
+---
+
+scene: zatarcie_sladow
+title: Zatarcie śladów
+
 Krzyś przyłożył palec do ust, po czym szerokim piórem wiosła zagarnął szlam i zerwane trzciny, zacierając ślady małych stóp na mieliźnie. Dziewczyna zrozumiała bez słów — wsunęła się z dzieckiem głębiej w cień pod dłubanką i zaczęła bezgłośnie odpływać z prądem bocznego rzeczki.
 
 Zanim jednak zniknęła w trzcinach, z gęstwiny wypadł zziajany sierżant Niedźwiedź z zakrwawionym tasakiem w dłoni.
 
-scene: Gwizdek alarmowy
-id: gwizdek_alarmowy
-next: spotkanie_z_niedzwiedziem
+exit: spotkanie_z_niedzwiedziem
+
+---
+
+scene: gwizdek_alarmowy
+title: Gwizdek alarmowy
+
 Wyuczony w koszarach odruch okazał się silniejszy niż wahanie. Krzyś podniósł do ust mosiężny gwizdek zawieszony na sznurku i zadął w niego przeraźliwie, wskazując wiosłem wywróconą dłubankę.
 
 Już po chwili z mgły wypadł sierżant Niedźwiedź z dwoma ludźmi, wywracając łódkę kopniakiem i kończąc sprawę kilkoma szybkimi uderzeniami tasaka w spienionej wodzie.
 
-scene: Spotkanie z Niedźwiedziem w szuwarach
-id: spotkanie_z_niedzwiedziem
+exit: spotkanie_z_niedzwiedziem
+
+---
+
+scene: spotkanie_z_niedzwiedziem
+title: Spotkanie z Niedźwiedziem w szuwarach
+
 Sierżant Niedźwiedź dyszał ciężko, mając całą brodę i przód munduru zbryzgane posoką. Spojrzał przekrwionymi oczami na Krzysia, który stał blady pośród trzcin.
 
 - A ty co się tak trzęsiesz, dziwadło?! - warknął brodacz, podchodząc niebezpiecznie blisko i unosząc wyszczerbiony tasak. - Widziałem, jak uciekałeś z majdanu! Miękkie masz serduszko czy chcesz dostać płazem po łbie?!
 
-Odepchnij pijanego od krwi sierżanta drzewcem wiosła -> cios_z_zaskoczenia
-Przytaknij potulnie i brnij za nim przez trzęsawisko -> brniecie_przez_mul
+exit: cios_z_zaskoczenia
+text: Odepchnij pijanego od krwi sierżanta drzewcem wiosła
+if: cwiczenia_z_wioslem || stan_ducha == zbuntowany
+set: sumienie++; stan_ducha = zbuntowany
 
-scene: Cios z zaskoczenia
-id: cios_z_zaskoczenia
-next: wir_pod_korzeniami
+exit: brniecie_przez_mul
+text: Przytaknij potulnie i brnij za nim przez trzęsawisko
+set: posluszenstwo++
+
+---
+
+scene: cios_z_zaskoczenia
+title: Cios z zaskoczenia
+
 Kiedy Niedźwiedź zamachnął się wolną łapą, Krzyś odruchowo pchnął oburącz trzonem wiosła prosto w brzuch olbrzyma. Pijany od gorzałki i rzezi sierżant stracił równowagę na śliskim korzeniu i runął plecami w głęboki lej wodny.
 
 Krzyś nie czekał, aż brodacz wypluje muł i sięgnie po pistolet — rzucił się pędem w głąb trzcinowiska, słysząc za sobą wściekły ryk i wystrzał, którego kula ścięła kitki pałek wodnych nad jego uchem.
 
-scene: Brnięcie przez muł
-id: brniecie_przez_mul
-next: wir_pod_korzeniami
+exit: wir_pod_korzeniami
+
+---
+
+scene: brniecie_przez_mul
+title: Brnięcie przez muł
+
 Krzyś skulił ramiona dokładnie tak samo, jak robił to w warsztacie przed ojcem, i wymamrotał posłusznie, że gonił zbiegów. Niedźwiedź splunął w wodę, zdzielił go płazem dłoni w potylicę i rozkazał iść przodem przez najgłębsze rozlewisko, by sprawdzać grunt przed resztą obławy.
 
 Woda stawała się z każdym krokiem chłodniejsza i głębsza, a pod stopami zamiast dna czuć było tylko plątaninę oślizgłych kłączy.
 
-scene: Wir pod korzeniami
-id: wir_pod_korzeniami
+exit: wir_pod_korzeniami
+
+---
+
+scene: wir_pod_korzeniami
+title: Wir pod korzeniami
+
 Nagle grunt pod nogami Krzysia urwał się całkowicie. Podziemny prąd z rozbitej powyżej kaplicy i stawideł wciągnął go pod nawis czarnoziemnej skarpy, gdzie w ciemnej toni kłębiły się korzenie drzew i białe łodygi trupich lilii.
 
 Nasiąknięty wodą sukienny mundur ciągnął go w dół jak ołowiany pancerz.
 
-Chwyć się wystającego konaru i wydostań na brzeg -> wyjscie_z_szuwarow
-Puść wiosło, gdy oślizgłe kłącza oplatają ci nogi -> objetosc_korzeni
+exit: wyjscie_z_szuwarow
+text: Chwyć się wystającego konaru i wydostań na brzeg
 
-scene: Objętość czarnych korzeni
-id: objetosc_korzeni
-end: true
+exit: objetosc_korzeni
+text: Puść wiosło, gdy oślizgłe kłącza oplatają ci nogi
+
+---
+
+scene: objetosc_korzeni
+title: Objętość czarnych korzeni
+
 Mięsiste kłącza trupich lilii owinęły się wokół wysokich butów Krzysia, a ciężki mundur z mosiężnymi guzikami i blachą z numerem przygwoździł go do mulistego dna. Próbował jeszcze machać rękami, lecz zamiast powietrza połknął gęstą, czarną wodę pachnącą popiołem i gnijącymi kwiatami.
 
 Tam na dole, w ciemności pod korzeniami, nikt już na niego nie krzyczał, nikt go nie bił pasem i nikt nie kazał mu być Prawym i Wielkim.
 
-scene: Wyjście z szuwarów
-id: wyjscie_z_szuwarow
+end: true
+
+---
+
+scene: wyjscie_z_szuwarow
+title: Wyjście z szuwarów
+
 Ostatkiem sił Krzyś wbił okute pióro wiosła w szparę między korzeniami olchy i podciągnął się na drżących ramionach na suchy brzeg. Wykaszlał czarną wodę, leżąc w paprociach i słuchając, jak na górze w osadzie cichną ostatnie krzyki, a niżej nad rzeką zbierają się ludzie przy łodziach.
 
-Wróć na dymiące zgliszcza osady, gdzie czeka oddział -> chapter:kruk_z_piekiel
-Przedrzyj się brzegiem prosto do przycumowanych kanu -> chapter:powrot_w_kajdanach
+exit: chapter:kruk_z_piekiel
+text: Wróć na dymiące zgliszcza osady, gdzie czeka oddział
+
+exit: chapter:powrot_w_kajdanach
+text: Przedrzyj się brzegiem prosto do przycumowanych kanu

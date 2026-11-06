@@ -356,3 +356,63 @@ func BuildPlayerOnlyApp(appDir, outDir string) error {
 	}
 	return nil
 }
+
+// BuildWWW compiles the standalone website from rootDir/www/{index.tpl,style.tss,app.js}
+// using shared tokens/icons/fonts from rootDir/app into a self-contained static directory rootDir/dist/www/.
+func BuildWWW(rootDir string) error {
+	wwwDir := filepath.Join(rootDir, "www")
+	if _, err := os.Stat(filepath.Join(wwwDir, "index.tpl")); os.IsNotExist(err) {
+		return nil
+	}
+	appDir := filepath.Join(rootDir, "app")
+	outDir := filepath.Join(rootDir, "dist", "www")
+	if err := os.MkdirAll(filepath.Join(outDir, "fonts"), 0755); err != nil {
+		return fmt.Errorf("mkdir %s: %w", outDir, err)
+	}
+	indexHTMLPath := filepath.Join(outDir, "index.html")
+	if err := TranspileDirectoryToHTML(wwwDir, indexHTMLPath); err != nil {
+		return fmt.Errorf("www tpl transpile error: %w", err)
+	}
+	if rawHTML, err := os.ReadFile(indexHTMLPath); err == nil {
+		relHTML := strings.ReplaceAll(string(rawHTML), `src="/app.js"`, `src="app.js"`)
+		_ = os.WriteFile(indexHTMLPath, []byte(relHTML), 0644)
+	}
+	styleCSSPath := filepath.Join(outDir, "style.css")
+	if err := BundleCSSFiles(
+		[]string{
+			filepath.Join(appDir, "styles", "colors.tss"),
+			filepath.Join(wwwDir, "style.tss"),
+		},
+		styleCSSPath,
+	); err != nil {
+		return fmt.Errorf("www css bundle error: %w", err)
+	}
+	if rawCSS, err := os.ReadFile(styleCSSPath); err == nil {
+		relCSS := strings.ReplaceAll(string(rawCSS), `url("/fonts/`, `url("fonts/`)
+		_ = os.WriteFile(styleCSSPath, []byte(relCSS), 0644)
+	}
+	if err := BundleJSFiles(
+		[]string{filepath.Join(wwwDir, "app.js")},
+		filepath.Join(outDir, "app.js"),
+	); err != nil {
+		return fmt.Errorf("www js bundle error: %w", err)
+	}
+
+	if fontEntries, err := os.ReadDir(filepath.Join(appDir, "fonts")); err == nil {
+		for _, fe := range fontEntries {
+			if fe.IsDir() || !strings.HasSuffix(strings.ToLower(fe.Name()), ".ttf") {
+				continue
+			}
+			if raw, rErr := os.ReadFile(filepath.Join(appDir, "fonts", fe.Name())); rErr == nil {
+				_ = os.WriteFile(filepath.Join(outDir, "fonts", fe.Name()), raw, 0644)
+			}
+		}
+	}
+	for _, iconFile := range []string{"favicon.ico", "icon.png"} {
+		if raw, rErr := os.ReadFile(filepath.Join(appDir, "icons", iconFile)); rErr == nil {
+			_ = os.WriteFile(filepath.Join(outDir, iconFile), raw, 0644)
+		}
+	}
+	return nil
+}
+

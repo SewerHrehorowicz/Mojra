@@ -23,16 +23,16 @@ func writeFileIfChanged(path string, data []byte, perm os.FileMode) error {
 	return os.WriteFile(path, data, perm)
 }
 
-// SaveBookMetadataToDisk writes data.txt for an unpacked book.
+// SaveBookMetadataToDisk writes book.playtxt for an unpacked book.
 func SaveBookMetadataToDisk(b *Book) error {
 	if b.IsPacked {
 		return fmt.Errorf("nie można edytować spakowanego archiwum .stbook bezpośrednio")
 	}
-	dataPath := filepath.Join(b.RootPath, "data.txt")
+	dataPath := filepath.Join(b.RootPath, BookDataFileName)
 	return writeFileIfChanged(dataPath, []byte(SerializeDataFile(b)), 0644)
 }
 
-// SaveBookScenesToDisk writes all modified source .txt files, data.txt, and editor.txt back to the book directory.
+// SaveBookScenesToDisk writes all modified source .playtxt files, book.playtxt, and .editor.cfg back to the book directory.
 func SaveBookScenesToDisk(b *Book) error {
 	if b.IsPacked {
 		return fmt.Errorf("nie można edytować spakowanego archiwum .stbook bezpośrednio; rozpakuj książkę do katalogu books/%s", b.ID)
@@ -51,10 +51,10 @@ func SaveBookScenesToDisk(b *Book) error {
 		trackedFiles[strings.ToLower(filepath.Base(tf))] = true
 	}
 	defaultCh := "Rozdział 1"
-	defaultFile := "rozdzial_1.txt"
+	defaultFile := DefaultChapterFile
 	if b.IsScreenplay() {
 		defaultCh = "Akt I"
-		defaultFile = "akt_1.txt"
+		defaultFile = DefaultActFile
 	}
 	for _, sc := range b.Scenes {
 		if strings.TrimSpace(sc.Chapter) == "" {
@@ -78,9 +78,9 @@ func SaveBookScenesToDisk(b *Book) error {
 	for sf := range filesSet {
 		cleanName := filepath.Base(sf)
 		lowerClean := strings.ToLower(cleanName)
-		if !strings.HasSuffix(lowerClean, ".txt") || lowerClean == "data.txt" || lowerClean == "editor.txt" || lowerClean == "nodes.txt" {
-			cleanName = "rozdzial_1.txt"
-			lowerClean = "rozdzial_1.txt"
+		if !strings.HasSuffix(lowerClean, PlaytxtExt) || lowerClean == BookDataFileName || lowerClean == EditorStateFileName || lowerClean == "editor.cfg" {
+			cleanName = DefaultChapterFile
+			lowerClean = DefaultChapterFile
 		}
 		if !activeFiles[lowerClean] {
 			if trackedFiles[lowerClean] {
@@ -108,12 +108,12 @@ func SaveBookScenesToDisk(b *Book) error {
 	return nil
 }
 
-// SaveBookEditorStateToDisk writes editor.txt inside the book directory with node (x, y) coordinates and canvas pan/zoom.
+// SaveBookEditorStateToDisk writes .editor.cfg inside the book directory with node (x, y) coordinates and canvas pan/zoom.
 func SaveBookEditorStateToDisk(b *Book) error {
 	if b == nil || b.IsPacked || b.RootPath == "" {
 		return nil
 	}
-	editorPath := filepath.Join(b.RootPath, "editor.txt")
+	editorPath := filepath.Join(b.RootPath, EditorStateFileName)
 	return writeFileIfChanged(editorPath, []byte(SerializeEditorFile(b)), 0644)
 }
 
@@ -168,7 +168,7 @@ func InsertSceneBetween(b *Book, parentSceneID, childSceneID, newSceneName strin
 
 	chapterName := "Rozdział 1"
 	chapterID := ""
-	sourceFile := "rozdzial_1.txt"
+	sourceFile := DefaultChapterFile
 	if parent != nil {
 		if parent.Chapter != "" {
 			chapterName = parent.Chapter
@@ -176,7 +176,7 @@ func InsertSceneBetween(b *Book, parentSceneID, childSceneID, newSceneName strin
 		if parent.ChapterID != "" {
 			chapterID = parent.ChapterID
 		}
-		if parent.SourceFile != "" && !strings.EqualFold(parent.SourceFile, "story.txt") {
+		if parent.SourceFile != "" && !strings.EqualFold(parent.SourceFile, DefaultStoryFile) && !strings.EqualFold(parent.SourceFile, BookDataFileName) {
 			sourceFile = parent.SourceFile
 		} else {
 			sourceFile = b.ChapterFileNameFor(chapterName, chapterID)
@@ -301,7 +301,7 @@ func InsertSceneBefore(b *Book, targetSceneID, newSceneName string) (*Scene, err
 
 	chapterName := "Rozdział 1"
 	chapterID := ""
-	sourceFile := "rozdzial_1.txt"
+	sourceFile := DefaultChapterFile
 	targetRef := ""
 	if target != nil {
 		if target.Chapter != "" {
@@ -310,7 +310,7 @@ func InsertSceneBefore(b *Book, targetSceneID, newSceneName string) (*Scene, err
 		if target.ChapterID != "" {
 			chapterID = target.ChapterID
 		}
-		if target.SourceFile != "" && !strings.EqualFold(target.SourceFile, "story.txt") {
+		if target.SourceFile != "" && !strings.EqualFold(target.SourceFile, DefaultStoryFile) && !strings.EqualFold(target.SourceFile, BookDataFileName) {
 			sourceFile = target.SourceFile
 		} else {
 			sourceFile = b.ChapterFileNameFor(chapterName, chapterID)
@@ -390,7 +390,7 @@ func CreateStandaloneSceneInChapter(b *Book, newSceneName, targetChapter string,
 
 	chapterName := SanitizePlainText(targetChapter)
 	chapterID := ""
-	sourceFile := "rozdzial_1.txt"
+	sourceFile := DefaultChapterFile
 	insertIdx := len(b.Scenes)
 	matchedChapter := false
 
@@ -495,7 +495,7 @@ func CreateStandaloneSceneInChapter(b *Book, newSceneName, targetChapter string,
 					if sc.ChapterID != "" {
 						chapterID = sc.ChapterID
 					}
-					if sc.SourceFile != "" && !strings.EqualFold(sc.SourceFile, "story.txt") {
+					if sc.SourceFile != "" && !strings.EqualFold(sc.SourceFile, DefaultStoryFile) && !strings.EqualFold(sc.SourceFile, BookDataFileName) {
 						sourceFile = sc.SourceFile
 					}
 				}
@@ -512,11 +512,11 @@ func CreateStandaloneSceneInChapter(b *Book, newSceneName, targetChapter string,
 		if b.IsScreenplay() {
 			chapterName = "Akt I"
 			chapterID = "akt_1"
-			sourceFile = "akt_1.txt"
+			sourceFile = DefaultActFile
 		} else {
 			chapterName = "Rozdział 1"
 			chapterID = "rozdzial_1"
-			sourceFile = "rozdzial_1.txt"
+			sourceFile = DefaultChapterFile
 		}
 	}
 
@@ -787,9 +787,9 @@ func CreateNewBookWithMode(booksDir, title, author, mode, standard string, narra
 			Imageless:      true,
 			RootPath:       bookDir,
 			Chapters: []Chapter{
-				{ID: "akt_1", ExplicitID: "akt_1", Name: "Akt I", SourceFile: "akt_1.txt"},
-				{ID: "akt_2", ExplicitID: "akt_2", Name: "Akt II", SourceFile: "akt_2.txt"},
-				{ID: "akt_3", ExplicitID: "akt_3", Name: "Akt III", SourceFile: "akt_3.txt"},
+				{ID: "akt_1", ExplicitID: "akt_1", Name: "Akt I", SourceFile: "akt_1.playtxt"},
+				{ID: "akt_2", ExplicitID: "akt_2", Name: "Akt II", SourceFile: "akt_2.playtxt"},
+				{ID: "akt_3", ExplicitID: "akt_3", Name: "Akt III", SourceFile: "akt_3.playtxt"},
 			},
 			Scenes: []*Scene{
 				{
@@ -801,7 +801,7 @@ func CreateNewBookWithMode(booksDir, title, author, mode, standard string, narra
 					ChapterID:    "akt_1",
 					ExplicitNext: "chapter:akt_2",
 					Text:         "Opis akcji w pierwszym akcie.",
-					SourceFile:   "akt_1.txt",
+					SourceFile:   "akt_1.playtxt",
 					Choices:      []Choice{{Label: "Dalej", Target: "chapter:akt_2", IsImplicit: true}},
 				},
 				{
@@ -813,7 +813,7 @@ func CreateNewBookWithMode(booksDir, title, author, mode, standard string, narra
 					ChapterID:    "akt_2",
 					ExplicitNext: "chapter:akt_3",
 					Text:         "Opis akcji w drugim akcie.",
-					SourceFile:   "akt_2.txt",
+					SourceFile:   "akt_2.playtxt",
 					Choices:      []Choice{{Label: "Dalej", Target: "chapter:akt_3", IsImplicit: true}},
 				},
 				{
@@ -825,7 +825,7 @@ func CreateNewBookWithMode(booksDir, title, author, mode, standard string, narra
 					ChapterID:   "akt_3",
 					ExplicitEnd: true,
 					Text:        "Opis akcji w trzecim akcie.",
-					SourceFile:  "akt_3.txt",
+					SourceFile:  "akt_3.playtxt",
 				},
 			},
 		}
@@ -834,31 +834,37 @@ func CreateNewBookWithMode(booksDir, title, author, mode, standard string, narra
 		if err := SaveBookScenesToDisk(b); err != nil {
 			return nil, err
 		}
-		_ = os.Remove(filepath.Join(bookDir, "editor.txt"))
+		_ = os.Remove(filepath.Join(bookDir, EditorStateFileName))
 		_ = GenerateAtmosphericPNG(filepath.Join(bookDir, "cover.png"), 400, 560, color.RGBA{24, 30, 44, 255}, color.RGBA{214, 158, 76, 255}, 1)
 		return LoadBookFromDir(bookDir)
 	}
 
 	dataContent := fmt.Sprintf("title: %s\nauthor: %s\ndescription: Interaktywna opowieść utworzona w Playbook Studio.\nnarrated: %s\nimageless: %s\nstart: poczatek\n", cleanTitle, cleanAuthor, narratedStr, imagelessStr)
-	if err := os.WriteFile(filepath.Join(bookDir, "data.txt"), []byte(dataContent), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(bookDir, BookDataFileName), []byte(dataContent), 0644); err != nil {
 		return nil, err
 	}
 
-	storyContent := `chapter: Rozdział 1
-id: rozdzial_1
+	storyContent := `chapter: rozdzial_1
+title: Rozdział 1
 
-scene: Początek drogi
-id: poczatek
+scene: poczatek
+title: Początek drogi
 image: images/poczatek.png
-next: rozdroze
+
 Stoisz u progu nowej przygody. Wiatr niesie odległe echo dawnej pieśni.
 
-scene: Rozdroże
-id: rozdroze
-end: true
+exit: rozdroze
+
+---
+
+scene: rozdroze
+title: Rozdroże
+
 Dotarłeś do celu podróży. Możesz rozbudować tę historię w Playbook Studio.
+
+end: true
 `
-	if err := os.WriteFile(filepath.Join(bookDir, "rozdzial_1.txt"), []byte(storyContent), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(bookDir, DefaultChapterFile), []byte(storyContent), 0644); err != nil {
 		return nil, err
 	}
 
@@ -1082,7 +1088,8 @@ func PackBookToZip(bookDir, outZipPath string) error {
 			}
 			return nil
 		}
-		if strings.HasPrefix(d.Name(), ".") || !IsSafePathInsideRoot(bookDir, path) {
+		isRootEditor := filepath.Clean(filepath.Dir(path)) == filepath.Clean(bookDir) && strings.EqualFold(d.Name(), EditorStateFileName)
+		if (strings.HasPrefix(d.Name(), ".") && !isRootEditor) || !IsSafePathInsideRoot(bookDir, path) {
 			return nil
 		}
 		rel, err := filepath.Rel(bookDir, path)

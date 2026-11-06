@@ -11,6 +11,7 @@ body[data-theme="light"]
 @switch preview
   full      .device-stage[data-preview="full"]
   portrait  .device-stage[data-preview="portrait"]
+  tablet    .device-stage[data-preview="tablet"]
   landscape .device-stage[data-preview="landscape"]
 
 :root
@@ -18,6 +19,11 @@ body[data-theme="light"]
   --bg-surface --bg-obsidian
   --bg-topbar --bg-obsidian
   --bg-elevated light-dark(#f4f4f4, #0c0c0c)
+  --preview-stage-top light-dark(#ededf0, #1a1a1e)
+  --preview-stage-bottom light-dark(#e2e2e7, #101013)
+  --preview-stage-glow light-dark(rgba(255, 255, 255, 0.7), rgba(255, 255, 255, 0.035))
+  --preview-shadow-ambient light-dark(rgba(0, 0, 0, 0.13), rgba(0, 0, 0, 0.72))
+  --preview-shadow-soft light-dark(rgba(0, 0, 0, 0.05), rgba(0, 0, 0, 0.42))
   --border-subtle light-dark(#e2e2e2, #242424)
   --border-strong light-dark(#999999, #525252)
   --text-primary light-dark(#000, #fff)
@@ -32,6 +38,11 @@ body[data-theme="light"]
   --toggle-track light-dark(#ececec, #1a1a1a)
   --toggle-track-on light-dark(#e0e0e0, #262626)
   --toggle-thumb-off light-dark(#b0b0b0, #484848)
+  --dropdown-bg light-dark(#f7f7f9, #0e0e11)
+  --dropdown-hover-bg light-dark(#ececef, #19191e)
+  --dropdown-border light-dark(#b0b0b6, #3d3d44)
+  --dropdown-item-fg light-dark(#3b3b42, #b4b6be)
+  --dropdown-meta-fg light-dark(#76767e, #6e7078)
   --font-serif "Aleo"
   --font-sans "Lato"
   --font-screenplay "Courier Prime", "Courier New", Courier, monospace

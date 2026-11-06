@@ -24,7 +24,7 @@ section.view-panel#view-library
                             alt: "{b.title}"
                             src: {b.cover_url}
                     span.book-cover-play-overlay
-                        svg.book-cover-play-icon src: /icons/play.svg
+                        svg.book-cover-play-icon src: /icons/playbook.svg
                 .book-card-body
                     .book-card-meta
                         span.book-card-author {b.author}

@@ -77,10 +77,11 @@ func DefaultCSSSwitches() map[string]*CSSSwitchDef {
 		},
 		"preview": {
 			Name:  "preview",
-			Order: []string{"full", "portrait", "landscape"},
+			Order: []string{"full", "portrait", "tablet", "landscape"},
 			Cases: map[string]string{
 				"full":      `.device-stage[data-preview="full"]`,
 				"portrait":  `.device-stage[data-preview="portrait"]`,
+				"tablet":    `.device-stage[data-preview="tablet"]`,
 				"landscape": `.device-stage[data-preview="landscape"]`,
 			},
 		},

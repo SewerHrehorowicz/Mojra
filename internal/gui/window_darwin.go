@@ -212,7 +212,27 @@ static NSImage *createStoryTellerAppIcon(void) {
 }
 
 - (void)applicationDidFinishLaunching:(NSNotification *)notification {
+    [[NSProcessInfo processInfo] setProcessName:@"Mojra"];
     [NSApp setApplicationIconImage:createStoryTellerAppIcon()];
+
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    NSArray<NSString *> *offKeys = @[
+        @"WebAutomaticSpellingCorrectionEnabled",
+        @"WebContinuousSpellCheckingEnabled",
+        @"WebAutomaticQuoteSubstitutionEnabled",
+        @"WebAutomaticDashSubstitutionEnabled",
+        @"WebAutomaticTextReplacementEnabled",
+        @"NSAutomaticSpellingCorrectionEnabled",
+        @"NSAutomaticQuoteSubstitutionEnabled",
+        @"NSAutomaticDashSubstitutionEnabled",
+        @"NSAutomaticTextReplacementEnabled",
+        @"NSAutomaticCapitalizationEnabled",
+        @"NSAutomaticPeriodSubstitutionEnabled"
+    ];
+    for (NSString *key in offKeys) {
+        [defaults setBool:NO forKey:key];
+    }
+
     NSRect visibleFrame = [[NSScreen mainScreen] visibleFrame];
     CGFloat winW = MIN(1440.0, visibleFrame.size.width * 0.92);
     CGFloat winH = MIN(900.0, visibleFrame.size.height * 0.90);

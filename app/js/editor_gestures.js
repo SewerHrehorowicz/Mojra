@@ -615,8 +615,10 @@ function handleEditorCanvasClick(e) {
           ta.setSelectionRange(insertStart + blockText.length, insertStart + blockText.length);
         }
 
-        if (typeof autoResizeSceneModalTextarea === "function") {
-          autoResizeSceneModalTextarea(ta);
+        if (typeof autoResizeSceneTextarea === "function") {
+          autoResizeSceneTextarea(ta);
+        } else if (typeof syncSceneTextareaHighlight === "function") {
+          syncSceneTextareaHighlight(ta);
         }
         const modalForm = ta.closest("form#form-scene-text");
         if (modalForm && typeof scheduleNodeLiveSave === "function") {
@@ -834,6 +836,22 @@ function handleEditorCanvasClick(e) {
         params[k] = v;
       });
       sendServerAction("SaveBookSettings", params);
+      return true;
+    }
+
+    if (selectEl.classList.contains("test-var-enum-select")) {
+      const varName = selectEl.getAttribute("data-var-name") || "";
+      if (varName) {
+        const params = { var_name: varName, var_value: val };
+        const modalForm = selectEl.closest("form#form-scene-text");
+        if (modalForm) {
+          const fd = new FormData(modalForm);
+          fd.forEach((v, k) => {
+            if (params[k] === undefined) params[k] = v;
+          });
+        }
+        sendServerAction("UpdateSceneTextTestVar", params);
+      }
       return true;
     }
 
@@ -2092,7 +2110,7 @@ function bindEditorCanvasEvents() {
       lastPointerClientPos.x = t.clientX;
       lastPointerClientPos.y = t.clientY;
 
-      if (e.target.closest("#canvas-context-menu, .custom-select-menu, #canvas-chapter-input, #canvas-node-title-input, #canvas-choice-input, #editor-empty-state")) {
+      if (e.target.closest("#canvas-context-menu, .custom-select-menu, #canvas-chapter-input, #canvas-node-title-input, #canvas-choice-input, #editor-empty-state, #btn-expand-scene-text")) {
         return;
       }
       closeCanvasContextMenu();
@@ -2297,7 +2315,7 @@ function bindEditorCanvasEvents() {
       return;
     }
 
-    if (e.target.closest("#canvas-context-menu, #canvas-chapter-input, #canvas-node-title-input, #canvas-choice-input, #editor-empty-state")) {
+    if (e.target.closest("#canvas-context-menu, #canvas-chapter-input, #canvas-node-title-input, #canvas-choice-input, #editor-empty-state, #btn-expand-scene-text")) {
       return;
     }
     closeCanvasContextMenu();
@@ -2381,6 +2399,11 @@ function bindEditorCanvasEvents() {
     if (hit.type === "edit-scene-btn") {
       e.preventDefault();
       e.stopPropagation();
+      editorSelectionCleared = false;
+      selectedNodeIds.clear();
+      if (hit.node && hit.node.id) selectedNodeIds.add(hit.node.id);
+      syncNodeSelectionDOM();
+      renderStudioCanvas();
       sendServerAction("OpenSceneTextModal", { scene: hit.node.id });
       return;
     }
@@ -2409,6 +2432,9 @@ function bindEditorCanvasEvents() {
       selectedNodeIds.clear();
       if (hit.node && hit.node.id) selectedNodeIds.add(hit.node.id);
       syncNodeSelectionDOM();
+      if (qs("#modal-scene-text") && hit.node && hit.node.id) {
+        selectNodeForContextPanel(hit.node.id);
+      }
       openFloatingChoiceInput(hit.node, hit.choiceIdx);
       return;
     }
@@ -2420,6 +2446,9 @@ function bindEditorCanvasEvents() {
       selectedNodeIds.clear();
       if (hit.node && hit.node.id) selectedNodeIds.add(hit.node.id);
       syncNodeSelectionDOM();
+      if (qs("#modal-scene-text") && hit.node && hit.node.id) {
+        selectNodeForContextPanel(hit.node.id);
+      }
       openFloatingNodeTitleInput(hit.node);
       return;
     }
@@ -2520,7 +2549,7 @@ function bindEditorCanvasEvents() {
       }
       return;
     }
-    if (!viewport || e.target.closest("#canvas-context-menu, #canvas-chapter-input, #canvas-node-title-input, #canvas-choice-input")) {
+    if (!viewport || e.target.closest("#canvas-context-menu, #canvas-chapter-input, #canvas-node-title-input, #canvas-choice-input, #btn-expand-scene-text")) {
       if (studioGraphState.hoveredItem) {
         studioGraphState.hoveredItem = null;
         studioGraphState.overlayBatchDirty = true;
@@ -2579,7 +2608,7 @@ function bindEditorCanvasEvents() {
   document.addEventListener("dblclick", (e) => {
     const vp = e.target.closest("#timeline-scroll-viewport");
     if (!vp) return;
-    if (e.target.closest("#canvas-context-menu, #canvas-chapter-input, #canvas-node-title-input, #canvas-choice-input, #editor-empty-state")) return;
+    if (e.target.closest("#canvas-context-menu, #canvas-chapter-input, #canvas-node-title-input, #canvas-choice-input, #editor-empty-state, #btn-expand-scene-text")) return;
     const ptWorld = clientToStudioWorld(vp, e.clientX, e.clientY);
     const hit = hitTestStudioCanvas(ptWorld.wx, ptWorld.wy);
     if (hit.type === "wire-pin") {
@@ -2637,6 +2666,27 @@ function bindEditorCanvasEvents() {
       scheduleBookTitleLiveSave(e.target);
       return;
     }
+    if (e.target && e.target.getAttribute && e.target.getAttribute("data-test-var-input")) {
+      const varName = (e.target.getAttribute("data-test-var-input") || "").trim().toLowerCase();
+      const modalForm = e.target.closest("form#form-scene-text");
+      if (varName && modalForm) {
+        const curSpec = modalForm.getAttribute("data-test-vars") || "";
+        const map = new Map();
+        curSpec.split(";").forEach((p) => {
+          const eq = p.indexOf("=");
+          if (eq > 0) map.set(p.slice(0, eq).trim().toLowerCase(), p.slice(eq + 1).trim());
+        });
+        map.set(varName, (e.target.value || "").trim());
+        const nextParts = [];
+        map.forEach((v, k) => nextParts.push(k + "=" + v));
+        modalForm.setAttribute("data-test-vars", nextParts.join(";"));
+        const modalTa = qs("#modal-scene-textarea", modalForm);
+        if (modalTa && typeof syncSceneTextareaHighlight === "function") {
+          syncSceneTextareaHighlight(modalTa);
+        }
+      }
+      return;
+    }
     const bookForm = e.target.closest("form.editor-book-form");
     if (bookForm) {
       scheduleBookSettingsLiveSave(bookForm);
@@ -2644,6 +2694,9 @@ function bindEditorCanvasEvents() {
     }
     const form = e.target.closest("form.editor-context-form, form#form-scene-text");
     if (!form) return;
+    if (typeof validateRuleInputElement === "function") {
+      validateRuleInputElement(e.target, form);
+    }
     const sceneIdInput = qs('input[name="scene_id"]', form);
     const sceneId =
       form.getAttribute("data-context-scene-id") ||
@@ -2675,8 +2728,36 @@ function bindEditorCanvasEvents() {
         renderStudioCanvas();
       }
     }
+    if (e.target && e.target.name && e.target.name.indexOf("choice_cond_") === 0) {
+      const idx = Number(e.target.getAttribute("data-choice-idx") || e.target.name.replace("choice_cond_", ""));
+      const hasCond = Boolean((e.target.value || "").trim());
+      const rowEl = e.target.closest(".context-choice-item, .modal-choice-row");
+      if (rowEl) {
+        const portIcon = qs(".choice-port-icon", rowEl);
+        if (portIcon) {
+          portIcon.classList.toggle("port-diamond", hasCond);
+        }
+      }
+      if (nd && nd.ports && nd.ports[idx]) {
+        nd.ports[idx].isConditional = hasCond;
+        studioGraphState.staticBatchDirty = true;
+        renderStudioCanvas();
+      }
+    }
     scheduleNodeLiveSave(form);
   });
+
+  function commitVariablePanelInput(inputEl) {
+    if (!inputEl || (typeof isEditorHistoryPreview === "function" && isEditorHistoryPreview())) return;
+    const form = inputEl.closest("form.var-panel-inline-form");
+    if (!form) return;
+    const params = {};
+    const fd = new FormData(form);
+    fd.forEach((val, key) => {
+      params[key] = val;
+    });
+    sendServerAction("UpdateBookVariable", params);
+  }
 
   function commitBreakdownRenameInput(inputEl) {
     if (!inputEl || (typeof isEditorHistoryPreview === "function" && isEditorHistoryPreview())) return;
@@ -2703,6 +2784,24 @@ function bindEditorCanvasEvents() {
     }
   }
 
+  function commitTestVarInput(inputEl) {
+    if (!inputEl) return;
+    const varName = (inputEl.getAttribute("data-test-var-input") || "").trim();
+    if (!varName) return;
+    const params = {
+      var_name: varName,
+      var_value: (inputEl.value || "").trim()
+    };
+    const modalForm = inputEl.closest ? inputEl.closest("form#form-scene-text") : null;
+    if (modalForm) {
+      const fd = new FormData(modalForm);
+      fd.forEach((v, k) => {
+        if (params[k] === undefined) params[k] = v;
+      });
+    }
+    sendServerAction("UpdateSceneTextTestVar", params);
+  }
+
   document.addEventListener("change", (e) => {
     if (e.target && e.target.id === "canvas-node-title-input") {
       commitNodeTitleInput(e.target);
@@ -2714,6 +2813,10 @@ function bindEditorCanvasEvents() {
       commitBookTitleInput(e.target);
     } else if (e.target && e.target.classList && e.target.classList.contains("breakdown-name-input")) {
       commitBreakdownRenameInput(e.target);
+    } else if (e.target && e.target.closest && e.target.closest("form.var-panel-inline-form")) {
+      commitVariablePanelInput(e.target);
+    } else if (e.target && e.target.getAttribute && e.target.getAttribute("data-test-var-input")) {
+      commitTestVarInput(e.target);
     }
   });
 

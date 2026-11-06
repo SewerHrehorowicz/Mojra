@@ -55,7 +55,7 @@ func (b *Book) addSceneToChapterWithMeta(chapterName, explicitID, sourceFile, sc
 	cleanName := strings.TrimSpace(chapterName)
 	cleanExp := SanitizeSceneID(explicitID)
 	fallbackID := ""
-	if sourceFile != "" && !strings.EqualFold(filepath.Base(sourceFile), "story.txt") {
+	if sourceFile != "" && !strings.EqualFold(filepath.Base(sourceFile), DefaultStoryFile) && !strings.EqualFold(filepath.Base(sourceFile), BookDataFileName) {
 		stem := strings.TrimSuffix(filepath.Base(sourceFile), filepath.Ext(sourceFile))
 		fallbackID = SanitizeSceneID(stem)
 	}
@@ -239,23 +239,23 @@ func chapterCanReach(edges map[string][]string, startKey, targetKey string) bool
 	return false
 }
 
-// IsMultiFileBook reports whether the book uses separate per-chapter .txt files rather than a single story.txt.
+// IsMultiFileBook reports whether the book uses separate per-chapter .playtxt files rather than a single story.playtxt.
 func (b *Book) IsMultiFileBook() bool {
 	return true
 }
 
-// ChapterFileNameFor returns the target .txt filename for a chapter, using its ID primarily.
+// ChapterFileNameFor returns the target .playtxt filename for a chapter, using its ID primarily.
 func (b *Book) ChapterFileNameFor(chapterName, chapterID string) string {
-	if cleanID := SanitizeChapterID(chapterID); cleanID != "" {
-		return cleanID + ".txt"
+	if cleanID := SanitizeChapterID(chapterID); cleanID != "" && cleanID != "book" {
+		return cleanID + PlaytxtExt
 	}
 	if ch := b.FindChapter(chapterName); ch != nil {
 		return ch.FileName()
 	}
-	if cleanNameID := SanitizeChapterID(chapterName); cleanNameID != "" {
-		return cleanNameID + ".txt"
+	if cleanNameID := SanitizeChapterID(chapterName); cleanNameID != "" && cleanNameID != "book" {
+		return cleanNameID + PlaytxtExt
 	}
-	return "rozdzial_1.txt"
+	return DefaultChapterFile
 }
 
 // FinalizeBook resolves scene IDs (including explicit id: headers), implicit "Next" transitions,
@@ -339,7 +339,7 @@ func FinalizeBook(b *Book) {
 		if sc.Chapter == "" {
 			if sc.ChapterID != "" {
 				sc.Chapter = sc.ChapterID
-			} else if sc.SourceFile != "" && !strings.EqualFold(filepath.Base(sc.SourceFile), "story.txt") {
+			} else if sc.SourceFile != "" && !strings.EqualFold(filepath.Base(sc.SourceFile), DefaultStoryFile) && !strings.EqualFold(filepath.Base(sc.SourceFile), BookDataFileName) {
 				stem := strings.TrimSuffix(filepath.Base(sc.SourceFile), filepath.Ext(sc.SourceFile))
 				sc.Chapter = SanitizeSceneID(stem)
 			} else {
@@ -391,7 +391,7 @@ func FinalizeBook(b *Book) {
 	} else if sc, ok := sceneByName[NormalizeLookupKey(startCandidate)]; ok {
 		b.StartSceneID = sc.ID
 	} else {
-		b.Warnings = append(b.Warnings, fmt.Sprintf("data.txt: scena startowa „%s” nie istnieje (użyto pierwszej sceny „%s”)", startCandidate, b.Scenes[0].DisplayName()))
+		b.Warnings = append(b.Warnings, fmt.Sprintf("book.playtxt: scena startowa „%s” nie istnieje (użyto pierwszej sceny „%s”)", startCandidate, b.Scenes[0].DisplayName()))
 		b.StartSceneID = b.Scenes[0].ID
 	}
 

@@ -1,0 +1,160 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Mojra Playtxt",
+  "scopeName": "source.playtxt",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#variable-header" },
+    { "include": "#editor-header" },
+    { "include": "#transition-header" },
+    { "include": "#label-header" },
+    { "include": "#any-header" },
+    { "include": "#standalone-effects" },
+    { "include": "#escaped-arrow" },
+    { "include": "#choice-line" },
+    { "include": "#inline-rules" },
+    { "include": "#prose-formatting" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.number-sign.playtxt",
+          "match": "^\\s*(#|//|;).*$"
+        }
+      ]
+    },
+    "variable-header": {
+      "match": "^\\s*(?i)((?:enum|stany|warianty|var|zmienna|set|then|if\\??|else|endif|effects|efekty|zmie[ńn])\\s*:)\\s*(.*)$",
+      "captures": {
+        "1": { "name": "comment.block.key.playtxt" },
+        "2": {
+          "patterns": [
+            { "include": "#rule-tokens" }
+          ]
+        }
+      }
+    },
+    "editor-header": {
+      "match": "^\\s*(?i)((?:pan_x|pan_y|zoom|node|wire)\\s*:)\\s*(.*)$",
+      "captures": {
+        "1": { "name": "comment.block.key.playtxt" },
+        "2": {
+          "patterns": [
+            {
+              "name": "comment.block.operator.playtxt",
+              "match": "(->|[,;|])"
+            },
+            {
+              "name": "constant.other.value.playtxt",
+              "match": "[^\\s,;\\-|>]+"
+            }
+          ]
+        }
+      }
+    },
+    "transition-header": {
+      "match": "^\\s*(?i)((?:exit|next|dalej|start|first_scene|pierwsza_scena|wej[śs]cie)\\s*:)\\s*(?:(?i)((?:chapter|rozdzia[łl]|act|akt):)\\s*(.*)|(.*))$",
+      "captures": {
+        "1": { "name": "comment.block.key.playtxt" },
+        "2": { "name": "comment.block.operator.playtxt" },
+        "3": { "name": "constant.other.value.playtxt" },
+        "4": { "name": "constant.other.value.playtxt" }
+      }
+    },
+    "label-header": {
+      "match": "^\\s*(?i)((?:title|tytu[łl]|text|tekst|label|etykieta|author|autor|description|opis|summary|license|licencja|copyright|prawa|slugline|nag[łl][óo]wek|heading|synopsis|streszczenie)\\s*:)\\s*(.*)$",
+      "captures": {
+        "1": { "name": "comment.block.key.playtxt" },
+        "2": { "name": "meta.title.playtxt" }
+      }
+    },
+    "any-header": {
+      "match": "^\\s*(?i)((?:chapter|rozdzia[łl]|act|akt|scene|scena|id|end|koniec|image|obraz|img|voice|audio|g[łl]os|cover|ok[łl]adka|narrated|narracja|voiced|imageless|bez_obraz[óo]w|text_only|mode|tryb|typ|type|standard|format|norma)\\s*:)\\s*(.*)$",
+      "captures": {
+        "1": { "name": "comment.block.key.playtxt" },
+        "2": { "name": "constant.other.value.playtxt" }
+      }
+    },
+    "standalone-effects": {
+      "match": "^\\s*(\\{\\{)(.*?)(\\}\\})\\s*$",
+      "captures": {
+        "1": { "name": "comment.block.brace.playtxt" },
+        "2": {
+          "patterns": [
+            { "include": "#rule-tokens" }
+          ]
+        },
+        "3": { "name": "comment.block.brace.playtxt" }
+      }
+    },
+    "escaped-arrow": {
+      "name": "comment.block.operator.playtxt",
+      "match": "\\\\->"
+    },
+    "choice-line": {
+      "match": "^(\\s*)(.+?)\\s*(->)\\s*(?:(?i)((?:chapter|rozdzia[łl]|act|akt):)\\s*(.+?)|(.+?))\\s*$",
+      "captures": {
+        "2": {
+          "patterns": [
+            { "include": "#inline-rules" },
+            { "include": "#prose-formatting" }
+          ]
+        },
+        "3": { "name": "comment.block.operator.playtxt" },
+        "4": { "name": "comment.block.operator.playtxt" },
+        "5": { "name": "constant.other.value.playtxt" },
+        "6": { "name": "constant.other.value.playtxt" }
+      }
+    },
+    "inline-rules": {
+      "match": "(\\{\\{)(\\??)(.*?)(\\}\\})",
+      "captures": {
+        "1": { "name": "comment.block.brace.playtxt" },
+        "2": { "name": "comment.block.operator.playtxt" },
+        "3": {
+          "patterns": [
+            { "include": "#rule-tokens" }
+          ]
+        },
+        "4": { "name": "comment.block.brace.playtxt" }
+      }
+    },
+    "rule-tokens": {
+      "patterns": [
+        {
+          "name": "comment.block.operator.playtxt",
+          "match": "\\b(?i)(and|or|not)\\b"
+        },
+        {
+          "name": "comment.block.operator.playtxt",
+          "match": "(&&|\\|\\||==|!=|>=|<=|\\+\\+|--|\\+=|-=|=|>|<|\\?|!|\\+|\\-|[,;:|/])"
+        },
+        {
+          "name": "constant.other.value.playtxt",
+          "match": "[\\p{L}\\p{N}_][\\p{L}\\p{N}_\\-]*"
+        }
+      ]
+    },
+    "prose-formatting": {
+      "patterns": [
+        {
+          "name": "comment.block.operator.playtxt",
+          "match": "^\\s*(---|\\*\\*\\*)\\s*$"
+        },
+        {
+          "name": "markup.quote.playtxt",
+          "match": "^\\s*>.*$"
+        },
+        {
+          "name": "markup.bold.playtxt",
+          "match": "\\*\\*[^*]+\\*\\*"
+        },
+        {
+          "name": "markup.italic.playtxt",
+          "match": "\\*[^*]+\\*"
+        }
+      ]
+    }
+  }
+}

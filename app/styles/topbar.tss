@@ -5,30 +5,50 @@
   z-index 200
   display flex
   align-items center
-  justify-content space-between
-  padding 6px
-  min-height 36px
+  justify-content flex-start
+  padding 4px 8px
+  min-height 32px
   background --bg-topbar
   border-bottom 1px solid --border-subtle
   flex-shrink 0
-  gap 12px
+  gap 4px
   -webkit-app-region drag
 
 .topbar button
   -webkit-app-region no-drag
 
-.topbar-left, .topbar-right
+.topbar-left, .topbar-center, .topbar-right
   display flex
   align-items center
 
 .topbar-left
-  gap 10px
+  gap 4px
+  min-width 0
+
+.topbar-center
+  gap 4px
   min-width 0
 
 .topbar-right
   position relative
-  gap 14px
+  margin-left auto
+  gap 4px
   flex-shrink 0
+
+.topbar-divider
+  width 1px
+  height 14px
+  background --border-subtle
+  display block
+  flex-shrink 0
+  margin 0 2px
+
+.topbar-icon-tab
+  padding 4px
+
+.topbar-icon-tab .tab-icon
+  width 15px
+  height 15px
 
 .topbar-hamburger-btn, .top-action-btn.topbar-hamburger-btn
   display none !important
@@ -36,15 +56,15 @@
 .topbar-actions-menu
   display flex
   align-items center
-  gap 14px
+  gap 4px
 
 .brand-mark
-  width 17px
-  height 17px
+  width 16px
+  height 16px
   display block
   flex-shrink 0
   color --text-primary
-  margin-left 4px
+  margin 0 2px
   pointer-events none
 
 .brand-logo
@@ -59,15 +79,12 @@
   text-overflow ellipsis
   user-select none
 
-.brand-logo-short
-  display none
-
 .topbar-tab
   display inline-flex
   align-items center
   justify-content center
-  gap 6px
-  padding 4px 8px
+  gap 4px
+  padding 4px
   border none !important
   text-decoration none !important
   background transparent
@@ -86,13 +103,9 @@
   border none !important
   text-decoration none !important
 
-#tab-player
-  flex-shrink 1
-  min-width 0
-
 .tab-icon
-  width 14px
-  height 14px
+  width 15px
+  height 15px
   display block
   flex-shrink 0
   pointer-events none
@@ -114,7 +127,7 @@
   align-items center
   justify-content center
   gap 4px
-  padding 5px
+  padding 4px
   border none !important
   text-decoration none !important
   background transparent
@@ -144,7 +157,7 @@
   flex-shrink 0
   pointer-events none
 
-#icon-imageless-on, #icon-zoom-out, #icon-theme-moon
+#icon-imageless-on, #icon-zoom-out, #icon-zoom-zen, #icon-theme-moon
   display none
 
 body[data-imageless="true"] #icon-imageless-off, body[data-imageless-locked="true"] #icon-imageless-off
@@ -153,11 +166,21 @@ body[data-imageless="true"] #icon-imageless-off, body[data-imageless-locked="tru
 body[data-imageless="true"] #icon-imageless-on, body[data-imageless-locked="true"] #icon-imageless-on
   display block
 
-body[data-ui-scale="large"] #icon-zoom-in
+body[data-ui-scale="large"] #icon-zoom-in, body[data-ui-scale="large"] #icon-zoom-out
   display none
 
-body[data-ui-scale="large"] #icon-zoom-out
+body[data-ui-scale="large"] #icon-zoom-zen
   display block
+
+body[data-ui-scale="zen"] #icon-zoom-in, body[data-ui-scale="zen"] #icon-zoom-zen
+  display none
+
+body[data-ui-scale="zen"] #icon-zoom-out
+  display block
+
+body[data-ui-scale="zen"]
+  #tab-library, #tab-editor, .topbar-divider, #btn-topbar-menu, #btn-toggle-imageless, #btn-toggle-fullscreen, .topbar-actions-menu button[action="PromptResetProgress"], .topbar-actions-menu button[action="OpenQRModal"]
+    display none !important
 
 body[data-theme="light"] #icon-theme-sun
   display none
@@ -167,82 +190,50 @@ body[data-theme="light"] #icon-theme-moon
 
 body[data-ui-scale="large"]
   .topbar
-    padding 10px 14px
-    min-height 50px
-    gap 16px
+    padding 6px 10px
+    min-height 40px
+    gap 8px
 
-  .topbar-left
-    gap 14px
+  .topbar-left, .topbar-right, .topbar-actions-menu
+    gap 6px
 
-  .topbar-right, .topbar-actions-menu
-    gap 18px
+  .topbar-divider
+    height 16px
 
   .brand-mark
-    width 21px
-    height 21px
-
-  .brand-logo
-    font-size 16px
-    padding 4px 8px 4px 2px
-
-  .topbar-tab
-    padding 6px 10px
-    font-size 14px
-
-  .tab-icon
     width 18px
     height 18px
 
-  .top-action-btn
-    padding 8px
-    font-size 14px
+  .brand-logo
+    font-size 15px
+    padding 2px 6px 2px 2px
 
-  .action-icon
-    width 22px
-    height 22px
+  .topbar-tab, .topbar-icon-tab, .top-action-btn
+    padding 5px
+    font-size 13px
+
+  .tab-icon, .topbar-icon-tab .tab-icon, .action-icon
+    width 18px
+    height 18px
 
 /* @dev-only-start */
 .device-frame .topbar
-  padding 6px
+  padding 4px 8px
 
 .topbar
   @switch preview
-    portrait, landscape
-      padding 6px
-      gap 8px
+    portrait, tablet, landscape
+      padding 4px 8px
+      gap 6px
 
 .desktop-only-btn
   display switch(preview)
-    portrait, landscape none !important
+    portrait, tablet, landscape none !important
 
 .topbar-left
   @switch preview
     portrait
-      gap 6px
-
-.topbar-left .brand-logo:not(.brand-logo-short):not(:only-child)
-  display switch(preview)
-    portrait none !important
-
-.brand-logo-short
-  display switch(preview)
-    portrait inline-block !important
-
-.topbar-tab
-  @switch preview
-    portrait
-      padding 6px 8px
-      max-width none
-
-.tab-label
-  display switch(preview)
-    portrait none !important
-
-.tab-icon
-  @switch preview
-    portrait
-      width 16px
-      height 16px
+      gap 4px
 
 .topbar-hamburger-btn, .top-action-btn.topbar-hamburger-btn
   display switch(preview)
@@ -257,8 +248,8 @@ body[data-ui-scale="large"]
       right 0
       background --bg-obsidian
       border 1px solid --text-primary
-      padding 6px 10px
-      gap 12px
+      padding 6px 8px
+      gap 6px
       align-items center
       z-index 120
       box-shadow 0 6px 18px rgba(0, 0, 0, 0.45)
@@ -271,18 +262,18 @@ body[data-ui-scale="large"]
 @media (max-width: 900px)
   .topbar
     padding 6px
-    gap 8px
+    gap 4px
 
   .desktop-only-btn
     display none !important
 
 @media (max-width: 620px)
   .topbar
-    padding 6px 8px
-    gap 6px
+    padding 4px 8px
+    gap 4px
 
   .topbar-left
-    gap 6px
+    gap 4px
 
   .topbar-hamburger-btn, .top-action-btn.topbar-hamburger-btn
     display inline-flex !important
@@ -294,29 +285,11 @@ body[data-ui-scale="large"]
     right 0
     background --bg-obsidian
     border 1px solid --text-primary
-    padding 6px 10px
-    gap 12px
+    padding 6px 8px
+    gap 6px
     align-items center
     z-index 120
     box-shadow 0 6px 18px rgba(0, 0, 0, 0.45)
 
   .topbar-actions-menu.open
     display flex !important
-
-@media (max-width: 480px)
-  .topbar-left .brand-logo:not(.brand-logo-short):not(:only-child)
-    display none !important
-
-  .brand-logo-short
-    display inline-block !important
-
-  .topbar-tab
-    padding 6px 8px
-    max-width none
-
-  .tab-label
-    display none !important
-
-  .tab-icon
-    width 16px
-    height 16px

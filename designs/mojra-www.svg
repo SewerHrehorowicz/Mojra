@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
+  <defs>
+    <!-- Ultra-subtle 24px (1G) grid fading into pure obsidian -->
+    <pattern id="grid24" width="24" height="24" patternUnits="userSpaceOnUse">
+      <path d="M 24 0 L 0 0 0 24" fill="none" stroke="#111111" stroke-width="1" />
+    </pattern>
+
+    <radialGradient id="vignette" cx="50%" cy="46%" r="50%">
+      <stop offset="0%" stop-color="#000000" stop-opacity="0.0" />
+      <stop offset="70%" stop-color="#000000" stop-opacity="0.84" />
+      <stop offset="100%" stop-color="#000000" stop-opacity="1.0" />
+    </radialGradient>
+
+    <!-- Refined, lightweight Mojra Symbol "M" -->
+    <g id="mojra-mark-lightweight">
+      <line x1="8" y1="8" x2="8" y2="54" stroke="#ffffff" stroke-width="1.8" />
+      <line x1="54" y1="8" x2="54" y2="54" stroke="#ffffff" stroke-width="1.8" />
+      <path d="M 8 8 L 31 31.5 L 54 8" fill="none" stroke="#ffffff" stroke-width="1.8" stroke-linejoin="round" />
+      <line x1="31" y1="31.5" x2="31" y2="54" stroke="#ffffff" stroke-width="1.4" stroke-linecap="round" />
+      <circle cx="8" cy="8" r="3.8" fill="#ffffff" />
+      <circle cx="54" cy="8" r="3.8" fill="#000000" stroke="#ffffff" stroke-width="1.7" />
+      <circle cx="8" cy="54" r="3.8" fill="#ffffff" />
+      <circle cx="54" cy="54" r="3.8" fill="#ffffff" />
+      <circle cx="31" cy="31.5" r="6.2" fill="#000000" stroke="#ffffff" stroke-width="1.75" />
+      <circle cx="31" cy="31.5" r="2.2" fill="#ffffff" />
+    </g>
+
+    <!-- Version 1 with continuous, unbroken open-book outline + bottom cover cradle + bold Play -->
+    <g id="playbook-open-play">
+      <!-- Continuous unbroken open-book contour -->
+      <path d="M 4 14 C 12 10.5, 23 11.5, 32 16.5 C 41 11.5, 52 10.5, 60 14 V 48 C 52 44.5, 41 45.5, 32 50.5 C 23 45.5, 12 44.5, 4 48 Z"
+        fill="none" stroke="#ffffff" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" />
+      <!-- Continuous bottom open cover cradle -->
+      <path d="M 6 54 C 14 51, 24 52, 32 56.5 C 40 52, 50 51, 58 54"
+        fill="none" stroke="#ffffff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" />
+      <!-- Bold Play triangle optically centered in the open interior -->
+      <path d="M 26 22.5 L 42.5 32.5 L 26 42.5 Z" fill="#ffffff" />
+    </g>
+  </defs>
+
+  <!-- PURE OBSIDIAN CANVAS + SUBTLE FADING 24PX GRID -->
+  <rect width="1920" height="1080" fill="#000000" />
+  <rect width="1920" height="1080" fill="url(#grid24)" />
+  <rect width="1920" height="1080" fill="url(#vignette)" />
+
+  <!-- ===================================================================== -->
+  <!-- CENTERPIECE: BALANCED VERTICAL RHYTHM + CONTINUOUS PLAYBOOK TRIGGER   -->
+  <!-- ===================================================================== -->
+
+  <!-- 1. Balanced, lightweight Mojra Logo -->
+  <g transform="translate(822, 296)">
+    <use href="#mojra-mark-lightweight" x="0" y="0" />
+    <text x="80" y="50" fill="#ffffff" font-family="Georgia, 'Times New Roman', serif" font-size="64" font-weight="400" letter-spacing="2.2">Mojra</text>
+  </g>
+
+  <!-- 2. MOJRA APP + PLAYBOOK STUDIO -->
+  <text x="960" y="408" text-anchor="middle" fill="#787878" font-family="-apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif" font-size="11" font-weight="500" letter-spacing="4.4">
+    MOJRA APP <tspan fill="#3d3d3d" dx="8" dy="0">+</tspan><tspan dx="8" dy="0">PLAYBOOK STUDIO</tspan>
+  </text>
+
+  <!-- Thin 36px divider -->
+  <line x1="942" y1="448" x2="978" y2="448" stroke="#292929" stroke-width="1" />
+
+  <!-- 3. Tagline -->
+  <text x="960" y="504" text-anchor="middle" fill="#ffffff" font-family="Georgia, 'Times New Roman', serif" font-size="26" font-weight="400" letter-spacing="0.5">
+    Każda opowieść ma więcej niż jedną nić.
+  </text>
+
+  <!-- 4. Short enigmatic description -->
+  <text x="960" y="544" text-anchor="middle" fill="#808080" font-family="-apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif" font-size="14.5" font-weight="300" letter-spacing="0.4">
+    Kiedy słowo, głos i wybór splatają się w jedną żywą księgę.
+  </text>
+
+  <!-- 5. Standalone Playbook Icon (Version 1 with continuous unbroken book outline) -->
+  <g transform="translate(928, 608)">
+    <use href="#playbook-open-play" />
+  </g>
+
+  <!-- 6. Minimalist bottom status: STORYTELLING REDEFINED • COMING SOON -->
+  <g transform="translate(792, 956)">
+    <path d="M 0 6 L 0 0 L 6 0" fill="none" stroke="#484848" stroke-width="1" />
+    <path d="M 330 0 L 336 0 L 336 6" fill="none" stroke="#484848" stroke-width="1" />
+    <path d="M 0 26 L 0 32 L 6 32" fill="none" stroke="#484848" stroke-width="1" />
+    <path d="M 330 32 L 336 32 L 336 26" fill="none" stroke="#484848" stroke-width="1" />
+    <text x="168" y="20" text-anchor="middle" fill="#666666" font-family="-apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif" font-size="10" font-weight="600" letter-spacing="3.2">
+      STORYTELLING REDEFINED  <tspan fill="#383838">•</tspan>  <tspan fill="#c8c8c8">COMING SOON</tspan>
+    </text>
+  </g>
+</svg>

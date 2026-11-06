@@ -41,7 +41,7 @@ Koniec wędrówki -> END
 		ID:    "las",
 		Title: "Las",
 	}
-	ParseStoryFile(raw, "story.txt", b)
+	ParseStoryFile(raw, "story.playtxt", b)
 	if len(b.Scenes) != 4 {
 		t.Fatalf("expected 4 scenes, got %d", len(b.Scenes))
 	}
@@ -101,7 +101,7 @@ Deszcz bębnił o szyby starej karczmy.
 Wyrusz w drogę -> END
 `
 	b := &Book{ID: "prolog", Title: "Prolog"}
-	ParseStoryFile(raw, "prolog.txt", b)
+	ParseStoryFile(raw, "prolog.playtxt", b)
 	if len(b.Scenes) != 1 {
 		t.Fatalf("expected 1 auto-created scene under chapter, got %d", len(b.Scenes))
 	}
@@ -117,7 +117,7 @@ To jest akapit z <script>evil()</script> oraz <img src=x onerror=evil()>.
 Kliknij <b onload=evil()>tutaj</b> -> END
 `
 	b := &Book{ID: "sec", Title: "Sec"}
-	ParseStoryFile(raw, "story.txt", b)
+	ParseStoryFile(raw, "story.playtxt", b)
 	if len(b.Scenes) != 1 {
 		t.Fatalf("expected 1 scene, got %d", len(b.Scenes))
 	}
@@ -132,13 +132,13 @@ func TestInsertSceneBetweenAndMediaMatchingNoSVG(t *testing.T) {
 	_ = os.MkdirAll(filepath.Join(dir, "images"), 0755)
 	_ = os.MkdirAll(filepath.Join(dir, "voice"), 0755)
 
-	_ = os.WriteFile(filepath.Join(dir, "data.txt"), []byte(`title: Las
+	_ = os.WriteFile(filepath.Join(dir, "book.playtxt"), []byte(`title: Las
 author: Autor
 narrated: true
 start: mgla
 `), 0644)
 
-	_ = os.WriteFile(filepath.Join(dir, "story.txt"), []byte(`chapter: Las
+	_ = os.WriteFile(filepath.Join(dir, "story.playtxt"), []byte(`chapter: Las
 
 scene: Mgła
 id: mgla
@@ -324,13 +324,13 @@ func TestExternalBooksZeroCopyAndURLDownload(t *testing.T) {
 	// 1. Create an external unpacked book folder outside booksDir
 	extBookDir := filepath.Join(externalRoot, "wyspa-mgiel")
 	_ = os.MkdirAll(extBookDir, 0755)
-	_ = os.WriteFile(filepath.Join(extBookDir, "data.txt"), []byte("title: Wyspa Mgieł\nauthor: Anna Nowak\nnarrated: false\nstart: brzeg\n"), 0644)
-	_ = os.WriteFile(filepath.Join(extBookDir, "story.txt"), []byte("chapter: Rozdział I\n\nscene: Brzeg\nid: brzeg\nFale uderzają o skały.\nWejdź w głąb lądu -> latarnia\n\nscene: Latarnia\nid: latarnia\nend: true\nDotarłeś do latarni.\n"), 0644)
+	_ = os.WriteFile(filepath.Join(extBookDir, "book.playtxt"), []byte("title: Wyspa Mgieł\nauthor: Anna Nowak\nnarrated: false\nstart: brzeg\n"), 0644)
+	_ = os.WriteFile(filepath.Join(extBookDir, "story.playtxt"), []byte("chapter: Rozdział I\n\nscene: Brzeg\nid: brzeg\nFale uderzają o skały.\nWejdź w głąb lądu -> latarnia\n\nscene: Latarnia\nid: latarnia\nend: true\nDotarłeś do latarni.\n"), 0644)
 
-	// Verify ResolveDiskBookPaths resolves both directory and direct story.txt path to extBookDir
-	resolvedFromFile, err := ResolveDiskBookPaths(filepath.Join(extBookDir, "story.txt"))
+	// Verify ResolveDiskBookPaths resolves both directory and direct story.playtxt path to extBookDir
+	resolvedFromFile, err := ResolveDiskBookPaths(filepath.Join(extBookDir, "story.playtxt"))
 	if err != nil || len(resolvedFromFile) != 1 || filepath.Clean(resolvedFromFile[0]) != filepath.Clean(extBookDir) {
-		t.Fatalf("expected story.txt path to resolve to parent book dir, got %v (err=%v)", resolvedFromFile, err)
+		t.Fatalf("expected story.playtxt path to resolve to parent book dir, got %v (err=%v)", resolvedFromFile, err)
 	}
 
 	// 2. Persist external book in settings.ini and verify round-trip
@@ -353,11 +353,11 @@ func TestExternalBooksZeroCopyAndURLDownload(t *testing.T) {
 	// 3. Serve a zipped book via HTTP (with a top-level folder prefix and __MACOSX metadata) and download via URL
 	var zipBuf bytes.Buffer
 	zw := zip.NewWriter(&zipBuf)
-	wMac, _ := zw.Create("__MACOSX/ksiega-wiatru/._story.txt")
+	wMac, _ := zw.Create("__MACOSX/ksiega-wiatru/._story.playtxt")
 	_, _ = wMac.Write([]byte("junk"))
-	wData, _ := zw.Create("ksiega-wiatru-main/data.txt")
+	wData, _ := zw.Create("ksiega-wiatru-main/book.playtxt")
 	_, _ = wData.Write([]byte("title: Księga Wiatru\nauthor: Piotr Wiśniewski\nnarrated: false\n"))
-	wStory, _ := zw.Create("ksiega-wiatru-main/story.txt")
+	wStory, _ := zw.Create("ksiega-wiatru-main/story.playtxt")
 	_, _ = wStory.Write([]byte("scene: Wichura\nid: wichura\nend: true\nWiatr wieje z północy.\n"))
 	_ = zw.Close()
 
@@ -406,7 +406,7 @@ end: true
 Cisza nad wodą.
 `
 	b := &Book{ID: "chrzest", Title: "Chrzest"}
-	ParseStoryFile(raw, "story.txt", b)
+	ParseStoryFile(raw, "story.playtxt", b)
 	FinalizeBook(b)
 
 	if len(b.Scenes) != 3 {
@@ -431,13 +431,13 @@ Cisza nad wodą.
 		t.Fatalf("expected scene 1 choice to resolve to 'agonia_mattiego', got %q", b.Scenes[1].Choices[0].TargetSceneID)
 	}
 
-	serialized := SerializeScenesForFile(b, "story.txt")
-	if strings.Contains(serialized, "scene: Scena") || strings.Count(serialized, "scene:") != 1 {
-		t.Fatalf("expected only 1 'scene:' header in serialized output, got:\n%s", serialized)
+	serialized := SerializeScenesForFile(b, "story.playtxt")
+	if strings.Contains(serialized, "scene: Scena") || strings.Count(serialized, "title:") != 1 || strings.Count(serialized, "scene:") != 3 {
+		t.Fatalf("expected 3 'scene:' headers and only 1 'title:' header in serialized output, got:\n%s", serialized)
 	}
 
 	b2 := &Book{ID: "chrzest", Title: "Chrzest"}
-	ParseStoryFile(serialized, "story.txt", b2)
+	ParseStoryFile(serialized, "story.playtxt", b2)
 	FinalizeBook(b2)
 	if len(b2.Scenes) != 3 {
 		t.Fatalf("expected 3 scenes after round-trip, got %d", len(b2.Scenes))
@@ -453,16 +453,16 @@ Cisza nad wodą.
 func TestChapterIDAndMultiFileBookWithoutMagicNumbers(t *testing.T) {
 	dir := t.TempDir()
 
-	// data.txt specifies start scene "warsztat", which lives in wioskowe_dziwadlo.txt
+	// book.playtxt specifies start scene "warsztat", which lives in wioskowe_dziwadlo.playtxt
 	// (alphabetically LAST among the three chapter files).
-	_ = os.WriteFile(filepath.Join(dir, "data.txt"), []byte(`title: Rzeka
+	_ = os.WriteFile(filepath.Join(dir, "book.playtxt"), []byte(`title: Rzeka
 author: Autor
 narrated: false
 start: warsztat
 `), 0644)
 
-	// Chapter 1 file (alphabetically 3rd: wioskowe_dziwadlo.txt)
-	_ = os.WriteFile(filepath.Join(dir, "wioskowe_dziwadlo.txt"), []byte(`chapter: Wioskowe dziwadło
+	// Chapter 1 file (alphabetically 3rd: wioskowe_dziwadlo.playtxt)
+	_ = os.WriteFile(filepath.Join(dir, "wioskowe_dziwadlo.playtxt"), []byte(`chapter: Wioskowe dziwadło
 id: wioskowe_dziwadlo
 
 scene: Wstyd w warsztacie
@@ -474,8 +474,8 @@ next: siedem_kanu
 Popłynął w końcu Krzyś na poważną akcję.
 `), 0644)
 
-	// Chapter 2 file (alphabetically 2nd: w_gore_umierajacej_rzeki.txt) - relies on filename stem for chapter ID
-	_ = os.WriteFile(filepath.Join(dir, "w_gore_umierajacej_rzeki.txt"), []byte(`chapter: W górę umierającej rzeki
+	// Chapter 2 file (alphabetically 2nd: w_gore_umierajacej_rzeki.playtxt) - relies on filename stem for chapter ID
+	_ = os.WriteFile(filepath.Join(dir, "w_gore_umierajacej_rzeki.playtxt"), []byte(`chapter: W górę umierającej rzeki
 
 scene: Siedem kanu
 id: siedem_kanu
@@ -483,8 +483,8 @@ next: zwiadowca_znikad
 Siedem kanu płynęło bezszelestnie.
 `), 0644)
 
-	// Chapter 3 file (alphabetically 1st: krew_pod_butelkowcami.txt)
-	_ = os.WriteFile(filepath.Join(dir, "krew_pod_butelkowcami.txt"), []byte(`chapter: Krew pod butelkowcami
+	// Chapter 3 file (alphabetically 1st: krew_pod_butelkowcami.playtxt)
+	_ = os.WriteFile(filepath.Join(dir, "krew_pod_butelkowcami.playtxt"), []byte(`chapter: Krew pod butelkowcami
 id: krew_pod_butelkowcami
 
 scene: Zwiadowca znikąd
@@ -505,13 +505,13 @@ Zwiadowca pojawił się przed nimi.
 	}
 
 	// Verify chapters are ordered by the story graph from start: warsztat, NOT alphabetical filename order
-	if b.Chapters[0].Name != "Wioskowe dziwadło" || b.Chapters[0].ExplicitID != "wioskowe_dziwadlo" || b.Chapters[0].FileName() != "wioskowe_dziwadlo.txt" {
+	if b.Chapters[0].Name != "Wioskowe dziwadło" || b.Chapters[0].ExplicitID != "wioskowe_dziwadlo" || b.Chapters[0].FileName() != "wioskowe_dziwadlo.playtxt" {
 		t.Fatalf("unexpected chapter 0: %+v", b.Chapters[0])
 	}
-	if b.Chapters[1].Name != "W górę umierającej rzeki" || b.Chapters[1].ID != "w_gore_umierajacej_rzeki" || b.Chapters[1].FileName() != "w_gore_umierajacej_rzeki.txt" {
+	if b.Chapters[1].Name != "W górę umierającej rzeki" || b.Chapters[1].ID != "w_gore_umierajacej_rzeki" || b.Chapters[1].FileName() != "w_gore_umierajacej_rzeki.playtxt" {
 		t.Fatalf("unexpected chapter 1: %+v", b.Chapters[1])
 	}
-	if b.Chapters[2].Name != "Krew pod butelkowcami" || b.Chapters[2].ExplicitID != "krew_pod_butelkowcami" || b.Chapters[2].FileName() != "krew_pod_butelkowcami.txt" {
+	if b.Chapters[2].Name != "Krew pod butelkowcami" || b.Chapters[2].ExplicitID != "krew_pod_butelkowcami" || b.Chapters[2].FileName() != "krew_pod_butelkowcami.playtxt" {
 		t.Fatalf("unexpected chapter 2: %+v", b.Chapters[2])
 	}
 
@@ -523,10 +523,10 @@ Zwiadowca pojawił się przed nimi.
 		t.Fatalf("unexpected scene order: %s, %s, %s, %s", b.Scenes[0].ID, b.Scenes[1].ID, b.Scenes[2].ID, b.Scenes[3].ID)
 	}
 
-	// Verify round-trip serialization preserves chapter id: header
-	serializedCh1 := SerializeScenesForFile(b, "wioskowe_dziwadlo.txt")
-	if !strings.Contains(serializedCh1, "chapter: Wioskowe dziwadło\nid: wioskowe_dziwadlo\n\n") {
-		t.Fatalf("expected chapter + id header block in serialized output, got:\n%s", serializedCh1)
+	// Verify round-trip serialization preserves chapter id + title header
+	serializedCh1 := SerializeScenesForFile(b, "wioskowe_dziwadlo.playtxt")
+	if !strings.Contains(serializedCh1, "chapter: wioskowe_dziwadlo\ntitle: Wioskowe dziwadło\n\n") {
+		t.Fatalf("expected chapter + title header block in serialized output, got:\n%s", serializedCh1)
 	}
 }
 
@@ -553,8 +553,8 @@ func TestDownloadBookFromURLBlocksSSRFPrivateAndLinkLocalIPs(t *testing.T) {
 func TestNarrationlessAllOrNothingPolicy(t *testing.T) {
 	dir := t.TempDir()
 	_ = os.MkdirAll(filepath.Join(dir, "voice"), 0755)
-	_ = os.WriteFile(filepath.Join(dir, "data.txt"), []byte("title: Cicha Księga\nauthor: Autor\nnarrated: false\nstart: s1\n"), 0644)
-	_ = os.WriteFile(filepath.Join(dir, "story.txt"), []byte("chapter: Rozdział 1\n\nscene: Cisza\nid: s1\nvoice: voice/cisza.ogg\nend: true\nTekst bez głosu.\n"), 0644)
+	_ = os.WriteFile(filepath.Join(dir, "book.playtxt"), []byte("title: Cicha Księga\nauthor: Autor\nnarrated: false\nstart: s1\n"), 0644)
+	_ = os.WriteFile(filepath.Join(dir, "story.playtxt"), []byte("chapter: Rozdział 1\n\nscene: Cisza\nid: s1\nvoice: voice/cisza.ogg\nend: true\nTekst bez głosu.\n"), 0644)
 	_ = os.WriteFile(filepath.Join(dir, "voice", "cisza.ogg"), []byte("OggS\x00\x02"), 0644)
 
 	b, err := LoadBookFromDir(dir)
@@ -570,7 +570,7 @@ func TestNarrationlessAllOrNothingPolicy(t *testing.T) {
 	if b.Scenes[0].ExplicitVoice != "" || b.Scenes[0].AudioFile != "" || b.Scenes[0].AudioURL != "" {
 		t.Fatalf("expected all voice fields cleared when narrated: false, got ExplicitVoice=%q AudioFile=%q AudioURL=%q", b.Scenes[0].ExplicitVoice, b.Scenes[0].AudioFile, b.Scenes[0].AudioURL)
 	}
-	serialized := SerializeScenesForFile(b, "story.txt")
+	serialized := SerializeScenesForFile(b, "story.playtxt")
 	if strings.Contains(serialized, "voice:") {
 		t.Fatalf("expected no voice: header serialized when narrated: false, got:\n%s", serialized)
 	}
@@ -578,8 +578,8 @@ func TestNarrationlessAllOrNothingPolicy(t *testing.T) {
 
 func TestOneWayChapterLinksAndSingleEntryPointValidation(t *testing.T) {
 	dir := t.TempDir()
-	_ = os.WriteFile(filepath.Join(dir, "data.txt"), []byte("title: Jednokierunkowa\nauthor: Autor\nstart: s1\n"), 0644)
-	_ = os.WriteFile(filepath.Join(dir, "rozdzial_1.txt"), []byte(`chapter: Rozdział 1
+	_ = os.WriteFile(filepath.Join(dir, "book.playtxt"), []byte("title: Jednokierunkowa\nauthor: Autor\nstart: s1\n"), 0644)
+	_ = os.WriteFile(filepath.Join(dir, "rozdzial_1.playtxt"), []byte(`chapter: Rozdział 1
 id: rozdzial_1
 
 scene: Scena 1
@@ -594,7 +594,7 @@ id: s2
 end: true
 Druga scena rozdziału 1.
 `), 0644)
-	_ = os.WriteFile(filepath.Join(dir, "rozdzial_2.txt"), []byte(`chapter: Rozdział 2
+	_ = os.WriteFile(filepath.Join(dir, "rozdzial_2.playtxt"), []byte(`chapter: Rozdział 2
 id: rozdzial_2
 
 scene: Wejście R2
@@ -607,7 +607,7 @@ id: r2_mid
 next: chapter:rozdzial_3
 Scena środkowa rozdziału 2.
 `), 0644)
-	_ = os.WriteFile(filepath.Join(dir, "rozdzial_3.txt"), []byte(`chapter: Rozdział 3
+	_ = os.WriteFile(filepath.Join(dir, "rozdzial_3.playtxt"), []byte(`chapter: Rozdział 3
 id: rozdzial_3
 
 scene: Wejście R3
@@ -651,7 +651,7 @@ Finał w rozdziale 3.
 	}
 
 	// Verify linking to an internal non-entry scene of another chapter or creating a backward chapter loop emits warnings and clears TargetSceneID
-	_ = os.WriteFile(filepath.Join(dir, "rozdzial_3.txt"), []byte(`chapter: Rozdział 3
+	_ = os.WriteFile(filepath.Join(dir, "rozdzial_3.playtxt"), []byte(`chapter: Rozdział 3
 id: rozdzial_3
 
 scene: Wejście R3
@@ -676,8 +676,8 @@ func TestPackBookToZipStoreMediaAndZeroRAMRangeServing(t *testing.T) {
 	_ = os.MkdirAll(filepath.Join(bookDir, "voice"), 0755)
 	_ = os.MkdirAll(filepath.Join(bookDir, ".history"), 0755)
 
-	_ = os.WriteFile(filepath.Join(bookDir, "data.txt"), []byte("title: Kronika\nauthor: Autor\nnarrated: true\nstart: s1\n"), 0644)
-	_ = os.WriteFile(filepath.Join(bookDir, "rozdzial_1.txt"), []byte("chapter: Rozdział 1\nid: rozdzial_1\n\nscene: Start\nid: s1\nimage: images/s1.png\nvoice: voice/s1.ogg\nend: true\nTekst **ważnej** sceny.\n"), 0644)
+	_ = os.WriteFile(filepath.Join(bookDir, "book.playtxt"), []byte("title: Kronika\nauthor: Autor\nnarrated: true\nstart: s1\n"), 0644)
+	_ = os.WriteFile(filepath.Join(bookDir, "rozdzial_1.playtxt"), []byte("chapter: Rozdział 1\nid: rozdzial_1\n\nscene: Start\nid: s1\nimage: images/s1.png\nvoice: voice/s1.ogg\nend: true\nTekst **ważnej** sceny.\n"), 0644)
 	_ = os.WriteFile(filepath.Join(bookDir, ".history", "history.txt"), []byte("cursor: r1\n"), 0644)
 
 	pngPayload := append([]byte("\x89PNG\r\n\x1a\n"), bytes.Repeat([]byte("P"), 256)...)
@@ -700,9 +700,9 @@ func TestPackBookToZipStoreMediaAndZeroRAMRangeServing(t *testing.T) {
 			_ = zr.Close()
 			t.Fatalf("expected .history to be excluded from .stbook, found %q", slashed)
 		}
-		if strings.HasSuffix(slashed, ".txt") && f.Method != zip.Deflate {
+		if strings.HasSuffix(slashed, ".playtxt") && f.Method != zip.Deflate {
 			_ = zr.Close()
-			t.Fatalf("expected .txt entry %q to use zip.Deflate, got method=%d", slashed, f.Method)
+			t.Fatalf("expected .playtxt entry %q to use zip.Deflate, got method=%d", slashed, f.Method)
 		}
 		if (strings.HasSuffix(slashed, ".png") || strings.HasSuffix(slashed, ".ogg")) && f.Method != zip.Store {
 			_ = zr.Close()
@@ -744,9 +744,9 @@ func TestPackBookToZipStoreMediaAndZeroRAMRangeServing(t *testing.T) {
 	legacyZip := filepath.Join(dir, "legacy.stbook")
 	var legacyBuf bytes.Buffer
 	lzw := zip.NewWriter(&legacyBuf)
-	dw, _ := lzw.Create("data.txt")
+	dw, _ := lzw.Create("book.playtxt")
 	_, _ = dw.Write([]byte("title: Legacy\nnarrated: true\n"))
-	sw, _ := lzw.Create("story.txt")
+	sw, _ := lzw.Create("story.playtxt")
 	_, _ = sw.Write([]byte("scene: S1\nid: s1\nvoice: voice/s1.ogg\nend: true\nTekst.\n"))
 	vw, _ := lzw.CreateHeader(&zip.FileHeader{Name: "voice/s1.ogg", Method: zip.Deflate})
 	_, _ = vw.Write(oggPayload)
@@ -769,8 +769,8 @@ func BenchmarkServePackedBookMediaRange(b *testing.B) {
 	dir := b.TempDir()
 	bookDir := filepath.Join(dir, "benchbook")
 	_ = os.MkdirAll(filepath.Join(bookDir, "voice"), 0755)
-	_ = os.WriteFile(filepath.Join(bookDir, "data.txt"), []byte("title: Bench\nnarrated: true\nstart: s1\n"), 0644)
-	_ = os.WriteFile(filepath.Join(bookDir, "rozdzial_1.txt"), []byte("chapter: R1\nid: rozdzial_1\n\nscene: S1\nid: s1\nvoice: voice/s1.ogg\nend: true\nTekst.\n"), 0644)
+	_ = os.WriteFile(filepath.Join(bookDir, "book.playtxt"), []byte("title: Bench\nnarrated: true\nstart: s1\n"), 0644)
+	_ = os.WriteFile(filepath.Join(bookDir, "rozdzial_1.playtxt"), []byte("chapter: R1\nid: rozdzial_1\n\nscene: S1\nid: s1\nvoice: voice/s1.ogg\nend: true\nTekst.\n"), 0644)
 	oggPayload := append([]byte("OggS\x00\x02\x00\x00"), bytes.Repeat([]byte("B"), 64*1024)...)
 	_ = os.WriteFile(filepath.Join(bookDir, "voice", "s1.ogg"), oggPayload, 0644)
 
@@ -800,12 +800,12 @@ func BenchmarkSaveMultiChapterBookDirtyOnly(b *testing.B) {
 	dir := b.TempDir()
 	bookDir := filepath.Join(dir, "multich")
 	_ = os.MkdirAll(bookDir, 0755)
-	_ = os.WriteFile(filepath.Join(bookDir, "data.txt"), []byte("title: Multi\nnarrated: false\nstart: s1\n"), 0644)
+	_ = os.WriteFile(filepath.Join(bookDir, "book.playtxt"), []byte("title: Multi\nnarrated: false\nstart: s1\n"), 0644)
 
 	for chIdx := 1; chIdx <= 20; chIdx++ {
 		chID := filepath.Base(SanitizeChapterID("rozdzial_" + string(rune('a'+chIdx-1))))
 		content := "chapter: Rozdział " + chID + "\nid: " + chID + "\n\nscene: Scena " + chID + "\nid: s_" + chID + "\nend: true\nTekst rozdziału.\n"
-		_ = os.WriteFile(filepath.Join(bookDir, chID+".txt"), []byte(content), 0644)
+		_ = os.WriteFile(filepath.Join(bookDir, chID+".playtxt"), []byte(content), 0644)
 	}
 	loaded, err := LoadBookFromDir(bookDir)
 	if err != nil {
@@ -829,7 +829,7 @@ func TestSecurityZipBombSymlinkExportDirAndDotDirs(t *testing.T) {
 	manyFilesZip := filepath.Join(dir, "many.stbook")
 	var manyBuf bytes.Buffer
 	mzw := zip.NewWriter(&manyBuf)
-	dw, _ := mzw.Create("story.txt")
+	dw, _ := mzw.Create("story.playtxt")
 	_, _ = dw.Write([]byte("scene: S1\nid: s1\nend: true\nTekst.\n"))
 	for i := 0; i <= MaxZipEntries; i++ {
 		_, _ = mzw.CreateHeader(&zip.FileHeader{
@@ -866,8 +866,8 @@ func TestSecurityZipBombSymlinkExportDirAndDotDirs(t *testing.T) {
 
 	bookDir := filepath.Join(dir, "symlink-book")
 	_ = os.MkdirAll(filepath.Join(bookDir, "images"), 0755)
-	_ = os.WriteFile(filepath.Join(bookDir, "data.txt"), []byte("title: Symlink Test\nexport_dir: /tmp/evil-hijack\n"), 0644)
-	_ = os.WriteFile(filepath.Join(bookDir, "story.txt"), []byte("scene: S1\nid: s1\nimage: images/leak.png\nend: true\nTekst.\n"), 0644)
+	_ = os.WriteFile(filepath.Join(bookDir, "book.playtxt"), []byte("title: Symlink Test\nexport_dir: /tmp/evil-hijack\n"), 0644)
+	_ = os.WriteFile(filepath.Join(bookDir, "story.playtxt"), []byte("scene: S1\nid: s1\nimage: images/leak.png\nend: true\nTekst.\n"), 0644)
 
 	symlinkPath := filepath.Join(bookDir, "images", "leak.png")
 	if err := os.Symlink(secretFile, symlinkPath); err == nil {
@@ -949,7 +949,7 @@ func FuzzParseStoryFileAndFinalize(f *testing.F) {
 	f.Add("scene: <script>alert(1)</script>\nid: ../etc/passwd\nimage: ../../secret.png\nvoice: /etc/shadow\n> Cytat\n---\nDalej -> chapter:r2\n")
 	f.Fuzz(func(t *testing.T, raw string) {
 		b := &Book{ID: "fuzz", Title: "Fuzz"}
-		ParseStoryFile(raw, "story.txt", b)
+		ParseStoryFile(raw, "story.playtxt", b)
 		FinalizeBook(b)
 		for _, sc := range b.Scenes {
 			assertOnlyAllowedProseTags(t, sc.EnsureHTML())

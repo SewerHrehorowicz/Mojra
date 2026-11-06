@@ -1,0 +1,147 @@
+chapter: kaplica_zrodla
+title: Kaplica zatrutego źródła
+
+scene: schody_w_korzeniach
+title: Schody w korzeniach
+
+Wąska ścieżka za murem cierni pięła się po stopniach ułożonych z płaskich kamieni i splecionych korzeni olbrzymich drzew. Im wyżej wchodzili, tym głośniejszy stawał się szum podziemnego wywierzyska, z którego brał początek główny dopływ rzeki.
+
+Na szczycie garbu stała pochylona, drewniana kaplica o gontowym dachu porośniętym białym liszajem.
+
+exit: prog_kaplicy
+
+---
+
+scene: prog_kaplicy
+title: Próg leśnej kaplicy
+
+Drzwi kaplicy nie były zaryglowane. Wewnątrz panował chłodny półmrok, rozświetlony jedynie kilkoma łojowymi ogarkami ustawionymi wokół kamiennej cembrowiny, z której biło źródło.
+
+Zamiast jednak krystalicznej wody, o której opowiadano w koszarowych legendach, w studni bulgotała gęsta, smolista ciecz o metalicznym połysku.
+
+exit: slepy_kustosz
+
+---
+
+scene: slepy_kustosz
+title: Ślepy kustosz źródła
+
+Przed cembrowiną klęczał wychudzony starzec w zgrzebnej szacie, trzymając dłonie nad czarną tonią. Kiedy podkute buty policjantów zadudniły na deskach podłogi, nawet nie odwrócił głowy — jego oczodoły były puste i dawno zabliźnione.
+
+- Przyszliście dolać więcej Boskich Łez? - zapytał cicho ślepiec, wskazując boczną niszę za ołtarzem. - Tam stoją wasze żelazne beczki z ostatniego transportu.
+
+exit: beczki_z_pieczecia
+text: Zajrzyj za ołtarz, gdzie stoją żelazne beczki
+
+exit: ksiega_wyrzutkow
+text: Zerwij ze stojaka spisaną na korze księgę wyrzutków
+
+---
+
+scene: beczki_z_pieczecia
+title: Beczki z policyjną pieczęcią
+set: odkryta_prawda = true; sumienie++; stan_ducha = zwatpienie
+
+Krzyś przesunął się z wiosłem w dłoni za drewniany ołtarz. W wykutej w skale niszy stało kilkanaście ciężkich, żelaznych beczek, z których rurkami sączył się prosto do podziemnego źródła gęsty, chemiczny szlam.
+
+Na każdym wieku widniała wytłoczona w ołowiu pieczęć ze skrzyżowanymi wiosłami i koroną — ten sam znak, który codziennie widział na bramie koszar Policji Rzecznej i na sygnecie kapitana Arvo.
+
+exit: czarna_cembrowina
+
+---
+
+scene: ksiega_wyrzutkow
+title: Księga wyrzutków
+set: odkryta_prawda = true; sumienie++; stan_ducha = zwatpienie
+
+Na drewnianym pulpicie leżały płaty brzozowej kory zapisane węglem. Krzyś sylabizował z trudem proste słowa, z których wynikało, że mieszkańcy osady przez lata próbowali oczyścić wywierzysko z trucizny wlewanej tu regularnie przez ekspedycje z miasta.
+
+Każdy, kto odkrył prawdę o zarazie i uciekł w las, był ogłaszany wrogiem Boskiej Dziewicy i ścigany aż do śmierci.
+
+exit: czarna_cembrowina
+
+---
+
+scene: czarna_cembrowina
+title: Czarna cembrowina
+
+Do kaplicy wszedł szybkim krokiem kapitan Arvo w otoczeniu dwóch najwierniejszych strzelców. Jednym ruchem dłoni kazał uciszyć ślepego kustosza, którego bez krzyku wywleczono za próg w ciernie.
+
+Wujek stanął nad bulgoczącą cembrowiną, a w blasku łojowych świec jego twarz wydawała się niemal święta.
+
+exit: kazanie_nad_zrodlem
+
+---
+
+scene: kazanie_nad_zrodlem
+title: Kazanie nad zatrutym źródłem
+
+- Patrzcie, chłopcy, co te leśne bestie zrobiły z krwią naszej Królowej! - zawołał z przejęciem kapitan, wskazując czarną maź w studni. - Zatruły samo serce strumienia! Dlatego musimy wypalić to gniazdo do ostatniej duszy, aż Boska Dziewica znów się do nas uśmiechnie!
+
+Krzyś stał z boku z ściśniętym gardłem, patrząc to na dobrotliwą twarz Wujka, to na cień za ołtarzem, skąd wciąż dochodziło ciche kapanie z żelaznych beczek.
+
+exit: proba_wiernosci
+text: Zaczerpnij w dłonie czarnej wody na rozkaz Wujka
+
+exit: ogien_w_kaplicy
+text: Odwróć wzrok od cembrowiny i podpal ściany kaplicy
+
+---
+
+scene: proba_wiernosci
+title: Próba wierności
+
+Kapitan Arvo dostrzegł wahanie w oczach Krzysia. Podszedł do studni, zanurzył w niej drewniany czerpak i podał go chłopakowi z tym swoim łagodnym, ojcowskim uśmiechem.
+
+- Pij, Krzysiu - powiedział miękko. - Kto ma w sercu czystą wiarę w Policję Rzeczną, temu brud wyrzutków nie zaszkodzi. Udowodnij przed kolegami, że jesteś Prawy i Wielki.
+
+if: odkryta_prawda
+Przed oczami Krzysia wciąż mieniła się ołowiana pieczęć na żelaznych beczkach za ołtarzem — wiedział już na pewno, że w czerpaku jest śmierć.
+endif:
+
+exit: lyk_z_czarnego_zrodla
+text: Wypij do dna gęsty, metaliczny płyn dla Boskiej Dziewicy
+set: posluszenstwo++
+
+exit: ogien_w_kaplicy
+text: Wylej ukradkiem truciznę w rękaw i skłoń głowę
+if: odkryta_prawda || sumienie >= 2
+set: sumienie++; stan_ducha = zbuntowany
+
+---
+
+scene: lyk_z_czarnego_zrodla
+title: Łyk z czarnego źródła
+
+Krzyś zamknął oczy, bo bardziej niż śmierci bał się tego, że Wujek znów na niego krzyknie albo nazwie go wioskowym dziwadłem. Przyłożył czerpak do ust i przełknął gęstą, lodowatą ciecz, która smakowała popiołem, żelazem i gnijącymi liliami.
+
+W jednej chwili ogień rozlał się po jego wnętrznościach, a z ust buchnęła mu czarna piana. Kiedy upadał na deski podłogi, widział jeszcze nad sobą uśmiechniętą twarz kapitana Arvo, który mówił cicho do pozostałych: „Widzicie, chłopcy? Nawet śmierć dla Niej jest słodka”.
+
+end: true
+
+---
+
+scene: ogien_w_kaplicy
+title: Ogień w kaplicy
+
+Strzelcy rozbili kolbami ołtarz i cisnęli płonące pochodnie na suche, żywiczne ściany kaplicy oraz w boczną niszę. Rozlane z beczek wyziewy zajęły się z głuchym hukiem, buchając błękitnym płomieniem aż pod sam gontowy strop.
+
+Wybiegli na zewnątrz w ostatniej chwili, gdy drewniana wieżyczka zapadła się do wnętrza wywierzyska z sykiem gotowanego szlamu.
+
+exit: zejscie_ze_wzgorza
+
+---
+
+scene: zejscie_ze_wzgorza
+title: Zejście ze wzgórza
+
+Stojąc na kamiennych stopniach pod płonącą kaplicą, Krzyś widział jak na dłoni całą nieckę w dole. Drewniane chaty osady stały już w ogniu, pomiędzy budynkami uwijała się czarna sylwetka zwiadowcy, a od wschodu zalane wodą szuwary tonęły w gęstym dymie.
+
+exit: chapter:pacyfikacja_osady
+text: Zbiegaj po stopniach prosto w sam środek szturmu na osadę
+
+exit: chapter:kruk_z_piekiel
+text: Zejdź na zadymiony majdan, gdzie krąży czarny zwiadowca
+
+exit: chapter:ucieczka_przez_szuwary
+text: Skręć za płonącą kaplicą w zalane wodą szuwary
