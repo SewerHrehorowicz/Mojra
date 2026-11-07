@@ -319,7 +319,7 @@ func TestScreenplayPDFAndFountainExport(t *testing.T) {
 
 	// Verify export_dir is NOT persisted in data.txt (untrusted book metadata cannot hijack export paths)
 	// and is instead persisted per-book in saves/settings.ini
-	b.ExportDir = "/tmp/storyteller-exports-test"
+	b.ExportDir = "/tmp/mojra-exports-test"
 	if err := SaveBookMetadataToDisk(b); err != nil {
 		t.Fatalf("SaveBookMetadataToDisk failed: %v", err)
 	}
@@ -332,12 +332,12 @@ func TestScreenplayPDFAndFountainExport(t *testing.T) {
 	}
 	savesDir := t.TempDir()
 	cfg := DefaultAppSettings()
-	cfg.SetBookExportDir(b.ID, "/tmp/storyteller-exports-test")
+	cfg.SetBookExportDir(b.ID, "/tmp/mojra-exports-test")
 	if err := SaveAppSettings(savesDir, cfg); err != nil {
 		t.Fatalf("SaveAppSettings failed: %v", err)
 	}
 	loadedCfg := LoadAppSettings(savesDir)
-	if got := loadedCfg.GetBookExportDir(b.ID); got != "/tmp/storyteller-exports-test" {
+	if got := loadedCfg.GetBookExportDir(b.ID); got != "/tmp/mojra-exports-test" {
 		t.Fatalf("expected per-book ExportDir persisted in settings.ini, got %q", got)
 	}
 

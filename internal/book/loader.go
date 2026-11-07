@@ -358,7 +358,7 @@ func isHiddenNonEditorFile(name string) bool {
 	return !strings.EqualFold(base, EditorStateFileName)
 }
 
-// HasBookFilesInDir checks whether a directory contains at least one .playtxt book file (such as story.playtxt, book.playtxt, or a .playtxt file with StoryTeller headers).
+// HasBookFilesInDir checks whether a directory contains at least one .playtxt book file (such as story.playtxt, book.playtxt, or a .playtxt file with Mojra headers).
 func HasBookFilesInDir(dir string) bool {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -441,7 +441,7 @@ func ensureFallbackEmptyScene(b *Book, warnMsg, fallbackText string) {
 	}
 }
 
-// ValidateBookZip checks whether a .stbook or .zip archive is a valid zip containing StoryTeller .playtxt files.
+// ValidateBookZip checks whether a .stbook or .zip archive is a valid zip containing Mojra .playtxt files.
 func ValidateBookZip(zipPath string) error {
 	zr, err := zip.OpenReader(zipPath)
 	if err != nil {
@@ -629,7 +629,7 @@ func DownloadBookFromURL(booksDir, rawURL string) (*Book, error) {
 	if err != nil {
 		return nil, fmt.Errorf("błąd tworzenia żądania HTTP: %w", err)
 	}
-	req.Header.Set("User-Agent", "StoryTeller/1.0")
+	req.Header.Set("User-Agent", "Mojra/1.0")
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -1291,30 +1291,30 @@ func IsInsideRepoDir(p string) bool {
 	return false
 }
 
-// DefaultAppDataDir returns the standard OS application data directory for StoryTeller
-// (e.g. ~/Library/Application Support/StoryTeller on macOS, %AppData%\StoryTeller on Windows, ~/.config/StoryTeller on Linux).
+// DefaultAppDataDir returns the standard OS application data directory for Mojra
+// (e.g. ~/Library/Application Support/Mojra on macOS, %AppData%\Mojra on Windows, ~/.config/Mojra on Linux).
 // During `go test`, it returns an isolated temporary directory so tests never touch user or repository state.
 func DefaultAppDataDir() string {
-	if envDir := strings.TrimSpace(os.Getenv("STORYTELLER_DATA_DIR")); envDir != "" {
+	if envDir := strings.TrimSpace(os.Getenv("MOJRA_DATA_DIR")); envDir != "" {
 		return filepath.Clean(envDir)
 	}
 	if isRunningUnderGoTest() {
 		defaultTestAppDataOnce.Do(func() {
-			if td, err := os.MkdirTemp("", "storyteller-test-appdata-*"); err == nil && td != "" {
+			if td, err := os.MkdirTemp("", "mojra-test-appdata-*"); err == nil && td != "" {
 				defaultTestAppDataDir = td
 				return
 			}
-			defaultTestAppDataDir = filepath.Join(os.TempDir(), "storyteller-test-appdata")
+			defaultTestAppDataDir = filepath.Join(os.TempDir(), "mojra-test-appdata")
 		})
 		return defaultTestAppDataDir
 	}
 	if cfgDir, err := os.UserConfigDir(); err == nil && strings.TrimSpace(cfgDir) != "" {
-		return filepath.Join(cfgDir, "StoryTeller")
+		return filepath.Join(cfgDir, "Mojra")
 	}
 	if home, err := os.UserHomeDir(); err == nil && strings.TrimSpace(home) != "" {
-		return filepath.Join(home, ".config", "StoryTeller")
+		return filepath.Join(home, ".config", "Mojra")
 	}
-	return filepath.Join(os.TempDir(), "StoryTeller")
+	return filepath.Join(os.TempDir(), "Mojra")
 }
 
 // DefaultSavesDir returns the standard application saves/state directory inside DefaultAppDataDir.

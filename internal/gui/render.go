@@ -1,8 +1,8 @@
 package gui
 
 import (
-	"storyteller/internal/book"
-	"storyteller/internal/tpl"
+	"mojra/internal/book"
+	"mojra/internal/tpl"
 )
 
 // BuildTargetedRenderContext constructs only the data needed for the given template/chunk target.

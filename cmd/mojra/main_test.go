@@ -20,14 +20,14 @@ func TestAppIconsAndWindowsResourceSYSO(t *testing.T) {
 		t.Fatalf("writeMacOSAppIconICNS failed: %v", err)
 	}
 
-	icoPath := filepath.Join(tmp, "StoryTeller.ico")
+	icoPath := filepath.Join(tmp, "Mojra.ico")
 	if err := writeWindowsAppIconICO(icoPath); err != nil {
 		t.Fatalf("writeWindowsAppIconICO failed: %v", err)
 	}
 
-	pngBytes, err := encodeStoryTellerIconPNG(256)
+	pngBytes, err := encodeIconPNG(256)
 	if err != nil {
-		t.Fatalf("encodeStoryTellerIconPNG failed: %v", err)
+		t.Fatalf("encodeIconPNG failed: %v", err)
 	}
 	img, err := png.Decode(bytes.NewReader(pngBytes))
 	if err != nil {
@@ -42,7 +42,7 @@ func TestAppIconsAndWindowsResourceSYSO(t *testing.T) {
 	// 2. Top-left & bottom-left solid nodes at (141, 135) and (141, 377)
 	// 3. Bottom-right solid node at (371, 377)
 	// 4. Center lower vertical stem at (256, 330)
-	icon512 := renderStoryTellerIcon(512)
+	icon512 := renderIcon(512)
 	for _, pt := range []struct {
 		name string
 		x, y int
@@ -91,7 +91,7 @@ func TestAppIconsAndWindowsResourceSYSO(t *testing.T) {
 		t.Fatalf("expected ARM64 machine 0xAA64, got 0x%x", peArm64.Machine)
 	}
 
-	linuxIconPath := filepath.Join(tmp, "StoryTeller.png")
+	linuxIconPath := filepath.Join(tmp, "Mojra.png")
 	if err := writeLinuxAppIconPNG(linuxIconPath); err != nil {
 		t.Fatalf("writeLinuxAppIconPNG failed: %v", err)
 	}
@@ -292,7 +292,7 @@ func TestPackageBooksForDistPacksOnlyStbook(t *testing.T) {
 
 func TestResolveDistRuntimeDirNeverReturnsRepoRoot(t *testing.T) {
 	fakeRepo := t.TempDir()
-	if err := os.WriteFile(filepath.Join(fakeRepo, "go.mod"), []byte("module storyteller\n"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(fakeRepo, "go.mod"), []byte("module mojra\n"), 0644); err != nil {
 		t.Fatalf("WriteFile go.mod failed: %v", err)
 	}
 	sampleSrc := filepath.Join(fakeRepo, "books", "nie-boj-sie-policji-rzecznej")

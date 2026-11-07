@@ -13,10 +13,10 @@ import (
 	"strings"
 	"syscall/js"
 
-	"storyteller"
-	"storyteller/internal/book"
-	"storyteller/internal/gui"
-	"storyteller/internal/tpl"
+	"mojra"
+	"mojra/internal/book"
+	"mojra/internal/gui"
+	"mojra/internal/tpl"
 )
 
 type wasmPlayerRuntime struct {
@@ -39,13 +39,13 @@ var rt = &wasmPlayerRuntime{
 }
 
 func main() {
-	templates, err := tpl.LoadTemplatesFromDir("", storyteller.WasmAppFS)
+	templates, err := tpl.LoadTemplatesFromDir("", mojra.WasmAppFS)
 	if err == nil {
 		rt.templates = templates
 	}
 
-	js.Global().Set("__mojraWasmBoot", js.FuncOf(wasmBoot))
-	js.Global().Set("__mojraWasmAction", js.FuncOf(wasmAction))
+	js.Global().Set("__wasmBoot", js.FuncOf(wasmBoot))
+	js.Global().Set("__wasmAction", js.FuncOf(wasmAction))
 
 	select {}
 }

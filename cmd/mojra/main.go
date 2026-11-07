@@ -17,11 +17,11 @@ import (
 	"runtime"
 	"strings"
 
-	"storyteller"
-	"storyteller/internal/audit"
-	"storyteller/internal/book"
-	"storyteller/internal/gui"
-	"storyteller/internal/tpl"
+	"mojra"
+	"mojra/internal/audit"
+	"mojra/internal/book"
+	"mojra/internal/gui"
+	"mojra/internal/tpl"
 )
 
 // productionBuild is set to "true" via -ldflags="-X main.productionBuild=true" during production builds.
@@ -84,34 +84,34 @@ func printUsage() {
 	fmt.Println(`Mojra — Interaktywny Czytnik & Playbook Studio
 
 Użycie / Usage:
-  storyteller [run] [--port 8484] [--headless]
+  mojra [run] [--port 8484] [--headless]
       Uruchamia samodzielną aplikację okienkową (natywne okno systemowe).
 
-  storyteller build [opcje] [platformy...]
+  mojra build [opcje] [platformy...]
       Kompiluje szablony .tpl -> app/index.html, łączy CSS i JS oraz buduje
       pliki wykonywalne i paczki dystrybucyjne dla wybranych lub wszystkich platform.
-      Uruchom 'storyteller build --help' lub './build.sh --help' po pełną listę flag.
+      Uruchom 'mojra build --help' lub './build.sh --help' po pełną listę flag.
 
-  storyteller bundle-all
+  mojra bundle-all
       Buduje binaria oraz paczki dystrybucyjne dla wszystkich platform (macOS, Windows, Linux).
 
-  storyteller bundle-app | bundle-macos
+  mojra bundle-app | bundle-macos
       Tworzy gotową paczkę aplikacji natywnej (dist/Mojra.app oraz dist/Mojra-macos.zip)
       wraz z binariami dla macOS (arm64/amd64) i przykładową książką.
 
-  storyteller bundle-windows
+  mojra bundle-windows
       Buduje samodzielną paczkę wykonywalną dla systemu Windows (dist/Mojra-windows/ + .zip).
 
-  storyteller bundle-linux
+  mojra bundle-linux
       Buduje samodzielną paczkę wykonywalną dla systemu Linux (dist/Mojra-linux/ + .zip).
 
-  storyteller pack <id-książki>
+  mojra pack <id-książki>
       Pakuje folder książki z katalogu books/<id> do archiwum dist/<id>.playbook.
 
-  storyteller add <ścieżka-na-dysku | url>
+  mojra add <ścieżka-na-dysku | url>
       Dodaje książkę do biblioteki z dysku (bez kopiowania plików) lub pobiera z adresu URL (.playbook / .zip).
 
-  storyteller audit [--js | --go | --tpl | --lang <język>] [--category <kategoria>] [--out <plik.log>] [--strict]
+  mojra audit [--js | --go | --tpl | --lang <język>] [--category <kategoria>] [--out <plik.log>] [--strict]
       Uruchamia statyczny audyt kodu Go, szablonów .tpl i skryptów .js.`)
 }
 
@@ -121,7 +121,7 @@ func printBuildUsage() {
 Użycie / Usage:
   ./build.sh [opcje] [platformy...]
   build.bat [opcje] [platformy...]
-  go run ./cmd/storyteller build [opcje] [platformy...]
+  go run ./cmd/mojra build [opcje] [platformy...]
 
 Platformy (Platforms):
   -a, --all                  Buduj dla wszystkich platform: macOS, Windows, Linux (domyślne)
@@ -252,8 +252,8 @@ func runCmd(args []string, forceDev bool) {
 	}
 
 	rootDir := resolveRootDir()
-	if err := gui.LaunchWithOptions(rootDir, storyteller.AppFS, *port, *headless, devMode); err != nil {
-		fmt.Fprintf(os.Stderr, "Błąd uruchomienia StoryTeller: %v\n", err)
+	if err := gui.LaunchWithOptions(rootDir, mojra.AppFS, *port, *headless, devMode); err != nil {
+		fmt.Fprintf(os.Stderr, "Błąd uruchomienia Mojra: %v\n", err)
 		os.Exit(1)
 	}
 }
@@ -509,7 +509,7 @@ func prepareBuildAssets(rootDir string) error {
 	if err := writeWindowsAppIconICO(filepath.Join(appDir, "icons", "favicon.ico")); err != nil {
 		return fmt.Errorf("błąd generowania favicon.ico: %w", err)
 	}
-	if png256, err := encodeStoryTellerIconPNG(256); err == nil {
+	if png256, err := encodeIconPNG(256); err == nil {
 		if err := os.WriteFile(filepath.Join(appDir, "icons", "icon.png"), png256, 0644); err != nil {
 			return fmt.Errorf("błąd generowania icon.png: %w", err)
 		}
@@ -631,12 +631,12 @@ func buildPlatformBinary(rootDir string, target platformTarget, outPath string, 
 	switch target.OS {
 	case "windows":
 		// Clean up any stale .syso files before writing the target architecture .syso
-		if matches, err := filepath.Glob(filepath.Join(rootDir, "cmd", "storyteller", "rsrc_windows_*.syso")); err == nil {
+		if matches, err := filepath.Glob(filepath.Join(rootDir, "cmd", "mojra", "rsrc_windows_*.syso")); err == nil {
 			for _, m := range matches {
 				_ = os.Remove(m)
 			}
 		}
-		sysoPath := filepath.Join(rootDir, "cmd", "storyteller", fmt.Sprintf("rsrc_windows_%s.syso", target.Arch))
+		sysoPath := filepath.Join(rootDir, "cmd", "mojra", fmt.Sprintf("rsrc_windows_%s.syso", target.Arch))
 		if err := writeWindowsResourceSYSOForArch(sysoPath, target.Arch); err != nil {
 			return fmt.Errorf("błąd generowania zasobów PE (.syso) dla windows/%s: %w", target.Arch, err)
 		}
@@ -644,7 +644,7 @@ func buildPlatformBinary(rootDir string, target platformTarget, outPath string, 
 			_ = os.Remove(sysoPath)
 		}()
 
-		cmd := exec.Command("go", "build", "-tags=prod_embed", "-trimpath", "-ldflags=-H=windowsgui "+modeFlags, "-o", outPath, "./cmd/storyteller")
+		cmd := exec.Command("go", "build", "-tags=prod_embed", "-trimpath", "-ldflags=-H=windowsgui "+modeFlags, "-o", outPath, "./cmd/mojra")
 		cmd.Dir = rootDir
 		cmd.Env = append(os.Environ(), "GOOS=windows", "GOARCH="+target.Arch, "CGO_ENABLED=0")
 		cmd.Stdout = os.Stdout
@@ -657,7 +657,7 @@ func buildPlatformBinary(rootDir string, target platformTarget, outPath string, 
 	case "darwin":
 		// On macOS host, prefer CGO_ENABLED=1 so native Cocoa/WKWebView window support is compiled in.
 		if runtime.GOOS == "darwin" {
-			cmd := exec.Command("go", "build", "-tags=prod_embed", "-trimpath", "-ldflags="+modeFlags, "-o", outPath, "./cmd/storyteller")
+			cmd := exec.Command("go", "build", "-tags=prod_embed", "-trimpath", "-ldflags="+modeFlags, "-o", outPath, "./cmd/mojra")
 			cmd.Dir = rootDir
 			cmd.Env = append(os.Environ(), "GOOS=darwin", "GOARCH="+target.Arch, "CGO_ENABLED=1")
 			var stderr bytes.Buffer
@@ -667,7 +667,7 @@ func buildPlatformBinary(rootDir string, target platformTarget, outPath string, 
 				return nil
 			}
 		}
-		cmd := exec.Command("go", "build", "-tags=prod_embed", "-trimpath", "-ldflags=-s -w "+modeFlags, "-o", outPath, "./cmd/storyteller")
+		cmd := exec.Command("go", "build", "-tags=prod_embed", "-trimpath", "-ldflags=-s -w "+modeFlags, "-o", outPath, "./cmd/mojra")
 		cmd.Dir = rootDir
 		cmd.Env = append(os.Environ(), "GOOS=darwin", "GOARCH="+target.Arch, "CGO_ENABLED=0")
 		cmd.Stdout = os.Stdout
@@ -682,7 +682,7 @@ func buildPlatformBinary(rootDir string, target platformTarget, outPath string, 
 		if err != nil {
 			return err
 		}
-		cmd := exec.Command("go", "build", "-tags=prod_embed", "-trimpath", "-ldflags=-s -w "+modeFlags, "-o", outPath, "./cmd/storyteller")
+		cmd := exec.Command("go", "build", "-tags=prod_embed", "-trimpath", "-ldflags=-s -w "+modeFlags, "-o", outPath, "./cmd/mojra")
 		cmd.Dir = rootDir
 		cmd.Env = append(os.Environ(), "GOOS=android", "GOARCH="+target.Arch, "CGO_ENABLED=1", "CC="+ndkClang)
 		cmd.Stdout = os.Stdout
@@ -693,7 +693,7 @@ func buildPlatformBinary(rootDir string, target platformTarget, outPath string, 
 		return nil
 
 	default: // linux and others
-		cmd := exec.Command("go", "build", "-tags=prod_embed", "-trimpath", "-ldflags=-s -w "+modeFlags, "-o", outPath, "./cmd/storyteller")
+		cmd := exec.Command("go", "build", "-tags=prod_embed", "-trimpath", "-ldflags=-s -w "+modeFlags, "-o", outPath, "./cmd/mojra")
 		cmd.Dir = rootDir
 		cmd.Env = append(os.Environ(), "GOOS="+target.OS, "GOARCH="+target.Arch, "CGO_ENABLED=0")
 		cmd.Stdout = os.Stdout
@@ -725,7 +725,7 @@ func buildCmd(args []string) {
 	if opts.WWWOnly {
 		appDir := filepath.Join(rootDir, "app")
 		_ = writeWindowsAppIconICO(filepath.Join(appDir, "icons", "favicon.ico"))
-		if png256, err := encodeStoryTellerIconPNG(256); err == nil {
+		if png256, err := encodeIconPNG(256); err == nil {
 			if wErr := os.WriteFile(filepath.Join(appDir, "icons", "icon.png"), png256, 0644); wErr != nil {
 				fmt.Fprintf(os.Stderr, "błąd zapisu icon.png: %v\n", wErr)
 				os.Exit(1)
@@ -760,9 +760,9 @@ func buildCmd(args []string) {
 		}
 		targetBin := opts.OutPath
 		if targetBin == "" {
-			targetBin = "storyteller"
+			targetBin = "mojra"
 			if targetOS == "windows" {
-				targetBin = "storyteller.exe"
+				targetBin = "mojra.exe"
 			}
 		}
 		if !filepath.IsAbs(targetBin) {
@@ -785,14 +785,8 @@ func buildCmd(args []string) {
 		"Mojra-windows.zip",
 		"Mojra-linux",
 		"Mojra-linux.zip",
-		"StoryTeller.app",
-		"StoryTeller-macos.zip",
-		"StoryTeller-windows",
-		"StoryTeller-windows.zip",
-		"StoryTeller-linux",
-		"StoryTeller-linux.zip",
-		"StoryTeller-macos-arm64",
-		"StoryTeller-macos-amd64",
+		"Mojra-macos-arm64",
+		"Mojra-macos-amd64",
 		"books",
 		"saves",
 	} {
@@ -825,9 +819,9 @@ func buildCmd(args []string) {
 
 	if hostMap := builtByOS[runtime.GOOS]; hostMap != nil {
 		if hostBin := hostMap[runtime.GOARCH]; hostBin != "" {
-			rootBinName := "storyteller"
+			rootBinName := "mojra"
 			if runtime.GOOS == "windows" {
-				rootBinName = "StoryTeller.exe"
+				rootBinName = "Mojra.exe"
 			}
 			rootBin := filepath.Join(rootDir, rootBinName)
 			_ = copyFileWithMode(hostBin, rootBin, 0755)
@@ -978,13 +972,13 @@ func packageMacOSBundle(rootDir string, archBins map[string]string) error {
 		}
 	}
 
-	// Keep ./storyteller in the project root updated when building on macOS
+	// Keep ./mojra in the project root updated when building on macOS
 	if runtime.GOOS == "darwin" {
 		hostBin := archBins[runtime.GOARCH]
 		if hostBin == "" {
 			hostBin = binPath
 		}
-		rootBin := filepath.Join(rootDir, "storyteller")
+		rootBin := filepath.Join(rootDir, "mojra")
 		_ = copyFileWithMode(hostBin, rootBin, 0755)
 		adhocSignMacOSPath(rootBin)
 	}
@@ -998,7 +992,7 @@ func packageMacOSBundle(rootDir string, archBins map[string]string) error {
 	<key>CFBundleDisplayName</key>
 	<string>Mojra</string>
 	<key>CFBundleIdentifier</key>
-	<string>pl.storyteller.app</string>
+	<string>pl.mojra.app</string>
 	<key>CFBundleVersion</key>
 	<string>1.0.0</string>
 	<key>CFBundlePackageType</key>
@@ -1092,7 +1086,7 @@ func packageWindowsBundle(rootDir string, archBins map[string]string) error {
 }
 
 func writeLinuxAppIconPNG(outPath string) error {
-	pngData, err := encodeStoryTellerIconPNG(512)
+	pngData, err := encodeIconPNG(512)
 	if err != nil {
 		return err
 	}
@@ -1134,7 +1128,7 @@ func packageLinuxBundle(rootDir string, archBins map[string]string) error {
 		if hostBin == "" {
 			hostBin = binPath
 		}
-		_ = copyFileWithMode(hostBin, filepath.Join(rootDir, "storyteller"), 0755)
+		_ = copyFileWithMode(hostBin, filepath.Join(rootDir, "mojra"), 0755)
 	}
 
 	if err := packageBooksForDist(booksDir, filepath.Join(outDir, "books")); err != nil {
@@ -1245,13 +1239,13 @@ func packageAndroidBundle(rootDir string, archBins map[string]string) error {
 	javac := filepath.Join(jdkDir, "bin", "javac")
 	keytool := filepath.Join(jdkDir, "bin", "keytool")
 
-	workDir, err := os.MkdirTemp("", "storyteller-apk-*")
+	workDir, err := os.MkdirTemp("", "mojra-apk-*")
 	if err != nil {
 		return err
 	}
 	defer os.RemoveAll(workDir)
 
-	srcDir := filepath.Join(workDir, "src", "pl", "storyteller", "app")
+	srcDir := filepath.Join(workDir, "src", "pl", "mojra", "app")
 	classesDir := filepath.Join(workDir, "classes")
 	resDir := filepath.Join(workDir, "res", "mipmap-xxxhdpi")
 	assetsBooksDir := filepath.Join(workDir, "assets", "books")
@@ -1260,7 +1254,7 @@ func packageAndroidBundle(rootDir string, archBins map[string]string) error {
 	_ = os.MkdirAll(resDir, 0755)
 	_ = os.MkdirAll(assetsBooksDir, 0755)
 
-	if pngIcon, err := encodeStoryTellerIconPNG(192); err == nil {
+	if pngIcon, err := encodeIconPNG(192); err == nil {
 		if wErr := os.WriteFile(filepath.Join(resDir, "ic_launcher.png"), pngIcon, 0644); wErr != nil {
 			return wErr
 		}
@@ -1271,7 +1265,7 @@ func packageAndroidBundle(rootDir string, archBins map[string]string) error {
 
 	manifestXML := `<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="pl.storyteller.app"
+    package="pl.mojra.app"
     android:versionCode="1"
     android:versionName="1.0.0">
     <uses-sdk android:minSdkVersion="24" android:targetSdkVersion="35" />
@@ -1284,7 +1278,7 @@ func packageAndroidBundle(rootDir string, archBins map[string]string) error {
         android:extractNativeLibs="true"
         android:theme="@android:style/Theme.NoTitleBar.Fullscreen">
         <activity
-            android:name="pl.storyteller.app.MainActivity"
+            android:name="pl.mojra.app.MainActivity"
             android:exported="true"
             android:configChanges="orientation|screenSize|keyboardHidden">
             <intent-filter>
@@ -1300,7 +1294,7 @@ func packageAndroidBundle(rootDir string, archBins map[string]string) error {
 		return err
 	}
 
-	mainActivityJava := `package pl.storyteller.app;
+	mainActivityJava := `package pl.mojra.app;
 
 import android.app.Activity;
 import android.os.Bundle;
@@ -1362,7 +1356,7 @@ public class MainActivity extends Activity {
                 }
             }
             String libDir = getApplicationInfo().nativeLibraryDir;
-            File binFile = new File(libDir, "libstoryteller.so");
+            File binFile = new File(libDir, "libmojra.so");
             ProcessBuilder pb = new ProcessBuilder(
                 binFile.getAbsolutePath(), "run", "--headless", "--port", String.valueOf(PORT)
             );
@@ -1430,7 +1424,7 @@ public class MainActivity extends Activity {
 		return err
 	}
 
-	classFiles, _ := filepath.Glob(filepath.Join(classesDir, "pl", "storyteller", "app", "*.class"))
+	classFiles, _ := filepath.Glob(filepath.Join(classesDir, "pl", "mojra", "app", "*.class"))
 	d8Args := append([]string{"--lib", androidJar, "--output", workDir}, classFiles...)
 	if err := runTool(d8, d8Args...); err != nil {
 		return err
@@ -1441,7 +1435,7 @@ public class MainActivity extends Activity {
 		return err
 	}
 
-	// Inject classes.dex and native lib/<abi>/libstoryteller.so into unaligned.apk
+	// Inject classes.dex and native lib/<abi>/libmojra.so into unaligned.apk
 	if err := appendAndroidNativeAndDexToAPK(unalignedAPK, filepath.Join(workDir, "classes.dex"), archBins); err != nil {
 		return err
 	}
@@ -1456,7 +1450,7 @@ public class MainActivity extends Activity {
 		return err
 	}
 
-	outAPK := filepath.Join(rootDir, "dist", "StoryTeller-android.apk")
+	outAPK := filepath.Join(rootDir, "dist", "Mojra-android.apk")
 	if err := runTool(apksigner, "sign", "--ks", ksPath, "--ks-pass", "pass:android", "--key-pass", "pass:android", "--out", outAPK, alignedAPK); err != nil {
 		return err
 	}
@@ -1514,7 +1508,7 @@ func appendAndroidNativeAndDexToAPK(apkPath, dexPath string, archBins map[string
 			continue
 		}
 		hdr := &zip.FileHeader{
-			Name:   "lib/" + abi + "/libstoryteller.so",
+			Name:   "lib/" + abi + "/libmojra.so",
 			Method: zip.Deflate,
 		}
 		hdr.SetMode(0755)
@@ -1556,11 +1550,11 @@ func blendRGBA(dst, src color.RGBA, alpha float64) color.RGBA {
 	}
 }
 
-// renderStoryTellerIcon renders the Mojra app icon inside a macOS-style rounded squircle:
+// renderIcon renders the Mojra app icon inside a macOS-style rounded squircle:
 // the minimalist black-and-white Mojra "M" loom mark with perfectly equal top/bottom and left/right margins.
 // Uses 2x2 supersampling and pixel-aligned minimum stroke weights so small icons (16x16..64x64)
 // and large icons (256x256..512x512) are both razor-sharp.
-func renderStoryTellerIcon(size int) *image.RGBA {
+func renderIcon(size int) *image.RGBA {
 	img := image.NewRGBA(image.Rect(0, 0, size, size))
 	scale := 512.0 / float64(size)
 	aa := 0.45 * scale
@@ -1682,8 +1676,8 @@ func renderStoryTellerIcon(size int) *image.RGBA {
 	return img
 }
 
-func encodeStoryTellerIconPNG(size int) ([]byte, error) {
-	img := renderStoryTellerIcon(size)
+func encodeIconPNG(size int) ([]byte, error) {
+	img := renderIcon(size)
 	var pngBuf bytes.Buffer
 	if err := png.Encode(&pngBuf, img); err != nil {
 		return nil, err
@@ -1692,7 +1686,7 @@ func encodeStoryTellerIconPNG(size int) ([]byte, error) {
 }
 
 func writeMacOSAppIconICNS(outPath string) error {
-	pngData, err := encodeStoryTellerIconPNG(512)
+	pngData, err := encodeIconPNG(512)
 	if err != nil {
 		return err
 	}
@@ -1707,8 +1701,8 @@ func writeMacOSAppIconICNS(outPath string) error {
 	return os.WriteFile(outPath, icnsBuf.Bytes(), 0644)
 }
 
-func encodeStoryTellerIconDIB(size int) []byte {
-	img := renderStoryTellerIcon(size)
+func encodeIconDIB(size int) []byte {
+	img := renderIcon(size)
 	andRowBytes := ((size + 31) / 32) * 4
 	xorSize := size * size * 4
 	andSize := andRowBytes * size
@@ -1756,23 +1750,23 @@ type winIconFrame struct {
 	data     []byte
 }
 
-func buildStoryTellerIconFrames() ([]winIconFrame, error) {
-	png256, err := encodeStoryTellerIconPNG(256)
+func buildIconFrames() ([]winIconFrame, error) {
+	png256, err := encodeIconPNG(256)
 	if err != nil {
 		return nil, err
 	}
 	return []winIconFrame{
 		{sizeByte: 0, data: png256},
-		{sizeByte: 64, data: encodeStoryTellerIconDIB(64)},
-		{sizeByte: 48, data: encodeStoryTellerIconDIB(48)},
-		{sizeByte: 32, data: encodeStoryTellerIconDIB(32)},
-		{sizeByte: 24, data: encodeStoryTellerIconDIB(24)},
-		{sizeByte: 16, data: encodeStoryTellerIconDIB(16)},
+		{sizeByte: 64, data: encodeIconDIB(64)},
+		{sizeByte: 48, data: encodeIconDIB(48)},
+		{sizeByte: 32, data: encodeIconDIB(32)},
+		{sizeByte: 24, data: encodeIconDIB(24)},
+		{sizeByte: 16, data: encodeIconDIB(16)},
 	}, nil
 }
 
 func writeWindowsAppIconICO(outPath string) error {
-	frames, err := buildStoryTellerIconFrames()
+	frames, err := buildIconFrames()
 	if err != nil {
 		return err
 	}
@@ -1801,7 +1795,7 @@ func writeWindowsAppIconICO(outPath string) error {
 }
 
 // writeWindowsResourceSYSO generates an amd64 COFF .syso object containing the .rsrc section
-// with RT_ICON (3) and RT_GROUP_ICON (14) so Go's linker embeds the icon directly into StoryTeller.exe.
+// with RT_ICON (3) and RT_GROUP_ICON (14) so Go's linker embeds the icon directly into Mojra.exe.
 func writeWindowsResourceSYSO(outPath string) error {
 	return writeWindowsResourceSYSOForArch(outPath, "amd64")
 }
@@ -1823,7 +1817,7 @@ func writeWindowsResourceSYSOForArch(outPath, goarch string) error {
 		return fmt.Errorf("nieobsługiwana architektura PE .syso: %s", goarch)
 	}
 
-	frames, err := buildStoryTellerIconFrames()
+	frames, err := buildIconFrames()
 	if err != nil {
 		return err
 	}
@@ -1846,7 +1840,7 @@ func writeWindowsResourceSYSOForArch(outPath, goarch string) error {
 	grpData := grpBuf.Bytes()
 	manifestData := []byte(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0" xmlns:asmv3="urn:schemas-microsoft-com:asm.v3">
-  <assemblyIdentity type="win32" name="StoryTeller.App" version="1.0.0.0"/>
+  <assemblyIdentity type="win32" name="Mojra.App" version="1.0.0.0"/>
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
     <security>
       <requestedPrivileges>
@@ -2051,7 +2045,7 @@ func zipDirRecursive(srcDir, outZipPath, rootPrefix string) error {
 
 func packCmd(args []string) {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "Podaj identyfikator książki, np.: storyteller pack <book-id>")
+		fmt.Fprintln(os.Stderr, "Podaj identyfikator książki, np.: mojra pack <book-id>")
 		os.Exit(1)
 	}
 	bookID := book.SanitizeBookID(args[0])
@@ -2070,7 +2064,7 @@ func packCmd(args []string) {
 
 func addCmd(args []string) {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "Podaj ścieżkę na dysku lub adres URL, np.: storyteller add /ścieżka/do/książki lub storyteller add https://example.com/ksiazka.playbook")
+		fmt.Fprintln(os.Stderr, "Podaj ścieżkę na dysku lub adres URL, np.: mojra add /ścieżka/do/książki lub mojra add https://example.com/ksiazka.playbook")
 		os.Exit(1)
 	}
 	rootDir := resolveRootDir()

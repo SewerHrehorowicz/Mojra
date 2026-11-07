@@ -15,9 +15,9 @@ import (
 	"strings"
 	"testing"
 
-	"storyteller"
-	"storyteller/internal/book"
-	"storyteller/internal/tpl"
+	"mojra"
+	"mojra/internal/book"
+	"mojra/internal/tpl"
 )
 
 func NewServer(rootDir string, embeddedFS fs.FS) *Server {
@@ -55,7 +55,7 @@ func NewStandaloneServer(rootDir string, embeddedFS fs.FS, standaloneBook *book.
 
 func TestServerActionLifecycleAndSecurity(t *testing.T) {
 	rootDir := t.TempDir()
-	srv := NewServer(rootDir, storyteller.AppFS)
+	srv := NewServer(rootDir, mojra.AppFS)
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
@@ -531,7 +531,7 @@ func TestServerActionLifecycleAndSecurity(t *testing.T) {
 		t.Fatalf("expected 404 Not Found for /api/lan-qr.png in prod mode, got %d", qrProdResp.StatusCode)
 	}
 
-	devQRServer := NewServerWithOptions(rootDir, storyteller.AppFS, true)
+	devQRServer := NewServerWithOptions(rootDir, mojra.AppFS, true)
 	devQRTS := httptest.NewServer(devQRServer.Handler())
 	defer devQRTS.Close()
 
@@ -615,7 +615,7 @@ end: true
 	}))
 	defer remoteSrv.Close()
 
-	srv := NewServer(rootDir, storyteller.AppFS)
+	srv := NewServer(rootDir, mojra.AppFS)
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
@@ -766,7 +766,7 @@ func TestDevicePreviewStrippedInProductionAndEnabledInDev(t *testing.T) {
 	_ = os.WriteFile(filepath.Join(savesDir, "settings.ini"), []byte("[display]\ntheme = dark\npreview_mode = portrait\n"), 0644)
 
 	// 1. Production server (default NewServer) must strip device preview completely
-	prodSrv := NewServer(rootDir, storyteller.AppFS)
+	prodSrv := NewServer(rootDir, mojra.AppFS)
 	prodTS := httptest.NewServer(prodSrv.Handler())
 	defer prodTS.Close()
 
@@ -808,7 +808,7 @@ func TestDevicePreviewStrippedInProductionAndEnabledInDev(t *testing.T) {
 	}
 
 	// 2. Development server (NewServerWithOptions with devMode=true) includes device preview and QR code
-	devSrv := NewServerWithOptions(rootDir, storyteller.AppFS, true)
+	devSrv := NewServerWithOptions(rootDir, mojra.AppFS, true)
 	devTS := httptest.NewServer(devSrv.Handler())
 	defer devTS.Close()
 
@@ -908,7 +908,7 @@ id: sikawa_kapitana
 end: true
 Dopiero kapitan Arvo wszystko mu wytłumaczył.
 `), 0644)
-	srv := NewServer(rootDir, storyteller.AppFS)
+	srv := NewServer(rootDir, mojra.AppFS)
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
@@ -1129,7 +1129,7 @@ Dopiero kapitan Arvo wszystko mu wytłumaczył.
 	if rQuit.Header.Get("X-Native-Cmd") != "quit" {
 		t.Fatalf("expected X-Native-Cmd=quit header on QuitApp, got %q", rQuit.Header.Get("X-Native-Cmd"))
 	}
-	if strings.Contains(quitHTML, `id="modal-confirm"`) || strings.Contains(quitHTML, "Zamknij StoryTeller") {
+	if strings.Contains(quitHTML, `id="modal-confirm"`) || strings.Contains(quitHTML, "Zamknij Mojra") {
 		t.Fatalf("expected no confirmation prompt when closing app, got:\n%s", quitHTML)
 	}
 
@@ -1236,7 +1236,7 @@ func TestStandaloneBookModeSecurity(t *testing.T) {
 	_ = os.WriteFile(filepath.Join(rootDir, "app", "app.js"), []byte("FAKE_DISK_OVERRIDE"), 0644)
 	_ = os.WriteFile(filepath.Join(rootDir, "build", "app", "app.js"), []byte("FAKE_DISK_OVERRIDE"), 0644)
 
-	srv := NewStandaloneServer(rootDir, storyteller.AppFS, reloadedBook)
+	srv := NewStandaloneServer(rootDir, mojra.AppFS, reloadedBook)
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
@@ -1383,7 +1383,7 @@ func TestSecurityCSRFMediaMagicBytesAndExternalTxtValidation(t *testing.T) {
 	_ = os.WriteFile(disguisedMP3, []byte("#!/bin/sh\necho pwned\n"), 0644)
 	_ = os.WriteFile(disguisedWAV, []byte("RIFF\x24\x00\x00\x00WAVEfmt "), 0644)
 
-	srv := NewServer(rootDir, storyteller.AppFS)
+	srv := NewServer(rootDir, mojra.AppFS)
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
@@ -1524,7 +1524,7 @@ func TestSecurityCSRFMediaMagicBytesAndExternalTxtValidation(t *testing.T) {
 	// 3. AddBookFromDisk must reject directories containing only unrelated non-book .txt files
 	unrelatedDir := t.TempDir()
 	unrelatedTxt := filepath.Join(unrelatedDir, "secret_notes.txt")
-	_ = os.WriteFile(unrelatedTxt, []byte("To są prywatne notatki użytkownika bez nagłówków StoryTeller.\nHasło: tajne123\n"), 0644)
+	_ = os.WriteFile(unrelatedTxt, []byte("To są prywatne notatki użytkownika bez nagłówków Mojra.\nHasło: tajne123\n"), 0644)
 
 	form := url.Values{}
 	form.Set("action", "AddBookFromDisk")
@@ -1614,7 +1614,7 @@ func TestTopbarAlwaysVisibleIncludingSceneTextEditor(t *testing.T) {
 
 	// 3. Verify runtime behavior when opening #modal-scene-text and clicking topbar navigation tabs
 	rootDir := t.TempDir()
-	srv := NewServer(rootDir, storyteller.AppFS)
+	srv := NewServer(rootDir, mojra.AppFS)
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
@@ -1680,7 +1680,7 @@ func TestTopbarAlwaysVisibleIncludingSceneTextEditor(t *testing.T) {
 
 func TestBookImagelessSettingAndTopbarLock(t *testing.T) {
 	rootDir := t.TempDir()
-	srv := NewServer(rootDir, storyteller.AppFS)
+	srv := NewServer(rootDir, mojra.AppFS)
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
@@ -1788,7 +1788,7 @@ func TestBookImagelessSettingAndTopbarLock(t *testing.T) {
 
 func TestNodeEditorEmptyLibraryRenameFitAndRootScene(t *testing.T) {
 	rootDir := t.TempDir()
-	srv := NewServer(rootDir, storyteller.AppFS)
+	srv := NewServer(rootDir, mojra.AppFS)
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
@@ -1939,7 +1939,7 @@ func TestNodeEditorEmptyLibraryRenameFitAndRootScene(t *testing.T) {
 
 func TestNarrationlessAllOrNothingAndMinimalProgressBar(t *testing.T) {
 	rootDir := t.TempDir()
-	srv := NewServer(rootDir, storyteller.AppFS)
+	srv := NewServer(rootDir, mojra.AppFS)
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
@@ -2102,7 +2102,7 @@ func TestNarrationlessAllOrNothingAndMinimalProgressBar(t *testing.T) {
 
 func TestUnreachableScenesGrayedOutInNodeEditor(t *testing.T) {
 	rootDir := t.TempDir()
-	srv := NewServer(rootDir, storyteller.AppFS)
+	srv := NewServer(rootDir, mojra.AppFS)
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
@@ -2152,18 +2152,22 @@ func TestUnreachableScenesGrayedOutInNodeEditor(t *testing.T) {
 }
 
 func TestMultilingualUISwitchAndI18nTableCompleteness(t *testing.T) {
-	// 1. Verify all TrKey entries are non-empty across all registered languages in SupportedLanguages.
+	// 1. Verify all TrKey entries are non-empty across all registered languages in SupportedLanguages (.cfg dictionaries).
 	for l := Lang(0); l < LangCount; l++ {
 		spec := tpl.SupportedLanguages[l]
 		if spec.Code == "" || spec.Upper == "" || spec.Name == "" {
 			t.Fatalf("SupportedLanguages[%d] has empty metadata: %+v", l, spec)
 		}
-		if i18nDicts[l] == nil {
-			t.Fatalf("i18nDicts[%d] (%s) is nil", l, spec.Code)
+		if len(tpl.I18nDicts[l]) == 0 {
+			t.Fatalf("tpl.I18nDicts[%d] (%s.cfg) is empty", l, spec.Code)
 		}
 		for k := TrKey(0); k < trKeyCount; k++ {
-			if strings.TrimSpace(i18nDicts[l][k]) == "" {
-				t.Fatalf("i18nDicts[%s][%d] is empty", spec.Code, k)
+			keyName := trKeyNames[k]
+			if strings.TrimSpace(keyName) == "" {
+				t.Fatalf("trKeyNames[%d] is empty", k)
+			}
+			if strings.TrimSpace(tpl.I18nDicts[l][keyName]) == "" {
+				t.Fatalf("i18n/%s.cfg key %q (TrKey=%d) is empty or missing", spec.Code, keyName, k)
 			}
 			if strings.TrimSpace(i18nTable[k][l]) == "" {
 				t.Fatalf("i18nTable[%d][%s] is empty", k, spec.Code)
@@ -2228,7 +2232,7 @@ func TestMultilingualUISwitchAndI18nTableCompleteness(t *testing.T) {
 			t.Fatalf("tpl.JSI18nTable entry %+v has empty key", e)
 		}
 		for l := Lang(0); l < LangCount; l++ {
-			if !tpl.HasJSI18nKeyInLang(l, key) || strings.TrimSpace(e[1+int(l)]) == "" {
+			if strings.TrimSpace(tpl.I18nDicts[l][key]) == "" || strings.TrimSpace(e[1+int(l)]) == "" {
 				t.Fatalf("tpl.JSI18nTable key %q is empty for language %q", key, tpl.SupportedLanguages[l].Code)
 			}
 		}
@@ -2295,7 +2299,7 @@ func TestMultilingualUISwitchAndI18nTableCompleteness(t *testing.T) {
 
 	// 4. Verify ToggleLanguage and SetLanguage switch UI between PL and EN and persist to settings.ini.
 	rootDir := t.TempDir()
-	srv := NewServer(rootDir, storyteller.AppFS)
+	srv := NewServer(rootDir, mojra.AppFS)
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 

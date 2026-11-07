@@ -609,8 +609,8 @@ func ctlCompletedInvoke(this, hr, ctlPtr uintptr) uintptr {
 	var token int64
 	_, _, _ = syscall.SyscallN(wvVtbl[34], wvPtr, uintptr(unsafe.Pointer(globalMsgHandler)), uintptr(unsafe.Pointer(&token)))
 
-	// Inject window.__storytellerNativeHost = true before document creation
-	initJS, _ := syscall.UTF16PtrFromString("window.__storytellerNativeHost=true;")
+	// Inject window.__nativeHost = true before document creation
+	initJS, _ := syscall.UTF16PtrFromString("window.__nativeHost=true;")
 	_, _, _ = syscall.SyscallN(wvVtbl[29], wvPtr, uintptr(unsafe.Pointer(initJS)), 0)
 
 	syncWebViewBounds(hwnd)
@@ -671,7 +671,7 @@ func runNativeWin32WebView2Window(url, dllPath string, onWindowClosed func()) bo
 	hCursor, _, _ := procLoadCursorW.Call(0, idcArrow)
 	hBrush, _, _ := procCreateSolidBrush.Call(0x00101214)
 
-	className, _ := syscall.UTF16PtrFromString("StoryTellerNativeWindow")
+	className, _ := syscall.UTF16PtrFromString("NativeWindow")
 	wcx := wndClassExW{
 		CbSize:        uint32(unsafe.Sizeof(wndClassExW{})),
 		LpfnWndProc:   syscall.NewCallback(wndProc),
@@ -764,7 +764,7 @@ func runNativeWin32WebView2Window(url, dllPath string, onWindowClosed func()) bo
 	if err != nil || baseCacheDir == "" {
 		baseCacheDir = os.TempDir()
 	}
-	profileDir := filepath.Join(baseCacheDir, "StoryTeller-WebView2")
+	profileDir := filepath.Join(baseCacheDir, "Mojra-WebView2")
 	_ = os.MkdirAll(profileDir, 0700)
 	profileUTF16, _ := syscall.UTF16PtrFromString(profileDir)
 
@@ -841,7 +841,7 @@ func RunNativeOSWindow(url string, onWindowClosed func()) bool {
 		if err != nil || baseCacheDir == "" {
 			baseCacheDir = os.TempDir()
 		}
-		profileDir := filepath.Join(baseCacheDir, "StoryTeller-AppHost")
+		profileDir := filepath.Join(baseCacheDir, "Mojra-AppHost")
 		_ = os.MkdirAll(profileDir, 0700)
 
 		cmd := exec.Command(

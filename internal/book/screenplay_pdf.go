@@ -115,7 +115,7 @@ func buildPolishToUnicodeCMap() string {
 12 dict begin
 begincmap
 /CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def
-/CMapName /StoryTellerPolishCMap def
+/CMapName /PolishCMap def
 /CMapType 2 def
 1 begincodespacerange
 <00> <FF>

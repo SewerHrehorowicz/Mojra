@@ -395,9 +395,9 @@ function applyServerResponseHeaders(resp, actionName) {
   const nativeCmd = resp.headers.get("X-Native-Cmd");
   if (nativeCmd === "toggle-fullscreen") {
     if (
-      (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.storytellerHost) ||
+      (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.nativeHost) ||
       (window.chrome && window.chrome.webview) ||
-      window.__storytellerNativeHost
+      window.__nativeHost
     ) {
       isWindowFullscreen = !isWindowFullscreen;
     } else if (document.documentElement.requestFullscreen) {
@@ -412,8 +412,8 @@ function applyServerResponseHeaders(resp, actionName) {
       isWindowFullscreen = !isWindowFullscreen;
     }
   } else if (nativeCmd === "quit" || actionName === "QuitApp" || actionName === "PromptQuitApp") {
-    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.storytellerHost) {
-      window.webkit.messageHandlers.storytellerHost.postMessage("quit");
+    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.nativeHost) {
+      window.webkit.messageHandlers.nativeHost.postMessage("quit");
     } else if (window.chrome && window.chrome.webview && typeof window.chrome.webview.postMessage === "function") {
       window.chrome.webview.postMessage("quit");
     }
@@ -512,9 +512,9 @@ function decodeWFP(rawText) {
 function parseWasmActionResponse(rawWfp) {
   const parsed = decodeWFP(rawWfp);
   const saveHex = parsed["X-Save-Hex"] || "";
-  if (saveHex && window.__mojraWasmBookId && typeof localStorage !== "undefined") {
+  if (saveHex && window.__wasmBookId && typeof localStorage !== "undefined") {
     try {
-      localStorage.setItem("mojra_save_" + window.__mojraWasmBookId, saveHex);
+      localStorage.setItem("mojra_save_" + window.__wasmBookId, saveHex);
     } catch (_) {}
   }
   const status = parseInt(parsed.status || "200", 10) || 200;
@@ -541,7 +541,7 @@ function parseWasmActionResponse(rawWfp) {
   };
 }
 
-async function bootMojraWasmPlayer(playBtn) {
+async function bootWasmPlayer(playBtn) {
   if (!playBtn || playBtn.classList.contains("is-loading")) return;
   playBtn.classList.add("is-loading");
 
@@ -582,7 +582,7 @@ async function bootMojraWasmPlayer(playBtn) {
     const instantiated = await WebAssembly.instantiate(wasmBuf, go.importObject);
     go.run(instantiated.instance);
 
-    if (typeof window.__mojraWasmBoot !== "function") {
+    if (typeof window.__wasmBoot !== "function") {
       playBtn.classList.remove("is-loading");
       return;
     }
@@ -598,16 +598,16 @@ async function bootMojraWasmPlayer(playBtn) {
       } catch (_) {}
     }
 
-    const rawBootWfp = window.__mojraWasmBoot(wasmBytes, savedHex);
+    const rawBootWfp = window.__wasmBoot(wasmBytes, savedHex);
     const bootParsed = decodeWFP(rawBootWfp);
     const bookId = bootParsed["X-Book-ID"] || bookHint || "book";
-    window.__mojraWasmBookId = bookId;
+    window.__wasmBookId = bookId;
 
     if (!savedHex && typeof localStorage !== "undefined") {
       try {
         const existingSave = localStorage.getItem("mojra_save_" + bookId) || "";
         if (existingSave) {
-          const reloaded = decodeWFP(window.__mojraWasmBoot(wasmBytes, existingSave));
+          const reloaded = decodeWFP(window.__wasmBoot(wasmBytes, existingSave));
           if (reloaded.html) {
             Object.assign(bootParsed, reloaded);
           }
@@ -801,14 +801,14 @@ async function sendServerAction(actionName, params) {
   }
 
   let resp;
-  if (typeof window.__mojraWasmAction === "function") {
-    resp = parseWasmActionResponse(window.__mojraWasmAction(encodeWFP(wfpPayload)));
+  if (typeof window.__wasmAction === "function") {
+    resp = parseWasmActionResponse(window.__wasmAction(encodeWFP(wfpPayload)));
   } else {
     resp = await fetch("/api/action", {
       method: "POST",
       headers: {
         "Content-Type": "text/x-wfp;charset=UTF-8",
-        "X-Requested-With": "StoryTeller"
+        "X-Requested-With": "Mojra"
       },
       body: encodeWFP(wfpPayload)
     });
@@ -1215,15 +1215,15 @@ function postServerActionSilent(actionName, paramsOrFormData) {
       });
     }
   }
-  if (typeof window.__mojraWasmAction === "function") {
-    parseWasmActionResponse(window.__mojraWasmAction(encodeWFP(wfpPayload)));
+  if (typeof window.__wasmAction === "function") {
+    parseWasmActionResponse(window.__wasmAction(encodeWFP(wfpPayload)));
     return;
   }
   fetch("/api/action", {
     method: "POST",
     headers: {
       "Content-Type": "text/x-wfp;charset=UTF-8",
-      "X-Requested-With": "StoryTeller"
+      "X-Requested-With": "Mojra"
     },
     body: encodeWFP(wfpPayload)
   })
@@ -1409,8 +1409,8 @@ function bindDeclarativeActionBridge() {
       /* @dev-only-end */
       const dragBar = e.target.closest(dragBarSelector);
       if (dragBar && !e.target.closest("button, a, input, select, textarea, label, [action], .brand-logo")) {
-        if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.storytellerHost) {
-          window.webkit.messageHandlers.storytellerHost.postMessage("start-window-drag");
+        if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.nativeHost) {
+          window.webkit.messageHandlers.nativeHost.postMessage("start-window-drag");
         } else {
           postServerActionSilent("StartWindowDrag");
         }
@@ -1456,7 +1456,7 @@ function bindDeclarativeActionBridge() {
     if (wasmPlayBtn) {
       e.preventDefault();
       e.stopPropagation();
-      bootMojraWasmPlayer(wasmPlayBtn);
+      bootWasmPlayer(wasmPlayBtn);
       return;
     }
 

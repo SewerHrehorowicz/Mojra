@@ -37,7 +37,7 @@ if exist "C:\Go\bin\go.exe" (
 echo ==================================================================
 echo   [BRAK ZALEZNOSCI] Nie znaleziono kompilatora Go ^(Golang^)
 echo ==================================================================
-echo Do zbudowania aplikacji StoryTeller wymagany jest kompilator Go
+echo Do zbudowania aplikacji Mojra wymagany jest kompilator Go
 echo oraz zaleznosci projektu.
 echo.
 
@@ -137,7 +137,7 @@ if %ERRORLEVEL% NEQ 0 (
     exit /b %ERRORLEVEL%
 )
 
-go run ./cmd/storyteller build %*
+go run ./cmd/mojra build %*
 exit /b %ERRORLEVEL%
 
 :refresh_go_path

@@ -301,21 +301,82 @@ function explainClientEffectsExprError(raw, varsMap) {
   return "";
 }
 
+function explainClientExitTargetError(raw, form) {
+  const s = (raw || "").trim();
+  if (!s) return tr("err_exit_empty");
+  if (s.indexOf("?") >= 0) return tr("err_exit_question");
+  const lower = s.toLowerCase();
+  if (lower === "end" || lower === "koniec" || lower === "next" || lower === "dalej") return "";
+  if (!form) return "";
+
+  const sceneIdInput = qs('input[name="scene_id"]', form);
+  const expIdInput = qs('input[name="explicit_id"]', form);
+  const curSceneId = ((sceneIdInput ? sceneIdInput.value : "") || form.getAttribute("data-context-scene-id") || "").trim().toLowerCase();
+  const curExpId = (expIdInput ? expIdInput.value : "").trim().toLowerCase();
+  if ((curSceneId && lower === curSceneId) || (curExpId && lower === curExpId)) {
+    return tr("err_exit_self_scene");
+  }
+
+  const chInput = qs('input[name="chapter"]', form);
+  const curChapter = (chInput ? chInput.value : "").trim().toLowerCase();
+  const targetItems = qsa('.syn-dropdown-item[data-syn-kind="target"]', form);
+
+  const chPrefixMatch = lower.match(/^(chapter|rozdzial|rozdział|act|akt):(.*)$/);
+  if (chPrefixMatch) {
+    const chRefRaw = s.slice(s.indexOf(":") + 1).trim();
+    const chRef = chRefRaw.toLowerCase();
+    if (!chRef) return trf("err_exit_unknown_chapter", s);
+    if (curChapter && (chRef === curChapter || chRef === curChapter.replace(/\s+/g, "_"))) {
+      return tr("err_exit_self_chapter");
+    }
+    const canonCh = "chapter:" + chRef;
+    for (let i = 0; i < targetItems.length; i++) {
+      const tVal = (targetItems[i].getAttribute("data-syn-var-name") || "").toLowerCase();
+      const tMetaEl = qs(".syn-dropdown-var-meta", targetItems[i]);
+      const tMeta = (tMetaEl ? tMetaEl.textContent : "").trim().toLowerCase();
+      if (tVal === canonCh || (tVal.indexOf("chapter:") === 0 && tMeta === chRef)) {
+        return "";
+      }
+    }
+    return trf("err_exit_unknown_chapter", chRefRaw);
+  }
+
+  if (curChapter && (lower === curChapter || lower === curChapter.replace(/\s+/g, "_"))) {
+    return tr("err_exit_self_chapter");
+  }
+
+  for (let i = 0; i < targetItems.length; i++) {
+    const tVal = (targetItems[i].getAttribute("data-syn-var-name") || "").toLowerCase();
+    const tMetaEl = qs(".syn-dropdown-var-meta", targetItems[i]);
+    const tMeta = (tMetaEl ? tMetaEl.textContent : "").trim().toLowerCase();
+    if (tVal === lower || (tMeta && tMeta === lower && tVal.indexOf("chapter:") !== 0)) {
+      return "";
+    }
+  }
+  return trf("err_exit_unknown_target", s);
+}
+
 function validateRuleInputElement(inputEl, form) {
   if (!inputEl || !form) return;
   const name = inputEl.name || "";
+  const isExit = name.indexOf("choice_target_") === 0;
   const isCond = name.indexOf("choice_cond_") === 0;
   const isEff = name.indexOf("choice_effects_") === 0 || name === "scene_effects";
-  if (!isCond && !isEff) return;
+  if (!isExit && !isCond && !isEff) return;
   const isEmpty = !(inputEl.value || "").trim();
   const emptyRow = inputEl.closest(".choice-triple-row, .node-meta-row, .scene-settings-row");
-  if (emptyRow) {
+  if (emptyRow && !isExit) {
     emptyRow.classList.toggle("is-empty-rule", isEmpty);
   }
-  const varsMap = parseBookVarsSpec(form.getAttribute("data-book-vars") || "");
-  const errMsg = isCond
-    ? explainClientCondExprError(inputEl.value, varsMap)
-    : explainClientEffectsExprError(inputEl.value, varsMap);
+  let errMsg = "";
+  if (isExit) {
+    errMsg = explainClientExitTargetError(inputEl.value, form);
+  } else {
+    const varsMap = parseBookVarsSpec(form.getAttribute("data-book-vars") || "");
+    errMsg = isCond
+      ? explainClientCondExprError(inputEl.value, varsMap)
+      : explainClientEffectsExprError(inputEl.value, varsMap);
+  }
   const valid = !errMsg;
   const wrap = inputEl.closest(".choice-triple-row, .syn-input-wrap");
   if (wrap) {
@@ -355,7 +416,7 @@ function stripOuterBracesClient(s) {
 
 function extractCurrentTypingToken(val, cursorPos) {
   const before = val.slice(0, cursorPos);
-  const m = before.match(/([a-z0-9_ąćęłńóśźż]+)$/i);
+  const m = before.match(/([a-z0-9_ąćęłńóśźż:\-]+)$/i);
   return m ? m[1].toLowerCase() : "";
 }
 
@@ -366,7 +427,7 @@ function isAtFreshOperandSlot(val, cursorPos) {
 
 function replaceCurrentTypingToken(inputEl, varName) {
   let val = inputEl.value || "";
-  if (!val.trim()) {
+  if (!val.trim() || (inputEl.classList && inputEl.classList.contains("choice-exit-input"))) {
     inputEl.value = varName;
     const p = varName.length;
     if (typeof inputEl.setSelectionRange === "function") inputEl.setSelectionRange(p, p);
@@ -374,8 +435,8 @@ function replaceCurrentTypingToken(inputEl, varName) {
   }
   const pos = typeof inputEl.selectionStart === "number" ? inputEl.selectionStart : val.length;
   const before = val.slice(0, pos);
-  const after = val.slice(pos).replace(/^[a-z0-9_ąćęłńóśźż]*/i, "");
-  const prefix = before.replace(/\?\s*[a-z0-9_ąćęłńóśźż]*$|[a-z0-9_ąćęłńóśźż]+$/i, "");
+  const after = val.slice(pos).replace(/^[a-z0-9_ąćęłńóśźż:\-]*/i, "");
+  const prefix = before.replace(/\?\s*[a-z0-9_ąćęłńóśźż:\-]*$|[a-z0-9_ąćęłńóśźż:\-]+$/i, "");
   let sep = "";
   if (prefix.length > 0 && !/\s$/.test(prefix) && !/[(!]$/.test(prefix) && !/(?:^|[\s;(,])[-+]$/.test(prefix)) {
     sep = " ";
@@ -409,17 +470,10 @@ function showAndAnchorSynDropdown(dropdown, inputEl, anchorSel, matchCount) {
 
 function commitChosenSynItem(itemBtn, inputEl, form, dropdown) {
   if (!itemBtn || !inputEl) return;
-  const kind = itemBtn.getAttribute("data-syn-kind") || "var";
-  if (kind === "target") {
-    const targetVal = itemBtn.getAttribute("data-syn-target-value") || "";
-    if (!targetVal) return;
-    replaceChoiceTargetToken(inputEl, targetVal);
-  } else {
-    const varName = itemBtn.getAttribute("data-syn-var-name") || "";
-    if (!varName) return;
-    replaceCurrentTypingToken(inputEl, varName);
-    if (form) validateRuleInputElement(inputEl, form);
-  }
+  const varName = itemBtn.getAttribute("data-syn-var-name") || "";
+  if (!varName) return;
+  replaceCurrentTypingToken(inputEl, varName);
+  if (form) validateRuleInputElement(inputEl, form);
   if (dropdown) dropdown.classList.add("hidden");
   if (form && typeof scheduleNodeLiveSave === "function") scheduleNodeLiveSave(form);
 }
@@ -457,104 +511,6 @@ function moveSynDropdownSelection(dropdown, delta) {
   }
 }
 
-function syncChoiceInlineHighlight(inputEl) {
-  if (!inputEl) return;
-  const val = inputEl.value || "";
-  const arrowIdx = val.lastIndexOf("->");
-  const hasArrow = arrowIdx >= 0 && (arrowIdx === 0 || val.charAt(arrowIdx - 1) !== "\\");
-  const wrap = inputEl.closest ? inputEl.closest(".choice-inline-wrap") : null;
-  if (wrap) {
-    const hlLabel = qs(".choice-hl-label", wrap);
-    const hlArrow = qs(".choice-hl-arrow", wrap);
-    if (hasArrow) {
-      if (hlLabel) hlLabel.textContent = val.slice(0, arrowIdx);
-      if (hlArrow) hlArrow.textContent = val.slice(arrowIdx);
-    } else {
-      if (hlLabel) hlLabel.textContent = val;
-      if (hlArrow) hlArrow.textContent = "";
-    }
-  }
-  const choiceIdx = inputEl.getAttribute ? inputEl.getAttribute("data-choice-idx") : null;
-  const form = inputEl.closest ? inputEl.closest("form.editor-context-form, form#form-scene-text") : null;
-  if (form && choiceIdx !== null && choiceIdx !== "" && hasArrow) {
-    const tgtInput = qs('input[name="choice_target_' + choiceIdx + '"]', form);
-    if (tgtInput) {
-      const parsedTgt = val.slice(arrowIdx + 2).trim();
-      tgtInput.value = parsedTgt || "END";
-    }
-  }
-}
-
-function replaceChoiceTargetToken(inputEl, targetVal) {
-  if (!inputEl) return;
-  if (inputEl.classList && inputEl.classList.contains("choice-exit-input")) {
-    inputEl.value = targetVal;
-    const newPos = targetVal.length;
-    if (typeof inputEl.setSelectionRange === "function") {
-      inputEl.setSelectionRange(newPos, newPos);
-    }
-    return;
-  }
-  const val = inputEl.value || "";
-  const pos = typeof inputEl.selectionStart === "number" ? inputEl.selectionStart : val.length;
-  const before = val.slice(0, pos);
-  const after = val.slice(pos);
-  const replacedBefore = before.replace(/->\s*([a-z0-9_ąćęłńóśźż:\-]*)$/i, "-> " + targetVal);
-  inputEl.value = replacedBefore + after;
-  const newPos = replacedBefore.length;
-  if (typeof inputEl.setSelectionRange === "function") {
-    inputEl.setSelectionRange(newPos, newPos);
-  }
-  syncChoiceInlineHighlight(inputEl);
-}
-
-function updateChoiceTargetAutocompleteOnInput(inputEl, forceAll) {
-  if (!inputEl || typeof document === "undefined") return;
-  const isExitInput = Boolean(inputEl.classList && inputEl.classList.contains("choice-exit-input"));
-  if (!isExitInput) {
-    syncChoiceInlineHighlight(inputEl);
-  }
-  const form = inputEl.closest("form.editor-context-form, form#form-scene-text");
-  if (!form) return;
-  const dropdown = qs(".syn-autocomplete-dropdown", form);
-  if (!dropdown) return;
-  activeSynRuleInput = inputEl;
-  lastSynRuleInputName = inputEl.name || "";
-
-  const val = inputEl.value || "";
-  let prefix = "";
-  if (isExitInput) {
-    prefix = val.trim().toLowerCase();
-    if (!forceAll && prefix === "") {
-      dropdown.classList.add("hidden");
-      return;
-    }
-  } else {
-    const pos = typeof inputEl.selectionStart === "number" ? inputEl.selectionStart : val.length;
-    const before = val.slice(0, pos);
-    const m = before.match(/->\s*([a-z0-9_ąćęłńóśźż:\-]*)$/i);
-    if (!m) {
-      dropdown.classList.add("hidden");
-      return;
-    }
-    prefix = (m[1] || "").toLowerCase();
-  }
-  const items = qsa(".syn-dropdown-item", dropdown);
-  let matchCount = 0;
-  items.forEach((btn) => {
-    const kind = btn.getAttribute("data-syn-kind") || "var";
-    if (kind !== "target") {
-      btn.classList.add("hidden");
-      return;
-    }
-    const tVal = (btn.getAttribute("data-syn-target-value") || "").toLowerCase();
-    const show = prefix === "" || (tVal.startsWith(prefix) && tVal !== prefix);
-    btn.classList.toggle("hidden", !show);
-    if (show) matchCount++;
-  });
-  showAndAnchorSynDropdown(dropdown, inputEl, ".choice-triple-row, .choice-inline-wrap", matchCount);
-}
-
 function updateSynAutocompleteOnInput(inputEl, forceAll) {
   if (!inputEl || typeof document === "undefined" || inputEl.id === "modal-scene-textarea") return;
   const form = inputEl.closest("form.editor-context-form, form#form-scene-text");
@@ -562,6 +518,8 @@ function updateSynAutocompleteOnInput(inputEl, forceAll) {
   if (!dropdown) return;
   activeSynRuleInput = inputEl;
   lastSynRuleInputName = inputEl.name || "";
+  const isExitInput = Boolean(inputEl.classList && inputEl.classList.contains("choice-exit-input"));
+  const wantKind = isExitInput ? "target" : "var";
 
   const val = inputEl.value || "";
   const pos = typeof inputEl.selectionStart === "number" ? inputEl.selectionStart : val.length;
@@ -570,7 +528,7 @@ function updateSynAutocompleteOnInput(inputEl, forceAll) {
   const currentLineBefore = lastNewline >= 0 ? beforeCursor.slice(lastNewline + 1) : beforeCursor;
 
   const varsMap = parseBookVarsSpec(form.getAttribute("data-book-vars") || "");
-  const enumSlotMatch = currentLineBefore.match(/([a-z0-9_ąćęłńóśźż]+)\s*(?:==|!=|=)\s*(\??\s*[a-z0-9_ąćęłńóśźż]*)$/i);
+  const enumSlotMatch = !isExitInput ? currentLineBefore.match(/([a-z0-9_ąćęłńóśźż]+)\s*(?:==|!=|=)\s*(\??\s*[a-z0-9_ąćęłńóśźż]*)$/i) : null;
   const items = qsa(".syn-dropdown-item", dropdown);
 
   if (enumSlotMatch) {
@@ -611,21 +569,29 @@ function updateSynAutocompleteOnInput(inputEl, forceAll) {
   }
 
   const usedVars = new Set();
-  const prefixBeforeToken = currentLineBefore.replace(/\?\s*[a-z0-9_ąćęłńóśźż]*$|[a-z0-9_ąćęłńóśźż]+$/i, "");
-  const afterToken = val.slice(pos).replace(/^[a-z0-9_ąćęłńóśźż]*/i, "");
-  const restTokens = (prefixBeforeToken + " " + afterToken).toLowerCase().match(/[a-z0-9_ąćęłńóśźż]+/gi) || [];
+  const prefixBeforeToken = currentLineBefore.replace(/\?\s*[a-z0-9_ąćęłńóśźż:\-]*$|[a-z0-9_ąćęłńóśźż:\-]+$/i, "");
+  const afterToken = val.slice(pos).replace(/^[a-z0-9_ąćęłńóśźż:\-]*/i, "");
+  if (isExitInput) {
+    const exitRest = (prefixBeforeToken + " " + val.slice(pos)).replace(/\?/g, "").trim().toLowerCase();
+    if (exitRest) usedVars.add(exitRest);
+  }
+  const restTokens = (prefixBeforeToken + " " + (isExitInput ? val.slice(pos) : afterToken)).toLowerCase().match(/[a-z0-9_ąćęłńóśźż:\-]+/gi) || [];
   restTokens.forEach((tok) => {
-    if (varsMap.has(tok)) usedVars.add(tok);
+    if (isExitInput || varsMap.has(tok)) usedVars.add(tok);
   });
 
   let matchCount = 0;
   items.forEach((btn) => {
     const kind = btn.getAttribute("data-syn-kind") || "var";
     const vName = (btn.getAttribute("data-syn-var-name") || "").toLowerCase();
+    const matchesToken =
+      token.length > 0 &&
+      (vName.startsWith(token) || (isExitInput && vName.startsWith("chapter:") && vName.slice(8).startsWith(token))) &&
+      vName !== token;
     const show =
-      kind === "var" &&
+      kind === wantKind &&
       !usedVars.has(vName) &&
-      (forceAll || triggeredByQuestionMark || touchSlot || (token.length > 0 && vName.startsWith(token) && vName !== token));
+      (forceAll || triggeredByQuestionMark || touchSlot || matchesToken);
     btn.classList.toggle("hidden", !show);
     if (show) matchCount++;
   });
@@ -639,61 +605,50 @@ function bindSynAutocompleteDropdown() {
   document.addEventListener("focusin", (e) => {
     const t = e.target;
     if (!t || !t.matches) return;
-    if (t.matches("input.choice-rule-input, input.syn-inner-input")) {
-      if (lastRulePointerWasTouch) {
-        updateSynAutocompleteOnInput(t, !(t.value || "").trim());
-      }
-    } else if (t.matches("input.choice-exit-input")) {
-      if (lastRulePointerWasTouch) {
-        updateChoiceTargetAutocompleteOnInput(t, true);
-      }
+    if (t.matches("input.choice-exit-input, input.choice-rule-input, input.syn-inner-input") && lastRulePointerWasTouch) {
+      updateSynAutocompleteOnInput(t, t.matches("input.choice-exit-input") || !(t.value || "").trim());
     }
   });
 
   document.addEventListener("focusout", (e) => {
     const t = e.target;
     if (!t || !t.matches) return;
-    if (t.matches("input.choice-rule-input, input.syn-inner-input")) {
-      const inner = stripOuterBracesClient(t.value);
+    if (t.matches("input.choice-exit-input, input.choice-rule-input, input.syn-inner-input")) {
+      let inner = stripOuterBracesClient(t.value);
+      if (t.matches("input.choice-exit-input")) {
+        inner = inner.replace(/\?/g, "").trim();
+        t.value = inner;
+        const form = t.closest("form.editor-context-form, form#form-scene-text");
+        if (form) validateRuleInputElement(t, form);
+        return;
+      }
       t.value = inner;
       const emptyRow = t.closest(".choice-triple-row, .node-meta-row, .scene-settings-row");
       if (emptyRow) {
         emptyRow.classList.toggle("is-empty-rule", !inner);
       }
-    } else if (t.matches("input.node-choice-label, textarea.node-choice-label, input.choice-label-text, textarea.choice-label-text")) {
-      syncChoiceInlineHighlight(t);
     }
   });
 
   document.addEventListener("input", (e) => {
     const t = e.target;
     if (!t || !t.matches) return;
-    if (t.matches("input.choice-rule-input, input.syn-inner-input")) {
+    if (t.matches("input.choice-exit-input, input.choice-rule-input, input.syn-inner-input")) {
       updateSynAutocompleteOnInput(t, false);
-    } else if (t.matches("input.choice-exit-input, input.node-choice-label, textarea.node-choice-label, input.choice-label-text, textarea.choice-label-text")) {
-      updateChoiceTargetAutocompleteOnInput(t, false);
     }
   });
 
   document.addEventListener("keydown", (e) => {
     const t = e.target;
-    if (!t || !t.matches || !t.matches("input.choice-exit-input, input.choice-rule-input, input.syn-inner-input, input.node-choice-label, textarea.node-choice-label, input.choice-label-text, textarea.choice-label-text")) return;
+    if (!t || !t.matches || !t.matches("input.choice-exit-input, input.choice-rule-input, input.syn-inner-input, textarea.node-choice-label, textarea.choice-label-text")) return;
     const form = t.closest("form.editor-context-form, form#form-scene-text");
     const dropdown = form ? qs(".syn-autocomplete-dropdown", form) : null;
     if (!dropdown || dropdown.classList.contains("hidden")) {
-      if (e.key === "ArrowDown") {
-        if (t.matches("input.choice-rule-input, input.syn-inner-input")) {
-          e.preventDefault();
-          e.stopPropagation();
-          updateSynAutocompleteOnInput(t, true);
-          return;
-        }
-        if (t.matches("input.choice-exit-input")) {
-          e.preventDefault();
-          e.stopPropagation();
-          updateChoiceTargetAutocompleteOnInput(t, true);
-          return;
-        }
+      if (e.key === "ArrowDown" && t.matches("input.choice-exit-input, input.choice-rule-input, input.syn-inner-input")) {
+        e.preventDefault();
+        e.stopPropagation();
+        updateSynAutocompleteOnInput(t, true);
+        return;
       }
       if (e.key === "Enter" && t.matches("textarea.node-choice-label, textarea.choice-label-text")) {
         e.preventDefault();

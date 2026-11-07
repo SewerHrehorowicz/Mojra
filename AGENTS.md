@@ -1,4 +1,4 @@
-# Mojra (StoryTeller) Architecture & Unbreakable Rules for AI Agents
+# Mojra Architecture & Unbreakable Rules for AI Agents
 
 ## 1. ALWAYS Keep the Top Bar (`header.topbar#topbar`) Visible — NEVER VIOLATE
 - **THE TOP BAR MUST ALWAYS REMAIN VISIBLE AND INTERACTIVE IN EVERY VIEW AND MODAL**:
@@ -18,8 +18,8 @@
   - A single outgoing transition MUST always normalize to implicit `Dalej` (`next: <target>` or sequential same-file scene), never a single custom-labeled choice button.
 - **Node Studio Layout (`books/<id>/.editor.cfg`)**: Plain text using `pan_x: <int>`, `pan_y: <int>`, `zoom: <float>`, and `node: <scene_ref> -> <x>, <y>` snapped to `EditorGridSize = 24`.
 - **App Settings & Saves in Standard OS App Data (`book.DefaultAppDataDir()` / `book.DefaultSavesDir()`)**:
-  - Built or running apps and tests must **NEVER** write `saves/`, `settings.ini`, `<book-id>.sav`, `.storyteller.pid`, or `.history/` into the repository (`repo/saves/`, `repo/dist/saves/`, `books/<id>/.history/` are strictly forbidden).
-  - Keep all app settings (`saves/settings.ini`), player saves (`saves/<book-id>.sav`), process lock files (`saves/.storyteller.pid`), version history (`history/`), default projects (`projects/`), and exports (`exports/`) in the standard OS application data directory (`os.UserConfigDir()/StoryTeller`, i.e., `~/Library/Application Support/StoryTeller` on macOS, `%AppData%\StoryTeller` on Windows, `$XDG_CONFIG_HOME/StoryTeller` on Linux) via `book.DefaultAppDataDir()` and `book.ResolveSavesDir(rootDir)`, and use isolated `os.TempDir()` directories during `go test`.
+  - Built or running apps and tests must **NEVER** write `saves/`, `settings.ini`, `<book-id>.sav`, `.mojra.pid`, or `.history/` into the repository (`repo/saves/`, `repo/dist/saves/`, `books/<id>/.history/` are strictly forbidden).
+  - Keep all app settings (`saves/settings.ini`), player saves (`saves/<book-id>.sav`), process lock files (`saves/.mojra.pid`), version history (`history/`), default projects (`projects/`), and exports (`exports/`) in the standard OS application data directory (`os.UserConfigDir()/Mojra`, i.e., `~/Library/Application Support/Mojra` on macOS, `%AppData%\Mojra` on Windows, `$XDG_CONFIG_HOME/Mojra` on Linux) via `book.DefaultAppDataDir()` and `book.ResolveSavesDir(rootDir)`, and use isolated `os.TempDir()` directories during `go test`.
 - **App Settings (`saves/settings.ini`)**: INI sections (`[display]`, `[audio]`, `[library]`) with `key = value` pairs written atomically via `.tmp` + `os.Rename`.
 - **Player Progress (`saves/<book-id>.sav`)**: Custom Little-Endian binary format (`STSV\x01`). Frequent `AudioTime` updates MUST patch bytes `[5..21]` in-place via `UpdateSaveAudioTimeInPlace` (`os.File.WriteAt`) without rewriting the file.
 

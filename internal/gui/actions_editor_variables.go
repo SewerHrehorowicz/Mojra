@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"storyteller/internal/book"
+	"mojra/internal/book"
 )
 
 func (s *Server) toggleEditorVariablesPanel(r *http.Request) string {

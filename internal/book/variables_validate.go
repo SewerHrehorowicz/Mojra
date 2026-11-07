@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"storyteller/internal/tpl"
+	"mojra/internal/tpl"
 )
 
 // EncodeBookVariablesSpec encodes the book's variable definitions as "name:kind:opt1,opt2;..." for client-side live validation.
@@ -380,3 +380,80 @@ func findCompoundAssignOp(clause string) (string, int) {
 	}
 	return "", -1
 }
+
+// ExplainExitTargetErrorLang returns a localized syntax/target error explanation for an invalid exit: target on sc, or "" when valid.
+func ExplainExitTargetErrorLang(sc *Scene, rawTarget string, b *Book, lang string) string {
+	l := tpl.ParseLang(lang)
+	trimmed := strings.TrimSpace(rawTarget)
+	if trimmed == "" {
+		return tpl.LookupJSI18n(l, "err_exit_empty")
+	}
+	if strings.Contains(trimmed, "?") {
+		return tpl.LookupJSI18n(l, "err_exit_question")
+	}
+	if strings.EqualFold(trimmed, "END") || strings.EqualFold(trimmed, "KONIEC") || strings.EqualFold(trimmed, "NEXT") || strings.EqualFold(trimmed, "DALEJ") {
+		return ""
+	}
+	if b == nil {
+		return ""
+	}
+	curCh := ""
+	if sc != nil {
+		curCh = strings.TrimSpace(sc.Chapter)
+	}
+	if curCh == "" {
+		curCh = b.DefaultChapterName()
+	}
+	curChMeta := b.FindChapter(curCh)
+
+	if chRef, isChTarget := ParseChapterTarget(trimmed); isChTarget {
+		targetCh := b.FindChapter(chRef)
+		if targetCh == nil {
+			return fmt.Sprintf(tpl.LookupJSI18n(l, "err_exit_unknown_chapter"), chRef)
+		}
+		if strings.EqualFold(targetCh.Name, curCh) || strings.EqualFold(targetCh.ReferenceKey(), curCh) || strings.EqualFold(targetCh.ID, curCh) ||
+			(curChMeta != nil && (strings.EqualFold(targetCh.ID, curChMeta.ID) || strings.EqualFold(targetCh.ReferenceKey(), curChMeta.ReferenceKey()))) {
+			return tpl.LookupJSI18n(l, "err_exit_self_chapter")
+		}
+		return ""
+	}
+
+	if sc != nil {
+		if strings.EqualFold(trimmed, sc.ID) ||
+			(sc.ExplicitID != "" && strings.EqualFold(trimmed, sc.ExplicitID)) ||
+			(sc.Name != "" && strings.EqualFold(trimmed, sc.Name)) {
+			return tpl.LookupJSI18n(l, "err_exit_self_scene")
+		}
+	}
+
+	normKey := NormalizeLookupKey(trimmed)
+	for _, cand := range b.Scenes {
+		if sc != nil && strings.EqualFold(cand.ID, sc.ID) {
+			continue
+		}
+		candCh := strings.TrimSpace(cand.Chapter)
+		if candCh == "" {
+			candCh = b.DefaultChapterName()
+		}
+		if !strings.EqualFold(candCh, curCh) {
+			continue
+		}
+		if strings.EqualFold(cand.ID, trimmed) ||
+			(cand.ExplicitID != "" && strings.EqualFold(cand.ExplicitID, trimmed)) ||
+			strings.EqualFold(cand.ReferenceKey(), trimmed) ||
+			(cand.Name != "" && (strings.EqualFold(cand.Name, trimmed) || NormalizeLookupKey(cand.Name) == normKey)) {
+			return ""
+		}
+	}
+
+	if targetCh := b.FindChapter(trimmed); targetCh != nil {
+		if strings.EqualFold(targetCh.Name, curCh) || strings.EqualFold(targetCh.ReferenceKey(), curCh) || strings.EqualFold(targetCh.ID, curCh) ||
+			(curChMeta != nil && (strings.EqualFold(targetCh.ID, curChMeta.ID) || strings.EqualFold(targetCh.ReferenceKey(), curChMeta.ReferenceKey()))) {
+			return tpl.LookupJSI18n(l, "err_exit_self_chapter")
+		}
+		return ""
+	}
+
+	return fmt.Sprintf(tpl.LookupJSI18n(l, "err_exit_unknown_target"), trimmed)
+}
+

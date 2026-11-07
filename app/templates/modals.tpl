@@ -869,7 +869,8 @@
                                                 data-choice-idx: "{ch.idx}"
                                                 svg.choice-grip-icon src: /icons/grip.svg
                                         .choice-triple-stack.modal-choice-triple-stack
-                                            .choice-triple-row.choice-triple-exit
+                                            .choice-triple-row.choice-triple-exit .is-invalid?: {ch.is_exit_invalid}
+                                                data-hint?: {ch.exit_error_hint}
                                                 span.choice-row-key "exit:"
                                                 input.choice-exit-input
                                                     type: text
@@ -881,6 +882,7 @@
                                                     autocorrect: "off"
                                                     autocapitalize: "off"
                                                     autocomplete: "off"
+                                                    data-hint?: {ch.exit_error_hint}
                                                     disabled?: {is_history_preview}
                                                     readonly?: {is_history_preview}
                                             .choice-triple-row.choice-triple-label
@@ -984,7 +986,7 @@
                                         button.syn-dropdown-item.hidden
                                             type: button
                                             data-syn-kind: "target"
-                                            data-syn-target-value: "{tsug.value}"
+                                            data-syn-var-name: "{tsug.value}"
                                             span.syn-dropdown-var-name {tsug.value}
                                             span.syn-dropdown-var-meta {tsug.meta}
                 .scroll-more-cue.hidden#modal-scroll-more-cue

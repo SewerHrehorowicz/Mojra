@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"storyteller/internal/book"
+	"mojra/internal/book"
 )
 
 func (s *Server) buildChoiceTargetOptions(sc *book.Scene, ch book.Choice) string {
@@ -204,7 +204,7 @@ func (s *Server) buildEditorNodeMap(sc *book.Scene, isSelected bool) map[string]
 			selectedVal = s.buildChoiceTargetOptions(sc, ch)
 		}
 
-		portMap, _ := s.buildChoiceRuleViewMap(sc.ID, chIdx, ch, selectedVal)
+		portMap, _ := s.buildChoiceRuleViewMap(sc, chIdx, ch, selectedVal)
 		portMap["raw_label"] = lbl
 		inspectorPorts = append(inspectorPorts, portMap)
 	}
@@ -505,7 +505,11 @@ func (s *Server) populateEditorBookAndChapterSettings(vars map[string]any) {
 	s.populateEditorVariablesContext(vars)
 }
 
-func (s *Server) buildChoiceRuleViewMap(sceneID string, idx int, ch book.Choice, selectedVal string) (map[string]any, bool) {
+func (s *Server) buildChoiceRuleViewMap(sc *book.Scene, idx int, ch book.Choice, selectedVal string) (map[string]any, bool) {
+	sceneID := ""
+	if sc != nil {
+		sceneID = sc.ID
+	}
 	condInputVal := book.CleanConditionExpr(ch.Condition)
 	if ch.ShowWhenLocked && condInputVal != "" && !strings.HasPrefix(condInputVal, "?") {
 		condInputVal = "? " + condInputVal
@@ -521,6 +525,10 @@ func (s *Server) buildChoiceRuleViewMap(sceneID string, idx int, ch book.Choice,
 		if expOpen, exists := s.ChoiceRulesOpen[ruleKey]; exists {
 			isRuleOpen = expOpen
 		}
+	}
+	exitErrHint := ""
+	if sc != nil {
+		exitErrHint = book.ExplainExitTargetErrorLang(sc, selectedVal, s.ActiveBook, s.Settings.Language)
 	}
 	condErrHint := ""
 	if hasCond {
@@ -539,6 +547,8 @@ func (s *Server) buildChoiceRuleViewMap(sceneID string, idx int, ch book.Choice,
 		"has_effects":     hasEff,
 		"has_rule":        hasRule,
 		"is_rule_open":    isRuleOpen,
+		"is_exit_invalid": exitErrHint != "",
+		"exit_error_hint": exitErrHint,
 		"is_cond_invalid": condErrHint != "",
 		"is_eff_invalid":  effErrHint != "",
 		"cond_error_hint": condErrHint,

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"sync"
 
-	"storyteller/internal/tpl"
+	"mojra/internal/tpl"
 )
 
 var (

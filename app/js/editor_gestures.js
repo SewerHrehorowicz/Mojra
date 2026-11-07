@@ -2623,6 +2623,9 @@ function bindEditorCanvasEvents() {
         renderStudioCanvas();
       }
     }
+    if (e.target && e.target.classList && e.target.classList.contains("choice-exit-input") && (e.target.value || "").indexOf("?") >= 0) {
+      return;
+    }
     scheduleNodeLiveSave(form);
   });
 

@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"storyteller/internal/book"
+	"mojra/internal/book"
 )
 
 func (s *Server) renameActiveBookChapter(r *http.Request) string {

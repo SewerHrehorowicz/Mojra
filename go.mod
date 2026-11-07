@@ -1,3 +1,3 @@
-module storyteller
+module mojra
 
 go 1.23

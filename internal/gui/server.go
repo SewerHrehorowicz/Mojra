@@ -12,9 +12,9 @@ import (
 	"strings"
 	"sync"
 
-	"storyteller/internal/book"
-	"storyteller/internal/qr"
-	"storyteller/internal/tpl"
+	"mojra/internal/book"
+	"mojra/internal/qr"
+	"mojra/internal/tpl"
 )
 
 // ModalState groups all active modal/overlay state for the Server while keeping promoted fields accessible.

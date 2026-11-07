@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"storyteller/internal/book"
+	"mojra/internal/book"
 )
 
 const historyPreviewLockedToast = "Podgląd wersji historycznej jest zablokowany do edycji"

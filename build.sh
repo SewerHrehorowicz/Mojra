@@ -131,7 +131,7 @@ if ! command -v go >/dev/null 2>&1; then
     echo "==================================================================" >&2
     echo "  [BRAK ZALEŻNOŚCI] Nie znaleziono kompilatora Go (Golang)" >&2
     echo "==================================================================" >&2
-    echo "Do zbudowania aplikacji StoryTeller wymagany jest kompilator Go" >&2
+    echo "Do zbudowania aplikacji Mojra wymagany jest kompilator Go" >&2
     echo "oraz zależności projektu." >&2
     echo "" >&2
 
@@ -169,7 +169,7 @@ fi
 
 if [ "${1:-}" = "audit" ] || [ "${1:-}" = "--audit" ]; then
     shift
-    exec go run ./cmd/storyteller audit "$@"
+    exec go run ./cmd/mojra audit "$@"
 fi
 
-exec go run ./cmd/storyteller build "$@"
+exec go run ./cmd/mojra build "$@"

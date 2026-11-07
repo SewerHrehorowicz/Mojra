@@ -28,7 +28,7 @@ Powiązana makieta wizualna: branch_graph_design.png (Tryb ciemny + Tryb jasny)
   - Ten sam komponent `.ui-tooltip` (`app/styles/app.tss`) obsługuje wszystkie podpowiedzi `data-hint` w całej aplikacji (`#topbar`, `Node Studio`, `Czytnik`, `Historia`).
 
 
-2. IMPLEMENTACJA W ARCHITEKTURZE STORYTELLERA
+2. IMPLEMENTACJA W ARCHITEKTURZE MOJRY
 ---------------------------------------------
 2.1. Zunifikowany `.ui-tooltip` (`app/styles/app.tss`):
   - Zastąpienie dotychczasowego `background: --bg-elevated; border: 1px solid --border-subtle` przez:

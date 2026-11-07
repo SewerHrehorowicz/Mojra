@@ -486,7 +486,10 @@
 .choice-triple-row:last-child
   border-bottom none
 
-.choice-triple-row.is-invalid .choice-rule-input, .choice-triple-row.is-invalid .choice-row-key, .choice-triple-row.is-invalid .syn-brace
+.choice-triple-row.is-invalid
+  border-bottom-color --accent-danger !important
+
+.choice-triple-row.is-invalid .choice-exit-input, .choice-triple-row.is-invalid .choice-rule-input, .choice-triple-row.is-invalid .choice-row-key, .choice-triple-row.is-invalid .syn-brace
   color --accent-danger !important
 
 .choice-triple-row .node-choice-label

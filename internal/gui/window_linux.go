@@ -50,7 +50,7 @@ func RunNativeOSWindow(url string, onClosed func()) bool {
 		if err != nil || baseCacheDir == "" {
 			baseCacheDir = os.TempDir()
 		}
-		profileDir := filepath.Join(baseCacheDir, "StoryTeller-WebView")
+		profileDir := filepath.Join(baseCacheDir, "Mojra-WebView")
 		_ = os.MkdirAll(profileDir, 0700)
 
 		cmd := exec.Command(

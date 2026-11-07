@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"storyteller/internal/book"
+	"mojra/internal/book"
 )
 
 func splitInlineChoiceLabelAndTarget(raw string) (label string, target string, hasArrow bool) {

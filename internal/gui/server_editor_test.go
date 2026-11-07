@@ -11,13 +11,13 @@ import (
 	"strings"
 	"testing"
 
-	"storyteller"
-	"storyteller/internal/book"
+	"mojra"
+	"mojra/internal/book"
 )
 
 func TestEditorUndoRedoAndVersionHistory(t *testing.T) {
 	rootDir := t.TempDir()
-	srv := NewServer(rootDir, storyteller.AppFS)
+	srv := NewServer(rootDir, mojra.AppFS)
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
@@ -173,7 +173,7 @@ func TestEditorUndoRedoAndVersionHistory(t *testing.T) {
 
 func TestHistoryPreviewClickPlayAndEditLock(t *testing.T) {
 	rootDir := t.TempDir()
-	srv := NewServer(rootDir, storyteller.AppFS)
+	srv := NewServer(rootDir, mojra.AppFS)
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
@@ -338,7 +338,7 @@ func TestHistoryPreviewClickPlayAndEditLock(t *testing.T) {
 
 func TestChapterPortsAndOneWayChapterConnectionsInStudio(t *testing.T) {
 	rootDir := t.TempDir()
-	srv := NewServer(rootDir, storyteller.AppFS)
+	srv := NewServer(rootDir, mojra.AppFS)
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
@@ -453,7 +453,7 @@ Czwarta scena (Hop 3 - poza kolejką 2 kroków).
 		_ = os.WriteFile(filepath.Join(bookDir, "voice", id+".ogg"), []byte("OggS\x00\x02"), 0644)
 	}
 
-	srv := NewServer(rootDir, storyteller.AppFS)
+	srv := NewServer(rootDir, mojra.AppFS)
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
@@ -500,7 +500,7 @@ Czwarta scena (Hop 3 - poza kolejką 2 kroków).
 
 func TestUnifiedPortStylesInCSSAndWebGL(t *testing.T) {
 	rootDir := t.TempDir()
-	srv := NewServer(rootDir, storyteller.AppFS)
+	srv := NewServer(rootDir, mojra.AppFS)
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
@@ -535,7 +535,7 @@ func TestUnifiedPortStylesInCSSAndWebGL(t *testing.T) {
 
 func TestScreenplayModeEndToEndFlow(t *testing.T) {
 	rootDir := t.TempDir()
-	srv := NewServer(rootDir, storyteller.AppFS)
+	srv := NewServer(rootDir, mojra.AppFS)
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
@@ -919,7 +919,7 @@ scene: Nowa scena 120
 end: true
 Tekst sceny 120 bez jawnego id.
 `
-	editorContent := `# StoryTeller — Stan edytora węzłów (.editor.cfg)
+	editorContent := `# Mojra — Stan edytora węzłów (.editor.cfg)
 pan_x: 0
 pan_y: 0
 zoom: 1.00
@@ -941,7 +941,7 @@ node: Nowa scena 120 -> 336, 2568
 		t.Fatal(err)
 	}
 
-	srv := NewServer(dir, storyteller.AppFS)
+	srv := NewServer(dir, mojra.AppFS)
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
@@ -1013,7 +1013,7 @@ func TestWFPProtocolAndZeroRepoSavesOrAppState(t *testing.T) {
 		"action":     {"SaveScene"},
 		"scene_id":   {"poczatek"},
 		"name":       {"Wstęp na przystani"},
-		"export_dir": {`C:\Users\Autor\StoryTeller\Exports`},
+		"export_dir": {`C:\Users\Autor\Mojra\Exports`},
 		"author":     {""},
 		"text":       {"Pierwszy akapit z polskimi znakami: Zażółć gęślą jaźń.\n\nDrugi akapit ze strzałką \\-> w treści."},
 	}
@@ -1036,7 +1036,7 @@ func TestWFPProtocolAndZeroRepoSavesOrAppState(t *testing.T) {
 
 	// 2. Verify POST /api/action accepts WFP wire frames directly
 	rootDir := t.TempDir()
-	srv := NewServer(rootDir, storyteller.AppFS)
+	srv := NewServer(rootDir, mojra.AppFS)
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
@@ -1046,7 +1046,7 @@ func TestWFPProtocolAndZeroRepoSavesOrAppState(t *testing.T) {
 			t.Fatalf("NewRequest failed: %v", err)
 		}
 		req.Header.Set("Content-Type", "text/x-wfp;charset=UTF-8")
-		req.Header.Set("X-Requested-With", "StoryTeller")
+		req.Header.Set("X-Requested-With", "Mojra")
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			t.Fatalf("POST /api/action WFP failed: %v", err)
@@ -1079,7 +1079,7 @@ func TestWFPProtocolAndZeroRepoSavesOrAppState(t *testing.T) {
 
 	// 3. Verify that a repository directory (containing go.mod) NEVER receives saves/, settings.ini, .pid, or .history/
 	fakeRepo := t.TempDir()
-	if err := os.WriteFile(filepath.Join(fakeRepo, "go.mod"), []byte("module storyteller\n"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(fakeRepo, "go.mod"), []byte("module mojra\n"), 0644); err != nil {
 		t.Fatalf("failed to write fake go.mod: %v", err)
 	}
 	repoBookDir := filepath.Join(fakeRepo, "books", "test-book")
@@ -1094,7 +1094,7 @@ func TestWFPProtocolAndZeroRepoSavesOrAppState(t *testing.T) {
 	}
 
 	StopPreviousInstance(fakeRepo)
-	repoSrv := NewServerWithOptions(fakeRepo, storyteller.AppFS, true)
+	repoSrv := NewServerWithOptions(fakeRepo, mojra.AppFS, true)
 	_ = repoSrv.saveAppSettings()
 	if repoSrv.ActiveBook != nil {
 		_ = book.EnsureBookHistoryBaseline(repoSrv.ActiveBook, "s1")
@@ -1128,7 +1128,7 @@ func TestWFPProtocolAndZeroRepoSavesOrAppState(t *testing.T) {
 
 func TestVariablesPanelChoiceTripleStackAndThreeStateScenePreview(t *testing.T) {
 	rootDir := t.TempDir()
-	srv := NewServer(rootDir, storyteller.AppFS)
+	srv := NewServer(rootDir, mojra.AppFS)
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
@@ -1360,7 +1360,7 @@ func TestSeparatePlayerAndStudioBooksAndPlaybookUnpackWarning(t *testing.T) {
 		t.Fatalf("PackBookToZip C failed: %v", err)
 	}
 
-	srv := NewServer(rootDir, storyteller.AppFS)
+	srv := NewServer(rootDir, mojra.AppFS)
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
@@ -1489,7 +1489,7 @@ func TestSeparatePlayerAndStudioBooksAndPlaybookUnpackWarning(t *testing.T) {
 
 func TestSceneTextSlideOutPanelUnifiedChoicesAndSyntaxHoverTooltip(t *testing.T) {
 	rootDir := t.TempDir()
-	srv := NewServer(rootDir, storyteller.AppFS)
+	srv := NewServer(rootDir, mojra.AppFS)
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 

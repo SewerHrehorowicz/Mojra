@@ -552,7 +552,7 @@ func checkSecurityLoopsAndReliability(rootDir string, fset *token.FileSet, goFil
 			trimmed := strings.TrimSpace(ln)
 			clean := strings.TrimSpace(stripJSLineCommentAndStrings(ln))
 			if innerHTMLRe.MatchString(clean) && !emptyInnerHTMLRe.MatchString(trimmed) {
-				if jf.rel == "app/js/core.js" && (curFunc == "sendServerAction" || curFunc == "bootMojraWasmPlayer") && hotwTransportLineRe.MatchString(trimmed) {
+				if jf.rel == "app/js/core.js" && (curFunc == "sendServerAction" || curFunc == "bootWasmPlayer") && hotwTransportLineRe.MatchString(trimmed) {
 					continue
 				}
 				out = append(out, Finding{

@@ -264,7 +264,8 @@ aside.editor-context-panel#editor-context-panel .hidden?: {is_context_panel_hidd
                                     data-choice-idx: "{pt.idx}"
                                     svg.choice-grip-icon src: /icons/grip.svg
                             .choice-triple-stack
-                                .choice-triple-row.choice-triple-exit
+                                .choice-triple-row.choice-triple-exit .is-invalid?: {pt.is_exit_invalid}
+                                    data-hint?: {pt.exit_error_hint}
                                     span.choice-row-key "exit:"
                                     input.choice-exit-input
                                         type: text
@@ -276,6 +277,7 @@ aside.editor-context-panel#editor-context-panel .hidden?: {is_context_panel_hidd
                                         autocorrect: "off"
                                         autocapitalize: "off"
                                         autocomplete: "off"
+                                        data-hint?: {pt.exit_error_hint}
                                         disabled?: {is_history_preview}
                                         readonly?: {is_history_preview}
                                 .choice-triple-row.choice-triple-label
@@ -365,7 +367,7 @@ aside.editor-context-panel#editor-context-panel .hidden?: {is_context_panel_hidd
                                 button.syn-dropdown-item.hidden
                                     type: button
                                     data-syn-kind: "target"
-                                    data-syn-target-value: "{tsug.value}"
+                                    data-syn-var-name: "{tsug.value}"
                                     span.syn-dropdown-var-name {tsug.value}
                                     span.syn-dropdown-var-meta {tsug.meta}
                 {if not is_history_preview}

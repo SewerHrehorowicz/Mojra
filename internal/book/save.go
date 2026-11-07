@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"storyteller/internal/tpl"
+	"mojra/internal/tpl"
 )
 
 const (
@@ -275,7 +275,7 @@ func SaveAppSettings(savesDir string, cfg *AppSettings) error {
 	cfg.AutoChoiceDelay = NormalizeAutoChoiceDelay(cfg.AutoChoiceDelay)
 
 	var sb strings.Builder
-	sb.WriteString("; StoryTeller — Ustawienia aplikacji (format INI)\n\n")
+	sb.WriteString("; Mojra — Ustawienia aplikacji (format INI)\n\n")
 	sb.WriteString("[display]\n")
 	fmt.Fprintf(&sb, "theme = %s\n", cfg.Theme)
 	fmt.Fprintf(&sb, "lang = %s\n", cfg.Language)

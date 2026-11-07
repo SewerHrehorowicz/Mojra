@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"storyteller/internal/book"
+	"mojra/internal/book"
 )
 
 func formatHistoryCompactTime(ts int64) string {

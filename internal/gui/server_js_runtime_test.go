@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"storyteller"
-	"storyteller/internal/tpl"
+	"mojra"
+	"mojra/internal/tpl"
 )
 
 func TestAllActionSpecsHaveHandlers(t *testing.T) {
@@ -943,7 +943,7 @@ function makeEvent(type, props) {
   const win = {
     document: doc,
     navigator: {
-      userAgent: "Mozilla/5.0 StoryTellerTest/1.0",
+      userAgent: "Mozilla/5.0 MojraTest/1.0",
       mediaDevices: {
         getUserMedia: async () => ({ getTracks: () => [{ stop() {} }] })
       }
@@ -1356,6 +1356,43 @@ function makeEvent(type, props) {
     throw new Error("Expected ArrowDown + Enter on '?' to select 2nd variable 'wypil_gorzalke', got: " + effInp.value);
   }
 
+  // 9c. Test exit: input '?' replacement dropdown, excluding current scene/chapter/target, and .is-invalid error highlighting
+  const exitInp = doc.querySelector('#modal-scene-text input.choice-exit-input[name="choice_target_0"]');
+  if (!exitInp) {
+    throw new Error("Expected #modal-scene-text input.choice-exit-input[name=choice_target_0]");
+  }
+  const origExitVal = exitInp.value;
+  exitInp.value = "?" + origExitVal;
+  exitInp.selectionStart = 1;
+  exitInp.selectionEnd = 1;
+  exitInp.dispatchEvent(makeEvent("input", { target: exitInp }));
+  const exitRow = exitInp.closest(".choice-triple-row");
+  if (!exitRow || !exitRow.classList.contains("is-invalid") || !exitInp.getAttribute("data-hint")) {
+    throw new Error("Expected exit: row with '?...' to be marked .is-invalid with data-hint");
+  }
+  if (synDrop.classList.contains("hidden")) {
+    throw new Error("Expected #modal-syn-autocomplete-dropdown to open when typing '?' before existing exit target");
+  }
+  const visibleTargetBtns = synDrop.querySelectorAll('.syn-dropdown-item[data-syn-kind="target"]:not(.hidden)');
+  if (visibleTargetBtns.length === 0) {
+    throw new Error("Expected target suggestions in dropdown for exit: '?...'");
+  }
+  for (let i = 0; i < visibleTargetBtns.length; i++) {
+    if ((visibleTargetBtns[i].getAttribute("data-syn-var-name") || "").toLowerCase() === origExitVal.toLowerCase()) {
+      throw new Error("Expected current exit target '" + origExitVal + "' to be excluded when typing '?'");
+    }
+  }
+  exitInp.dispatchEvent(makeEvent("keydown", { key: "Enter", target: exitInp }));
+  if (exitInp.value.includes("?") || exitRow.classList.contains("is-invalid")) {
+    throw new Error("Expected selecting target from dropdown to replace full exit: value and clear .is-invalid, got: " + exitInp.value);
+  }
+  exitInp.value = origExitVal;
+  exitInp.dispatchEvent(makeEvent("input", { target: exitInp }));
+  if (exitRow.classList.contains("is-invalid")) {
+    throw new Error("Expected restored valid exit target '" + origExitVal + "' to clear .is-invalid");
+  }
+
+
   const openModalScId = doc.querySelector('#modal-scene-text input[name="scene_id"]').value;
   if (doc.querySelector("#editor-context-form").getAttribute("data-context-scene-id") !== openModalScId) {
     throw new Error("Expected canvas context selection to be synced with open #modal-scene-text scene_id: " + openModalScId);
@@ -1627,7 +1664,7 @@ function makeEvent(type, props) {
 		{name: "dev_app_js", code: devJS},
 	} {
 		caseDir := t.TempDir()
-		srv := NewServer(caseDir, storyteller.AppFS)
+		srv := NewServer(caseDir, mojra.AppFS)
 		ts := httptest.NewServer(srv.Handler())
 
 		cmd := exec.Command(nodeBin, "-e", harnessScript)

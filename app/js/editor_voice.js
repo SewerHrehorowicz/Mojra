@@ -654,7 +654,7 @@ async function startVoiceRecording(stripEl) {
       typeof window !== "undefined" &&
         window.webkit &&
         window.webkit.messageHandlers &&
-        window.webkit.messageHandlers.storytellerHost
+        window.webkit.messageHandlers.nativeHost
     ) ||
     typeof navigator === "undefined" ||
     !navigator.mediaDevices ||

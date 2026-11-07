@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"strings"
 
-	"storyteller/internal/book"
-	"storyteller/internal/tpl"
+	"mojra/internal/book"
+	"mojra/internal/tpl"
 )
 
 type actionTargetKind uint8

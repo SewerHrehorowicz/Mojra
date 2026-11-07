@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"storyteller/internal/book"
+	"mojra/internal/book"
 )
 
 func buildPlayerScreenplayBlocks(sc *book.Scene, state map[string]string, b *book.Book, sceneNum int, standard string) []map[string]any {

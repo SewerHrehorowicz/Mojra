@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"storyteller/internal/book"
+	"mojra/internal/book"
 )
 
 func buildScreenplayFormatInsertPills(standard string, b *book.Book, lang Lang) ([]map[string]any, []map[string]any) {
@@ -489,7 +489,7 @@ func (s *Server) populateModalsContext(vars map[string]any) {
 					arr = "↺"
 				}
 				selectedVal := s.buildChoiceTargetOptions(modalSc, ch)
-				choiceMap, hasCond := s.buildChoiceRuleViewMap(modalSc.ID, idx, ch, selectedVal)
+				choiceMap, hasCond := s.buildChoiceRuleViewMap(modalSc, idx, ch, selectedVal)
 				condMet := book.EvaluateCondition(ch.Condition, testState, s.ActiveBook)
 				if previewMode == "output" && hasCond && !condMet && !ch.ShowWhenLocked {
 					continue

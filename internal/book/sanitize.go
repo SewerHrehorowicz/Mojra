@@ -6,7 +6,7 @@ import (
 	"strings"
 	"unicode"
 
-	"storyteller/internal/tpl"
+	"mojra/internal/tpl"
 )
 
 var (

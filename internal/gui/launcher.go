@@ -15,7 +15,7 @@ import (
 	"syscall"
 	"time"
 
-	"storyteller/internal/book"
+	"mojra/internal/book"
 )
 
 var nativeWindowDevMode bool
@@ -23,10 +23,10 @@ var nativeWindowDevMode bool
 func pidFilePath(rootDir string) string {
 	savesDir := book.ResolveSavesDir(rootDir)
 	_ = os.MkdirAll(savesDir, 0755)
-	return filepath.Join(savesDir, ".storyteller.pid")
+	return filepath.Join(savesDir, ".mojra.pid")
 }
 
-// StopPreviousInstance terminates any stale StoryTeller GUI process recorded in .storyteller.pid.
+// StopPreviousInstance terminates any stale Mojra GUI process recorded in .mojra.pid.
 func StopPreviousInstance(rootDir string) {
 	pidPath := pidFilePath(rootDir)
 	raw, err := os.ReadFile(pidPath)
@@ -43,7 +43,7 @@ func StopPreviousInstance(rootDir string) {
 	_ = os.Remove(pidPath)
 }
 
-// LaunchWithOptions starts the in-process StoryTeller engine and opens the Native OS Window (WKWebView on macOS / Edge WebView2 on Windows).
+// LaunchWithOptions starts the in-process Mojra engine and opens the Native OS Window (WKWebView on macOS / Edge WebView2 on Windows).
 func LaunchWithOptions(rootDir string, embeddedFS fs.FS, port int, headless bool, devMode bool) error {
 	nativeWindowDevMode = devMode
 	StopPreviousInstance(rootDir)

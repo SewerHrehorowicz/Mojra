@@ -1174,7 +1174,7 @@ func ParseWirePinList(raw string) []WirePin {
 // SerializeEditorFile serializes Node Editor canvas viewport, node (x, y) positions, and wire pins into .editor.cfg format.
 func SerializeEditorFile(b *Book) string {
 	var sb strings.Builder
-	sb.WriteString("# StoryTeller — Stan edytora węzłów (.editor.cfg)\n")
+	sb.WriteString("# Mojra — Stan edytora węzłów (.editor.cfg)\n")
 	zoom := b.EditorZoom
 	if zoom < 0.2 || zoom > 3.0 {
 		zoom = 1.0

@@ -21,7 +21,7 @@ func TestTranspileDirectoryToPlainHTML(t *testing.T) {
 
 	_ = os.WriteFile(filepath.Join(templatesDir, "topbar.tpl"), []byte(`
 header.topbar#main-top
-    span.brand "StoryTeller"
+    span.brand "Mojra"
     svg.icon src: /icons/play.svg
 `), 0644)
 
@@ -29,7 +29,7 @@ header.topbar#main-top
 html lang: pl
     head
         meta charset: UTF-8
-        title "StoryTeller"
+        title "Mojra"
     body
         #app
             @topbar
@@ -50,7 +50,7 @@ html lang: pl
 	}
 	html := string(data)
 	if !strings.Contains(html, `<header class="topbar" id="main-top">`) ||
-		!strings.Contains(html, `<span class="brand">StoryTeller</span>`) ||
+		!strings.Contains(html, `<span class="brand">Mojra</span>`) ||
 		!strings.Contains(html, `<svg class="icon" viewBox="0 0 24 24">`) ||
 		!strings.Contains(html, `<input id="book-title" type="text" required="required" placeholder="Szepczący Las" />`) {
 		t.Fatalf("unexpected HTML output:\n%s", html)

@@ -1,6 +1,6 @@
 //go:build js && wasm
 
-package storyteller
+package mojra
 
 import "embed"
 

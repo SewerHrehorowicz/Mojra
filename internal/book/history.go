@@ -450,7 +450,7 @@ func SerializeHistoryFile(h *BookHistory) string {
 	}
 	h.syncBranchesMetadata()
 	var sb strings.Builder
-	sb.WriteString("# StoryTeller — Historia edycji książki (history.txt)\n")
+	sb.WriteString("# Mojra — Historia edycji książki (history.txt)\n")
 	sb.WriteString(fmt.Sprintf("active_branch: %s\n", h.NormalizedActiveBranch()))
 	sb.WriteString(fmt.Sprintf("cursor: %s\n", SanitizeSceneID(h.Cursor)))
 	nextSeq := h.NextSeq

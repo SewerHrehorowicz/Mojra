@@ -1,6 +1,6 @@
 //go:build !prod_embed && !(js && wasm)
 
-package storyteller
+package mojra
 
 import "embed"
 

@@ -1024,7 +1024,8 @@
   padding 0
 
 .modal-choice-row .syn-autocomplete-dropdown, .modal-choice-triple-stack .syn-autocomplete-dropdown, .scene-settings-row .syn-autocomplete-dropdown
-  width 280px
+  width 320px
+  max-width 100%
 
 .modal-choice-row .syn-dropdown-list, .modal-choice-triple-stack .syn-dropdown-list, .scene-settings-row .syn-dropdown-list
   max-height 196px

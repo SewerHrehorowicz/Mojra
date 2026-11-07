@@ -3,7 +3,7 @@ package gui
 import (
 	"fmt"
 
-	"storyteller/internal/tpl"
+	"mojra/internal/tpl"
 )
 
 // Lang aliases tpl.Lang so all packages share the same extensible language registry.
@@ -253,7 +253,6 @@ const (
 	TrScrollSensOff
 	TrVoiceTrimDestructiveHint
 
-	// Dynamic / server-side UI strings (formerly inline trPair / lang == LangEN)
 	TrThemeDarkLabel
 	TrThemeLightLabel
 	TrImagelessLockedLabel
@@ -339,13 +338,326 @@ const (
 	trKeyCount
 )
 
-// i18nDicts registers per-language translation tables (defined in i18n_<code.go>).
-var i18nDicts = [LangCount]*[trKeyCount]string{
-	LangPL: &i18nDictPL,
-	LangEN: &i18nDictEN,
+// trKeyNames maps each TrKey index to its canonical key in internal/tpl/i18n/<lang>.cfg.
+var trKeyNames = [trKeyCount]string{
+	"TrPreviewPhone",
+	"TrPreviewTablet",
+	"TrPreviewDesktop",
+
+	"TrNavLibrary",
+	"TrNavStudio",
+	"TrMenu",
+	"TrResetStoryHint",
+	"TrToggleThemeHint",
+	"TrToggleLangHint",
+	"TrAppSettingsHint",
+	"TrFullscreenHint",
+
+	"TrScaleZenHint",
+	"TrScaleExitZenHint",
+	"TrScaleEnlargeHint",
+	"TrImagelessLockedHint",
+	"TrImagelessEnableHint",
+	"TrImagelessDisableHint",
+	"TrAutoChoiceOnLabel",
+	"TrAutoChoiceOffLabel",
+
+	"TrAddBookBtn",
+	"TrExtractEmbeddedBook",
+	"TrBookshelfEmpty",
+
+	"TrHistoryPreviewBanner",
+	"TrEditingLocked",
+	"TrBackToEditor",
+	"TrBackToCurrentVersion",
+	"TrRewindSceneHint",
+	"TrEndScreenplayReset",
+	"TrEndStoryReset",
+	"TrHistoryRailAria",
+	"TrNext",
+	"TrEndUpper",
+
+	"TrNoActiveProject",
+	"TrNewBookHint",
+	"TrOpenProjectHint",
+	"TrExportProjectHint",
+	"TrZeroSelected",
+	"TrFitNodesHint",
+	"TrAutoLayoutHint",
+	"TrVariablesTitle",
+	"TrBreakdownHint",
+	"TrHistoryPanelHint",
+	"TrEditorHelpHint",
+	"TrPlayBtn",
+	"TrRestoreForEditing",
+
+	"TrHelpPanelTitle",
+	"TrHelpK1",
+	"TrHelpD1",
+	"TrHelpK2",
+	"TrHelpD2",
+	"TrHelpK3",
+	"TrHelpD3",
+	"TrHelpK4",
+	"TrHelpD4",
+	"TrHelpK5",
+	"TrHelpD5",
+
+	"TrSceneTitlePlaceholder",
+	"TrChoiceTextPlaceholder",
+	"TrCtxAddNode",
+	"TrCtxAddAct",
+	"TrCtxAddChapter",
+	"TrCtxFitView",
+	"TrNoOpenProject",
+	"TrCreateNewBookBtn",
+	"TrOpenProjectBtn",
+
+	"TrChapterPlaceholder",
+	"TrStartSceneBadgeHint",
+	"TrChapterEntryHint",
+	"TrSceneNameOptPlaceholder",
+	"TrSceneIDPlaceholder",
+	"TrSpSceneKey",
+	"TrSluglinePlaceholder",
+	"TrDescKey",
+	"TrSynopsisPlaceholder",
+	"TrOpenSceneTextHint",
+	"TrPreviewContentBtn",
+	"TrEditContentBtn",
+	"TrPlayFromSceneHint",
+	"TrPlayFromSceneBtn",
+	"TrExitTargetPlaceholder",
+	"TrAddChoiceBtn",
+	"TrDeleteSceneBtn",
+
+	"TrActSettingsTitle",
+	"TrChapterSettingsTitle",
+	"TrChapterNamePlaceholder",
+	"TrEntryKey",
+	"TrMetricScenes",
+	"TrMetricLength",
+	"TrMetricBranches",
+	"TrMetricExits",
+
+	"TrStandardKey",
+	"TrActKey",
+	"TrChapterKey",
+	"TrNarrationKey",
+	"TrImagesKey",
+	"TrAuthorKey",
+	"TrLicenseKey",
+	"TrLicensePlaceholder",
+	"TrFolderDirKey",
+	"TrChangeProjectDirHint",
+	"TrExportKey",
+	"TrChangeExportDirHint",
+	"TrSelectedScenesLabel",
+	"TrDeleteSelectedScenes",
+
+	"TrCloseVariablesPanel",
+	"TrAddEnumOptHint",
+	"TrEnumOptPlaceholder",
+	"TrRemoveEnumOptHint",
+
+	"TrBreakdownPanelTitle",
+	"TrBdParamsLabel",
+	"TrBdVolume",
+	"TrBdScreenTime",
+	"TrBdShootDays",
+	"TrBdDaysUnit",
+	"TrBdSceneCount",
+	"TrBdIntExt",
+	"TrBdDayNight",
+	"TrBdActBalance",
+	"TrBdCastLabel",
+	"TrCharNamePlaceholder",
+	"TrBdCues",
+	"TrBdWords",
+	"TrBdSpoken",
+	"TrBdBg",
+	"TrNoCharactersEmpty",
+	"TrBdLocationsLabel",
+	"TrLocNamePlaceholder",
+	"TrBdDay",
+	"TrBdNight",
+	"TrNoLocationsEmpty",
+
+	"TrHistoryPanelTitle",
+	"TrSaveVersionBtn",
+	"TrAddBranchBtn",
+
+	"TrSettingsModalTitle",
+	"TrSettingsLangKey",
+	"TrThemeKey",
+	"TrScaleKey",
+	"TrScaleDefault",
+	"TrScaleLarge",
+	"TrLANQRDesc",
+	"TrLANQRAlt",
+	"TrClose",
+	"TrCancel",
+	"TrConfirmBtn",
+
+	"TrNewScreenplayModalTitle",
+	"TrNewBookModalTitle",
+	"TrTitleKey",
+	"TrAuthorPlaceholder",
+	"TrModeKey",
+	"TrRequiredLabel",
+	"TrDisabledLabel",
+	"TrWithImagesLabel",
+	"TrNoImagesLabel",
+	"TrFolderKey",
+	"TrChooseFolderHint",
+	"TrCreateScreenplayBtn",
+	"TrCreateBookBtn",
+
+	"TrExportModalTitle",
+	"TrFormatsKey",
+	"TrAdvancedUpper",
+	"TrExportBtn",
+
+	"TrAddBookModalTitle",
+	"TrAddDiskHdr",
+	"TrAddDiskDesc",
+	"TrChooseBookDirBtn",
+	"TrChooseBookFileBtn",
+	"TrAddDiskPathPlaceholder",
+	"TrAddFromDiskBtn",
+	"TrAddURLHdr",
+	"TrAddURLDesc",
+	"TrAddURLPlaceholder",
+	"TrDownloadFromURLBtn",
+
+	"TrOpenProjectModalTitle",
+	"TrChooseProjectDirBtn",
+	"TrUnpackPlaybookCopyBtn",
+	"TrStudioProjectPathPlaceholder",
+	"TrOpenBtn",
+
+	"TrStartSceneRootHint",
+	"TrPreviewReadonlyBadge",
+	"TrSceneSettingsHint",
+	"TrTestStateTitle",
+	"TrNoVarsInProject",
+	"TrSpSceneUpperKey",
+	"TrDescUpperKey",
+	"TrInsertUpperKey",
+	"TrCharUpperKey",
+	"TrSceneTextPlaceholder",
+	"TrGoToTargetSceneHint",
+
+	"TrHelpMK1",
+	"TrHelpMD1",
+	"TrHelpMK2",
+	"TrHelpMD2",
+	"TrHelpMK3",
+	"TrHelpMD3",
+	"TrHelpMK4",
+	"TrHelpMD4",
+	"TrHelpMK5",
+	"TrHelpMD5",
+	"TrHelpMK6",
+	"TrHelpMD6",
+	"TrHelpMK7",
+	"TrHelpMD7",
+	"TrHelpMK8",
+	"TrHelpMD8",
+	"TrGotItBtn",
+
+	"TrAutoChoiceDelayKey",
+	"TrScrollSensitivityKey",
+	"TrScrollSensHigh",
+	"TrScrollSensMedium",
+	"TrScrollSensLow",
+	"TrScrollSensOff",
+	"TrVoiceTrimDestructiveHint",
+
+	"TrThemeDarkLabel",
+	"TrThemeLightLabel",
+	"TrImagelessLockedLabel",
+	"TrImagelessOffLabel",
+	"TrImagelessOnLabel",
+	"TrEditorSpTitlePlaceholder",
+	"TrEditorSpAuthorPlaceholder",
+	"TrEditorSpDescPlaceholder",
+	"TrEditorActTitlePlaceholder",
+	"TrEditorSpSettingsHint",
+	"TrEditorBookTitlePlaceholder",
+	"TrEditorBookAuthorPlaceholder",
+	"TrEditorBookDescPlaceholder",
+	"TrEditorChapterTitlePlaceholder",
+	"TrEditorBookSettingsHint",
+	"TrBookNarratedReqLabel",
+	"TrBookNarratedOffLabel",
+	"TrBookImagelessOnLabel",
+	"TrBookImagelessOffLabel",
+	"TrMediaNoneLabel",
+	"TrAddImageFromDiskOpt",
+	"TrAddAudioFromDiskOpt",
+	"TrWordsCountFmt",
+	"TrModeInteractiveBook",
+	"TrModeScreenplay",
+	"TrHistoryMainScenesFmt",
+	"TrHistoryInitialState",
+	"TrHistoryPreviewPrefix",
+	"TrHistoryDefaultVersionFmt",
+	"TrHistoryDefaultBranchFmt",
+	"TrEndOfPathMeta",
+	"TrSyntaxHelpSetDesc",
+	"TrSyntaxHelpExitDesc",
+	"TrProjectKindBadge",
+	"TrPlaybookReadonlyBadge",
+	"TrNewScreenplayTitlePlaceholder",
+	"TrNewBookTitlePlaceholder",
+	"TrExportFmtWebApp",
+	"TrExportFmtPDFScreenplay",
+	"TrExportFmtFountain",
+	"TrExportFmtPlaytxt",
+	"TrExportSelectedOne",
+	"TrExportSelectedFewFmt",
+	"TrExportSelectedManyFmt",
+	"TrSpPillDialogueLabel",
+	"TrSpPillDialogueHint",
+	"TrSpPillParenLabelPLStd",
+	"TrSpPillParenLabelIntlStd",
+	"TrSpPillParenHintPLStd",
+	"TrSpPillParenHintIntlStd",
+	"TrSpPillActionLabel",
+	"TrSpPillActionHintPLStd",
+	"TrSpPillActionHintIntlStd",
+	"TrSpPillOffLabelPLStd",
+	"TrSpPillOffLabelIntlStd",
+	"TrSpPillOffHintPLStd",
+	"TrSpPillOffHintIntlStd",
+	"TrSpPillVOLabel",
+	"TrSpPillVOHintPLStd",
+	"TrSpPillVOHintIntlStd",
+	"TrSpPillCutHintPLStd",
+	"TrSpPillCutHintIntlStd",
+	"TrSpPillFadeHintPLStd",
+	"TrSpPillFadeHintIntlStd",
+	"TrSpPillSubslugLabelIntlStd",
+	"TrSpPillSubslugHintPLStd",
+	"TrSpPillSubslugHintIntlStd",
+	"TrSpPillCharDialogueHintFmt",
+	"TrRewoundStoryToast",
+	"TrResetProgressToast",
+	"TrConfirmRewindMsgFmt",
+	"TrConfirmResetTitle",
+	"TrConfirmResetMsgFmt",
+	"TrConfirmEndingTitle",
+	"TrConfirmEndingMsg",
+	"TrTargetSceneNotFoundPrefix",
+	"TrOpenedInStudioLicenseFmt",
+	"TrOpenedInStudioPrefix",
+	"TrUnknownAuthor",
+	"TrConfirmPlaybookReadonlyTitle",
+	"TrConfirmPlaybookUnpackMsgFmt",
 }
 
-// i18nTable is a static zero-allocation lookup table indexed by [TrKey][Lang], compiled from i18nDicts with fallback.
+// i18nTable is a static zero-allocation lookup table indexed by [TrKey][Lang], compiled from tpl.I18nDicts with fallback.
 var i18nTable [trKeyCount][LangCount]string
 
 // tplI18nBindings maps template context keys (t_*) to TrKey indices in i18nTable.
@@ -590,18 +902,8 @@ var (
 
 func init() {
 	for l := Lang(0); l < LangCount; l++ {
-		dict := i18nDicts[l]
 		for k := TrKey(0); k < trKeyCount; k++ {
-			val := ""
-			if dict != nil {
-				val = dict[k]
-			}
-			if val == "" && i18nDicts[LangEN] != nil {
-				val = i18nDicts[LangEN][k]
-			}
-			if val == "" && i18nDicts[LangPL] != nil {
-				val = i18nDicts[LangPL][k]
-			}
+			val := tpl.LookupJSI18n(l, trKeyNames[k])
 			i18nTable[k][l] = val
 			i18nAnyTable[l][k] = val
 		}

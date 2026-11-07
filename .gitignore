@@ -1,6 +1,6 @@
 # Compiled binaries & distribution bundles
-/storyteller
-/storyteller.exe
+/mojra
+/mojra.exe
 /build/
 /dist/
 *.syso

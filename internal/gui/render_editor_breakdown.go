@@ -3,7 +3,7 @@ package gui
 import (
 	"fmt"
 
-	"storyteller/internal/book"
+	"mojra/internal/book"
 )
 
 func buildBookModeOptions(activeMode string, lang Lang) (string, []map[string]any) {

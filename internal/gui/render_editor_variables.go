@@ -3,7 +3,7 @@ package gui
 import (
 	"strings"
 
-	"storyteller/internal/book"
+	"mojra/internal/book"
 )
 
 func (s *Server) buildBookTargetSuggestions(sc *book.Scene) []map[string]any {
@@ -17,9 +17,10 @@ func (s *Server) buildBookTargetSuggestions(sc *book.Scene) []map[string]any {
 	if curCh == "" {
 		curCh = s.ActiveBook.DefaultChapterName()
 	}
+	curChMeta := s.ActiveBook.FindChapter(curCh)
 	out := make([]map[string]any, 0, len(s.ActiveBook.Scenes)+len(s.ActiveBook.Chapters)+1)
 	for _, cand := range s.ActiveBook.Scenes {
-		if sc != nil && cand.ID == sc.ID {
+		if sc != nil && strings.EqualFold(cand.ID, sc.ID) {
 			continue
 		}
 		candCh := strings.TrimSpace(cand.Chapter)
@@ -44,7 +45,10 @@ func (s *Server) buildBookTargetSuggestions(sc *book.Scene) []map[string]any {
 	}
 	for _, chItem := range s.ActiveBook.Chapters {
 		chRef := chItem.ReferenceKey()
-		if ok, _ := s.ActiveBook.CanLinkChapters(curCh, chRef); !ok {
+		if strings.EqualFold(chItem.Name, curCh) || strings.EqualFold(chRef, curCh) || strings.EqualFold(chItem.ID, curCh) {
+			continue
+		}
+		if curChMeta != nil && (strings.EqualFold(chItem.ID, curChMeta.ID) || strings.EqualFold(chRef, curChMeta.ReferenceKey())) {
 			continue
 		}
 		out = append(out, map[string]any{

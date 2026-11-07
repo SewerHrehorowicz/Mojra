@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"storyteller/internal/book"
+	"mojra/internal/book"
 )
 
 func (s *Server) autoSaveSceneAction(r *http.Request) string {
@@ -773,12 +773,10 @@ func (s *Server) navigateSceneTextModal(r *http.Request) string {
 				if s.ActiveBook != nil {
 					targetID = s.ActiveBook.StartSceneID
 				}
+			} else if ch.TargetSceneID != "" {
+				targetID = ch.TargetSceneID
 			} else if targetID == "" {
-				if ch.TargetSceneID != "" {
-					targetID = ch.TargetSceneID
-				} else {
-					targetID = ch.Target
-				}
+				targetID = ch.Target
 			}
 		}
 	}

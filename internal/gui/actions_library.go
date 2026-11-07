@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"storyteller/internal/book"
+	"mojra/internal/book"
 )
 
 func (s *Server) openBook(r *http.Request) string {

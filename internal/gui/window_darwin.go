@@ -36,13 +36,13 @@ package gui
 
 @implementation STAppDelegate
 
-static NSImage *createStoryTellerAppIcon(void) {
+static NSImage *createAppIcon(void) {
     NSSize size = NSMakeSize(512, 512);
     NSImage *img = [[NSImage alloc] initWithSize:size];
     [img lockFocus];
 
     [NSGraphicsContext saveGraphicsState];
-    // Use top-left origin (0,0 at top-left, Y growing downward) to match renderStoryTellerIcon 1:1
+    // Use top-left origin (0,0 at top-left, Y growing downward) to match renderIcon 1:1
     NSAffineTransform *flip = [NSAffineTransform transform];
     [flip translateXBy:0.0 yBy:512.0];
     [flip scaleXBy:1.0 yBy:-1.0];
@@ -213,7 +213,7 @@ static NSImage *createStoryTellerAppIcon(void) {
 
 - (void)applicationDidFinishLaunching:(NSNotification *)notification {
     [[NSProcessInfo processInfo] setProcessName:@"Mojra"];
-    [NSApp setApplicationIconImage:createStoryTellerAppIcon()];
+    [NSApp setApplicationIconImage:createAppIcon()];
 
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
     NSArray<NSString *> *offKeys = @[
@@ -268,7 +268,7 @@ static NSImage *createStoryTellerAppIcon(void) {
 
     WKWebViewConfiguration *config = [[WKWebViewConfiguration alloc] init];
     [config.preferences setValue:@YES forKey:@"fullScreenEnabled"];
-    [[config userContentController] addScriptMessageHandler:self name:@"storytellerHost"];
+    [[config userContentController] addScriptMessageHandler:self name:@"nativeHost"];
 
     self.webView = [[WKWebView alloc] initWithFrame:[[self.window contentView] bounds]
                                       configuration:config];
