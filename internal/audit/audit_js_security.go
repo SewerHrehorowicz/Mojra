@@ -245,15 +245,16 @@ func checkJSDeepAnalysis(rootDir string) []Finding {
 		}
 	}
 
-	// 7c. JS_DOM_CONTRACT: qs("#id") / getElementById("id") vs app/templates/*.tpl
+	// 7c. JS_DOM_CONTRACT: qs("#id") / getElementById("id") vs app/templates/*.tpl & www/*.tpl
 	var allTpl strings.Builder
-	tplDir := filepath.Join(rootDir, "app", "templates")
-	if entries, err := os.ReadDir(tplDir); err == nil {
-		for _, e := range entries {
-			if !e.IsDir() && strings.HasSuffix(e.Name(), ".tpl") {
-				if raw, err := os.ReadFile(filepath.Join(tplDir, e.Name())); err == nil {
-					allTpl.Write(raw)
-					allTpl.WriteByte('\n')
+	for _, tplDir := range []string{filepath.Join(rootDir, "app", "templates"), filepath.Join(rootDir, "www")} {
+		if entries, err := os.ReadDir(tplDir); err == nil {
+			for _, e := range entries {
+				if !e.IsDir() && strings.HasSuffix(e.Name(), ".tpl") {
+					if raw, err := os.ReadFile(filepath.Join(tplDir, e.Name())); err == nil {
+						allTpl.Write(raw)
+						allTpl.WriteByte('\n')
+					}
 				}
 			}
 		}

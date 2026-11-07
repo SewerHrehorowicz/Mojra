@@ -24,7 +24,7 @@ aside.editor-context-panel#editor-context-panel .hidden?: {is_context_panel_hidd
                             type: text
                             name: chapter
                             value: "{selected_node.chapter}"
-                            placeholder: "Rozdział..."
+                            placeholder: "{t_chapter_placeholder}"
                             disabled?: {is_history_preview}
                             readonly?: {is_history_preview}
                         {if not is_history_preview}
@@ -44,17 +44,17 @@ aside.editor-context-panel#editor-context-panel .hidden?: {is_context_panel_hidd
                 .node-title-row
                     {if selected_node.is_start_scene}
                         span.node-start-indicator
-                            data-hint: "Scena początkowa (START)"
+                            data-hint: "{t_start_scene_badge_hint}"
                             svg.scene-star-icon src: /icons/star.svg
                     {elif selected_node.is_chapter_entry}
                         span.node-start-indicator.node-chapter-entry-indicator
-                            data-hint: "Wejście rozdziału"
+                            data-hint: "{t_chapter_entry_hint}"
                             svg.scene-star-icon src: /icons/star.svg
                     input.node-inline-title
                         type: text
                         name: name
                         value: "{selected_node.name}"
-                        placeholder: "Nazwa sceny (opcjonalna przy ID)..."
+                        placeholder: "{t_scene_name_opt_placeholder}"
                         disabled?: {is_history_preview}
                         readonly?: {is_history_preview}
 
@@ -66,7 +66,7 @@ aside.editor-context-panel#editor-context-panel .hidden?: {is_context_panel_hidd
                             type: text
                             name: explicit_id
                             value: "{selected_node.explicit_id}"
-                            placeholder: "id sceny (np. warsztat)"
+                            placeholder: "{t_scene_id_placeholder}"
                             spellcheck: "false"
                             autocorrect: "off"
                             autocapitalize: "off"
@@ -92,12 +92,12 @@ aside.editor-context-panel#editor-context-panel .hidden?: {is_context_panel_hidd
                                     readonly?: {is_history_preview}
                     {if is_screenplay_mode}
                         .node-meta-row
-                            span.node-meta-key "scena:"
+                            span.node-meta-key {t_sp_scene_key}
                             input.node-meta-input.node-slugline-input
                                 type: text
                                 name: slugline
                                 value: "{selected_node.slugline}"
-                                placeholder: "WN. LOKACJA - DZIEŃ"
+                                placeholder: "{t_slugline_placeholder}"
                                 disabled?: {is_history_preview}
                                 readonly?: {is_history_preview}
                             {if selected_node.script_length_label}
@@ -119,11 +119,11 @@ aside.editor-context-panel#editor-context-panel .hidden?: {is_context_panel_hidd
                                         data-time: "{t.token}"
                                         {t.token}
                         .node-meta-row.node-meta-row-textarea
-                            span.node-meta-key "opis:"
+                            span.node-meta-key {t_desc_key}
                             textarea.node-meta-input.node-meta-textarea
                                 name: synopsis
                                 rows: 1
-                                placeholder: "Streszczenie sceny (1 zdanie)..."
+                                placeholder: "{t_synopsis_placeholder}"
                                 disabled?: {is_history_preview}
                                 readonly?: {is_history_preview}
                                 {selected_node.synopsis}
@@ -193,6 +193,8 @@ aside.editor-context-panel#editor-context-panel .hidden?: {is_context_panel_hidd
                                 data-scene: "{selected_node.id}"
                                 data-voice-url: "{selected_node.current_voice_url}"
                                 data-voice-file: "{selected_node.current_voice}"
+                                data-trim-start: "{selected_node.voice_trim_start}"
+                                data-trim-end: "{selected_node.voice_trim_end}"
                                 button.voice-rec-transport-btn
                                     type: button
                                     data-voice-transport: "true"
@@ -214,6 +216,12 @@ aside.editor-context-panel#editor-context-panel .hidden?: {is_context_panel_hidd
                                 span.voice-rec-timer
                                     data-voice-timer: "true"
                                     {selected_node.voice_duration_label}
+                                button.voice-rec-action-btn.voice-rec-cut-btn .hidden?: {!selected_node.has_voice_trim}
+                                    type: button
+                                    data-voice-trim-destructive: "true"
+                                    data-scene: "{selected_node.id}"
+                                    data-hint: "{t_voice_trim_destructive_hint}"
+                                    svg.voice-rec-btn-icon src: /icons/scissors.svg
                                 button.voice-rec-action-btn.voice-rec-rerecord-btn .hidden?: {!selected_node.has_voice_file}
                                     type: button
                                     data-voice-record-start: "true"
@@ -229,17 +237,17 @@ aside.editor-context-panel#editor-context-panel .hidden?: {is_context_panel_hidd
                     type: button
                     action: OpenSceneTextModal
                     data-scene: "{selected_node.id}"
-                    data-hint: "Otwórz treść sceny w widoku książki"
+                    data-hint: "{t_open_scene_text_hint}"
                     {if is_history_preview}
-                        "Podgląd treści"
+                        "{t_preview_content_btn}"
                     {else}
-                        "Edytuj treść"
+                        "{t_edit_content_btn}"
                 button.btn.btn-sm.node-edit-text-btn
                     type: button
                     action: PlayFromScene
                     data-scene: "{selected_node.id}"
-                    data-hint: "Rozpocznij grę w odtwarzaczu od tej sceny"
-                    "Graj od tej sceny"
+                    data-hint: "{t_play_from_scene_hint}"
+                    "{t_play_from_scene_btn}"
 
             {if selected_node.has_node_warnings}
                 ul.node-warnings-list
@@ -263,7 +271,7 @@ aside.editor-context-panel#editor-context-panel .hidden?: {is_context_panel_hidd
                                         name: "choice_target_{pt.idx}"
                                         data-choice-idx: "{pt.idx}"
                                         value: "{pt.selected_value}"
-                                        placeholder: "cel (id lub END)"
+                                        placeholder: "{t_exit_target_placeholder}"
                                         spellcheck: "false"
                                         autocorrect: "off"
                                         autocapitalize: "off"
@@ -276,7 +284,7 @@ aside.editor-context-panel#editor-context-panel .hidden?: {is_context_panel_hidd
                                         name: "choice_label_{pt.idx}"
                                         data-choice-idx: "{pt.idx}"
                                         rows: 1
-                                        placeholder: "Tekst wyboru..."
+                                        placeholder: "{t_choice_text_placeholder}"
                                         disabled?: {is_history_preview}
                                         readonly?: {is_history_preview}
                                         {pt.raw_label}
@@ -365,7 +373,7 @@ aside.editor-context-panel#editor-context-panel .hidden?: {is_context_panel_hidd
                         type: button
                         action: AddChoice
                         data-scene: "{selected_node.id}"
-                        "+ Wybór"
+                        "{t_add_choice_btn}"
 
             {if not is_history_preview}
                 .context-danger-zone
@@ -374,7 +382,7 @@ aside.editor-context-panel#editor-context-panel .hidden?: {is_context_panel_hidd
                         action: PromptDeleteScene
                         data-scene: "{selected_node.id}"
                         svg.btn-icon src: /icons/trash.svg
-                        span "Usuń scenę"
+                        span {t_delete_scene_btn}
 
     {if selected_chapter}
         form.editor-chapter-form#editor-chapter-form .hidden?: {!has_selected_chapter}
@@ -390,9 +398,9 @@ aside.editor-context-panel#editor-context-panel .hidden?: {is_context_panel_hidd
                 value: "{selected_chapter.name}"
             .history-panel-header
                 {if is_screenplay_mode}
-                    span.history-panel-title "Ustawienia aktu"
+                    span.history-panel-title {t_act_settings_title}
                 {else}
-                    span.history-panel-title "Ustawienia rozdziału"
+                    span.history-panel-title {t_chapter_settings_title}
             .history-panel-body
                 .context-panel-section
                     input.node-inline-title.chapter-group-title-input
@@ -400,13 +408,13 @@ aside.editor-context-panel#editor-context-panel .hidden?: {is_context_panel_hidd
                         name: new_chapter
                         value: "{selected_chapter.name}"
                         data-old-chapter: "{selected_chapter.name}"
-                        placeholder: "Nazwa rozdziału..."
+                        placeholder: "{t_chapter_name_placeholder}"
                         disabled?: {is_history_preview}
                         readonly?: {is_history_preview}
                 .context-panel-section
                     .node-meta-fields
                         .node-meta-row
-                            span.node-meta-key "wejście:"
+                            span.node-meta-key {t_entry_key}
                             .custom-select.node-media-select.chapter-start-scene-select
                                 input.custom-select-input
                                     type: hidden
@@ -428,16 +436,16 @@ aside.editor-context-panel#editor-context-panel .hidden?: {is_context_panel_hidd
                 .context-panel-section
                     .breakdown-metrics-grid
                         .breakdown-metric-cell
-                            span.breakdown-metric-label "Sceny"
+                            span.breakdown-metric-label {t_metric_scenes}
                             span.breakdown-metric-value {selected_chapter.scene_count}
                         .breakdown-metric-cell
-                            span.breakdown-metric-label "Długość"
+                            span.breakdown-metric-label {t_metric_length}
                             span.breakdown-metric-value {selected_chapter.length_stat}
                         .breakdown-metric-cell
-                            span.breakdown-metric-label "Odgałęzienia"
+                            span.breakdown-metric-label {t_metric_branches}
                             span.breakdown-metric-value {selected_chapter.branch_count}
                         .breakdown-metric-cell
-                            span.breakdown-metric-label "Wyjścia"
+                            span.breakdown-metric-label {t_metric_exits}
                             span.breakdown-metric-value {selected_chapter.exit_count}
 
     {if has_editor_book}
@@ -463,7 +471,7 @@ aside.editor-context-panel#editor-context-panel .hidden?: {is_context_panel_hidd
                     .node-meta-fields
                         {if is_screenplay_mode}
                             .node-meta-row.node-meta-row-radio
-                                span.node-meta-key "norma:"
+                                span.node-meta-key {t_standard_key}
                                 .form-radio-group
                                     {for std_opt in script_standard_options}
                                         label.form-radio-option .active?: {std_opt.is_active} .is-disabled?: {is_history_preview}
@@ -478,9 +486,9 @@ aside.editor-context-panel#editor-context-panel .hidden?: {is_context_panel_hidd
                                             span.form-radio-sq
                         .node-meta-row
                             {if is_screenplay_mode}
-                                span.node-meta-key "akt:"
+                                span.node-meta-key {t_act_key}
                             {else}
-                                span.node-meta-key "rozdział:"
+                                span.node-meta-key {t_chapter_key}
                             .custom-select.node-media-select.book-start-chapter-select#book-start-chapter-select
                                 input.custom-select-input
                                     type: hidden
@@ -521,7 +529,7 @@ aside.editor-context-panel#editor-context-panel .hidden?: {is_context_panel_hidd
                                             {bk_st_opt.label}
                         {if not is_screenplay_mode}
                             .node-meta-row
-                                span.node-meta-key "narracja:"
+                                span.node-meta-key {t_narration_key}
                                 button.book-setting-toggle-btn .active?: {book_narrated} .is-disabled?: {is_history_preview}
                                     type: button
                                     action: ToggleBookNarrated
@@ -536,7 +544,7 @@ aside.editor-context-panel#editor-context-panel .hidden?: {is_context_panel_hidd
                                             svg.action-icon src: /icons/mic-off.svg
                                     span.custom-select-label {book_narrated_short_label}
                             .node-meta-row
-                                span.node-meta-key "obrazy:"
+                                span.node-meta-key {t_images_key}
                                 button.book-setting-toggle-btn .active?: {!book_imageless} .is-disabled?: {is_history_preview}
                                     type: button
                                     action: ToggleBookImageless
@@ -551,7 +559,7 @@ aside.editor-context-panel#editor-context-panel .hidden?: {is_context_panel_hidd
                                             svg.action-icon src: /icons/image.svg
                                     span.custom-select-label {book_imageless_short_label}
                         .node-meta-row
-                            span.node-meta-key "autor:"
+                            span.node-meta-key {t_author_key}
                             input.node-meta-input
                                 type: text
                                 name: author
@@ -560,16 +568,16 @@ aside.editor-context-panel#editor-context-panel .hidden?: {is_context_panel_hidd
                                 disabled?: {is_history_preview}
                                 readonly?: {is_history_preview}
                         .node-meta-row
-                            span.node-meta-key "licencja:"
+                            span.node-meta-key {t_license_key}
                             input.node-meta-input#book-settings-license-input
                                 type: text
                                 name: license
                                 value: "{active_book_license}"
-                                placeholder: "Wszelkie prawa zastrzeżone"
+                                placeholder: "{t_license_placeholder}"
                                 disabled?: {is_history_preview}
                                 readonly?: {is_history_preview}
                         .node-meta-row.node-meta-row-textarea
-                            span.node-meta-key "opis:"
+                            span.node-meta-key {t_desc_key}
                             textarea.node-meta-input.node-meta-textarea
                                 name: description
                                 rows: 1
@@ -578,7 +586,7 @@ aside.editor-context-panel#editor-context-panel .hidden?: {is_context_panel_hidd
                                 readonly?: {is_history_preview}
                                 {active_book_description}
                         .node-meta-row
-                            span.node-meta-key "katalog:"
+                            span.node-meta-key {t_folder_dir_key}
                             .node-media-picker-row
                                 input.node-meta-input
                                     type: text
@@ -590,10 +598,10 @@ aside.editor-context-panel#editor-context-panel .hidden?: {is_context_panel_hidd
                                     button.node-icon-btn.node-folder-btn
                                         type: button
                                         action: BrowseBookSaveFolder
-                                        data-hint: "Zmień katalog projektu"
+                                        data-hint: "{t_change_project_dir_hint}"
                                         svg.folder-browse-icon src: /icons/folder.svg
                         .node-meta-row
-                            span.node-meta-key "eksport:"
+                            span.node-meta-key {t_export_key}
                             .node-media-picker-row
                                 input.node-meta-input
                                     type: text
@@ -606,12 +614,12 @@ aside.editor-context-panel#editor-context-panel .hidden?: {is_context_panel_hidd
                                     button.node-icon-btn.node-folder-btn
                                         type: button
                                         action: BrowseBookExportFolder
-                                        data-hint: "Zmień katalog eksportu"
+                                        data-hint: "{t_change_export_dir_hint}"
                                         svg.folder-browse-icon src: /icons/folder.svg
 
     .editor-multi-panel.hidden#editor-multi-panel
         .context-panel-section
-            label.node-micro-label#multi-select-count-label "Zaznaczone sceny"
+            label.node-micro-label#multi-select-count-label {t_selected_scenes_label}
             .context-multi-scene-list#context-multi-scene-list
                 {for ms in multi_scene_items}
                     .context-multi-scene-item.hidden
@@ -632,4 +640,4 @@ aside.editor-context-panel#editor-context-panel .hidden?: {is_context_panel_hidd
                     action: PromptDeleteScenes
                     data-scenes: ""
                     svg.btn-icon src: /icons/trash.svg
-                    span#btn-delete-selected-scenes-label "Usuń zaznaczone sceny"
+                    span#btn-delete-selected-scenes-label {t_delete_selected_scenes}

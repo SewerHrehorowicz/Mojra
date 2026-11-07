@@ -62,7 +62,7 @@ function recomputeNodeMetrics(node) {
     if (!node.implicitPort) {
       node.implicitPort = {
         idx: 0,
-        label: "Dalej",
+        label: tr("next"),
         targetId: implicitTarget,
         targetChapter: implicitChapter,
         connected: impConnected,
@@ -428,7 +428,7 @@ function parseStudioGraphPayload(rawText) {
             }))
           : [{ idx: 0, target: "", targetLower: "", x: 0, y: 0 }];
 
-      const chName = kv.name || kv.ref || "Rozdział 1";
+      const chName = kv.name || kv.ref || tr("default_chapter");
       const chRef = kv.ref || chName;
       const ch = {
         id: "ch:" + (chRef || chName).toLowerCase(),
@@ -453,7 +453,7 @@ function parseStudioGraphPayload(rawText) {
     } else if (kind === "node") {
       const id = kv.id || "";
       if (!id) continue;
-      const chName = kv.chapter || "Rozdział 1";
+      const chName = kv.chapter || tr("default_chapter");
       const impTarget = kv.imp_target || "";
       const impChapter = kv.imp_chapter || "";
       const node = {
@@ -487,7 +487,7 @@ function parseStudioGraphPayload(rawText) {
       const oy = choiceRowY(idx) + CARD.choiceH * 0.5;
       node.ports.push({
         idx: idx,
-        label: kv.label || "Wybór " + (idx + 1),
+        label: kv.label || tr("choice_prefix") + (idx + 1),
         targetId: kv.target_id || "",
         targetChapter: kv.target_chapter || "",
         isConditional: kv.cond === "1",
@@ -1217,7 +1217,7 @@ function commitChoiceInput(inp) {
   const idx = ec.idx;
   const pt = nd.ports && nd.ports[idx];
   if (!pt) return;
-  const newLabel = (inp.value || "").trim() || "Wybór " + (idx + 1);
+  const newLabel = (inp.value || "").trim() || tr("choice_prefix") + (idx + 1);
   if (newLabel === (pt.label || "")) return;
   pt.label = newLabel;
   studioGraphState.staticBatchDirty = true;
@@ -1233,7 +1233,7 @@ function openFloatingChoiceInput(nd, choiceIdx) {
   hideFloatingChapterInput(true);
   hideFloatingNodeTitleInput(true);
   studioGraphState.editingChoice = { node: nd, idx: choiceIdx };
-  inp.value = nd.ports[choiceIdx].label || "Wybór " + (choiceIdx + 1);
+  inp.value = nd.ports[choiceIdx].label || tr("choice_prefix") + (choiceIdx + 1);
   inp.setAttribute("data-scene-id", nd.id);
   inp.setAttribute("data-choice-idx", String(choiceIdx));
   showFloatingCanvasInputEl(inp, positionFloatingChoiceInput);
@@ -1367,7 +1367,7 @@ function updateChapterGroupFrames(onlyChaptersSet, hasInterChapterPortMove) {
   const byChapter = new Map();
   for (let i = 0; i < nodes.length; i++) {
     const nd = nodes[i];
-    const key = (nd.chapter || "Rozdział 1").trim().toLowerCase();
+    const key = (nd.chapter || tr("default_chapter")).trim().toLowerCase();
     let list = byChapter.get(key);
     if (!list) {
       list = [];
@@ -1379,7 +1379,7 @@ function updateChapterGroupFrames(onlyChaptersSet, hasInterChapterPortMove) {
   byChapter.forEach((memberNodes, key) => {
     let ch = studioGraphState.chapterByKey.get(key);
     if (!ch) {
-      const displayCh = memberNodes[0].chapter || "Rozdział 1";
+      const displayCh = memberNodes[0].chapter || tr("default_chapter");
       ch = {
         id: "ch:" + key,
         rawId: key,

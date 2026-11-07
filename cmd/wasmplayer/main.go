@@ -130,6 +130,7 @@ func wasmBoot(_ js.Value, args []js.Value) any {
 	respVals.Set("X-Imageless-Locked", strconv.FormatBool(b.Imageless))
 	respVals.Set("X-Audio-Speed", fmt.Sprintf("%.2g", rt.save.PlaybackSpeed))
 	respVals.Set("X-Auto-Choice", strconv.FormatBool(rt.save.AutoChoice))
+	respVals.Set("X-Auto-Delay", fmt.Sprintf("%.2g", book.NormalizeAutoChoiceDelay(rt.save.AutoChoiceDelay)))
 	respVals.Set("X-Save-Hex", hex.EncodeToString(book.EncodeSaveStateBytes(rt.save)))
 	respVals.Set("html", `<main class="workspace" id="workspace">`+playerHTML+`</main><div class="modals-root" id="modals-root">`+modalsHTML+`</div><div class="toast hidden" id="toast-banner"></div><div class="ui-tooltip hidden" id="ui-tooltip"></div>`)
 	return string(gui.EncodeWFPForm(respVals))
@@ -201,11 +202,29 @@ func wasmAction(_ js.Value, args []js.Value) any {
 		if rt.save.AutoChoice {
 			cur := rt.currentScene()
 			if cur != nil && len(cur.Choices) > 0 && !cur.ExplicitEnd {
-				idx := 0
-				if rt.save.AutoChoiceStrategy == "random" {
-					idx = rand.Intn(len(cur.Choices))
+				rt.save.Variables = book.EnsureSaveVariables(rt.book, rt.save.Variables)
+				var unlocked []book.Choice
+				var unlockedNonEnding []book.Choice
+				for _, ch := range cur.Choices {
+					if !book.EvaluateCondition(ch.Condition, rt.save.Variables, rt.book) {
+						continue
+					}
+					unlocked = append(unlocked, ch)
+					if !ch.IsEnding && !strings.EqualFold(ch.TargetSceneID, "END") {
+						unlockedNonEnding = append(unlockedNonEnding, ch)
+					}
 				}
-				toast = rt.executeChoiceTransition(cur, cur.Choices[idx])
+				candidates := unlockedNonEnding
+				if len(candidates) == 0 {
+					candidates = unlocked
+				}
+				if len(candidates) > 0 {
+					chosen := candidates[0]
+					if rt.save.AutoChoiceStrategy == "random" && len(candidates) > 1 {
+						chosen = candidates[rand.Intn(len(candidates))]
+					}
+					toast = rt.executeChoiceTransition(cur, chosen)
+				}
 			}
 		}
 		if rt.confirmPendingAction != "" {
@@ -213,6 +232,15 @@ func wasmAction(_ js.Value, args []js.Value) any {
 			tplName = "modals"
 			keepScroll = true
 		}
+
+	case "SetAutoChoiceDelay":
+		if d, err := strconv.ParseFloat(strings.TrimSpace(form.Get("delay")), 64); err == nil {
+			rt.save.AutoChoiceDelay = book.NormalizeAutoChoiceDelay(d)
+		}
+		target = "none"
+		tplName = ""
+		keepScroll = true
+		status = "204"
 
 	case "CycleAudioSpeed":
 		steps := []float64{0.75, 1.0, 1.25, 1.5, 2.0}
@@ -351,6 +379,7 @@ func wasmAction(_ js.Value, args []js.Value) any {
 	respVals.Set("X-Imageless-Locked", strconv.FormatBool(rt.book.Imageless))
 	respVals.Set("X-Audio-Speed", fmt.Sprintf("%.2g", rt.save.PlaybackSpeed))
 	respVals.Set("X-Auto-Choice", strconv.FormatBool(rt.save.AutoChoice))
+	respVals.Set("X-Auto-Delay", fmt.Sprintf("%.2g", book.NormalizeAutoChoiceDelay(rt.save.AutoChoiceDelay)))
 	respVals.Set("X-Save-Hex", hex.EncodeToString(book.EncodeSaveStateBytes(rt.save)))
 	if toast != "" {
 		respVals.Set("X-Toast", toast)
@@ -437,6 +466,10 @@ func (r *wasmPlayerRuntime) renderTemplate(name string) string {
 }
 
 func (r *wasmPlayerRuntime) populateContext(vars map[string]any) {
+	gui.PopulateI18nContext(vars, gui.LangPL)
+	vars["lang"] = "pl"
+	vars["lang_upper"] = "PL"
+	vars["is_lang_en"] = false
 	b := r.book
 	if b == nil || len(b.Scenes) == 0 {
 		return
@@ -485,18 +518,23 @@ func (r *wasmPlayerRuntime) populateContext(vars map[string]any) {
 			if isScreenplay {
 				pastBlocks = buildWasmScreenplayBlocks(pastScene, pastVars, b, pastScene.OrderIndex+1, normStd)
 			}
+			pastTrimStart, pastTrimEnd := pastScene.NormalizedVoiceTrim()
 			histList = append(histList, map[string]any{
-				"idx":               idx,
-				"header_meta":       pastHeaderMeta,
-				"name":              pastScene.Name,
-				"slugline":          pastScene.Slugline,
-				"rail_title":        pastScene.DisplayName(),
-				"has_title":         strings.TrimSpace(pastScene.Name) != "",
-				"prose":             book.EvaluateSceneProseText(pastScene, pastVars, b),
-				"screenplay_blocks": pastBlocks,
-				"has_image":         pastImgURL != "",
-				"image_url":         pastImgURL,
-				"bg_image_url":      lastImageURL,
+				"idx":                  idx,
+				"header_meta":          pastHeaderMeta,
+				"name":                 pastScene.Name,
+				"slugline":             pastScene.Slugline,
+				"rail_title":           pastScene.DisplayName(),
+				"has_title":            strings.TrimSpace(pastScene.Name) != "",
+				"prose":                book.EvaluateSceneProseText(pastScene, pastVars, b),
+				"screenplay_blocks":    pastBlocks,
+				"has_image":            pastImgURL != "",
+				"image_url":            pastImgURL,
+				"bg_image_url":         lastImageURL,
+				"audio_url":            pastScene.AudioURL,
+				"audio_duration_label": "0:00",
+				"audio_trim_start":     fmt.Sprintf("%.4f", pastTrimStart),
+				"audio_trim_end":       fmt.Sprintf("%.4f", pastTrimEnd),
 			})
 		}
 		vars["history_items"] = histList
@@ -541,21 +579,25 @@ func (r *wasmPlayerRuntime) populateContext(vars map[string]any) {
 	if isScreenplay {
 		curBlocks = buildWasmScreenplayBlocks(curScene, curVars, b, curScene.OrderIndex+1, normStd)
 	}
+	curTrimStart, curTrimEnd := curScene.NormalizedVoiceTrim()
 	vars["current_scene"] = map[string]any{
-		"name":              curScene.Name,
-		"slugline":          curScene.Slugline,
-		"rail_title":        curScene.DisplayName(),
-		"has_title":         strings.TrimSpace(curScene.Name) != "",
-		"header_meta":       curHeaderMeta,
-		"prose":             book.EvaluateSceneProseText(curScene, curVars, b),
-		"screenplay_blocks": curBlocks,
-		"has_image":         curImgURL != "",
-		"image_url":         curImgURL,
-		"has_bg_image":      !imageless && lastImageURL != "",
-		"bg_image_url":      lastImageURL,
-		"audio_url":         curScene.AudioURL,
-		"is_terminal":       len(curScene.Choices) == 0 || curScene.ExplicitEnd,
-		"choices":           curChoices,
+		"name":                 curScene.Name,
+		"slugline":             curScene.Slugline,
+		"rail_title":           curScene.DisplayName(),
+		"has_title":            strings.TrimSpace(curScene.Name) != "",
+		"header_meta":          curHeaderMeta,
+		"prose":                book.EvaluateSceneProseText(curScene, curVars, b),
+		"screenplay_blocks":    curBlocks,
+		"has_image":            curImgURL != "",
+		"image_url":            curImgURL,
+		"has_bg_image":         !imageless && lastImageURL != "",
+		"bg_image_url":         lastImageURL,
+		"audio_url":            curScene.AudioURL,
+		"audio_duration_label": "0:00",
+		"audio_trim_start":     fmt.Sprintf("%.4f", curTrimStart),
+		"audio_trim_end":       fmt.Sprintf("%.4f", curTrimEnd),
+		"is_terminal":          len(curScene.Choices) == 0 || curScene.ExplicitEnd,
+		"choices":              curChoices,
 	}
 
 	vars["show_audio_deck"] = b.Narrated
@@ -586,6 +628,12 @@ func (r *wasmPlayerRuntime) populateContext(vars map[string]any) {
 	} else {
 		vars["auto_choice_label"] = "Auto-Wybór: WYŁ"
 	}
+	autoDelay := book.NormalizeAutoChoiceDelay(r.save.AutoChoiceDelay)
+	vars["auto_choice_delay"] = fmt.Sprintf("%.2g", autoDelay)
+	vars["is_auto_delay_1"] = autoDelay <= 1.25
+	vars["is_auto_delay_2"] = autoDelay > 1.25 && autoDelay <= 2.5
+	vars["is_auto_delay_3"] = autoDelay > 2.5 && autoDelay <= 4.0
+	vars["is_auto_delay_5"] = autoDelay > 4.0
 
 	vars["show_confirm_modal"] = r.confirmPendingAction != ""
 	vars["confirm_title"] = r.confirmTitle

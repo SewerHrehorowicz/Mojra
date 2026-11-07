@@ -1401,7 +1401,7 @@ function makeEvent(type, props) {
   if (!savedVoiceAttr.endsWith(".flac")) {
     throw new Error("Expected stopping recording to auto-save .flac file and set data-voice-file, got: " + savedVoiceAttr);
   }
-  // Drag right 4-corner trim handle (.trim-end) and release to auto-save trimmed .flac
+  // Drag right 4-corner trim handle (.trim-end) and release to auto-save non-destructive trim by default
   const trimEndEl = doc.querySelector('#inspector-voice-rec-strip .voice-rec-trim-handle.trim-end');
   const waveWrapEl = doc.querySelector('#inspector-voice-rec-strip [data-voice-waveform-wrap="true"]');
   waveWrapEl.getBoundingClientRect = () => ({ left: 0, top: 0, width: 200, height: 28, right: 200, bottom: 28 });
@@ -1409,6 +1409,22 @@ function makeEvent(type, props) {
   doc.dispatchEvent(makeEvent("pointermove", { button: 0, clientX: 150, clientY: 14, target: doc }));
   doc.dispatchEvent(makeEvent("pointerup", { button: 0, clientX: 150, clientY: 14, target: doc }));
   await waitForActions();
+  const nonDestructiveEnd = doc.querySelector("#inspector-voice-rec-strip").getAttribute("data-trim-end") || "";
+  if (nonDestructiveEnd !== "0.7500") {
+    throw new Error("Expected default non-destructive trim to persist data-trim-end=0.7500, got: " + nonDestructiveEnd);
+  }
+  const cutBtn = doc.querySelector('#inspector-voice-rec-strip [data-voice-trim-destructive="true"]');
+  if (!cutBtn || cutBtn.classList.contains("hidden")) {
+    throw new Error("Expected destructive trim button [data-voice-trim-destructive=true] to be visible when non-destructive trim is active");
+  }
+  await clickEl('#inspector-voice-rec-strip [data-voice-trim-destructive="true"]');
+  const afterDestructiveEnd = doc.querySelector("#inspector-voice-rec-strip").getAttribute("data-trim-end") || "";
+  if (afterDestructiveEnd !== "1.0000") {
+    throw new Error("Expected destructive trim to crop file and reset data-trim-end=1.0000, got: " + afterDestructiveEnd);
+  }
+  if (!doc.querySelector('#inspector-voice-rec-strip [data-voice-trim-destructive="true"]').classList.contains("hidden")) {
+    throw new Error("Expected destructive trim button to hide after destructive trim resets bounds to [0, 1]");
+  }
 
   // 10b. Topbar toggles (Theme, UI Scale, Hamburger Menu)
   await clickEl("#btn-topbar-menu");
@@ -1432,7 +1448,7 @@ function makeEvent(type, props) {
     throw new Error("Expected ToggleTheme to set data-theme=light");
   }
 
-  // 11. Switch to Player view via Topbar and click a ChoiceBranch button
+  // 11. Switch to Player view via Topbar, click ChooseBranch to enter the scene with recorded audio, and verify automatic audio playback + pause option
   await clickEl('#tab-player');
   if (!doc.querySelector("#view-player")) {
     throw new Error("Expected #view-player after clicking #tab-player");
@@ -1444,6 +1460,33 @@ function makeEvent(type, props) {
   await clickEl('#active-scene-stage button.choice-btn[action="ChooseBranch"]');
   if (!doc.querySelector("#history-stack")) {
     throw new Error("Expected #history-stack in player view after clicking ChooseBranch");
+  }
+  const storyAudio = doc.querySelector("#story-audio");
+  if (!storyAudio || storyAudio.paused || doc.querySelector("#icon-audio-pause").classList.contains("hidden")) {
+    throw new Error("Expected narrated scene entry in #view-player to auto-play #story-audio with pause button visible");
+  }
+  if (storyAudio.getAttribute("data-auto-delay") !== "2") {
+    throw new Error("Expected default data-auto-delay=2 on #story-audio, got: " + storyAudio.getAttribute("data-auto-delay"));
+  }
+  await clickEl("#btn-audio-play");
+  if (!storyAudio.paused || doc.querySelector("#icon-audio-play").classList.contains("hidden")) {
+    throw new Error("Expected clicking #btn-audio-play while playing to pause #story-audio and show play icon");
+  }
+  await clickEl("#btn-auto-choice-toggle");
+  const rewindBtn = doc.querySelector('#history-stack button.contextual-rewind-btn[action="PromptRewindStep"]');
+  if (rewindBtn) {
+    await clickEl(rewindBtn);
+    await clickEl('#modals-root button[action="ConfirmModalAccept"]');
+    const rewoundAudio = doc.querySelector("#story-audio");
+    if (rewoundAudio) {
+      rewoundAudio.setAttribute("data-auto-delay", "0.02");
+      rewoundAudio.dispatchEvent(makeEvent("ended", { target: rewoundAudio }));
+      await new Promise((r) => setTimeout(r, 40));
+      await waitForActions();
+      if (!doc.querySelector("#history-stack")) {
+        throw new Error("Expected AutoChoice + ended event on #story-audio to advance to next scene after data-auto-delay");
+      }
+    }
   }
 
   // 12. Switch to Editor, create a Screenplay project via custom-select mode picker, test Breakdown Panel forms & jump
@@ -1553,6 +1596,20 @@ function makeEvent(type, props) {
   if (process.env.ST_TEST_BUNDLE_NAME === "dev_app_js" && f12Evt.defaultPrevented) {
     throw new Error("Expected F12 keydown NOT to be blocked in dev bundle");
   }
+
+  // Verify client rule validator localizes messages dynamically via I18N_TABLE when data-lang switches between pl and en
+  const sampleVarsMap = win.parseBookVarsSpec("klucz:bool:;punkty:int:;pora:enum:dzien,noc");
+  doc.body.setAttribute("data-lang", "pl");
+  const errPL = win.explainClientCondExprError("punkty = abc", sampleVarsMap);
+  if (!errPL.includes("Błąd typu")) {
+    throw new Error("Expected Polish rule error when data-lang=pl, got: " + errPL);
+  }
+  doc.body.setAttribute("data-lang", "en");
+  const errEN = win.explainClientCondExprError("punkty = abc", sampleVarsMap);
+  if (!errEN.includes("Type error")) {
+    throw new Error("Expected English rule error when data-lang=en, got: " + errEN);
+  }
+  doc.body.setAttribute("data-lang", "pl");
 
   console.log("STATUS=OK");
   console.log("ACTIONS=" + actionLog.join(","));

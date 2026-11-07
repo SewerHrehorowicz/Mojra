@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	"storyteller/internal/tpl"
 )
 
 // EncodeBookVariablesSpec encodes the book's variable definitions as "name:kind:opt1,opt2;..." for client-side live validation.
@@ -28,15 +30,54 @@ func EncodeBookVariablesSpec(b *Book) string {
 	return strings.Join(parts, ";")
 }
 
-// ExplainConditionExprError returns a human-readable Polish syntax/type error explanation for an invalid condition expression, or "" when valid.
-func ExplainConditionExprError(expr string, b *Book) string {
+type valExtraKey uint8
+
+const (
+	valErrEmptyCond valExtraKey = iota
+	valErrMissingAfterOr
+	valErrMissingAfterAnd
+	valErrInvalidVarName
+	valErrNoNumericVal
+	valExtraKeyCount
+)
+
+var valExtraDicts = [tpl.LangCount][valExtraKeyCount]string{
+	tpl.LangPL: {
+		valErrEmptyCond:       "Błąd składni: puste wyrażenie warunkowe",
+		valErrMissingAfterOr:  "Błąd składni: brak wyrażenia po operatorze '||'",
+		valErrMissingAfterAnd: "Błąd składni: brak wyrażenia po operatorze '&&'",
+		valErrInvalidVarName:  "Błąd składni: nieprawidłowa nazwa zmiennej '%s'",
+		valErrNoNumericVal:    "Błąd typu: zmienna '%s' (%s) nie przyjmuje wartości liczbowej",
+	},
+	tpl.LangEN: {
+		valErrEmptyCond:       "Syntax error: empty condition expression",
+		valErrMissingAfterOr:  "Syntax error: missing expression after '||'",
+		valErrMissingAfterAnd: "Syntax error: missing expression after '&&'",
+		valErrInvalidVarName:  "Syntax error: invalid variable name '%s'",
+		valErrNoNumericVal:    "Type error: variable '%s' (%s) does not accept a numeric value",
+	},
+}
+
+func valExtraMsg(l tpl.Lang, k valExtraKey) string {
+	if l < tpl.LangCount && valExtraDicts[l][k] != "" {
+		return valExtraDicts[l][k]
+	}
+	if valExtraDicts[tpl.LangEN][k] != "" {
+		return valExtraDicts[tpl.LangEN][k]
+	}
+	return valExtraDicts[tpl.LangPL][k]
+}
+
+// ExplainConditionExprErrorLang returns a localized syntax/type error explanation for an invalid condition expression, or "" when valid.
+func ExplainConditionExprErrorLang(expr string, b *Book, lang string) string {
+	l := tpl.ParseLang(lang)
 	clean := CleanConditionExpr(expr)
 	clean = strings.TrimSpace(strings.TrimPrefix(clean, "?"))
 	if clean == "" {
 		return ""
 	}
 	if b == nil {
-		return "Brak zadeklarowanych zmiennych w książce"
+		return tpl.LookupJSI18n(l, "err_no_vars")
 	}
 	depth := 0
 	for i := 0; i < len(clean); i++ {
@@ -46,101 +87,109 @@ func ExplainConditionExprError(expr string, b *Book) string {
 		case ')':
 			depth--
 			if depth < 0 {
-				return "Błąd składni: niedomknięty nawias w warunku"
+				return tpl.LookupJSI18n(l, "err_unclosed_paren")
 			}
 		}
 	}
 	if depth != 0 {
-		return "Błąd składni: niedomknięty nawias w warunku"
+		return tpl.LookupJSI18n(l, "err_unclosed_paren")
 	}
-	return explainCondOr(clean, b)
+	return explainCondOr(clean, b, l)
 }
 
-func explainCondOr(s string, b *Book) string {
+func explainCondOr(s string, b *Book, l tpl.Lang) string {
 	s = strings.TrimSpace(trimOuterParens(s))
 	if s == "" {
-		return "Błąd składni: puste wyrażenie warunkowe"
+		return valExtraMsg(l, valErrEmptyCond)
 	}
 	if parts := splitTopLevelLogical(s, "||"); len(parts) > 1 {
 		for _, p := range parts {
 			if strings.TrimSpace(p) == "" {
-				return "Błąd składni: brak wyrażenia po operatorze '||'"
+				return valExtraMsg(l, valErrMissingAfterOr)
 			}
-			if errMsg := explainCondAnd(p, b); errMsg != "" {
+			if errMsg := explainCondAnd(p, b, l); errMsg != "" {
 				return errMsg
 			}
 		}
 		return ""
 	}
-	return explainCondAnd(s, b)
+	return explainCondAnd(s, b, l)
 }
 
-func explainCondAnd(s string, b *Book) string {
+func explainCondAnd(s string, b *Book, l tpl.Lang) string {
 	s = strings.TrimSpace(trimOuterParens(s))
 	if s == "" {
-		return "Błąd składni: puste wyrażenie warunkowe"
+		return valExtraMsg(l, valErrEmptyCond)
 	}
 	if parts := splitTopLevelLogical(s, "&&"); len(parts) > 1 {
 		for _, p := range parts {
 			if strings.TrimSpace(p) == "" {
-				return "Błąd składni: brak wyrażenia po operatorze '&&'"
+				return valExtraMsg(l, valErrMissingAfterAnd)
 			}
-			if errMsg := explainCondAtom(p, b); errMsg != "" {
+			if errMsg := explainCondAtom(p, b, l); errMsg != "" {
 				return errMsg
 			}
 		}
 		return ""
 	}
-	return explainCondAtom(s, b)
+	return explainCondAtom(s, b, l)
 }
 
-func explainCondAtom(s string, b *Book) string {
-	s = strings.TrimSpace(s)
+func explainCondAtom(s string, b *Book, l tpl.Lang) string {
+	for step := 0; step < 32; step++ {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			return valExtraMsg(l, valErrEmptyCond)
+		}
+		if unwrapped := trimOuterParens(s); unwrapped != s {
+			return explainCondOr(unwrapped, b, l)
+		}
+		if strings.HasPrefix(s, "?") {
+			s = s[1:]
+			continue
+		}
+		if strings.HasPrefix(s, "!") && !strings.HasPrefix(s, "!=") {
+			s = s[1:]
+			continue
+		}
+		break
+	}
 	if s == "" {
-		return "Błąd składni: puste wyrażenie warunkowe"
-	}
-	if unwrapped := trimOuterParens(s); unwrapped != s {
-		return explainCondOr(unwrapped, b)
-	}
-	if strings.HasPrefix(s, "?") {
-		return explainCondAtom(s[1:], b)
-	}
-	if strings.HasPrefix(s, "!") && !strings.HasPrefix(s, "!=") {
-		return explainCondAtom(s[1:], b)
+		return valExtraMsg(l, valErrEmptyCond)
 	}
 	for _, mutOp := range []string{"++", "--", "+=", "-="} {
 		if strings.Contains(s, mutOp) {
-			return fmt.Sprintf("Błąd w if: operator '%s' służy do zmiany wartości w polu set:, a w if: podaj porównanie", mutOp)
+			return fmt.Sprintf(tpl.LookupJSI18n(l, "err_mut_op_in_if"), mutOp)
 		}
 	}
 	if strings.ContainsAny(s, ",;") {
-		return "Błąd składni w if: użyj '&&' (oraz) lub '||' (lub) zamiast przecinka/średnika"
+		return tpl.LookupJSI18n(l, "err_comma_in_if")
 	}
 	for _, op := range []string{"==", "!=", ">=", "<=", ">", "<", "="} {
 		if idx := strings.Index(s, op); idx >= 0 {
 			lhs := strings.TrimSpace(s[:idx])
 			rhs := strings.Trim(strings.TrimSpace(s[idx+len(op):]), `"'`)
 			if lhs == "" {
-				return fmt.Sprintf("Błąd składni: brak nazwy zmiennej przed operatorem '%s'", op)
+				return fmt.Sprintf(tpl.LookupJSI18n(l, "err_missing_var_before_op"), op)
 			}
 			if rhs == "" {
-				return fmt.Sprintf("Błąd składni: brak wartości po operatorze '%s' dla zmiennej '%s'", op, lhs)
+				return fmt.Sprintf(tpl.LookupJSI18n(l, "err_missing_val_after_op"), op, lhs)
 			}
 			if strings.ContainsAny(lhs, " \t=!<>+-()") {
-				return fmt.Sprintf("Błąd składni: nieprawidłowa nazwa zmiennej '%s'", lhs)
+				return fmt.Sprintf(valExtraMsg(l, valErrInvalidVarName), lhs)
 			}
 			vDef := b.FindVariable(lhs)
 			if vDef == nil {
-				return fmt.Sprintf("Nieznana zmienna '%s' — zadeklaruj ją w panelu Zmienne {}", lhs)
+				return fmt.Sprintf(tpl.LookupJSI18n(l, "err_unknown_var"), lhs)
 			}
-			return explainVarValueMatchError(vDef, op, rhs, b)
+			return explainVarValueMatchError(vDef, op, rhs, b, l)
 		}
 	}
 	if strings.ContainsAny(s, " \t=!<>+-(),:|&") {
-		return fmt.Sprintf("Błąd składni w warunku: '%s'", s)
+		return fmt.Sprintf(tpl.LookupJSI18n(l, "err_cond_syntax"), s)
 	}
 	if b.FindVariable(s) == nil {
-		return fmt.Sprintf("Nieznana zmienna '%s' — zadeklaruj ją w panelu Zmienne {}", s)
+		return fmt.Sprintf(tpl.LookupJSI18n(l, "err_unknown_var"), s)
 	}
 	return ""
 }
@@ -154,7 +203,7 @@ func isBoolLiteralString(s string) bool {
 	}
 }
 
-func explainVarValueMatchError(vDef *VariableDef, op string, rhs string, b *Book) string {
+func explainVarValueMatchError(vDef *VariableDef, op string, rhs string, b *Book, l tpl.Lang) string {
 	switch vDef.Kind {
 	case VarKindInt:
 		if _, err := strconv.Atoi(rhs); err == nil {
@@ -163,10 +212,10 @@ func explainVarValueMatchError(vDef *VariableDef, op string, rhs string, b *Book
 		if rhsVar := b.FindVariable(rhs); rhsVar != nil && rhsVar.Kind == VarKindInt {
 			return ""
 		}
-		return fmt.Sprintf("Błąd typu: zmienna '%s' (int) wymaga liczby całkowitej, otrzymano '%s'", vDef.Name, rhs)
+		return fmt.Sprintf(tpl.LookupJSI18n(l, "err_int_type"), vDef.Name, rhs)
 	case VarKindEnum:
 		if op != "==" && op != "!=" && op != "=" {
-			return fmt.Sprintf("Błąd operatora: zmienna '%s' (enum) obsługuje tylko '=' / '==' lub '!='", vDef.Name)
+			return fmt.Sprintf(tpl.LookupJSI18n(l, "err_enum_op"), vDef.Name)
 		}
 		opt := SanitizeEnumOption(rhs)
 		for _, allowed := range vDef.Options {
@@ -177,10 +226,10 @@ func explainVarValueMatchError(vDef *VariableDef, op string, rhs string, b *Book
 		if rhsVar := b.FindVariable(rhs); rhsVar != nil && rhsVar.Kind == VarKindEnum {
 			return ""
 		}
-		return fmt.Sprintf("Nieznana wartość '%s' dla zmiennej '%s' (dozwolone: %s)", rhs, vDef.Name, strings.Join(vDef.Options, ", "))
+		return fmt.Sprintf(tpl.LookupJSI18n(l, "err_enum_val"), rhs, vDef.Name, strings.Join(vDef.Options, ", "))
 	default:
 		if op != "==" && op != "!=" && op != "=" {
-			return fmt.Sprintf("Błąd operatora: zmienna '%s' (bool) obsługuje tylko '=' / '==' lub '!='", vDef.Name)
+			return fmt.Sprintf(tpl.LookupJSI18n(l, "err_bool_op"), vDef.Name)
 		}
 		if isBoolLiteralString(rhs) {
 			return ""
@@ -193,12 +242,13 @@ func explainVarValueMatchError(vDef *VariableDef, op string, rhs string, b *Book
 		if rhsVar := b.FindVariable(rhs); rhsVar != nil && rhsVar.Kind == VarKindBool {
 			return ""
 		}
-		return fmt.Sprintf("Błąd typu: zmienna '%s' (bool) wymaga wartości true/false lub samej nazwy zmiennej", vDef.Name)
+		return fmt.Sprintf(tpl.LookupJSI18n(l, "err_bool_type"), vDef.Name)
 	}
 }
 
-// ExplainEffectsExprError returns a human-readable Polish syntax/type error explanation for an invalid effects expression, or "" when valid.
-func ExplainEffectsExprError(expr string, b *Book) string {
+// ExplainEffectsExprErrorLang returns a localized syntax/type error explanation for an invalid effects expression, or "" when valid.
+func ExplainEffectsExprErrorLang(expr string, b *Book, lang string) string {
+	l := tpl.ParseLang(lang)
 	clean := StripOuterDoubleBraces(expr)
 	lower := strings.ToLower(clean)
 	if strings.HasPrefix(lower, "set:") {
@@ -211,26 +261,26 @@ func ExplainEffectsExprError(expr string, b *Book) string {
 		return ""
 	}
 	if b == nil {
-		return "Brak zadeklarowanych zmiennych w książce"
+		return tpl.LookupJSI18n(l, "err_no_vars")
 	}
 	clauses := splitEffectClauses(clean)
 	if len(clauses) == 0 {
-		return "Błąd składni w polu set:"
+		return tpl.LookupJSI18n(l, "err_set_syntax_empty")
 	}
 	for _, rawClause := range clauses {
 		c := strings.TrimSpace(rawClause)
 		if c == "" {
-			return "Błąd składni w set: puste wyrażenie po przecinku"
+			return tpl.LookupJSI18n(l, "err_set_empty_after_comma")
 		}
 		if (strings.HasSuffix(c, "++") || strings.HasSuffix(c, "--")) && !strings.Contains(c, "=") {
 			op := c[len(c)-2:]
 			varName := strings.TrimSpace(c[:len(c)-2])
 			vDef := b.FindVariable(varName)
 			if vDef == nil {
-				return fmt.Sprintf("Nieznana zmienna '%s' — zadeklaruj ją w panelu Zmienne {}", varName)
+				return fmt.Sprintf(tpl.LookupJSI18n(l, "err_unknown_var"), varName)
 			}
 			if vDef.Kind != VarKindInt {
-				return fmt.Sprintf("Błąd typu: operator '%s' wymaga zmiennej typu int (zmienna '%s' jest typu %s)", op, vDef.Name, vDef.Kind)
+				return fmt.Sprintf(tpl.LookupJSI18n(l, "err_op_requires_int"), op, vDef.Name, vDef.Kind)
 			}
 			continue
 		}
@@ -238,54 +288,54 @@ func ExplainEffectsExprError(expr string, b *Book) string {
 			varName := strings.TrimSpace(c[1:])
 			vDef := b.FindVariable(varName)
 			if vDef == nil {
-				return fmt.Sprintf("Nieznana zmienna '%s' — zadeklaruj ją w panelu Zmienne {}", varName)
+				return fmt.Sprintf(tpl.LookupJSI18n(l, "err_unknown_var"), varName)
 			}
 			if vDef.Kind != VarKindBool {
-				return fmt.Sprintf("Błąd typu: negacja '!%s' wymaga zmiennej typu bool (jest typu %s)", vDef.Name, vDef.Kind)
+				return fmt.Sprintf(tpl.LookupJSI18n(l, "err_neg_requires_bool"), vDef.Name, vDef.Kind)
 			}
 			continue
 		}
 		if (strings.HasPrefix(c, "+") || strings.HasPrefix(c, "-")) && !strings.Contains(c, "=") {
 			rest := strings.Fields(strings.TrimSpace(c[1:]))
 			if len(rest) == 0 || len(rest) > 2 {
-				return fmt.Sprintf("Błąd składni w set: '%s'", c)
+				return fmt.Sprintf(tpl.LookupJSI18n(l, "err_set_clause_syntax"), c)
 			}
 			vDef := b.FindVariable(rest[0])
 			if vDef == nil {
-				return fmt.Sprintf("Nieznana zmienna '%s' — zadeklaruj ją w panelu Zmienne {}", rest[0])
+				return fmt.Sprintf(tpl.LookupJSI18n(l, "err_unknown_var"), rest[0])
 			}
 			if vDef.Kind != VarKindBool && vDef.Kind != VarKindInt {
-				return fmt.Sprintf("Błąd typu: dla zmiennej '%s' (enum) użyj przypisania '='", vDef.Name)
+				return fmt.Sprintf(tpl.LookupJSI18n(l, "err_enum_needs_assign"), vDef.Name)
 			}
 			if len(rest) == 2 {
 				if vDef.Kind != VarKindInt {
-					return fmt.Sprintf("Błąd typu: zmienna '%s' (%s) nie przyjmuje wartości liczbowej", vDef.Name, vDef.Kind)
+					return fmt.Sprintf(valExtraMsg(l, valErrNoNumericVal), vDef.Name, vDef.Kind)
 				}
 				if _, err := strconv.Atoi(rest[1]); err != nil {
-					return fmt.Sprintf("Błąd typu: zmienna '%s' (int) wymaga liczby całkowitej, otrzymano '%s'", vDef.Name, rest[1])
+					return fmt.Sprintf(tpl.LookupJSI18n(l, "err_int_type"), vDef.Name, rest[1])
 				}
 			}
 			continue
 		}
 		if strings.Contains(c, "==") || strings.Contains(c, "!=") || strings.Contains(c, ">=") || strings.Contains(c, "<=") || strings.Contains(c, ">") || strings.Contains(c, "<") || strings.Contains(c, "&&") || strings.Contains(c, "||") {
-			return "Błąd w set: użyj przypisania ('=', '+=', '-=', '++', '--'), a nie operatora warunkowego"
+			return tpl.LookupJSI18n(l, "err_cond_op_in_set")
 		}
 		if op, idx := findCompoundAssignOp(c); idx > 0 {
 			lhs := strings.TrimSpace(c[:idx])
 			rhs := strings.TrimSpace(c[idx+len(op):])
 			vDef := b.FindVariable(lhs)
 			if vDef == nil {
-				return fmt.Sprintf("Nieznana zmienna '%s' — zadeklaruj ją w panelu Zmienne {}", lhs)
+				return fmt.Sprintf(tpl.LookupJSI18n(l, "err_unknown_var"), lhs)
 			}
 			if vDef.Kind != VarKindInt {
-				return fmt.Sprintf("Błąd typu: operator '%s' wymaga zmiennej typu int (zmienna '%s' jest typu %s)", op, vDef.Name, vDef.Kind)
+				return fmt.Sprintf(tpl.LookupJSI18n(l, "err_op_requires_int"), op, vDef.Name, vDef.Kind)
 			}
 			if rhs == "" {
-				return fmt.Sprintf("Błąd składni: brak wartości po '%s' dla zmiennej '%s'", op, vDef.Name)
+				return fmt.Sprintf(tpl.LookupJSI18n(l, "err_missing_val_after_compound"), op, vDef.Name)
 			}
 			if _, err := strconv.Atoi(rhs); err != nil {
 				if rhsVar := b.FindVariable(rhs); rhsVar == nil || rhsVar.Kind != VarKindInt {
-					return fmt.Sprintf("Błąd typu: zmienna '%s' (int) wymaga liczby całkowitej po '%s', otrzymano '%s'", vDef.Name, op, rhs)
+					return fmt.Sprintf(tpl.LookupJSI18n(l, "err_int_after_compound"), vDef.Name, op, rhs)
 				}
 			}
 			continue
@@ -295,12 +345,12 @@ func ExplainEffectsExprError(expr string, b *Book) string {
 			rhs := strings.Trim(strings.TrimSpace(c[idx+1:]), `"'`)
 			vDef := b.FindVariable(lhs)
 			if vDef == nil {
-				return fmt.Sprintf("Nieznana zmienna '%s' — zadeklaruj ją w panelu Zmienne {}", lhs)
+				return fmt.Sprintf(tpl.LookupJSI18n(l, "err_unknown_var"), lhs)
 			}
 			if rhs == "" {
-				return fmt.Sprintf("Błąd składni: brak przypisywanej wartości po '=' dla zmiennej '%s'", vDef.Name)
+				return fmt.Sprintf(tpl.LookupJSI18n(l, "err_missing_val_after_eq"), vDef.Name)
 			}
-			if errMsg := explainVarValueMatchError(vDef, "=", rhs, b); errMsg != "" {
+			if errMsg := explainVarValueMatchError(vDef, "=", rhs, b, l); errMsg != "" {
 				return errMsg
 			}
 			continue
@@ -308,17 +358,18 @@ func ExplainEffectsExprError(expr string, b *Book) string {
 		if !strings.ContainsAny(c, " \t+-*/=<>!&|,;:") {
 			vDef := b.FindVariable(c)
 			if vDef == nil {
-				return fmt.Sprintf("Nieznana zmienna '%s' — zadeklaruj ją w panelu Zmienne {}", c)
+				return fmt.Sprintf(tpl.LookupJSI18n(l, "err_unknown_var"), c)
 			}
 			if vDef.Kind == VarKindBool {
 				continue
 			}
-			return fmt.Sprintf("Błąd składni: dla zmiennej '%s' (%s) podaj przypisanie (np. %s = wartość)", vDef.Name, vDef.Kind, vDef.Name)
+			return fmt.Sprintf(tpl.LookupJSI18n(l, "err_bare_var_needs_assign"), vDef.Name, vDef.Kind, vDef.Name)
 		}
-		return fmt.Sprintf("Błąd składni w set: '%s'", c)
+		return fmt.Sprintf(tpl.LookupJSI18n(l, "err_set_clause_syntax"), c)
 	}
 	return ""
 }
+
 
 func findCompoundAssignOp(clause string) (string, int) {
 	if idx := strings.Index(clause, "+="); idx > 0 {

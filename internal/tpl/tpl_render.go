@@ -183,9 +183,80 @@ func writeLineIndent(buf *bytes.Buffer, indent int) {
 	}
 }
 
+type renderStackFrame struct {
+	nodes             []*Node
+	idx               int
+	ctx               *RenderContext
+	indent            int
+	closeTag          string
+	closeIndent       int
+	childIndent       int
+	posAfterOpen      int
+	posBeforeChildren int
+	inlineText        string
+	forList           any
+	forIdx            int
+	forTotal          int
+	itemCtx           RenderContext
+	idxCtx            RenderContext
+	useIdx            bool
+}
+
 func renderNodesToBuffer(buf *bytes.Buffer, nodes []*Node, components map[string]*ParsedTemplate, ctx *RenderContext, indent int) {
-	for i := 0; i < len(nodes); i++ {
-		n := nodes[i]
+	if len(nodes) == 0 {
+		return
+	}
+	var stackBuf [64]renderStackFrame
+	stackBuf[0] = renderStackFrame{
+		nodes:  nodes,
+		ctx:    ctx,
+		indent: indent,
+	}
+	sp := 0
+
+	for step := 0; step < 262144 && sp >= 0; step++ {
+		frame := &stackBuf[sp]
+		if frame.idx >= len(frame.nodes) {
+			if frame.forTotal > 0 && frame.forIdx < frame.forTotal {
+				nextItemIdx := frame.forIdx
+				frame.forIdx++
+				frame.itemCtx.localVal = listItemAt(frame.forList, nextItemIdx)
+				if frame.useIdx {
+					frame.idxCtx.localVal = nextItemIdx
+					frame.ctx = &frame.idxCtx
+				} else {
+					frame.ctx = &frame.itemCtx
+				}
+				frame.idx = 0
+				continue
+			}
+			if frame.closeTag != "" {
+				if buf.Len() > frame.posBeforeChildren {
+					if frame.childIndent >= 0 {
+						writeLineIndent(buf, frame.closeIndent)
+					}
+					buf.WriteString("</")
+					buf.WriteString(frame.closeTag)
+					buf.WriteByte('>')
+				} else {
+					buf.Truncate(frame.posAfterOpen)
+					if frame.inlineText != "" {
+						writeEscapedHTML(buf, frame.inlineText)
+					}
+					buf.WriteString("</")
+					buf.WriteString(frame.closeTag)
+					buf.WriteByte('>')
+				}
+			}
+			*frame = renderStackFrame{}
+			sp--
+			continue
+		}
+
+		n := frame.nodes[frame.idx]
+		frame.idx++
+		curCtx := frame.ctx
+		curIndent := frame.indent
 
 		switch n.Kind {
 		case NodeDoctype:
@@ -194,37 +265,47 @@ func renderNodesToBuffer(buf *bytes.Buffer, nodes []*Node, components map[string
 			}
 			buf.WriteString("<!DOCTYPE html>")
 
-		case NodeDef:
+		case NodeDef, NodeElif, NodeElse:
 			continue
 
 		case NodeSlot:
-			if ctx != nil && len(ctx.slotNodes) > 0 {
-				slotScope := ctx.slotCtx
+			if curCtx != nil && len(curCtx.slotNodes) > 0 && sp+1 < len(stackBuf) {
+				slotScope := curCtx.slotCtx
 				if slotScope == nil {
-					slotScope = ctx
+					slotScope = curCtx
 				}
-				renderNodesToBuffer(buf, ctx.slotNodes, components, slotScope, indent)
+				sp++
+				stackBuf[sp] = renderStackFrame{
+					nodes:  curCtx.slotNodes,
+					ctx:    slotScope,
+					indent: curIndent,
+				}
 			}
 
 		case NodeComponent:
 			if n.Tag == "slot" {
-				if ctx != nil && len(ctx.slotNodes) > 0 {
-					slotScope := ctx.slotCtx
+				if curCtx != nil && len(curCtx.slotNodes) > 0 && sp+1 < len(stackBuf) {
+					slotScope := curCtx.slotCtx
 					if slotScope == nil {
-						slotScope = ctx
+						slotScope = curCtx
 					}
-					renderNodesToBuffer(buf, ctx.slotNodes, components, slotScope, indent)
+					sp++
+					stackBuf[sp] = renderStackFrame{
+						nodes:  curCtx.slotNodes,
+						ctx:    slotScope,
+						indent: curIndent,
+					}
 				}
 				continue
 			}
 			comp, ok := components[n.Tag]
-			if !ok {
+			if !ok || len(comp.Nodes) == 0 || sp+1 >= len(stackBuf) {
 				continue
 			}
-			compCtx := ctx
+			compCtx := curCtx
 			if n.ContextExpr != "" && n.ContextExpr != "." && n.ContextExpr != "$" {
-				if subVal, exists := resolvePath(ctx, n.ContextExpr); exists {
-					compCtx = ctx.WithVar(".", subVal)
+				if subVal, exists := resolvePath(curCtx, n.ContextExpr); exists {
+					compCtx = curCtx.WithVar(".", subVal)
 				}
 			}
 			if len(n.Attrs) > 0 || len(n.Classes) > 0 || len(n.CondClasses) > 0 || n.ID != "" || len(n.Children) > 0 {
@@ -232,135 +313,166 @@ func renderNodesToBuffer(buf *bytes.Buffer, nodes []*Node, components map[string
 				if len(n.Attrs) > 0 || len(n.Classes) > 0 || len(n.CondClasses) > 0 || n.ID != "" {
 					propVars = make(map[string]any, len(n.Attrs)+2)
 					if n.ID != "" {
-						propVars["id"] = interpolateString(n.ID, ctx)
+						propVars["id"] = interpolateString(n.ID, curCtx)
 					}
 					if len(n.Classes) > 0 {
-						propVars["class"] = interpolateString(strings.Join(n.Classes, " "), ctx)
+						propVars["class"] = interpolateString(strings.Join(n.Classes, " "), curCtx)
 					}
 					for _, cc := range n.CondClasses {
-						propVars[cc.Name] = evalCondition(ctx, cc.Cond)
+						propVars[cc.Name] = evalCondition(curCtx, cc.Cond)
 					}
 					for _, a := range n.Attrs {
-						if a.Conditional && !evalCondition(ctx, unwrapOuterBraces(a.Val)) {
+						if a.Conditional && !evalCondition(curCtx, unwrapOuterBraces(a.Val)) {
 							continue
 						}
-						propVars[a.Key] = evaluateAttrOrPropAny(a.Val, ctx)
+						propVars[a.Key] = evaluateAttrOrPropAny(a.Val, curCtx)
 					}
 				}
 				compCtx = &RenderContext{
 					Vars:      propVars,
 					parent:    compCtx,
 					slotNodes: n.Children,
-					slotCtx:   ctx,
+					slotCtx:   curCtx,
 				}
-				if len(n.Children) == 0 && ctx != nil {
-					compCtx.slotNodes = ctx.slotNodes
-					compCtx.slotCtx = ctx.slotCtx
+				if len(n.Children) == 0 && curCtx != nil {
+					compCtx.slotNodes = curCtx.slotNodes
+					compCtx.slotCtx = curCtx.slotCtx
 				}
 			}
-			renderNodesToBuffer(buf, comp.Nodes, components, compCtx, indent)
+			sp++
+			stackBuf[sp] = renderStackFrame{
+				nodes:  comp.Nodes,
+				ctx:    compCtx,
+				indent: curIndent,
+			}
 
 		case NodeIf:
-			chainEnd := i
-			for chainEnd+1 < len(nodes) && (nodes[chainEnd+1].Kind == NodeElif || nodes[chainEnd+1].Kind == NodeElse) {
+			chainStart := frame.idx - 1
+			chainEnd := chainStart
+			for chainEnd+1 < len(frame.nodes) && (frame.nodes[chainEnd+1].Kind == NodeElif || frame.nodes[chainEnd+1].Kind == NodeElse) {
 				chainEnd++
 			}
-			for bIdx := i; bIdx <= chainEnd; bIdx++ {
-				branch := nodes[bIdx]
+			frame.idx = chainEnd + 1
+			for bIdx := chainStart; bIdx <= chainEnd; bIdx++ {
+				branch := frame.nodes[bIdx]
 				matched := false
 				if branch.Kind == NodeElse {
 					matched = true
 				} else {
-					matched = evalCondition(ctx, branch.Expr)
+					matched = evalCondition(curCtx, branch.Expr)
 				}
 				if matched {
-					renderNodesToBuffer(buf, branch.Children, components, ctx, indent)
+					if len(branch.Children) > 0 && sp+1 < len(stackBuf) {
+						sp++
+						stackBuf[sp] = renderStackFrame{
+							nodes:  branch.Children,
+							ctx:    curCtx,
+							indent: curIndent,
+						}
+					}
 					break
 				}
 			}
-			i = chainEnd
-
-		case NodeElif, NodeElse:
-			continue
 
 		case NodeWith:
 			var elseNode *Node
-			if i+1 < len(nodes) && nodes[i+1].Kind == NodeElse {
-				elseNode = nodes[i+1]
-				i++
+			if frame.idx < len(frame.nodes) && frame.nodes[frame.idx].Kind == NodeElse {
+				elseNode = frame.nodes[frame.idx]
+				frame.idx++
 			}
-			val, ok := resolvePath(ctx, n.Expr)
+			val, ok := resolvePath(curCtx, n.Expr)
 			if ok && isTruthy(val) {
-				withCtx := ctx.WithVar(".", val)
-				renderNodesToBuffer(buf, n.Children, components, withCtx, indent)
-			} else if elseNode != nil {
-				renderNodesToBuffer(buf, elseNode.Children, components, ctx, indent)
+				if len(n.Children) > 0 && sp+1 < len(stackBuf) {
+					withCtx := curCtx.WithVar(".", val)
+					sp++
+					stackBuf[sp] = renderStackFrame{
+						nodes:  n.Children,
+						ctx:    withCtx,
+						indent: curIndent,
+					}
+				}
+			} else if elseNode != nil && len(elseNode.Children) > 0 && sp+1 < len(stackBuf) {
+				sp++
+				stackBuf[sp] = renderStackFrame{
+					nodes:  elseNode.Children,
+					ctx:    curCtx,
+					indent: curIndent,
+				}
 			}
 
 		case NodeFor:
-			rawList, _ := resolvePath(ctx, strings.TrimSuffix(n.Expr, ".each()"))
+			rawList, _ := resolvePath(curCtx, strings.TrimSuffix(n.Expr, ".each()"))
+			total := listLen(rawList)
+			if total == 0 || len(n.Children) == 0 || sp+1 >= len(stackBuf) {
+				continue
+			}
 			itemVar := n.LoopVal
 			if itemVar == "" {
 				itemVar = "."
 			}
 			idxVar := n.LoopIdx
 
-			var itemCtx RenderContext
-			if ctx != nil {
-				itemCtx.parent = ctx
-				itemCtx.slotNodes = ctx.slotNodes
-				itemCtx.slotCtx = ctx.slotCtx
+			sp++
+			nextFrame := &stackBuf[sp]
+			*nextFrame = renderStackFrame{
+				nodes:    n.Children,
+				indent:   curIndent,
+				forList:  rawList,
+				forIdx:   1,
+				forTotal: total,
+				useIdx:   idxVar != "",
 			}
-			itemCtx.localKey = itemVar
-			itemCtx.hasLocal = true
-
-			var idxCtx RenderContext
-			useIdx := idxVar != ""
-			if useIdx {
-				idxCtx.parent = &itemCtx
-				idxCtx.localKey = idxVar
-				idxCtx.hasLocal = true
-				if ctx != nil {
-					idxCtx.slotNodes = ctx.slotNodes
-					idxCtx.slotCtx = ctx.slotCtx
-				}
+			if curCtx != nil {
+				nextFrame.itemCtx.parent = curCtx
+				nextFrame.itemCtx.slotNodes = curCtx.slotNodes
+				nextFrame.itemCtx.slotCtx = curCtx.slotCtx
 			}
+			nextFrame.itemCtx.localKey = itemVar
+			nextFrame.itemCtx.hasLocal = true
+			nextFrame.itemCtx.localVal = listItemAt(rawList, 0)
 
-			forEachListItem(rawList, func(idx int, item any) {
-				itemCtx.localVal = item
-				if useIdx {
-					idxCtx.localVal = idx
-					renderNodesToBuffer(buf, n.Children, components, &idxCtx, indent)
-				} else {
-					renderNodesToBuffer(buf, n.Children, components, &itemCtx, indent)
+			if nextFrame.useIdx {
+				nextFrame.idxCtx.parent = &nextFrame.itemCtx
+				nextFrame.idxCtx.localKey = idxVar
+				nextFrame.idxCtx.hasLocal = true
+				nextFrame.idxCtx.localVal = 0
+				if curCtx != nil {
+					nextFrame.idxCtx.slotNodes = curCtx.slotNodes
+					nextFrame.idxCtx.slotCtx = curCtx.slotCtx
 				}
-			})
+				nextFrame.ctx = &nextFrame.idxCtx
+			} else {
+				nextFrame.ctx = &nextFrame.itemCtx
+			}
 
 		case NodeText:
-			txt := evalTextNodeString(n, ctx)
+			txt := evalTextNodeString(n, curCtx)
 			if txt != "" {
-				writeLineIndent(buf, indent)
+				writeLineIndent(buf, curIndent)
 				writeEscapedHTML(buf, txt)
 			}
 
 		case NodeProse:
-			proseHTML := evalProseNodeHTML(n, ctx)
+			proseHTML := evalProseNodeHTML(n, curCtx)
 			if proseHTML != "" {
-				writeLineIndent(buf, indent)
+				writeLineIndent(buf, curIndent)
 				buf.WriteString(proseHTML)
 			}
 
 		case NodeSVG:
 			if n.RawSVG != "" {
-				writeSVGNodeToBuffer(buf, n, ctx, indent)
+				writeSVGNodeToBuffer(buf, n, curCtx, curIndent)
 			}
 
 		case NodeElement:
 			if n.RawSVG != "" {
-				writeSVGNodeToBuffer(buf, n, ctx, indent)
+				writeSVGNodeToBuffer(buf, n, curCtx, curIndent)
 				continue
 			}
-			renderSingleElementNode(buf, n, components, ctx, indent)
+			if childFrame, hasChildren := beginElementNode(buf, n, curCtx, curIndent); hasChildren && sp+1 < len(stackBuf) {
+				sp++
+				stackBuf[sp] = childFrame
+			}
 		}
 	}
 }
@@ -388,13 +500,13 @@ func evalProseNodeHTML(n *Node, ctx *RenderContext) string {
 	return RenderSafeProseHTML(plain)
 }
 
-func renderSingleElementNode(buf *bytes.Buffer, n *Node, components map[string]*ParsedTemplate, ctx *RenderContext, indent int) {
+func beginElementNode(buf *bytes.Buffer, n *Node, ctx *RenderContext, indent int) (renderStackFrame, bool) {
 	if n.Tag == "img" {
 		for _, a := range n.Attrs {
 			if strings.EqualFold(a.Key, "src") {
 				resolvedSrc := strings.TrimSpace(evaluateAttrString(a.Val, ctx))
 				if resolvedSrc == "" {
-					return
+					return renderStackFrame{}, false
 				}
 			}
 		}
@@ -418,7 +530,7 @@ func renderSingleElementNode(buf *bytes.Buffer, n *Node, components map[string]*
 		} else {
 			buf.WriteString(" />")
 		}
-		return
+		return renderStackFrame{}, false
 	}
 
 	buf.WriteByte('>')
@@ -428,7 +540,7 @@ func renderSingleElementNode(buf *bytes.Buffer, n *Node, components map[string]*
 		buf.WriteString("</")
 		buf.WriteString(n.Tag)
 		buf.WriteByte('>')
-		return
+		return renderStackFrame{}, false
 	}
 
 	if inlineText == "" && len(n.Children) == 1 && (n.Children[0].Kind == NodeText || n.Children[0].Kind == NodeProse) {
@@ -441,7 +553,7 @@ func renderSingleElementNode(buf *bytes.Buffer, n *Node, components map[string]*
 		buf.WriteString("</")
 		buf.WriteString(n.Tag)
 		buf.WriteByte('>')
-		return
+		return renderStackFrame{}, false
 	}
 
 	childIndent := indent + 1
@@ -455,24 +567,18 @@ func renderSingleElementNode(buf *bytes.Buffer, n *Node, components map[string]*
 		writeEscapedHTML(buf, inlineText)
 	}
 	posBeforeChildren := buf.Len()
-	renderNodesToBuffer(buf, n.Children, components, ctx, childIndent)
-	if buf.Len() > posBeforeChildren {
-		if childIndent >= 0 {
-			writeLineIndent(buf, indent)
-		}
-		buf.WriteString("</")
-		buf.WriteString(n.Tag)
-		buf.WriteByte('>')
-		return
-	}
 
-	buf.Truncate(posAfterOpen)
-	if inlineText != "" {
-		writeEscapedHTML(buf, inlineText)
-	}
-	buf.WriteString("</")
-	buf.WriteString(n.Tag)
-	buf.WriteByte('>')
+	return renderStackFrame{
+		nodes:             n.Children,
+		ctx:               ctx,
+		indent:            childIndent,
+		closeTag:          n.Tag,
+		closeIndent:       indent,
+		childIndent:       childIndent,
+		posAfterOpen:      posAfterOpen,
+		posBeforeChildren: posBeforeChildren,
+		inlineText:        inlineText,
+	}, true
 }
 
 func writeSVGNodeToBuffer(buf *bytes.Buffer, n *Node, ctx *RenderContext, indent int) {
@@ -677,40 +783,58 @@ func writeElementAttrs(buf *bytes.Buffer, n *Node, ctx *RenderContext) {
 }
 
 func evaluateValueExpr(raw string, ctx *RenderContext) string {
+	rem := raw
+	for pipeStep := 0; pipeStep < 16; pipeStep++ {
+		expr := strings.TrimSpace(rem)
+		for wrap := 0; wrap < 16 && (isBraceWrapped(expr) || isParenWrapped(expr)); wrap++ {
+			expr = strings.TrimSpace(expr[1 : len(expr)-1])
+		}
+		if expr == "" {
+			return ""
+		}
+		if pipeIdx := findTopLevelSinglePipe(expr); pipeIdx >= 0 {
+			left := evaluateSingleValueExpr(expr[:pipeIdx], ctx)
+			if left != "" && left != "false" {
+				return left
+			}
+			rem = expr[pipeIdx+1:]
+			continue
+		}
+		return evaluateSingleValueExpr(expr, ctx)
+	}
+	return ""
+}
+
+func evaluateSingleValueExpr(raw string, ctx *RenderContext) string {
 	expr := strings.TrimSpace(raw)
-	for isBraceWrapped(expr) || isParenWrapped(expr) {
-		expr = strings.TrimSpace(expr[1 : len(expr)-1])
-	}
-	if expr == "" {
-		return ""
-	}
-
-	if pipeIdx := findTopLevelSinglePipe(expr); pipeIdx >= 0 {
-		left := evaluateValueExpr(expr[:pipeIdx], ctx)
-		if left != "" && left != "false" {
-			return left
+	for step := 0; step < 32; step++ {
+		for wrap := 0; wrap < 16 && (isBraceWrapped(expr) || isParenWrapped(expr)); wrap++ {
+			expr = strings.TrimSpace(expr[1 : len(expr)-1])
 		}
-		return evaluateValueExpr(expr[pipeIdx+1:], ctx)
-	}
-
-	if qIdx, colonIdx := findTopLevelTernary(expr); qIdx >= 0 && colonIdx > qIdx {
-		cond := strings.TrimSpace(expr[:qIdx])
-		thenExpr := strings.TrimSpace(expr[qIdx+1 : colonIdx])
-		elseExpr := strings.TrimSpace(expr[colonIdx+1:])
-		if evalCondition(ctx, cond) {
-			return evaluateValueExpr(thenExpr, ctx)
+		if expr == "" {
+			return ""
 		}
-		return evaluateValueExpr(elseExpr, ctx)
-	}
-
-	if strings.HasPrefix(expr, "if ") {
-		condTok, rest := splitFirstToken(strings.TrimSpace(expr[3:]))
-		thenTok, elseRest := splitFirstToken(rest)
-		elseTok, _ := splitFirstToken(elseRest)
-		if evalCondition(ctx, condTok) {
-			return evaluateValueExpr(thenTok, ctx)
+		if qIdx, colonIdx := findTopLevelTernary(expr); qIdx >= 0 && colonIdx > qIdx {
+			cond := strings.TrimSpace(expr[:qIdx])
+			if evalCondition(ctx, cond) {
+				expr = strings.TrimSpace(expr[qIdx+1 : colonIdx])
+			} else {
+				expr = strings.TrimSpace(expr[colonIdx+1:])
+			}
+			continue
 		}
-		return evaluateValueExpr(elseTok, ctx)
+		if strings.HasPrefix(expr, "if ") {
+			condTok, rest := splitFirstToken(strings.TrimSpace(expr[3:]))
+			thenTok, elseRest := splitFirstToken(rest)
+			elseTok, _ := splitFirstToken(elseRest)
+			if evalCondition(ctx, condTok) {
+				expr = thenTok
+			} else {
+				expr = elseTok
+			}
+			continue
+		}
+		break
 	}
 
 	if strings.HasPrefix(expr, `"`) && strings.HasSuffix(expr, `"`) && len(expr) >= 2 {
@@ -873,30 +997,138 @@ func splitFirstToken(s string) (string, string) {
 }
 
 func evalCondition(ctx *RenderContext, cond string) bool {
-	cond = strings.TrimSpace(cond)
+	cond = unwrapCondOuterGrouping(cond)
 	if cond == "" {
 		return false
 	}
-	for isBraceWrapped(cond) || (strings.HasPrefix(cond, "(") && strings.HasSuffix(cond, ")") && isBalancedParens(cond[1:len(cond)-1])) {
-		cond = strings.TrimSpace(cond[1 : len(cond)-1])
+	for orStep := 0; orStep < 32; orStep++ {
+		if idx, opLen := findFirstTopLevelOr(cond); idx >= 0 {
+			if evalCondAndChain(ctx, cond[:idx]) {
+				return true
+			}
+			cond = unwrapCondOuterGrouping(cond[idx+opLen:])
+			continue
+		}
+		return evalCondAndChain(ctx, cond)
 	}
-	if strings.HasPrefix(cond, "not ") {
-		return !evalCondition(ctx, cond[4:])
+	return false
+}
+
+func evalCondAndChain(ctx *RenderContext, cond string) bool {
+	cond = unwrapCondOuterGrouping(cond)
+	for andStep := 0; andStep < 32; andStep++ {
+		if idx, opLen := findFirstTopLevelAnd(cond); idx >= 0 {
+			if !evalCondAtom(ctx, cond[:idx]) {
+				return false
+			}
+			cond = unwrapCondOuterGrouping(cond[idx+opLen:])
+			continue
+		}
+		return evalCondAtom(ctx, cond)
 	}
-	if strings.HasPrefix(cond, "!") {
-		return !evalCondition(ctx, cond[1:])
+	return false
+}
+
+func evalCondAtom(ctx *RenderContext, cond string) bool {
+	invert := false
+	for step := 0; step < 32; step++ {
+		cond = strings.TrimSpace(cond)
+		if cond == "" {
+			return invert
+		}
+		unwrapped := unwrapCondOuterGrouping(cond)
+		if unwrapped != cond {
+			cond = unwrapped
+			if idx, _ := findFirstTopLevelOr(cond); idx >= 0 {
+				res := evalCondFlatOr(ctx, cond)
+				if invert {
+					return !res
+				}
+				return res
+			}
+			if idx, _ := findFirstTopLevelAnd(cond); idx >= 0 {
+				res := evalCondFlatAnd(ctx, cond)
+				if invert {
+					return !res
+				}
+				return res
+			}
+			continue
+		}
+		if strings.HasPrefix(cond, "not ") {
+			invert = !invert
+			cond = cond[4:]
+			continue
+		}
+		if strings.HasPrefix(cond, "!") && !strings.HasPrefix(cond, "!=") {
+			invert = !invert
+			cond = cond[1:]
+			continue
+		}
+		break
 	}
-	if idx := findTopLevelCondOp(cond, "||"); idx >= 0 {
-		return evalCondition(ctx, cond[:idx]) || evalCondition(ctx, cond[idx+2:])
+	res := evalCondComparisonOrVar(ctx, cond)
+	if invert {
+		return !res
 	}
-	if idx := findTopLevelCondOp(cond, " or "); idx >= 0 {
-		return evalCondition(ctx, cond[:idx]) || evalCondition(ctx, cond[idx+4:])
+	return res
+}
+
+func evalCondFlatOr(ctx *RenderContext, cond string) bool {
+	for step := 0; step < 32; step++ {
+		if idx, opLen := findFirstTopLevelOr(cond); idx >= 0 {
+			if evalCondFlatAnd(ctx, cond[:idx]) {
+				return true
+			}
+			cond = unwrapCondOuterGrouping(cond[idx+opLen:])
+			continue
+		}
+		return evalCondFlatAnd(ctx, cond)
 	}
-	if idx := findTopLevelCondOp(cond, "&&"); idx >= 0 {
-		return evalCondition(ctx, cond[:idx]) && evalCondition(ctx, cond[idx+2:])
+	return false
+}
+
+func evalCondFlatAnd(ctx *RenderContext, cond string) bool {
+	for step := 0; step < 32; step++ {
+		if idx, opLen := findFirstTopLevelAnd(cond); idx >= 0 {
+			if !evalCondSimpleAtom(ctx, cond[:idx]) {
+				return false
+			}
+			cond = unwrapCondOuterGrouping(cond[idx+opLen:])
+			continue
+		}
+		return evalCondSimpleAtom(ctx, cond)
 	}
-	if idx := findTopLevelCondOp(cond, " and "); idx >= 0 {
-		return evalCondition(ctx, cond[:idx]) && evalCondition(ctx, cond[idx+5:])
+	return false
+}
+
+func evalCondSimpleAtom(ctx *RenderContext, cond string) bool {
+	invert := false
+	for step := 0; step < 16; step++ {
+		cond = unwrapCondOuterGrouping(cond)
+		if strings.HasPrefix(cond, "not ") {
+			invert = !invert
+			cond = cond[4:]
+			continue
+		}
+		if strings.HasPrefix(cond, "!") && !strings.HasPrefix(cond, "!=") {
+			invert = !invert
+			cond = cond[1:]
+			continue
+		}
+		break
+	}
+	res := evalCondComparisonOrVar(ctx, cond)
+	if invert {
+		return !res
+	}
+	return res
+}
+
+func evalCondComparisonOrVar(ctx *RenderContext, cond string) bool {
+	cond = strings.TrimSpace(cond)
+	if cond == "" {
+		return false
 	}
 	if strings.HasPrefix(cond, "eq ") || strings.HasPrefix(cond, "ne ") {
 		isNe := strings.HasPrefix(cond, "ne ")
@@ -923,6 +1155,34 @@ func evalCondition(ctx *RenderContext, cond string) bool {
 	}
 	val, ok := resolvePath(ctx, cond)
 	return ok && isTruthy(val)
+}
+
+func unwrapCondOuterGrouping(cond string) string {
+	cond = strings.TrimSpace(cond)
+	for wrap := 0; wrap < 16 && (isBraceWrapped(cond) || (strings.HasPrefix(cond, "(") && strings.HasSuffix(cond, ")") && isBalancedParens(cond[1:len(cond)-1]))); wrap++ {
+		cond = strings.TrimSpace(cond[1 : len(cond)-1])
+	}
+	return cond
+}
+
+func findFirstTopLevelOr(cond string) (int, int) {
+	if idx := findTopLevelCondOp(cond, "||"); idx >= 0 {
+		return idx, 2
+	}
+	if idx := findTopLevelCondOp(cond, " or "); idx >= 0 {
+		return idx, 4
+	}
+	return -1, 0
+}
+
+func findFirstTopLevelAnd(cond string) (int, int) {
+	if idx := findTopLevelCondOp(cond, "&&"); idx >= 0 {
+		return idx, 2
+	}
+	if idx := findTopLevelCondOp(cond, " and "); idx >= 0 {
+		return idx, 5
+	}
+	return -1, 0
 }
 
 func evalOperandString(ctx *RenderContext, expr string) string {
@@ -1225,24 +1485,28 @@ func isTruthy(v any) bool {
 	return true
 }
 
-func forEachListItem(v any, fn func(idx int, item any)) {
-	if v == nil {
-		return
-	}
+func listLen(v any) int {
 	switch t := v.(type) {
 	case []map[string]any:
-		for i := range t {
-			fn(i, t[i])
-		}
+		return len(t)
 	case []any:
-		for i := range t {
-			fn(i, t[i])
-		}
+		return len(t)
 	case []string:
-		for i := range t {
-			fn(i, t[i])
-		}
+		return len(t)
 	}
+	return 0
+}
+
+func listItemAt(v any, i int) any {
+	switch t := v.(type) {
+	case []map[string]any:
+		return t[i]
+	case []any:
+		return t[i]
+	case []string:
+		return t[i]
+	}
+	return nil
 }
 
 func valToString(v any) string {

@@ -5,6 +5,7 @@ import (
 	"crypto/md5"
 	"encoding/binary"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -545,27 +546,27 @@ func TrimSceneVoiceFile(b *Book, sceneID string, currentRelVoice string, startRa
 	return writeVoiceFLACFileAtomically(b, sceneID, flacBytes)
 }
 
-// ReadAudioDurationAndStamp returns a formatted M:SS duration label and a cache-busting modtime stamp for a scene's audio file.
-func ReadAudioDurationAndStamp(b *Book, relVoice string) (string, int64) {
+// ReadAudioDurationSecondsAndStamp returns the raw duration in seconds and modtime stamp for a scene's audio file.
+func ReadAudioDurationSecondsAndStamp(b *Book, relVoice string) (float64, int64) {
 	if b == nil || b.IsPacked || strings.TrimSpace(relVoice) == "" || strings.TrimSpace(b.RootPath) == "" {
-		return "0:00", 0
+		return 0, 0
 	}
 	cleanRel := SanitizeRelativeMediaPath(relVoice)
 	if cleanRel == "" {
-		return "0:00", 0
+		return 0, 0
 	}
 	absPath := filepath.Join(b.RootPath, filepath.FromSlash(cleanRel))
 	if !IsSafePathInsideRoot(b.RootPath, absPath) {
-		return "0:00", 0
+		return 0, 0
 	}
 	f, err := os.Open(absPath)
 	if err != nil {
-		return "0:00", 0
+		return 0, 0
 	}
 	defer f.Close()
 	info, err := f.Stat()
 	if err != nil || info.IsDir() {
-		return "0:00", 0
+		return 0, 0
 	}
 	stamp := info.ModTime().UnixNano()
 	var hdr [42]byte
@@ -590,14 +591,32 @@ func ReadAudioDurationAndStamp(b *Book, relVoice string) (string, int64) {
 		sr := (packed64 >> 44) & 0xFFFFF
 		tot := packed64 & 0xFFFFFFFFF
 		if sr > 0 && tot > 0 {
-			secs := int((tot + sr/2) / sr)
-			if secs < 0 {
-				secs = 0
-			}
-			return fmt.Sprintf("%d:%02d", secs/60, secs%60), stamp
+			return float64(tot) / float64(sr), stamp
 		}
 	}
-	return "0:00", stamp
+	return 0, stamp
+}
+
+// ReadSceneAudioDurationAndStamp returns a formatted M:SS duration label (adjusted for non-destructive VoiceTrimStart..VoiceTrimEnd) and modtime stamp.
+func ReadSceneAudioDurationAndStamp(b *Book, sc *Scene) (string, int64) {
+	if b == nil || sc == nil {
+		return "0:00", 0
+	}
+	voiceRel := sc.ExplicitVoice
+	if voiceRel == "" {
+		voiceRel = sc.AudioFile
+	}
+	durSec, stamp := ReadAudioDurationSecondsAndStamp(b, voiceRel)
+	if durSec <= 0 {
+		return "0:00", stamp
+	}
+	ts, te := sc.NormalizedVoiceTrim()
+	trimmedSec := durSec * (te - ts)
+	secs := int(math.Round(trimmedSec))
+	if secs < 0 {
+		secs = 0
+	}
+	return fmt.Sprintf("%d:%02d", secs/60, secs%60), stamp
 }
 
 // DeleteSceneVoiceFile removes the voice assignment from a scene and deletes its voice/<scene_id>.flac file if unused by other scenes.
@@ -613,6 +632,8 @@ func DeleteSceneVoiceFile(b *Book, sc *Scene) error {
 		prevRel = SanitizeRelativeMediaPath(sc.AudioFile)
 	}
 	sc.ExplicitVoice = ""
+	sc.VoiceTrimStart = 0
+	sc.VoiceTrimEnd = 0
 	sc.AudioFile = ""
 	sc.AudioURL = ""
 	if prevRel != "" && strings.TrimSpace(b.RootPath) != "" {

@@ -625,7 +625,7 @@ func EvaluateCondition(expr string, state map[string]string, b *Book) bool {
 }
 
 func trimOuterParens(s string) string {
-	for {
+	for maxDepth := len(s); maxDepth > 0; maxDepth-- {
 		s = strings.TrimSpace(s)
 		if len(s) < 2 || s[0] != '(' || s[len(s)-1] != ')' {
 			return s
@@ -648,6 +648,7 @@ func trimOuterParens(s string) string {
 		}
 		s = s[1 : len(s)-1]
 	}
+	return s
 }
 
 func splitTopLevelLogical(s, op string) []string {
@@ -705,19 +706,41 @@ func evalLogicalAnd(s string, state map[string]string, b *Book) bool {
 }
 
 func evalLogicalAtom(s string, state map[string]string, b *Book) bool {
-	s = strings.TrimSpace(s)
+	invert := false
+	for step := 0; step < 32; step++ {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			return !invert
+		}
+		if unwrapped := trimOuterParens(s); unwrapped != s {
+			res := evalLogicalOr(unwrapped, state, b)
+			if invert {
+				return !res
+			}
+			return res
+		}
+		if strings.HasPrefix(s, "?") {
+			s = s[1:]
+			continue
+		}
+		if strings.HasPrefix(s, "!") && !strings.HasPrefix(s, "!=") {
+			invert = !invert
+			s = s[1:]
+			continue
+		}
+		break
+	}
 	if s == "" {
-		return true
+		return !invert
 	}
-	if unwrapped := trimOuterParens(s); unwrapped != s {
-		return evalLogicalOr(unwrapped, state, b)
+	res := evalLogicalComparisonOrVar(s, state, b)
+	if invert {
+		return !res
 	}
-	if strings.HasPrefix(s, "?") {
-		return evalLogicalAtom(s[1:], state, b)
-	}
-	if strings.HasPrefix(s, "!") && !strings.HasPrefix(s, "!=") {
-		return !evalLogicalAtom(s[1:], state, b)
-	}
+	return res
+}
+
+func evalLogicalComparisonOrVar(s string, state map[string]string, b *Book) bool {
 	for _, op := range []string{"==", "!=", ">=", "<=", ">", "<", "="} {
 		if idx := strings.Index(s, op); idx > 0 {
 			lhs := strings.TrimSpace(s[:idx])

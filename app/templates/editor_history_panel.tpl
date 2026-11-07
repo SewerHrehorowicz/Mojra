@@ -1,6 +1,6 @@
 aside.editor-history-panel#editor-history-panel .hidden?: {!show_editor_history_panel}
     .history-panel-header
-        span.history-panel-title "Historia"
+        span.history-panel-title {t_history_panel_title}
         button.node-close-btn
             type: button
             action: CloseEditorHistoryPanel
@@ -16,7 +16,7 @@ aside.editor-history-panel#editor-history-panel .hidden?: {!show_editor_history_
         button.btn.btn-primary.btn-sm.history-version-save-btn .is-disabled?: {is_history_preview}
             type: submit
             disabled?: {is_history_preview}
-            "Zapisz wersję"
+            "{t_save_version_btn}"
 
     .history-active-branch-bar
         span.history-active-branch-dot
@@ -106,4 +106,4 @@ aside.editor-history-panel#editor-history-panel .hidden?: {!show_editor_history_
             placeholder: "{default_next_branch_name}"
         button.btn.btn-sm.history-version-save-btn
             type: submit
-            "+ Wariant"
+            "{t_add_branch_btn}"

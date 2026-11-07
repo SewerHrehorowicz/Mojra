@@ -7,7 +7,7 @@ import (
 	"storyteller/internal/book"
 )
 
-func buildScreenplayFormatInsertPills(standard string, b *book.Book) ([]map[string]any, []map[string]any) {
+func buildScreenplayFormatInsertPills(standard string, b *book.Book, lang Lang) ([]map[string]any, []map[string]any) {
 	isPL := book.NormalizeScriptStandard(standard) == "pl"
 	pick := func(plVal, intlVal string) string {
 		if isPL {
@@ -15,15 +15,24 @@ func buildScreenplayFormatInsertPills(standard string, b *book.Book) ([]map[stri
 		}
 		return intlVal
 	}
+	trK := func(k TrKey) string {
+		return trLang(lang, k)
+	}
+	pickTr := func(plStdKey, intlStdKey TrKey) string {
+		if isPL {
+			return trK(plStdKey)
+		}
+		return trK(intlStdKey)
+	}
 	insertPills := []map[string]any{
-		{"kind": "dialogue", "label": "+ Dialog", "hint": "Wstaw blok postaci i kwestii dialogowej"},
-		{"kind": "parenthetical", "label": pick("+ Didaskalia (wtrącenie)", "+ Didaskalia (...)"), "hint": pick("Wstaw wskazówkę aktorską w nawiasie, np. (cicho)", "Wstaw wskazówkę aktorską w nawiasie")},
-		{"kind": "action", "label": "+ Opis akcji", "hint": pick("Wstaw nowy akapit opisu akcji (didaskalia sceniczne)", "Wstaw nowy akapit opisu akcji")},
-		{"kind": "dialogue_off", "label": pick("+ Dialog (OFF)", "+ Dialog (O.S.)"), "hint": pick("Wstaw kwestię postaci spoza kadru (OFF)", "Wstaw kwestię postaci spoza kadru (O.S.)")},
-		{"kind": "dialogue_vo", "label": "+ Narracja (V.O.)", "hint": pick("Wstaw głos spoza obrazu / narratora (V.O.)", "Wstaw głos narratora (V.O.)")},
-		{"kind": "transition_cut", "label": pick("+ CIĘCIE DO:", "+ CUT TO:"), "hint": pick("Wstaw przejście montażowe CIĘCIE DO:", "Wstaw przejście montażowe CUT TO:")},
-		{"kind": "transition_fade", "label": pick("+ ŚCIEMNIENIE.", "+ FADE OUT."), "hint": pick("Wstaw przejście ŚCIEMNIENIE.", "Wstaw przejście FADE OUT.")},
-		{"kind": "subslug", "label": pick("+ Podscena (WN./PL.)", "+ Podscena (INT./EXT.)"), "hint": pick("Wstaw śródtytuł podsceny w tej samej scenie", "Wstaw śródtytuł podsceny")},
+		{"kind": "dialogue", "label": trK(TrSpPillDialogueLabel), "hint": trK(TrSpPillDialogueHint)},
+		{"kind": "parenthetical", "label": pickTr(TrSpPillParenLabelPLStd, TrSpPillParenLabelIntlStd), "hint": pickTr(TrSpPillParenHintPLStd, TrSpPillParenHintIntlStd)},
+		{"kind": "action", "label": trK(TrSpPillActionLabel), "hint": pickTr(TrSpPillActionHintPLStd, TrSpPillActionHintIntlStd)},
+		{"kind": "dialogue_off", "label": pickTr(TrSpPillOffLabelPLStd, TrSpPillOffLabelIntlStd), "hint": pickTr(TrSpPillOffHintPLStd, TrSpPillOffHintIntlStd)},
+		{"kind": "dialogue_vo", "label": trK(TrSpPillVOLabel), "hint": pickTr(TrSpPillVOHintPLStd, TrSpPillVOHintIntlStd)},
+		{"kind": "transition_cut", "label": pick("+ CIĘCIE DO:", "+ CUT TO:"), "hint": pickTr(TrSpPillCutHintPLStd, TrSpPillCutHintIntlStd)},
+		{"kind": "transition_fade", "label": pick("+ ŚCIEMNIENIE.", "+ FADE OUT."), "hint": pickTr(TrSpPillFadeHintPLStd, TrSpPillFadeHintIntlStd)},
+		{"kind": "subslug", "label": pick("+ Podscena (WN./PL.)", trK(TrSpPillSubslugLabelIntlStd)), "hint": pickTr(TrSpPillSubslugHintPLStd, TrSpPillSubslugHintIntlStd)},
 	}
 
 	var charPills []map[string]any
@@ -38,43 +47,47 @@ func buildScreenplayFormatInsertPills(standard string, b *book.Book) ([]map[stri
 			charPills = append(charPills, map[string]any{
 				"name":  chName,
 				"label": "@ " + chName,
-				"hint":  "Wstaw kwestię dialogową postaci " + chName,
+				"hint":  trfLang(lang, TrSpPillCharDialogueHintFmt, chName),
 			})
 		}
 	}
 	return insertPills, charPills
 }
 
-func formatExportSelectionCountLabel(count int) string {
+func formatExportSelectionCountLabel(count int, lang Lang) string {
 	mod10 := count % 10
 	mod100 := count % 100
 	switch {
 	case count == 1:
-		return "1 WYBRANY"
+		return trLang(lang, TrExportSelectedOne)
 	case mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14):
-		return fmt.Sprintf("%d WYBRANE", count)
+		return trfLang(lang, TrExportSelectedFewFmt, count)
 	default:
-		return fmt.Sprintf("%d WYBRANYCH", count)
+		return trfLang(lang, TrExportSelectedManyFmt, count)
 	}
 }
 
-func buildExportModalFormatLists(selected map[string]bool) ([]map[string]any, []map[string]any, int) {
+func buildExportModalFormatLists(selected map[string]bool, lang Lang) ([]map[string]any, []map[string]any, int) {
+	webLabel := trLang(lang, TrExportFmtWebApp)
+	pdfLabel := trLang(lang, TrExportFmtPDFScreenplay)
+	fountainLabel := trLang(lang, TrExportFmtFountain)
+	playtxtLabel := trLang(lang, TrExportFmtPlaytxt)
 	primaryDefs := []struct {
 		id    string
 		label string
 		ext   string
 	}{
 		{"playbook", "Playbook", ".playbook"},
-		{"wasm", "Aplikacja Web", ".wasm"},
-		{"pdf", "Scenariusz PDF", ".pdf"},
+		{"wasm", webLabel, ".wasm"},
+		{"pdf", pdfLabel, ".pdf"},
 	}
 	advancedDefs := []struct {
 		id    string
 		label string
 		ext   string
 	}{
-		{"fountain", "Scenariusz Fountain", ".fountain"},
-		{"playtxt", "Tekst Playtxt", ".playtxt"},
+		{"fountain", fountainLabel, ".fountain"},
+		{"playtxt", playtxtLabel, ".playtxt"},
 	}
 
 	var primary []map[string]any
@@ -132,9 +145,9 @@ func (s *Server) populateModalsContext(vars map[string]any) {
 		allBooks, _ := s.loadBooks()
 		studioProjects := make([]map[string]any, 0, len(allBooks))
 		for _, b := range allBooks {
-			kindBadge := "PROJEKT"
+			kindBadge := s.tr(TrProjectKindBadge)
 			if b.IsPacked {
-				kindBadge = ".PLAYBOOK (TYLKO ODCZYT)"
+				kindBadge = s.tr(TrPlaybookReadonlyBadge)
 			}
 			isCurrent := s.ActiveBook != nil && s.ActiveBook.ID == b.ID && !b.IsPacked
 			studioProjects = append(studioProjects, map[string]any{
@@ -151,11 +164,12 @@ func (s *Server) populateModalsContext(vars map[string]any) {
 		vars["has_studio_projects"] = false
 	}
 
-	primaryFmts, advancedFmts, selCount := buildExportModalFormatLists(s.ExportModalFormats)
+	lang := s.lang()
+	primaryFmts, advancedFmts, selCount := buildExportModalFormatLists(s.ExportModalFormats, lang)
 	vars["export_primary_formats"] = primaryFmts
 	vars["export_advanced_formats"] = advancedFmts
 	vars["export_selected_count"] = selCount
-	vars["export_selected_count_label"] = formatExportSelectionCountLabel(selCount)
+	vars["export_selected_count_label"] = formatExportSelectionCountLabel(selCount, lang)
 	vars["export_has_selected"] = selCount > 0
 	vars["export_advanced_open"] = s.ExportModalAdvancedOpen
 	expStd := book.NormalizeScriptStandard(s.ExportModalStandard)
@@ -174,7 +188,7 @@ func (s *Server) populateModalsContext(vars map[string]any) {
 
 	draftMode := book.NormalizeBookMode(s.NewBookDraftMode)
 	draftStd := book.NormalizeScriptStandard(s.NewBookDraftStandard)
-	newModeLabel, newModeOpts := buildBookModeOptions(draftMode)
+	newModeLabel, newModeOpts := buildBookModeOptions(draftMode, lang)
 	_, newStdOpts := buildScriptStandardOptions(draftStd)
 	vars["new_book_mode"] = draftMode
 	vars["new_book_is_screenplay"] = draftMode == "screenplay"
@@ -187,24 +201,24 @@ func (s *Server) populateModalsContext(vars map[string]any) {
 	vars["new_book_narrated"] = s.NewBookDraftNarrated
 	if s.NewBookDraftNarrated {
 		vars["new_book_narrated_val"] = "true"
-		vars["new_book_narrated_short_label"] = "Wymagana"
+		vars["new_book_narrated_short_label"] = s.tr(TrRequiredLabel)
 	} else {
 		vars["new_book_narrated_val"] = "false"
-		vars["new_book_narrated_short_label"] = "Wyłączona"
+		vars["new_book_narrated_short_label"] = s.tr(TrDisabledLabel)
 	}
 	vars["new_book_imageless"] = s.NewBookDraftImageless
 	if s.NewBookDraftImageless {
 		vars["new_book_imageless_val"] = "true"
-		vars["new_book_imageless_short_label"] = "Bez obrazów"
+		vars["new_book_imageless_short_label"] = s.tr(TrNoImagesLabel)
 	} else {
 		vars["new_book_imageless_val"] = "false"
-		vars["new_book_imageless_short_label"] = "Z obrazami"
+		vars["new_book_imageless_short_label"] = s.tr(TrWithImagesLabel)
 	}
 	vars["new_book_default_dir"] = s.defaultNewBookDir()
 	if draftMode == "screenplay" {
-		vars["new_book_title_placeholder"] = "np. Ostatni Rejs"
+		vars["new_book_title_placeholder"] = s.tr(TrNewScreenplayTitlePlaceholder)
 	} else {
-		vars["new_book_title_placeholder"] = "np. Tajemnica Starego Młyna"
+		vars["new_book_title_placeholder"] = s.tr(TrNewBookTitlePlaceholder)
 	}
 
 	if s.SceneTextModalID != "" {
@@ -225,7 +239,7 @@ func (s *Server) populateModalsContext(vars map[string]any) {
 				prefixPills, timePills := buildSluglineHelperPills(normStd)
 				vars["slugline_prefix_pills"] = prefixPills
 				vars["slugline_time_pills"] = timePills
-				insertPills, charPills := buildScreenplayFormatInsertPills(normStd, s.ActiveBook)
+				insertPills, charPills := buildScreenplayFormatInsertPills(normStd, s.ActiveBook, lang)
 				vars["screenplay_insert_pills"] = insertPills
 				vars["screenplay_character_pills"] = charPills
 				vars["has_screenplay_character_pills"] = len(charPills) > 0
@@ -248,9 +262,9 @@ func (s *Server) populateModalsContext(vars map[string]any) {
 			if curChName == "" {
 				curChName = s.ActiveBook.DefaultChapterName()
 			}
-			chKey := "rozdział:"
+			chKey := s.tr(TrChapterKey)
 			if s.ActiveBook != nil && s.ActiveBook.IsScreenplay() {
-				chKey = "akt:"
+				chKey = s.tr(TrActKey)
 			}
 			var modalChOptions []map[string]any
 			if s.ActiveBook != nil {
@@ -283,12 +297,14 @@ func (s *Server) populateModalsContext(vars map[string]any) {
 			modalVoiceURL := modalSc.AudioURL
 			modalVoiceDur := "0:00"
 			if curVoice != "" && s.ActiveBook != nil {
-				durLbl, stamp := book.ReadAudioDurationAndStamp(s.ActiveBook, curVoice)
+				durLbl, stamp := book.ReadSceneAudioDurationAndStamp(s.ActiveBook, modalSc)
 				modalVoiceDur = durLbl
 				if modalVoiceURL != "" && stamp > 0 {
 					modalVoiceURL = fmt.Sprintf("%s?v=%d", modalVoiceURL, stamp)
 				}
 			}
+			modalTrimStart, modalTrimEnd := modalSc.NormalizedVoiceTrim()
+			hasModalVoice := curVoice != "" && modalSc.AudioURL != ""
 			vars["scene_text_modal_current_image"] = curImg
 			vars["scene_text_modal_current_image_label"] = curImgLabel
 			vars["scene_text_modal_image_options"] = imgOptions
@@ -297,7 +313,10 @@ func (s *Server) populateModalsContext(vars map[string]any) {
 			vars["scene_text_modal_current_voice_label"] = curVoiceLabel
 			vars["scene_text_modal_voice_url"] = modalVoiceURL
 			vars["scene_text_modal_voice_duration_label"] = modalVoiceDur
-			vars["scene_text_modal_has_voice"] = curVoice != "" && modalSc.AudioURL != ""
+			vars["scene_text_modal_voice_trim_start"] = fmt.Sprintf("%.4f", modalTrimStart)
+			vars["scene_text_modal_voice_trim_end"] = fmt.Sprintf("%.4f", modalTrimEnd)
+			vars["scene_text_modal_has_voice"] = hasModalVoice
+			vars["scene_text_modal_has_voice_trim"] = hasModalVoice && modalSc.HasVoiceTrim()
 			vars["scene_text_modal_voice_options"] = voiceOptions
 			vars["voice_recorder_open"] = s.VoiceRecorderOpen
 
@@ -317,7 +336,7 @@ func (s *Server) populateModalsContext(vars map[string]any) {
 			effModalStr := book.CleanEffectsExpr(modalSc.Effects)
 			effModalErr := ""
 			if effModalStr != "" {
-				effModalErr = book.ExplainEffectsExprError(modalSc.Effects, s.ActiveBook)
+				effModalErr = book.ExplainEffectsExprErrorLang(modalSc.Effects, s.ActiveBook, s.Settings.Language)
 			}
 			vars["scene_text_modal_effects"] = effModalStr
 			vars["scene_text_modal_has_effects"] = effModalStr != ""
@@ -330,8 +349,8 @@ func (s *Server) populateModalsContext(vars map[string]any) {
 			vars["show_syntax_help_popover"] = hasBookVars && s.SyntaxHelpPopoverOpen
 			vars["syntax_help_cond_rows"] = []map[string]any{
 				{"code": "if: odkryta_prawda && sumienie >= 2", "desc": "bool / int / enum (&&, ||, !, ==, !=, >=, <=)"},
-				{"code": "set: odkryta_prawda = true; sumienie++", "desc": "efekty rozdzielone średnikiem ; (=, +=, -=, ++, --)"},
-				{"code": "exit: ogien_w_kaplicy", "desc": "wyjście do sceny, chapter:<id> lub END"},
+				{"code": "set: odkryta_prawda = true; sumienie++", "desc": s.tr(TrSyntaxHelpSetDesc)},
+				{"code": "exit: ogien_w_kaplicy", "desc": s.tr(TrSyntaxHelpExitDesc)},
 			}
 
 			previewMode := s.SceneTextPreviewMode
@@ -451,7 +470,7 @@ func (s *Server) populateModalsContext(vars map[string]any) {
 			if isTerminal {
 				choicesSource = []book.Choice{
 					{
-						Label:      "Dalej",
+						Label:      s.tr(TrNext),
 						Target:     "END",
 						IsEnding:   true,
 						IsImplicit: true,
@@ -463,7 +482,7 @@ func (s *Server) populateModalsContext(vars map[string]any) {
 			for idx, ch := range choicesSource {
 				lbl := ch.Label
 				if !hasMulti && lbl == "" {
-					lbl = "Dalej"
+					lbl = s.tr(TrNext)
 				}
 				arr := "»"
 				if ch.IsEnding {

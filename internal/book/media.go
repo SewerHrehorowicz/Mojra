@@ -129,6 +129,8 @@ func matchBookMedia(b *Book, audioFiles []string, imageFiles []string) {
 		// 1. Match Voice / Audio (all-or-nothing policy: voice is forbidden when !b.Narrated)
 		if !b.Narrated {
 			sc.ExplicitVoice = ""
+			sc.VoiceTrimStart = 0
+			sc.VoiceTrimEnd = 0
 		} else {
 			if sc.ExplicitVoice != "" {
 				if matched, ok := findMediaFile(audioFiles, sc.ExplicitVoice, "", ""); ok {

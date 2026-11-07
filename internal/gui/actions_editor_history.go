@@ -423,6 +423,7 @@ func (s *Server) previewHistoryRevision(r *http.Request) string {
 		PlaybackSpeed:      s.Settings.PlaybackSpeed,
 		AutoChoice:         s.Settings.AutoChoice,
 		AutoChoiceStrategy: s.Settings.AutoChoiceStrategy,
+		AutoChoiceDelay:    s.Settings.AutoChoiceDelay,
 	}
 	s.HistoryRevealed = false
 	s.FocusedHistoryIdx = -1
@@ -460,6 +461,7 @@ func (s *Server) playHistoryRevision(r *http.Request) string {
 				PlaybackSpeed:      s.Settings.PlaybackSpeed,
 				AutoChoice:         s.Settings.AutoChoice,
 				AutoChoiceStrategy: s.Settings.AutoChoiceStrategy,
+				AutoChoiceDelay:    s.Settings.AutoChoiceDelay,
 			}
 		} else if s.findScene(s.Save.CurrentSceneID) == nil && len(s.ActiveBook.Scenes) > 0 {
 			s.Save.CurrentSceneID = s.ActiveBook.StartSceneID

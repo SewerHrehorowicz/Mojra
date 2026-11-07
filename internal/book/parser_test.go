@@ -1089,16 +1089,38 @@ func TestEncodeDecodeFLACAndTrimSceneVoice(t *testing.T) {
 	sc.ExplicitVoice = relPath
 	FinalizeBook(b)
 
-	durLbl, stamp := ReadAudioDurationAndStamp(b, relPath)
+	durLbl, stamp := ReadSceneAudioDurationAndStamp(b, sc)
 	if durLbl != "0:02" || stamp == 0 {
 		t.Fatalf("expected duration label 0:02 and non-zero stamp, got %q (%d)", durLbl, stamp)
+	}
+
+	// Verify non-destructive trim preserves original 0:02 file while reporting 0:01 scene duration and round-tripping voice_trim:
+	sc.VoiceTrimStart = 0.25
+	sc.VoiceTrimEnd = 0.75
+	if !sc.HasVoiceTrim() {
+		t.Fatalf("expected sc.HasVoiceTrim() to be true")
+	}
+	scDurLbl, _ := ReadSceneAudioDurationAndStamp(b, sc)
+	if scDurLbl != "0:01" {
+		t.Fatalf("expected non-destructively trimmed scene duration label 0:01, got %q", scDurLbl)
+	}
+	if err := SaveBookScenesToDisk(b); err != nil {
+		t.Fatalf("SaveBookScenesToDisk failed: %v", err)
+	}
+	reloadedTrimBook, err := LoadBookFromPath(b.RootPath)
+	if err != nil {
+		t.Fatalf("LoadBookFromPath failed: %v", err)
+	}
+	ts, te := reloadedTrimBook.Scenes[0].NormalizedVoiceTrim()
+	if ts != 0.25 || te != 0.75 {
+		t.Fatalf("expected round-tripped voice_trim [0.25, 0.75], got [%v, %v]", ts, te)
 	}
 
 	trimmedRel, err := TrimSceneVoiceFile(b, sc.ReferenceKey(), relPath, 0.25, 0.75)
 	if err != nil {
 		t.Fatalf("TrimSceneVoiceFile failed: %v", err)
 	}
-	durAfter, _ := ReadAudioDurationAndStamp(b, trimmedRel)
+	durAfter, _ := ReadSceneAudioDurationAndStamp(b, &Scene{ExplicitVoice: trimmedRel})
 	if durAfter != "0:01" {
 		t.Fatalf("expected trimmed duration label 0:01, got %q", durAfter)
 	}

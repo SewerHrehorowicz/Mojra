@@ -46,15 +46,11 @@ func buildPlayerScreenplayBlocks(sc *book.Scene, state map[string]string, b *boo
 	return out
 }
 
-func resolvePlayerSceneAudio(b *book.Book, sc *book.Scene) (string, string) {
+func resolvePlayerSceneAudio(b *book.Book, sc *book.Scene) (string, string, string, string) {
 	if b == nil || !b.Narrated || sc == nil || sc.AudioURL == "" {
-		return "", "0:00"
+		return "", "0:00", "0.0000", "1.0000"
 	}
-	voiceRel := sc.ExplicitVoice
-	if voiceRel == "" {
-		voiceRel = sc.AudioFile
-	}
-	durLbl, stamp := book.ReadAudioDurationAndStamp(b, voiceRel)
+	durLbl, stamp := book.ReadSceneAudioDurationAndStamp(b, sc)
 	if durLbl == "" {
 		durLbl = "0:00"
 	}
@@ -62,7 +58,8 @@ func resolvePlayerSceneAudio(b *book.Book, sc *book.Scene) (string, string) {
 	if stamp > 0 {
 		urlStr = fmt.Sprintf("%s?v=%d", urlStr, stamp)
 	}
-	return urlStr, durLbl
+	ts, te := sc.NormalizedVoiceTrim()
+	return urlStr, durLbl, fmt.Sprintf("%.4f", ts), fmt.Sprintf("%.4f", te)
 }
 
 func (s *Server) populatePlayerContext(vars map[string]any) {
@@ -135,7 +132,7 @@ func (s *Server) populatePlayerContext(vars map[string]any) {
 				pastBlocks = buildPlayerScreenplayBlocks(pastScene, pastVars, s.PlayerBook, pastScene.OrderIndex+1, normStd)
 			}
 			pastProse := book.EvaluateSceneProseText(pastScene, pastVars, s.PlayerBook)
-			pastAudioURL, pastAudioDur := resolvePlayerSceneAudio(s.PlayerBook, pastScene)
+			pastAudioURL, pastAudioDur, pastTrimStart, pastTrimEnd := resolvePlayerSceneAudio(s.PlayerBook, pastScene)
 			histList = append(histList, map[string]any{
 				"idx":                  idx,
 				"header_meta":          pastHeaderMeta,
@@ -150,6 +147,8 @@ func (s *Server) populatePlayerContext(vars map[string]any) {
 				"bg_image_url":         lastImageURL,
 				"audio_url":            pastAudioURL,
 				"audio_duration_label": pastAudioDur,
+				"audio_trim_start":     pastTrimStart,
+				"audio_trim_end":       pastTrimEnd,
 			})
 		}
 		vars["history_items"] = histList
@@ -164,11 +163,11 @@ func (s *Server) populatePlayerContext(vars map[string]any) {
 		}
 		label := ch.Label
 		if !hasMultipleChoices {
-			label = "Dalej"
+			label = s.tr(TrNext)
 		}
 		arrow := "»"
 		if ch.IsEnding {
-			arrow = "KONIEC"
+			arrow = s.tr(TrEndUpper)
 		}
 		isImplicitNext := !hasMultipleChoices && !ch.IsEnding && ch.TargetSceneID != "END"
 		curChoices = append(curChoices, map[string]any{
@@ -196,7 +195,7 @@ func (s *Server) populatePlayerContext(vars map[string]any) {
 		curBlocks = buildPlayerScreenplayBlocks(curScene, curVars, s.PlayerBook, curScene.OrderIndex+1, normStd)
 	}
 	curProse := book.EvaluateSceneProseText(curScene, curVars, s.PlayerBook)
-	curAudioURL, curAudioDur := resolvePlayerSceneAudio(s.PlayerBook, curScene)
+	curAudioURL, curAudioDur, curTrimStart, curTrimEnd := resolvePlayerSceneAudio(s.PlayerBook, curScene)
 
 	vars["current_scene"] = map[string]any{
 		"name":                 curScene.Name,
@@ -212,6 +211,8 @@ func (s *Server) populatePlayerContext(vars map[string]any) {
 		"bg_image_url":         lastImageURL,
 		"audio_url":            curAudioURL,
 		"audio_duration_label": curAudioDur,
+		"audio_trim_start":     curTrimStart,
+		"audio_trim_end":       curTrimEnd,
 		"is_terminal":          len(curScene.Choices) == 0 || curScene.ExplicitEnd,
 		"choices":              curChoices,
 	}
@@ -307,8 +308,9 @@ func (s *Server) populatePlayerContext(vars map[string]any) {
 	vars["audio_speed"] = fmt.Sprintf("%.2g", s.Settings.PlaybackSpeed)
 	vars["auto_choice_enabled"] = s.Settings.AutoChoice
 	if s.Settings.AutoChoice {
-		vars["auto_choice_label"] = "Auto-Wybór: WŁ"
+		vars["auto_choice_label"] = s.tr(TrAutoChoiceOnLabel)
 	} else {
-		vars["auto_choice_label"] = "Auto-Wybór: WYŁ"
+		vars["auto_choice_label"] = s.tr(TrAutoChoiceOffLabel)
 	}
+	vars["auto_choice_delay"] = fmt.Sprintf("%.2g", book.NormalizeAutoChoiceDelay(s.Settings.AutoChoiceDelay))
 }

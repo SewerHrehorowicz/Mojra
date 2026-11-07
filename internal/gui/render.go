@@ -7,7 +7,9 @@ import (
 
 // BuildTargetedRenderContext constructs only the data needed for the given template/chunk target.
 func (s *Server) BuildTargetedRenderContext(targetTpl string, books []*book.Book) *tpl.RenderContext {
-	vars := make(map[string]any)
+	vars := make(map[string]any, 280)
+	lang := s.lang()
+	PopulateI18nContext(vars, lang)
 
 	theme := s.Settings.Theme
 	if theme != "light" {
@@ -15,9 +17,9 @@ func (s *Server) BuildTargetedRenderContext(targetTpl string, books []*book.Book
 	}
 	vars["theme"] = theme
 	if theme == "light" {
-		vars["theme_toggle_label"] = "Ciemny"
+		vars["theme_toggle_label"] = s.tr(TrThemeDarkLabel)
 	} else {
-		vars["theme_toggle_label"] = "Jasny"
+		vars["theme_toggle_label"] = s.tr(TrThemeLightLabel)
 	}
 
 	imagelessLocked := s.isBookImageless()
@@ -32,16 +34,16 @@ func (s *Server) BuildTargetedRenderContext(targetTpl string, books []*book.Book
 	if effectiveImageless {
 		vars["imageless_attr"] = "true"
 		if imagelessLocked {
-			vars["imageless_toggle_label"] = "Wyłączone (wymuszone)"
-			vars["imageless_toggle_title"] = "Obrazy wyłączone w ustawieniach książki (imageless: true)"
+			vars["imageless_toggle_label"] = s.tr(TrImagelessLockedLabel)
+			vars["imageless_toggle_title"] = s.tr(TrImagelessLockedHint)
 		} else {
-			vars["imageless_toggle_label"] = "Wyłączone"
-			vars["imageless_toggle_title"] = "Włącz obrazy (tryb bez obrazów aktywny)"
+			vars["imageless_toggle_label"] = s.tr(TrImagelessOffLabel)
+			vars["imageless_toggle_title"] = s.tr(TrImagelessEnableHint)
 		}
 	} else {
 		vars["imageless_attr"] = "false"
-		vars["imageless_toggle_label"] = "Włączone"
-		vars["imageless_toggle_title"] = "Wyłącz obrazy (tryb tekstowy na środku)"
+		vars["imageless_toggle_label"] = s.tr(TrImagelessOnLabel)
+		vars["imageless_toggle_title"] = s.tr(TrImagelessDisableHint)
 	}
 
 	uiScale := s.Settings.UIScale
@@ -55,12 +57,26 @@ func (s *Server) BuildTargetedRenderContext(targetTpl string, books []*book.Book
 	vars["is_non_small_ui"] = uiScale != "small"
 	switch uiScale {
 	case "large":
-		vars["ui_scale_toggle_title"] = "Tryb Zen — sama treść"
+		vars["ui_scale_toggle_title"] = s.tr(TrScaleZenHint)
 	case "zen":
-		vars["ui_scale_toggle_title"] = "Wyjdź z trybu Zen (małe UI)"
+		vars["ui_scale_toggle_title"] = s.tr(TrScaleExitZenHint)
 	default:
-		vars["ui_scale_toggle_title"] = "Powiększ przyciski i kontrolki (+ / Ctrl++)"
+		vars["ui_scale_toggle_title"] = s.tr(TrScaleEnlargeHint)
 	}
+
+	autoDelay := book.NormalizeAutoChoiceDelay(s.Settings.AutoChoiceDelay)
+	vars["auto_choice_delay"] = autoDelay
+	vars["is_auto_delay_1"] = autoDelay <= 1.25
+	vars["is_auto_delay_2"] = autoDelay > 1.25 && autoDelay <= 2.5
+	vars["is_auto_delay_3"] = autoDelay > 2.5 && autoDelay <= 4.0
+	vars["is_auto_delay_5"] = autoDelay > 4.0
+
+	scrollSens := book.NormalizeScrollSensitivity(s.Settings.ScrollSensitivity)
+	vars["scroll_sensitivity"] = scrollSens
+	vars["is_scroll_sens_high"] = scrollSens == "high"
+	vars["is_scroll_sens_medium"] = scrollSens == "medium"
+	vars["is_scroll_sens_low"] = scrollSens == "low"
+	vars["is_scroll_sens_off"] = scrollSens == "off"
 
 	vars["standalone_mode"] = s.StandaloneMode
 	vars["has_active_book"] = s.PlayerBook != nil
@@ -91,7 +107,7 @@ func (s *Server) BuildTargetedRenderContext(targetTpl string, books []*book.Book
 	if s.PlayerBook != nil {
 		vars["active_book_title"] = s.PlayerBook.Title
 	} else {
-		vars["active_book_title"] = "Biblioteka"
+		vars["active_book_title"] = s.tr(TrNavLibrary)
 	}
 	isScreenplay := false
 	if s.ActiveBook != nil {
@@ -114,17 +130,17 @@ func (s *Server) BuildTargetedRenderContext(targetTpl string, books []*book.Book
 		vars["is_screenplay_mode"] = isScreenplay
 	}
 	if isScreenplay {
-		vars["editor_title_placeholder"] = "Tytuł scenariusza..."
-		vars["editor_author_placeholder"] = "Autor scenariusza..."
-		vars["editor_description_placeholder"] = "Krótki opis scenariusza / logline..."
-		vars["editor_chapter_title_placeholder"] = "Tytuł aktu..."
-		vars["editor_settings_hint"] = "Ustawienia scenariusza"
+		vars["editor_title_placeholder"] = s.tr(TrEditorSpTitlePlaceholder)
+		vars["editor_author_placeholder"] = s.tr(TrEditorSpAuthorPlaceholder)
+		vars["editor_description_placeholder"] = s.tr(TrEditorSpDescPlaceholder)
+		vars["editor_chapter_title_placeholder"] = s.tr(TrEditorActTitlePlaceholder)
+		vars["editor_settings_hint"] = s.tr(TrEditorSpSettingsHint)
 	} else {
-		vars["editor_title_placeholder"] = "Tytuł książki..."
-		vars["editor_author_placeholder"] = "Autor książki..."
-		vars["editor_description_placeholder"] = "Krótki opis książki..."
-		vars["editor_chapter_title_placeholder"] = "Tytuł rozdziału..."
-		vars["editor_settings_hint"] = "Ustawienia książki"
+		vars["editor_title_placeholder"] = s.tr(TrEditorBookTitlePlaceholder)
+		vars["editor_author_placeholder"] = s.tr(TrEditorBookAuthorPlaceholder)
+		vars["editor_description_placeholder"] = s.tr(TrEditorBookDescPlaceholder)
+		vars["editor_chapter_title_placeholder"] = s.tr(TrEditorChapterTitlePlaceholder)
+		vars["editor_settings_hint"] = s.tr(TrEditorBookSettingsHint)
 	}
 
 	vars["show_reset_progress"] = view == "player" && s.PlayerBook != nil
@@ -170,19 +186,19 @@ func (s *Server) BuildTargetedRenderContext(targetTpl string, books []*book.Book
 		isNarrated := !s.ActiveBook.IsScreenplay() && s.ActiveBook.Narrated
 		vars["book_narrated"] = isNarrated
 		if isNarrated {
-			vars["book_narrated_label"] = "Narracja książki: WYMAGANA (narrated: true)"
-			vars["book_narrated_short_label"] = "Wymagana"
+			vars["book_narrated_label"] = s.tr(TrBookNarratedReqLabel)
+			vars["book_narrated_short_label"] = s.tr(TrRequiredLabel)
 		} else {
-			vars["book_narrated_label"] = "Narracja książki: WYŁĄCZONA (narrated: false)"
-			vars["book_narrated_short_label"] = "Wyłączona"
+			vars["book_narrated_label"] = s.tr(TrBookNarratedOffLabel)
+			vars["book_narrated_short_label"] = s.tr(TrDisabledLabel)
 		}
 		vars["book_imageless"] = s.ActiveBook.Imageless
 		if s.ActiveBook.Imageless {
-			vars["book_imageless_label"] = "Tryb obrazów książki: BEZ OBRAZÓW (imageless: true)"
-			vars["book_imageless_short_label"] = "Bez obrazów"
+			vars["book_imageless_label"] = s.tr(TrBookImagelessOnLabel)
+			vars["book_imageless_short_label"] = s.tr(TrNoImagesLabel)
 		} else {
-			vars["book_imageless_label"] = "Tryb obrazów książki: Z OBRAZAMI (imageless: false)"
-			vars["book_imageless_short_label"] = "Z obrazami"
+			vars["book_imageless_label"] = s.tr(TrBookImagelessOffLabel)
+			vars["book_imageless_short_label"] = s.tr(TrWithImagesLabel)
 		}
 
 		if needsEditorFull {
@@ -196,11 +212,11 @@ func (s *Server) BuildTargetedRenderContext(targetTpl string, books []*book.Book
 		vars["has_multiple_book_warnings"] = false
 		vars["first_book_warning"] = ""
 		vars["book_narrated"] = false
-		vars["book_narrated_label"] = "Narracja książki: WYŁĄCZONA (narrated: false)"
-		vars["book_narrated_short_label"] = "Wyłączona"
+		vars["book_narrated_label"] = s.tr(TrBookNarratedOffLabel)
+		vars["book_narrated_short_label"] = s.tr(TrDisabledLabel)
 		vars["book_imageless"] = false
-		vars["book_imageless_label"] = "Tryb obrazów książki: Z OBRAZAMI (imageless: false)"
-		vars["book_imageless_short_label"] = "Z obrazami"
+		vars["book_imageless_label"] = s.tr(TrBookImagelessOffLabel)
+		vars["book_imageless_short_label"] = s.tr(TrWithImagesLabel)
 		vars["has_selected_node"] = false
 		vars["book_settings_open"] = false
 		vars["has_selected_chapter"] = false

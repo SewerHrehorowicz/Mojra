@@ -26,35 +26,65 @@ func StripDevNodesFromTemplates(templates map[string]*ParsedTemplate) {
 	}
 }
 
-func stripDevNodesSlice(nodes []*Node) []*Node {
-	var out []*Node
-	for i := 0; i < len(nodes); i++ {
-		n := nodes[i]
-		expr := strings.TrimSpace(n.Expr)
-		if n.Kind == NodeIf && expr == "dev_mode" {
-			if i+1 < len(nodes) {
-				next := nodes[i+1]
-				if next.Kind == NodeElse {
-					i++
-					next.Children = stripDevNodesSlice(next.Children)
-					out = append(out, next.Children...)
-				} else if next.Kind == NodeElif {
-					next.Kind = NodeIf
-				}
-			}
-			continue
+func stripDevNodesSlice(rootNodes []*Node) []*Node {
+	out := filterDevNodesLevel(rootNodes)
+	stack := make([]*[]*Node, 0, 32)
+	for i := range out {
+		if len(out[i].Children) > 0 {
+			stack = append(stack, &out[i].Children)
 		}
-		n.Children = stripDevNodesSlice(n.Children)
-		if n.Kind == NodeIf && (expr == "not dev_mode" || expr == "!dev_mode") {
-			out = append(out, n.Children...)
-			for i+1 < len(nodes) && (nodes[i+1].Kind == NodeElif || nodes[i+1].Kind == NodeElse) {
-				i++
+	}
+	for step := 0; step < 8192 && len(stack) > 0; step++ {
+		top := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		filtered := filterDevNodesLevel(*top)
+		*top = filtered
+		for i := range filtered {
+			if len(filtered[i].Children) > 0 {
+				stack = append(stack, &filtered[i].Children)
 			}
-			continue
 		}
-		out = append(out, n)
 	}
 	return out
+}
+
+func filterDevNodesLevel(nodes []*Node) []*Node {
+	cur := nodes
+	for pass := 0; pass < 8; pass++ {
+		var out []*Node
+		unwrapped := false
+		for i := 0; i < len(cur); i++ {
+			n := cur[i]
+			expr := strings.TrimSpace(n.Expr)
+			if n.Kind == NodeIf && expr == "dev_mode" {
+				if i+1 < len(cur) {
+					next := cur[i+1]
+					if next.Kind == NodeElse {
+						i++
+						out = append(out, next.Children...)
+						unwrapped = true
+					} else if next.Kind == NodeElif {
+						next.Kind = NodeIf
+					}
+				}
+				continue
+			}
+			if n.Kind == NodeIf && (expr == "not dev_mode" || expr == "!dev_mode") {
+				out = append(out, n.Children...)
+				unwrapped = true
+				for i+1 < len(cur) && (cur[i+1].Kind == NodeElif || cur[i+1].Kind == NodeElse) {
+					i++
+				}
+				continue
+			}
+			out = append(out, n)
+		}
+		cur = out
+		if !unwrapped {
+			break
+		}
+	}
+	return cur
 }
 
 // BundleFilesToString concatenates the given source files and optionally strips dev-only blocks.
@@ -73,6 +103,12 @@ func BundleFilesToString(files []string, stripDev bool) (string, error) {
 	}
 
 	var sb strings.Builder
+	for _, f := range files {
+		if strings.HasSuffix(filepath.ToSlash(f), "js/core.js") {
+			sb.WriteString(BuildJSI18nHeader())
+			break
+		}
+	}
 	for _, f := range files {
 		if strings.HasSuffix(filepath.ToSlash(f), "js/editor_canvas.js") {
 			appDir := filepath.Dir(filepath.Dir(f))
@@ -153,6 +189,7 @@ func bundleJSPathsFromFS(fsys fs.FS, paths []string, stripDev bool, prependMSDF 
 		return "", fmt.Errorf("nil fs")
 	}
 	var sb strings.Builder
+	sb.WriteString(BuildJSI18nHeader())
 	if prependMSDF {
 		if _, metricsJS, err := BuildStudioMSDFAtlasFromFS(fsys); err == nil && metricsJS != "" {
 			sb.WriteString(metricsJS)

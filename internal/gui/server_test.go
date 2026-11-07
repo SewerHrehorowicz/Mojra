@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -932,8 +933,8 @@ Dopiero kapitan Arvo wszystko mu wytłumaczył.
 		!strings.Contains(libHTML, `id="btn-topbar-menu"`) ||
 		!strings.Contains(libHTML, `id="icon-theme-sun"`) ||
 		!strings.Contains(libHTML, `id="icon-theme-moon"`) ||
-		strings.Contains(libHTML, `action="OpenQRModal"`) {
-		t.Fatalf("expected responsive topbar with symbol-only brand-mark, tab icons, hamburger menu, sun/moon theme icons, and no gear icon in prod, got:\n%s", libHTML)
+		!strings.Contains(libHTML, `action="OpenQRModal"`) {
+		t.Fatalf("expected responsive topbar with symbol-only brand-mark, tab icons, hamburger menu, sun/moon theme icons, and settings gear icon, got:\n%s", libHTML)
 	}
 
 	secStart := strings.Index(libHTML, `<section class="view-panel" id="view-library">`)
@@ -1101,6 +1102,18 @@ Dopiero kapitan Arvo wszystko mu wytłumaczył.
 	_ = rSetSmall.Body.Close()
 	if rSetSmall.Header.Get("X-UI-Scale") != "small" {
 		t.Fatalf("expected X-UI-Scale=small header after SetUIScale(small), got %q", rSetSmall.Header.Get("X-UI-Scale"))
+	}
+
+	setSensForm := url.Values{}
+	setSensForm.Set("action", "SetScrollSensitivity")
+	setSensForm.Set("sensitivity", "low")
+	rSetSens, err := http.PostForm(ts.URL+"/api/action", setSensForm)
+	if err != nil {
+		t.Fatalf("SetScrollSensitivity failed: %v", err)
+	}
+	_ = rSetSens.Body.Close()
+	if rSetSens.Header.Get("X-Scroll-Sensitivity") != "low" {
+		t.Fatalf("expected X-Scroll-Sensitivity=low header after SetScrollSensitivity(low), got %q", rSetSens.Header.Get("X-Scroll-Sensitivity"))
 	}
 
 	// 6. Verify QuitApp closes immediately without any confirmation modal
@@ -2137,3 +2150,205 @@ func TestUnreachableScenesGrayedOutInNodeEditor(t *testing.T) {
 		t.Fatalf("expected no unreachable:1 once all scenes are reachable, got:\n%s", connHTML)
 	}
 }
+
+func TestMultilingualUISwitchAndI18nTableCompleteness(t *testing.T) {
+	// 1. Verify all TrKey entries are non-empty across all registered languages in SupportedLanguages.
+	for l := Lang(0); l < LangCount; l++ {
+		spec := tpl.SupportedLanguages[l]
+		if spec.Code == "" || spec.Upper == "" || spec.Name == "" {
+			t.Fatalf("SupportedLanguages[%d] has empty metadata: %+v", l, spec)
+		}
+		if i18nDicts[l] == nil {
+			t.Fatalf("i18nDicts[%d] (%s) is nil", l, spec.Code)
+		}
+		for k := TrKey(0); k < trKeyCount; k++ {
+			if strings.TrimSpace(i18nDicts[l][k]) == "" {
+				t.Fatalf("i18nDicts[%s][%d] is empty", spec.Code, k)
+			}
+			if strings.TrimSpace(i18nTable[k][l]) == "" {
+				t.Fatalf("i18nTable[%d][%s] is empty", k, spec.Code)
+			}
+		}
+	}
+
+	// 1b. Verify internal/gui/*.go has zero inline trPair(pl, en) calls.
+	guiGoMatches, err := filepath.Glob("*.go")
+	if err != nil || len(guiGoMatches) == 0 {
+		t.Fatalf("failed to glob internal/gui/*.go: %v", err)
+	}
+	for _, p := range guiGoMatches {
+		if strings.HasSuffix(p, "_test.go") {
+			continue
+		}
+		raw, rErr := os.ReadFile(p)
+		if rErr != nil {
+			t.Fatalf("read %s: %v", p, rErr)
+		}
+		if strings.Contains(string(raw), "trPair(") {
+			t.Fatalf("%s contains forbidden inline trPair(pl, en); add a TrKey to i18n_<lang>.go instead", p)
+		}
+	}
+
+	// 2. Verify all tplI18nBindings are referenced in app/templates/*.tpl and vice-versa.
+	tplMatches, err := filepath.Glob(filepath.Join("..", "..", "app", "templates", "*.tpl"))
+	if err != nil || len(tplMatches) == 0 {
+		t.Fatalf("failed to glob app/templates/*.tpl: %v", err)
+	}
+	var allTplBuilder strings.Builder
+	for _, p := range tplMatches {
+		raw, rErr := os.ReadFile(p)
+		if rErr != nil {
+			t.Fatalf("read %s: %v", p, rErr)
+		}
+		allTplBuilder.Write(raw)
+		allTplBuilder.WriteByte('\n')
+	}
+	allTpl := allTplBuilder.String()
+
+	boundVars := make(map[string]bool, len(tplI18nBindings))
+	for _, b := range tplI18nBindings {
+		boundVars[b.varName] = true
+		if !strings.Contains(allTpl, "{"+b.varName+"}") {
+			t.Fatalf("tplI18nBindings var %q is not used in app/templates/*.tpl", b.varName)
+		}
+	}
+	tVarRe := regexp.MustCompile(`\{(t_[a-z0-9_]+)\}`)
+	for _, m := range tVarRe.FindAllStringSubmatch(allTpl, -1) {
+		if !boundVars[m[1]] {
+			t.Fatalf("template variable %q in .tpl is missing from tplI18nBindings", m[1])
+		}
+	}
+
+	// 2b. Verify all tpl.JSI18nTable entries are non-empty in every registered language, bijectively mapped to tr()/trf()/trStd() in app/js/*.js,
+	// and that app/js/*.js contains zero hardcoded Polish string literals or legacy trUI() calls.
+	jsKeySet := make(map[string]bool, len(tpl.JSI18nTable))
+	for _, e := range tpl.JSI18nTable {
+		key := e[0]
+		if strings.TrimSpace(key) == "" {
+			t.Fatalf("tpl.JSI18nTable entry %+v has empty key", e)
+		}
+		for l := Lang(0); l < LangCount; l++ {
+			if !tpl.HasJSI18nKeyInLang(l, key) || strings.TrimSpace(e[1+int(l)]) == "" {
+				t.Fatalf("tpl.JSI18nTable key %q is empty for language %q", key, tpl.SupportedLanguages[l].Code)
+			}
+		}
+		if jsKeySet[key] {
+			t.Fatalf("duplicate key %q in tpl.JSI18nTable", key)
+		}
+		jsKeySet[key] = true
+	}
+
+	jsMatches, err := filepath.Glob(filepath.Join("..", "..", "app", "js", "*.js"))
+	if err != nil || len(jsMatches) == 0 {
+		t.Fatalf("failed to glob app/js/*.js: %v", err)
+	}
+	jsTrCallRe := regexp.MustCompile(`\b(?:tr|trf)\(\s*"([a-z0-9_]+)"|\btrStd\([^,]+,\s*"([a-z0-9_]+)"`)
+	jsQuotedPolishRe := regexp.MustCompile(`"(?:[^"\\\n\r]|\\.)*[ąęćłńóśźżĄĘĆŁŃÓŚŹŻ](?:[^"\\\n\r]|\\.)*"|'(?:[^'\\\n\r]|\\.)*[ąęćłńóśźżĄĘĆŁŃÓŚŹŻ](?:[^'\\\n\r]|\\.)*'`)
+	usedJSKeys := make(map[string]bool, len(tpl.JSI18nTable))
+	for _, p := range jsMatches {
+		raw, rErr := os.ReadFile(p)
+		if rErr != nil {
+			t.Fatalf("read %s: %v", p, rErr)
+		}
+		src := string(raw)
+		base := filepath.Base(p)
+		if strings.Contains(src, "trUI(") {
+			t.Fatalf("%s contains forbidden inline trUI(pl, en); use tr(key) / trf(key) backed by tpl.JSI18nTable", base)
+		}
+		if m := jsQuotedPolishRe.FindString(src); m != "" {
+			t.Fatalf("%s contains hardcoded Polish string literal %s; move it to tpl.JSI18nTable", base, m)
+		}
+		for _, m := range jsTrCallRe.FindAllStringSubmatch(src, -1) {
+			k := m[1]
+			if k == "" {
+				k = m[2]
+			}
+			if !jsKeySet[k] {
+				t.Fatalf("%s references unknown JS i18n key %q (missing from tpl.JSI18nTable)", base, k)
+			}
+			usedJSKeys[k] = true
+		}
+	}
+	for _, e := range tpl.JSI18nTable {
+		if !usedJSKeys[e[0]] {
+			t.Fatalf("tpl.JSI18nTable key %q is unused in app/js/*.js", e[0])
+		}
+	}
+
+	// 2c. Verify book.ExplainConditionExprErrorLang and book.ExplainEffectsExprErrorLang localize to PL and EN.
+	if gotEN := book.ExplainConditionExprErrorLang("nieznana_zmienna", nil, "en"); !strings.Contains(gotEN, "No variables declared") {
+		t.Fatalf("expected English condition validation message for lang=en, got %q", gotEN)
+	}
+	if gotPL := book.ExplainConditionExprErrorLang("nieznana_zmienna", nil, "pl"); !strings.Contains(gotPL, "Brak zadeklarowanych") {
+		t.Fatalf("expected Polish condition validation message for lang=pl, got %q", gotPL)
+	}
+
+	// 3. Verify PopulateI18nContext performs zero heap allocations on a pre-sized map.
+	prealloc := make(map[string]any, len(tplI18nBindings)+8)
+	PopulateI18nContext(prealloc, LangPL)
+	allocs := testing.AllocsPerRun(100, func() {
+		PopulateI18nContext(prealloc, LangEN)
+	})
+	if allocs > 0 {
+		t.Fatalf("expected 0 allocations in PopulateI18nContext, got %v", allocs)
+	}
+
+	// 4. Verify ToggleLanguage and SetLanguage switch UI between PL and EN and persist to settings.ini.
+	rootDir := t.TempDir()
+	srv := NewServer(rootDir, storyteller.AppFS)
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	// Default is PL
+	getResp, err := http.Get(ts.URL + "/")
+	if err != nil {
+		t.Fatalf("GET / failed: %v", err)
+	}
+	initBytes, _ := io.ReadAll(getResp.Body)
+	_ = getResp.Body.Close()
+	initHTML := string(initBytes)
+	if !strings.Contains(initHTML, `data-lang="pl"`) || !strings.Contains(initHTML, `+ Dodaj książkę`) {
+		t.Fatalf("expected default PL UI on initial load, got:\n%s", initHTML)
+	}
+
+	// ToggleLanguage -> EN
+	togResp, err := http.PostForm(ts.URL+"/api/action", url.Values{
+		"action": {"ToggleLanguage"},
+	})
+	if err != nil {
+		t.Fatalf("ToggleLanguage failed: %v", err)
+	}
+	togBytes, _ := io.ReadAll(togResp.Body)
+	_ = togResp.Body.Close()
+	togHTML := string(togBytes)
+	if got := togResp.Header.Get("X-Lang"); got != "en" {
+		t.Fatalf("expected X-Lang=en after ToggleLanguage, got %q", got)
+	}
+	if !strings.Contains(togHTML, `+ Add book`) || !strings.Contains(togHTML, `data-hint="Library"`) {
+		t.Fatalf("expected English UI labels after ToggleLanguage, got:\n%s", togHTML)
+	}
+
+	loadedCfg := book.LoadAppSettings(srv.SavesDir)
+	if loadedCfg.Language != "en" {
+		t.Fatalf("expected persisted settings.ini lang=en, got %q", loadedCfg.Language)
+	}
+
+	// SetLanguage back to PL
+	setResp, err := http.PostForm(ts.URL+"/api/action", url.Values{
+		"action": {"SetLanguage"},
+		"lang":   {"pl"},
+	})
+	if err != nil {
+		t.Fatalf("SetLanguage(pl) failed: %v", err)
+	}
+	setBytes, _ := io.ReadAll(setResp.Body)
+	_ = setResp.Body.Close()
+	setHTML := string(setBytes)
+	if got := setResp.Header.Get("X-Lang"); got != "pl" {
+		t.Fatalf("expected X-Lang=pl after SetLanguage(pl), got %q", got)
+	}
+	if !strings.Contains(setHTML, `+ Dodaj książkę`) || !strings.Contains(setHTML, `data-hint="Biblioteka"`) {
+		t.Fatalf("expected Polish UI labels after SetLanguage(pl), got:\n%s", setHTML)
+	}
+}
+

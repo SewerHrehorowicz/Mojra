@@ -9,17 +9,17 @@ section.view-panel#view-player
         .story-scroll-feed#story-scroll-feed
             {if is_history_preview}
                 .studio-preview-banner.player-preview-banner#player-preview-banner
-                    span.studio-preview-banner-text "Podgląd wersji historycznej: {history_preview_label}"
+                    span.studio-preview-banner-text "{t_history_preview_banner}: {history_preview_label}"
                     .studio-preview-banner-actions
                         button.btn.btn-sm
                             type: button
                             action: SwitchView
                             data-view: editor
-                            "Wróć do edytora"
+                            "{t_back_to_editor}"
                         button.btn.btn-primary.btn-sm
                             type: button
                             action: ExitHistoryPreview
-                            "Wróć do aktualnej wersji"
+                            "{t_back_to_current_version}"
 
             .reader-global-meta#reader-global-meta
                 span.scene-chapter-pill#reader-global-meta-text {current_scene.header_meta}
@@ -33,6 +33,8 @@ section.view-panel#view-player
                             data-scene-meta: "{h.header_meta}"
                             data-scene-audio: "{h.audio_url}"
                             data-scene-audio-duration: "{h.audio_duration_label}"
+                            data-scene-audio-trim-start: "{h.audio_trim_start}"
+                            data-scene-audio-trim-end: "{h.audio_trim_end}"
                             {if h.has_title}
                                 .scene-header-block
                                     .scene-title-row
@@ -42,7 +44,7 @@ section.view-panel#view-player
                                                 type: button
                                                 action: PromptRewindStep
                                                 data-step: "{h.idx}"
-                                                data-hint: "Wznów od tej sceny"
+                                                data-hint: "{t_rewind_scene_hint}"
                                                 svg.rewind-icon src: /icons/reset.svg
 
                             {if h.has_image}
@@ -60,7 +62,7 @@ section.view-panel#view-player
                                             type: button
                                             action: PromptRewindStep
                                             data-step: "{h.idx}"
-                                            data-hint: "Wznów od tej sceny"
+                                            data-hint: "{t_rewind_scene_hint}"
                                             svg.rewind-icon src: /icons/reset.svg
                                 .scene-prose .is-screenplay?: {is_screenplay_mode}
                                     {if is_screenplay_mode}
@@ -93,6 +95,8 @@ section.view-panel#view-player
                     data-scene-meta: "{current_scene.header_meta}"
                     data-scene-audio: "{current_scene.audio_url}"
                     data-scene-audio-duration: "{current_scene.audio_duration_label}"
+                    data-scene-audio-trim-start: "{current_scene.audio_trim_start}"
+                    data-scene-audio-trim-end: "{current_scene.audio_trim_end}"
                     {if current_scene.has_title}
                         .scene-header-block
                             .scene-title-row
@@ -134,9 +138,9 @@ section.view-panel#view-player
                                     type: button
                                     action: PromptResetProgress
                                     {if is_screenplay_mode}
-                                        span "Koniec scenariusza — Zacznij od początku"
+                                        span {t_end_screenplay_reset}
                                     {else}
-                                        span "Koniec opowieści — Zagraj od początku"
+                                        span {t_end_story_reset}
                                     span.choice-arrow "↺"
                             {else}
                                 {for ch in current_scene.choices}
@@ -153,7 +157,7 @@ section.view-panel#view-player
 
         {if has_history}
             nav.story-history-rail#story-history-rail
-                aria-label: "Oś przeczytanych scen"
+                aria-label: "{t_history_rail_aria}"
                 {for h in history_items}
                     button.history-rail-tick
                         type: button
@@ -169,9 +173,12 @@ section.view-panel#view-player
                 audio#story-audio
                     preload: auto
                     data-audio-url: "{current_scene.audio_url}"
+                    data-trim-start: "{current_scene.audio_trim_start}"
+                    data-trim-end: "{current_scene.audio_trim_end}"
                     data-resume-time: "{audio_resume_time}"
                     data-speed: "{audio_speed}"
                     data-auto-choice: "{auto_choice_enabled}"
+                    data-auto-delay: "{auto_choice_delay}"
                 .audio-deck-inner
                     .audio-transport
                         button.deck-play-btn#btn-audio-play

@@ -201,7 +201,7 @@ func BuildSceneProseHighlightSegments(raw string, state map[string]string, b *Bo
 			appendSeg(line, true)
 		} else {
 			rest := line
-			for {
+			for maxTok := len(line) + 1; maxTok > 0; maxTok-- {
 				openIdx := strings.Index(rest, "{{")
 				if openIdx < 0 {
 					appendSeg(rest, false)
@@ -244,7 +244,7 @@ func BuildSceneProseHighlightSegments(raw string, state map[string]string, b *Bo
 func evaluateInlineProseTokens(line string, state map[string]string, b *Book) string {
 	var sb strings.Builder
 	rest := line
-	for {
+	for maxTok := len(line) + 1; maxTok > 0; maxTok-- {
 		openIdx := strings.Index(rest, "{{")
 		if openIdx < 0 {
 			sb.WriteString(rest)
@@ -419,7 +419,7 @@ func buildLinePreviewSegments(line string, isHighlight bool, blockActive bool, s
 	}
 
 	rest := line
-	for {
+	for maxTok := len(line) + 1; maxTok > 0; maxTok-- {
 		openIdx := strings.Index(rest, "{{")
 		if openIdx < 0 {
 			appendSeg(rest, false, false, isHighlight && !blockActive, false)

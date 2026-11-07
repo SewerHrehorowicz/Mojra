@@ -173,10 +173,17 @@ func (s *Server) applySceneFormFields(target *book.Scene, r *http.Request) {
 	}
 	if !s.ActiveBook.Narrated {
 		target.ExplicitVoice = ""
+		target.VoiceTrimStart = 0
+		target.VoiceTrimEnd = 0
 		target.AudioFile = ""
 		target.AudioURL = ""
 	} else if _, hasVoice := r.Form["explicit_voice"]; hasVoice {
-		target.ExplicitVoice = book.SanitizeRelativeMediaPath(r.FormValue("explicit_voice"))
+		newVoice := book.SanitizeRelativeMediaPath(r.FormValue("explicit_voice"))
+		if newVoice != target.ExplicitVoice {
+			target.VoiceTrimStart = 0
+			target.VoiceTrimEnd = 0
+		}
+		target.ExplicitVoice = newVoice
 		if target.ExplicitVoice == "" {
 			target.AudioFile = ""
 			target.AudioURL = ""
@@ -1095,8 +1102,9 @@ func (s *Server) commitSceneVoiceFile(target *book.Scene, relPath string, err er
 		return err.Error()
 	}
 	target.ExplicitVoice = relPath
+	target.VoiceTrimStart = 0
+	target.VoiceTrimEnd = 0
 	s.VoiceRecorderOpen = true
-
 	book.FinalizeBook(s.ActiveBook)
 	if err := book.SaveBookScenesToDisk(s.ActiveBook); err != nil {
 		return err.Error()
@@ -1185,10 +1193,39 @@ func (s *Server) trimSceneVoiceAction(r *http.Request) string {
 	}
 	startRatio, _ := strconv.ParseFloat(strings.TrimSpace(r.FormValue("start_ratio")), 64)
 	endRatio, _ := strconv.ParseFloat(strings.TrimSpace(r.FormValue("end_ratio")), 64)
+	if startRatio < 0 || startRatio >= 1 {
+		startRatio = 0
+	}
+	if endRatio <= 0 || endRatio > 1 {
+		endRatio = 1
+	}
+	if endRatio <= startRatio+0.001 {
+		startRatio = 0
+		endRatio = 1
+	}
 
 	s.ensureHistoryBaselineBeforeMutation()
 	if s.hasSceneTextModalChanges(target, r) {
 		s.applySceneFormFields(target, r)
+	}
+
+	isDestructive := strings.EqualFold(strings.TrimSpace(r.FormValue("destructive")), "true")
+	if !isDestructive {
+		if startRatio <= 0.002 && endRatio >= 0.998 {
+			target.VoiceTrimStart = 0
+			target.VoiceTrimEnd = 0
+		} else {
+			target.VoiceTrimStart = startRatio
+			target.VoiceTrimEnd = endRatio
+		}
+		s.VoiceRecorderOpen = true
+		book.FinalizeBook(s.ActiveBook)
+		if err := book.SaveBookScenesToDisk(s.ActiveBook); err != nil {
+			return err.Error()
+		}
+		s.reloadActiveBook()
+		s.recordHistoryAfterMutation("Przycięto nagranie audio: "+target.DisplayName(), "scene", "voicetrim:"+target.ID)
+		return ""
 	}
 
 	var relPath string
@@ -1210,7 +1247,7 @@ func (s *Server) trimSceneVoiceAction(r *http.Request) string {
 		}
 		relPath, err = book.TrimSceneVoiceFile(s.ActiveBook, target.ReferenceKey(), curVoice, startRatio, endRatio)
 	}
-	return s.commitSceneVoiceFile(target, relPath, err, "Przycięto nagranie audio: ")
+	return s.commitSceneVoiceFile(target, relPath, err, "Przycięto trwale plik audio: ")
 }
 
 func (s *Server) deleteSceneVoiceAction(r *http.Request) string {

@@ -64,7 +64,7 @@ function pushNodeChoiceRowQuads(nd, j, isHistoryPreview, isDraggingRow, theme) {
     studioGraphState.editingChoice.node === nd &&
     studioGraphState.editingChoice.idx === j;
   if (!isEditingThisChoice) {
-    const rawLabel = pt.label || "Wybór " + (j + 1);
+    const rawLabel = pt.label || tr("choice_prefix") + (j + 1);
     const choiceMaxW = nd.w - (isHistoryPreview ? 36 : 47);
     if (pt._shapedLabelTxt !== rawLabel || pt._shapedChoiceMaxW !== choiceMaxW || !pt._shapedChoice) {
       pt._shapedLabelTxt = rawLabel;
@@ -242,7 +242,7 @@ function compileStaticSceneQuads(theme) {
 
     let badgeW = 0;
     if (nd.isStart || nd.isEntry) {
-      const badgeTxt = nd.isStart ? "START" : "WEJŚCIE";
+      const badgeTxt = nd.isStart ? "START" : tr("entry_badge_upper");
       if (nd._shapedBadgeTxt !== badgeTxt || !nd._shapedBadge) {
         nd._shapedBadgeTxt = badgeTxt;
         nd._shapedBadge = shapeTextGlyphs(FONT_BADGE, badgeTxt, 64);

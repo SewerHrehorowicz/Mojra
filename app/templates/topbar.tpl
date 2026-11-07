@@ -9,8 +9,8 @@ header.topbar#topbar
                 type: button
                 action: SwitchView
                 data-view: library
-                data-hint: "Biblioteka"
-                aria-label: "Biblioteka"
+                data-hint: "{t_nav_library}"
+                aria-label: "{t_nav_library}"
                 svg.tab-icon src: /icons/library.svg
 
     {if !standalone_mode}
@@ -27,22 +27,22 @@ header.topbar#topbar
                 type: button
                 action: SwitchView
                 data-view: editor
-                data-hint: "Studio"
-                aria-label: "Studio"
+                data-hint: "{t_nav_studio}"
+                aria-label: "{t_nav_studio}"
                 svg.tab-icon src: /icons/studio.svg
 
     .topbar-right#topbar-right
         button.top-action-btn.topbar-hamburger-btn#btn-topbar-menu
             type: button
             data-topbar-menu-toggle: "true"
-            aria-label: "Menu"
+            aria-label: "{t_menu}"
             svg.action-icon src: /icons/menu.svg
         .topbar-actions-menu#topbar-actions-menu
             {if show_reset_progress}
                 button.top-action-btn
                     type: button
                     action: PromptResetProgress
-                    data-hint: "Wymaż postęp i zacznij od początku"
+                    data-hint: "{t_reset_story_hint}"
                     svg.action-icon src: /icons/reset.svg
             button.top-action-btn#btn-toggle-imageless .active?: {imageless_mode} .is-disabled?: {imageless_locked} .hidden?: {is_screenplay_mode}
                 type: button
@@ -61,19 +61,23 @@ header.topbar#topbar
             button.top-action-btn
                 type: button
                 action: ToggleTheme
-                data-hint: "Przełącz motyw Jasny / Ciemny"
+                data-hint: "{t_toggle_theme_hint}"
                 svg.action-icon#icon-theme-sun .hidden?: {theme == "light"} src: /icons/sun.svg
                 svg.action-icon#icon-theme-moon .hidden?: {theme != "light"} src: /icons/theme.svg
-            {if dev_mode}
-                button.top-action-btn
-                    type: button
-                    action: OpenQRModal
-                    data-hint: "Ustawienia / Kod QR LAN"
-                    svg.action-icon src: /icons/settings.svg
+            button.top-action-btn#btn-toggle-lang
+                type: button
+                action: ToggleLanguage
+                data-hint: "{t_toggle_lang_hint}"
+                {lang_upper}
+            button.top-action-btn
+                type: button
+                action: OpenQRModal
+                data-hint: "{t_app_settings_hint}"
+                svg.action-icon src: /icons/settings.svg
             button.top-action-btn.desktop-only-btn#btn-toggle-fullscreen
                 type: button
                 action: ToggleFullscreen
-                data-hint: "Przełącz pełny ekran"
+                data-hint: "{t_fullscreen_hint}"
                 svg.action-icon#icon-fullscreen-enter src: /icons/fullscreen.svg
                 svg.action-icon.hidden#icon-fullscreen-exit src: /icons/windowed.svg
         button.top-action-btn.btn-quit-app

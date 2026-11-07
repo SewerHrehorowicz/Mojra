@@ -71,10 +71,6 @@
   flex-direction column
   background transparent
 
-.history-stack .scene-card
-  content-visibility auto
-  contain-intrinsic-size auto 320px
-
 .history-stack, .active-scene-stage
   will-change transform
   transition transform 0.42s cubic-bezier(0.22, 1.35, 0.36, 1)

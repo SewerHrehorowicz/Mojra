@@ -76,7 +76,8 @@ func (s *Server) buildSceneMediaOptions(sc *book.Scene, buildMenus bool) (curImg
 	if curImg == "" && sc.ImageFile != "" {
 		curImg = sc.ImageFile
 	}
-	curImgLabel = "— brak —"
+	noneLabel := s.tr(TrMediaNoneLabel)
+	curImgLabel = noneLabel
 	if curImg != "" {
 		curImgLabel = curImg
 	}
@@ -84,7 +85,7 @@ func (s *Server) buildSceneMediaOptions(sc *book.Scene, buildMenus bool) (curImg
 		imgOptions = make([]map[string]any, 0, len(s.ActiveBook.ImageFiles)+2)
 		imgOptions = append(imgOptions, map[string]any{
 			"value":     "",
-			"label":     "— brak —",
+			"label":     noneLabel,
 			"is_active": curImg == "",
 		})
 		matchedImg := curImg == ""
@@ -110,13 +111,13 @@ func (s *Server) buildSceneMediaOptions(sc *book.Scene, buildMenus bool) (curImg
 		}
 		imgOptions = append(imgOptions, map[string]any{
 			"value":     "__browse_disk__",
-			"label":     "+ Dodaj obraz z dysku...",
+			"label":     s.tr(TrAddImageFromDiskOpt),
 			"is_active": false,
 		})
 	}
 
 	curVoice = ""
-	curVoiceLabel = "— brak —"
+	curVoiceLabel = noneLabel
 	if s.ActiveBook != nil && s.ActiveBook.Narrated {
 		curVoice = sc.ExplicitVoice
 		if curVoice == "" && sc.AudioFile != "" {
@@ -129,7 +130,7 @@ func (s *Server) buildSceneMediaOptions(sc *book.Scene, buildMenus bool) (curImg
 			voiceOptions = make([]map[string]any, 0, len(s.ActiveBook.AudioFiles)+3)
 			voiceOptions = append(voiceOptions, map[string]any{
 				"value":     "",
-				"label":     "— brak —",
+				"label":     noneLabel,
 				"is_active": curVoice == "",
 			})
 			matchedVoice := curVoice == ""
@@ -155,7 +156,7 @@ func (s *Server) buildSceneMediaOptions(sc *book.Scene, buildMenus bool) (curImg
 			}
 			voiceOptions = append(voiceOptions, map[string]any{
 				"value":     "__browse_disk__",
-				"label":     "+ Dodaj nagranie z dysku...",
+				"label":     s.tr(TrAddAudioFromDiskOpt),
 				"is_active": false,
 			})
 		}
@@ -185,7 +186,7 @@ func (s *Server) buildEditorNodeMap(sc *book.Scene, isSelected bool) map[string]
 	if len(inspectorChoices) == 0 || sc.ExplicitEnd {
 		inspectorChoices = []book.Choice{
 			{
-				Label:      "Dalej",
+				Label:      s.tr(TrNext),
 				Target:     "END",
 				IsEnding:   true,
 				IsImplicit: true,
@@ -196,7 +197,7 @@ func (s *Server) buildEditorNodeMap(sc *book.Scene, isSelected bool) map[string]
 	for chIdx, ch := range inspectorChoices {
 		lbl := ch.Label
 		if lbl == "" && !hasChoices {
-			lbl = "Dalej"
+			lbl = s.tr(TrNext)
 		}
 		selectedVal := "END"
 		if isSelected {
@@ -252,17 +253,19 @@ func (s *Server) buildEditorNodeMap(sc *book.Scene, isSelected bool) map[string]
 	scEffectsVal := book.CleanEffectsExpr(sc.Effects)
 	scEffectsErr := ""
 	if scEffectsVal != "" {
-		scEffectsErr = book.ExplainEffectsExprError(sc.Effects, s.ActiveBook)
+		scEffectsErr = book.ExplainEffectsExprErrorLang(sc.Effects, s.ActiveBook, s.Settings.Language)
 	}
 	voiceURL := sc.AudioURL
 	voiceDurLabel := "0:00"
 	if isSelected && curVoice != "" && s.ActiveBook != nil {
-		durLbl, stamp := book.ReadAudioDurationAndStamp(s.ActiveBook, curVoice)
+		durLbl, stamp := book.ReadSceneAudioDurationAndStamp(s.ActiveBook, sc)
 		voiceDurLabel = durLbl
 		if voiceURL != "" && stamp > 0 {
 			voiceURL = fmt.Sprintf("%s?v=%d", voiceURL, stamp)
 		}
 	}
+	trimStart, trimEnd := sc.NormalizedVoiceTrim()
+	hasVoiceFile := curVoice != "" && sc.AudioURL != ""
 
 	portCount := 0
 	if hasChoices {
@@ -279,7 +282,10 @@ func (s *Server) buildEditorNodeMap(sc *book.Scene, isSelected bool) map[string]
 		"current_voice_label":  curVoiceLabel,
 		"current_voice_url":    voiceURL,
 		"voice_duration_label": voiceDurLabel,
-		"has_voice_file":       curVoice != "" && sc.AudioURL != "",
+		"voice_trim_start":     fmt.Sprintf("%.4f", trimStart),
+		"voice_trim_end":       fmt.Sprintf("%.4f", trimEnd),
+		"has_voice_file":       hasVoiceFile,
+		"has_voice_trim":       hasVoiceFile && sc.HasVoiceTrim(),
 		"voice_options":        voiceOptions,
 		"name":                 sc.Name,
 		"slugline":             sc.Slugline,
@@ -313,7 +319,7 @@ func (s *Server) populateEditorBookAndChapterSettings(vars map[string]any) {
 	isScreenplay := s.ActiveBook.IsScreenplay()
 	normMode := s.ActiveBook.NormalizedMode()
 	normStd := s.ActiveBook.NormalizedStandard()
-	modeLabel, modeOpts := buildBookModeOptions(normMode)
+	modeLabel, modeOpts := buildBookModeOptions(normMode, s.lang())
 	_, stdOpts := buildScriptStandardOptions(normStd)
 	prefixPills, timePills := buildSluglineHelperPills(normStd)
 
@@ -475,7 +481,7 @@ func (s *Server) populateEditorBookAndChapterSettings(vars map[string]any) {
 				}
 			}
 		}
-		lengthStat := fmt.Sprintf("%d słów", totalWords)
+		lengthStat := s.trf(TrWordsCountFmt, totalWords)
 		if s.ActiveBook.IsScreenplay() {
 			lengthStat = book.FormatEighths(totalEighths)
 		}
@@ -518,11 +524,11 @@ func (s *Server) buildChoiceRuleViewMap(sceneID string, idx int, ch book.Choice,
 	}
 	condErrHint := ""
 	if hasCond {
-		condErrHint = book.ExplainConditionExprError(ch.Condition, s.ActiveBook)
+		condErrHint = book.ExplainConditionExprErrorLang(ch.Condition, s.ActiveBook, s.Settings.Language)
 	}
 	effErrHint := ""
 	if hasEff {
-		effErrHint = book.ExplainEffectsExprError(ch.Effects, s.ActiveBook)
+		effErrHint = book.ExplainEffectsExprErrorLang(ch.Effects, s.ActiveBook, s.Settings.Language)
 	}
 	return map[string]any{
 		"idx":             idx,

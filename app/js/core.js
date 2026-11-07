@@ -87,6 +87,32 @@ function setElementHint(el, text) {
   }
 }
 
+function currentLangIndex() {
+  const code = (typeof document !== "undefined" && document.body && document.body.getAttribute("data-lang")) || "pl";
+  return typeof I18N_LANGS !== "undefined" && I18N_LANGS[code] !== undefined ? I18N_LANGS[code] : 0;
+}
+
+function tr(key) {
+  const row = typeof I18N_TABLE !== "undefined" ? I18N_TABLE[key] : null;
+  if (!row) return "";
+  const idx = currentLangIndex();
+  return row[idx] || row[1] || row[0] || "";
+}
+
+function trStd(isPL, key) {
+  const row = typeof I18N_TABLE !== "undefined" ? I18N_TABLE[key] : null;
+  if (!row) return "";
+  return row[isPL ? 0 : 1] || row[0] || "";
+}
+
+function trf(key) {
+  let s = tr(key);
+  for (let i = 1; i < arguments.length; i++) {
+    s = s.replace("%s", String(arguments[i]));
+  }
+  return s;
+}
+
 function syncFullscreenButtonState() {
   const enterIcon = qs("#icon-fullscreen-enter");
   const exitIcon = qs("#icon-fullscreen-exit");
@@ -96,7 +122,7 @@ function syncFullscreenButtonState() {
   if (btn) {
     setElementHint(
       btn,
-      isWindowFullscreen ? "Wróć do trybu okienkowego" : "Przełącz pełny ekran"
+      isWindowFullscreen ? tr("fullscreen_exit_hint") : tr("fullscreen_enter_hint")
     );
   }
 }
@@ -142,10 +168,10 @@ function syncTopbarToggleIcons() {
     setElementHint(
       zoomBtn,
       isLarge
-        ? "Tryb Zen — sama treść"
+        ? tr("scale_zen_hint")
         : isZen
-          ? "Wyjdź z trybu Zen (małe UI)"
-          : "Powiększ przyciski i kontrolki (+ / Ctrl++)"
+          ? tr("scale_exit_zen_hint")
+          : tr("scale_enlarge_hint")
     );
   }
 
@@ -163,10 +189,10 @@ function syncTopbarToggleIcons() {
     setElementHint(
       imgBtn,
       isImagelessLocked
-        ? "Obrazy wyłączone w ustawieniach książki (imageless: true)"
+        ? tr("imageless_locked_hint")
         : isImageless
-          ? "Włącz obrazy (tryb bez obrazów aktywny)"
-          : "Wyłącz obrazy (tryb tekstowy na środku)"
+          ? tr("imageless_enable_hint")
+          : tr("imageless_disable_hint")
     );
   }
 
@@ -240,6 +266,13 @@ function syncEditorHistoryHeaders(resp) {
 
 function applyServerResponseHeaders(resp, actionName) {
   syncEditorHistoryHeaders(resp);
+  const lang = resp.headers.get("X-Lang");
+  if (lang) {
+    document.body.setAttribute("data-lang", lang);
+    if (document.documentElement) {
+      document.documentElement.setAttribute("lang", lang);
+    }
+  }
   const theme = resp.headers.get("X-Theme");
   if (theme) {
     document.body.setAttribute("data-theme", theme);
@@ -293,6 +326,19 @@ function applyServerResponseHeaders(resp, actionName) {
     }
   }
 
+  const autoDelay = resp.headers.get("X-Auto-Delay");
+  if (autoDelay) {
+    const audioEl = qs("#story-audio");
+    if (audioEl) {
+      audioEl.setAttribute("data-auto-delay", autoDelay);
+    }
+  }
+
+  const scrollSens = resp.headers.get("X-Scroll-Sensitivity");
+  if (scrollSens) {
+    document.body.setAttribute("data-scroll-sensitivity", scrollSens);
+  }
+
   const autoChoice = resp.headers.get("X-Auto-Choice");
   if (autoChoice) {
     const isAutoOn = autoChoice === "true";
@@ -303,23 +349,25 @@ function applyServerResponseHeaders(resp, actionName) {
     const autoBtn = qs("#btn-auto-choice-toggle");
     if (autoBtn) {
       autoBtn.classList.toggle("chip-active", isAutoOn);
-      setElementHint(autoBtn, isAutoOn ? "Auto-Wybór: WŁ" : "Auto-Wybór: WYŁ");
+      setElementHint(autoBtn, isAutoOn ? tr("auto_choice_on") : tr("auto_choice_off"));
     }
     if (actionName === "ToggleAutoChoice") {
       if (isAutoOn) {
         autoPlayChainActive = true;
-        if (audioEl && audioEl.paused && audioEl.getAttribute("data-audio-url")) {
-          audioEl.play().catch(() => {});
-        } else if (
-          (!audioEl || !audioEl.getAttribute("data-audio-url")) &&
-          qsa('#active-scene-stage .choice-btn[action="ChooseBranch"]').length > 0
-        ) {
-          if (typeof autoAdvanceFallbackTimer !== "undefined" && autoAdvanceFallbackTimer) {
-            clearTimeout(autoAdvanceFallbackTimer);
+        if (audioEl && audioEl.getAttribute("data-audio-url")) {
+          if (audioEl.ended || (typeof sceneAudioEndedHandled !== "undefined" && sceneAudioEndedHandled)) {
+            if (typeof scheduleAutoChoiceAdvance === "function") {
+              scheduleAutoChoiceAdvance(audioEl);
+            }
+          } else if (audioEl.paused) {
+            setPlayButtonVisual(true);
+            const p = audioEl.play();
+            if (p && typeof p.catch === "function") {
+              p.catch(() => setPlayButtonVisual(false));
+            }
           }
-          autoAdvanceFallbackTimer = setTimeout(() => {
-            sendServerAction("AudioEnded", {});
-          }, 1500);
+        } else if (audioEl && typeof scheduleAutoChoiceAdvance === "function") {
+          scheduleAutoChoiceAdvance(audioEl);
         }
       } else {
         autoPlayChainActive = false;
@@ -667,7 +715,9 @@ const ACTIONS_KEEP_MODAL_SCROLL = new Set([
   "StopSceneVoiceCapture",
   "SaveSceneVoiceRecording",
   "TrimSceneVoice",
-  "DeleteSceneVoice"
+  "DeleteSceneVoice",
+  "ToggleLanguage",
+  "SetLanguage"
 ]);
 
 function restoreSynDropdownFocus(rootEl) {
@@ -849,7 +899,7 @@ async function sendServerAction(actionName, params) {
       const matchesContext = Boolean(contextForm && contextForm.getAttribute("data-context-scene-id") === String(params.scene_id));
       if (params.text !== undefined) {
         const cleaned = String(params.text).trim().replace(/\s+/g, " ");
-        let summaryText = "Kliknij, aby wpisać treść sceny...";
+        let summaryText = tr("scene_text_placeholder");
         if (cleaned) {
           const m = cleaned.match(/^.*?[.!?…](?=\s|$)/);
           summaryText = m ? m[0] : cleaned;
@@ -876,7 +926,7 @@ async function sendServerAction(actionName, params) {
       Object.keys(params).forEach((k) => {
         if (k.startsWith("choice_label_")) {
           const idx = k.slice("choice_label_".length);
-          const lbl = String(params[k]).trim() || "Wybór " + (Number(idx) + 1);
+          const lbl = String(params[k]).trim() || tr("choice_prefix") + (Number(idx) + 1);
           if (nd && nd.ports && nd.ports[Number(idx)]) {
             nd.ports[Number(idx)].label = lbl;
           }
@@ -950,7 +1000,7 @@ async function sendServerAction(actionName, params) {
           qsa('input[name^="choice_label_"]', updatedForm).forEach((inp) => {
             const idx = inp.getAttribute("data-choice-idx");
             if (idx !== null && nd.ports && nd.ports[Number(idx)]) {
-              nd.ports[Number(idx)].label = inp.value.trim() || "Wybór " + (Number(idx) + 1);
+              nd.ports[Number(idx)].label = inp.value.trim() || tr("choice_prefix") + (Number(idx) + 1);
             }
           });
           studioGraphState.staticBatchDirty = true;
@@ -1099,20 +1149,26 @@ async function sendServerAction(actionName, params) {
     const nextAudio = qs("#story-audio");
     const nextAutoChoice = nextAudio ? nextAudio.getAttribute("data-auto-choice") === "true" : false;
     const nextAudioUrl = nextAudio ? nextAudio.getAttribute("data-audio-url") || "" : "";
+    const isSameSceneKeepScroll = Boolean(keepScroll && prevAudioUrl && prevAudioUrl === nextAudioUrl);
 
-    let shouldAutoPlay = prevWasPlaying || actionName === "AudioEnded";
-    if (actionName === "ToggleAutoChoice" && nextAutoChoice) {
+    let shouldAutoPlay = false;
+    if (nextAudio && nextAudioUrl) {
+      if (isSameSceneKeepScroll) {
+        shouldAutoPlay = prevWasPlaying;
+      } else {
+        shouldAutoPlay = true;
+      }
+    } else if (actionName === "ToggleAutoChoice" && nextAutoChoice) {
       shouldAutoPlay = true;
       autoPlayChainActive = true;
     } else if (actionName === "ToggleAutoChoice" && !nextAutoChoice) {
       autoPlayChainActive = false;
-    } else if (nextAutoChoice && (actionName === "ChooseBranch" || actionName === "AudioEnded" || autoPlayChainActive)) {
+    } else if (nextAutoChoice && (!keepScroll || autoPlayChainActive)) {
       shouldAutoPlay = true;
       autoPlayChainActive = true;
     }
 
-    const preserveTime =
-      keepScroll && prevAudioUrl && prevAudioUrl === nextAudioUrl ? prevAudioTime : null;
+    const preserveTime = isSameSceneKeepScroll ? prevAudioTime : null;
 
     initPlayerScrollAndAudio(
       keepScroll ? prevScrollTop : null,
@@ -1605,7 +1661,7 @@ function bindDeclarativeActionBridge() {
     autoResizeAllInspectorTextareas(document);
   }
   if (typeof initPlayerScrollAndAudio === "function") {
-    initPlayerScrollAndAudio(null);
+    initPlayerScrollAndAudio(null, Boolean(qs("#story-audio")), null, null);
   }
   if (typeof initVoiceRecorderStrips === "function") {
     initVoiceRecorderStrips();

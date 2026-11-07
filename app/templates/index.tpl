@@ -1,5 +1,5 @@
 doctype html
-html lang: pl
+html lang: "{lang}"
     head
         meta charset: UTF-8
         meta
@@ -23,9 +23,11 @@ html lang: pl
             href: /style.css
     body
         data-theme: "{theme}"
+        data-lang: "{lang}"
         data-imageless: "{imageless_attr}"
         data-imageless-locked: "{imageless_locked_attr}"
         data-ui-scale: "{ui_scale}"
+        data-scroll-sensitivity: "{scroll_sensitivity}"
         {if dev_mode}
             .device-stage#device-stage data-preview: "{preview_mode}"
                 .device-preview-bar
@@ -33,19 +35,19 @@ html lang: pl
                         type: button
                         action: SetDeviceMode
                         data-mode: portrait
-                        aria-label: "Telefon"
+                        aria-label: "{t_preview_phone}"
                         svg.preview-device-icon src: /icons/device-phone.svg
                     button.preview-mode-btn .active?: {preview_mode == "tablet"}
                         type: button
                         action: SetDeviceMode
                         data-mode: tablet
-                        aria-label: "Tablet"
+                        aria-label: "{t_preview_tablet}"
                         svg.preview-device-icon src: /icons/device-tablet.svg
                     button.preview-mode-btn .active?: {preview_mode == "full"}
                         type: button
                         action: SetDeviceMode
                         data-mode: full
-                        aria-label: "Desktop"
+                        aria-label: "{t_preview_desktop}"
                         svg.preview-device-icon src: /icons/device-desktop.svg
 
                 .device-frame

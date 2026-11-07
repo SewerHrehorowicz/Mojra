@@ -150,6 +150,13 @@
   color --text-secondary
   font-weight 400
 
+#btn-toggle-lang
+  font-size 11px
+  font-weight 600
+  letter-spacing 0.04em
+  line-height 1
+  min-width 22px
+
 .action-icon
   width 15px
   height 15px
@@ -179,7 +186,7 @@ body[data-ui-scale="zen"] #icon-zoom-out
   display block
 
 body[data-ui-scale="zen"]
-  #tab-library, #tab-editor, .topbar-divider, #btn-topbar-menu, #btn-toggle-imageless, #btn-toggle-fullscreen, .topbar-actions-menu button[action="PromptResetProgress"], .topbar-actions-menu button[action="OpenQRModal"]
+  #tab-library, #tab-editor, .topbar-divider, #btn-topbar-menu, #btn-toggle-imageless, #btn-toggle-lang, #btn-toggle-fullscreen, .topbar-actions-menu button[action="PromptResetProgress"], .topbar-actions-menu button[action="OpenQRModal"]
     display none !important
 
 body[data-theme="light"] #icon-theme-sun

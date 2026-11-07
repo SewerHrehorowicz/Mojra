@@ -3,14 +3,14 @@ section.view-panel#view-library
         button.btn.btn-sm
             type: button
             action: OpenAddBookModal
-            "+ Dodaj książkę"
+            "{t_add_book_btn}"
         {if dev_mode}
             button.btn.btn-sm
                 type: button
                 action: ExtractEmbeddedBook
-                "Wypakuj wbudowaną książkę"
+                "{t_extract_embedded_book}"
     {if not books}
-        p.bookshelf-empty "No books in library page"
+        p.bookshelf-empty {t_bookshelf_empty}
     .bookshelf-grid
         {for b in books}
             article.book-card

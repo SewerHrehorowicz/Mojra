@@ -1,7 +1,6 @@
 package gui
 
 import (
-	"fmt"
 	"math/rand"
 	"net/http"
 	"strconv"
@@ -41,8 +40,35 @@ func (s *Server) audioEnded(_ *http.Request) string {
 	if s.Settings.AutoChoice {
 		cur := s.currentScene()
 		if cur != nil && len(cur.Choices) > 0 && !cur.ExplicitEnd {
-			idx := rand.Intn(len(cur.Choices))
-			return s.executeChoiceTransition(cur, cur.Choices[idx])
+			var curVars map[string]string
+			if s.Save != nil {
+				s.Save.Variables = book.EnsureSaveVariables(s.PlayerBook, s.Save.Variables)
+				curVars = s.Save.Variables
+			} else if s.PlayerBook != nil {
+				curVars = book.DefaultVariablesMap(s.PlayerBook)
+			}
+			var unlocked []book.Choice
+			var unlockedNonEnding []book.Choice
+			for _, ch := range cur.Choices {
+				if !book.EvaluateCondition(ch.Condition, curVars, s.PlayerBook) {
+					continue
+				}
+				unlocked = append(unlocked, ch)
+				if !ch.IsEnding && !strings.EqualFold(ch.TargetSceneID, "END") {
+					unlockedNonEnding = append(unlockedNonEnding, ch)
+				}
+			}
+			candidates := unlockedNonEnding
+			if len(candidates) == 0 {
+				candidates = unlocked
+			}
+			if len(candidates) > 0 {
+				chosen := candidates[0]
+				if s.Settings.AutoChoiceStrategy == "random" && len(candidates) > 1 {
+					chosen = candidates[rand.Intn(len(candidates))]
+				}
+				return s.executeChoiceTransition(cur, chosen)
+			}
 		}
 	}
 	return ""
@@ -80,8 +106,8 @@ func (s *Server) promptRewindStep(r *http.Request) string {
 		if sceneName == "" {
 			sceneName = entry.SceneID
 		}
-		s.ConfirmTitle = "Wznów od tej sceny"
-		s.ConfirmMessage = fmt.Sprintf("Czy na pewno chcesz wznowić opowieść od sceny „%s”? Późniejszy postęp oraz dokonane wybory zostaną bezpowrotnie wymazane.", sceneName)
+		s.ConfirmTitle = s.tr(TrRewindSceneHint)
+		s.ConfirmMessage = s.trf(TrConfirmRewindMsgFmt, sceneName)
 		s.ConfirmPendingAction = "RewindStep"
 		s.ConfirmPendingParam = strconv.Itoa(stepIdx)
 	}
@@ -96,8 +122,8 @@ func (s *Server) promptResetProgress(r *http.Request) string {
 		}
 	}
 	if targetBook != nil {
-		s.ConfirmTitle = "Wymaż zapisany postęp"
-		s.ConfirmMessage = fmt.Sprintf("Czy na pewno chcesz wyczyścić historię wyborów i zakładkę dla książki „%s” oraz zacząć od pierwszej sceny?", targetBook.Title)
+		s.ConfirmTitle = s.tr(TrConfirmResetTitle)
+		s.ConfirmMessage = s.trf(TrConfirmResetMsgFmt, targetBook.Title)
 		s.ConfirmPendingAction = "ResetProgress"
 		s.ConfirmPendingParam = targetBook.ID
 	}
@@ -129,6 +155,25 @@ func (s *Server) toggleAutoChoice(_ *http.Request) string {
 		s.Save.AutoChoice = s.Settings.AutoChoice
 		s.persistSaveState()
 	}
+	return ""
+}
+
+func (s *Server) setAutoChoiceDelay(r *http.Request) string {
+	raw := strings.TrimSpace(r.FormValue("delay"))
+	if d, err := strconv.ParseFloat(raw, 64); err == nil {
+		s.Settings.AutoChoiceDelay = book.NormalizeAutoChoiceDelay(d)
+		s.persistSettings()
+		if s.Save != nil {
+			s.Save.AutoChoiceDelay = s.Settings.AutoChoiceDelay
+			s.persistSaveState()
+		}
+	}
+	return ""
+}
+
+func (s *Server) setScrollSensitivity(r *http.Request) string {
+	s.Settings.ScrollSensitivity = book.NormalizeScrollSensitivity(r.FormValue("sensitivity"))
+	s.persistSettings()
 	return ""
 }
 
@@ -181,15 +226,15 @@ func (s *Server) executeChoiceTransition(fromScene *book.Scene, choice book.Choi
 		return ""
 	}
 	if choice.IsEnding || choice.TargetSceneID == "END" {
-		s.ConfirmTitle = "Zakończenie opowieści"
-		s.ConfirmMessage = "Dotarłeś do zakończenia tej ścieżki. Czy chcesz zresetować postęp i rozpocząć od pierwszej sceny?"
+		s.ConfirmTitle = s.tr(TrConfirmEndingTitle)
+		s.ConfirmMessage = s.tr(TrConfirmEndingMsg)
 		s.ConfirmPendingAction = "ResetProgress"
 		s.ConfirmPendingParam = ""
 		return ""
 	}
 	nextScene := s.findPlayerScene(choice.TargetSceneID)
 	if nextScene == nil {
-		return "Nie znaleziono docelowej sceny: " + choice.Target
+		return s.tr(TrTargetSceneNotFoundPrefix) + choice.Target
 	}
 
 	prevVarsSnapshot := book.CloneVariablesMap(s.Save.Variables)

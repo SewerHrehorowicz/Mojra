@@ -3,6 +3,7 @@ package book
 import (
 	"fmt"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -80,6 +81,8 @@ func ParseDataFile(content string, b *Book) {
 			}
 		case "export_dir":
 			// Ignored in book.playtxt for security: export target paths are stored in local saves/settings.ini, never trusted from imported books.
+		case "auto_delay", "scene_pause", "pauza":
+			// Accepted book-level hint for inter-scene pause; runtime delay is configured via saves/settings.ini.
 		default:
 			b.Warnings = append(b.Warnings, fmt.Sprintf("book.playtxt:%d: nieznany klucz „%s”", lineIdx+1, key))
 		}
@@ -116,6 +119,8 @@ func ParseStoryFile(content string, sourceFileName string, b *Book) {
 	pendingSceneID := ""
 	pendingImage := ""
 	pendingVoice := ""
+	pendingVoiceTrimStart := 0.0
+	pendingVoiceTrimEnd := 0.0
 	pendingSlugline := ""
 	pendingSynopsis := ""
 	pendingEffects := ""
@@ -194,6 +199,10 @@ func ParseStoryFile(content string, sourceFileName string, b *Book) {
 		pendingImage = ""
 		voiceVal := pendingVoice
 		pendingVoice = ""
+		voiceTrimStartVal := pendingVoiceTrimStart
+		voiceTrimEndVal := pendingVoiceTrimEnd
+		pendingVoiceTrimStart = 0
+		pendingVoiceTrimEnd = 0
 		slugVal := pendingSlugline
 		pendingSlugline = ""
 		synVal := pendingSynopsis
@@ -202,17 +211,19 @@ func ParseStoryFile(content string, sourceFileName string, b *Book) {
 		pendingEffects = ""
 
 		currentScene = &Scene{
-			ID:            sceneID,
-			ExplicitID:    explicitID,
-			Name:          cleanName,
-			Slugline:      slugVal,
-			Synopsis:      synVal,
-			Effects:       effVal,
-			Chapter:       currentChapter,
-			ChapterID:     currentChapterExplicitID,
-			ExplicitImage: imgVal,
-			ExplicitVoice: voiceVal,
-			SourceFile:    sourceFileName,
+			ID:             sceneID,
+			ExplicitID:     explicitID,
+			Name:           cleanName,
+			Slugline:       slugVal,
+			Synopsis:       synVal,
+			Effects:        effVal,
+			Chapter:        currentChapter,
+			ChapterID:      currentChapterExplicitID,
+			ExplicitImage:  imgVal,
+			ExplicitVoice:  voiceVal,
+			VoiceTrimStart: voiceTrimStartVal,
+			VoiceTrimEnd:   voiceTrimEndVal,
+			SourceFile:     sourceFileName,
 		}
 		sawSceneHeader = explicitSceneHeader
 		headerBlockEnded = false
@@ -444,6 +455,20 @@ func ParseStoryFile(content string, sourceFileName string, b *Book) {
 					currentScene.ExplicitVoice = safeVoice
 				} else {
 					pendingVoice = safeVoice
+				}
+				continue
+
+			case "voice_trim", "audio_trim", "trim":
+				inChapterHeaderBlock = false
+				inExitChoiceBlock = false
+				if ts, te, okTrim := parseVoiceTrimHeader(val); okTrim {
+					if currentScene != nil && !headerBlockEnded && len(proseLines) == 0 && len(currentScene.Choices) == 0 {
+						currentScene.VoiceTrimStart = ts
+						currentScene.VoiceTrimEnd = te
+					} else {
+						pendingVoiceTrimStart = ts
+						pendingVoiceTrimEnd = te
+					}
 				}
 				continue
 
@@ -717,6 +742,7 @@ func parseStructuralHeader(trimmed string) (string, string, bool) {
 		"start", "first_scene", "pierwsza_scena", "wejscie", "wejście",
 		"image", "obraz", "img",
 		"voice", "audio", "glos", "głos",
+		"voice_trim", "audio_trim", "trim",
 		"exit", "next", "dalej",
 		"label", "etykieta",
 		"if", "if?", "gdy", "warunek",
@@ -740,4 +766,31 @@ func parseChoiceLine(trimmed string) (string, string, bool) {
 		return "", "", false
 	}
 	return label, target, true
+}
+
+func parseVoiceTrimHeader(val string) (float64, float64, bool) {
+	clean := strings.ReplaceAll(val, "..", ",")
+	clean = strings.ReplaceAll(clean, "-", ",")
+	parts := strings.Split(clean, ",")
+	if len(parts) != 2 {
+		parts = strings.Fields(val)
+	}
+	if len(parts) != 2 {
+		return 0, 1, false
+	}
+	s, err1 := strconv.ParseFloat(strings.TrimSpace(parts[0]), 64)
+	e, err2 := strconv.ParseFloat(strings.TrimSpace(parts[1]), 64)
+	if err1 != nil || err2 != nil {
+		return 0, 1, false
+	}
+	if s < 0 {
+		s = 0
+	}
+	if e > 1 {
+		e = 1
+	}
+	if e <= s+0.001 {
+		return 0, 1, false
+	}
+	return s, e, true
 }

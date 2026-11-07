@@ -167,6 +167,10 @@ func SerializeScenesForFile(b *Book, sourceFile string) string {
 		}
 		if b.Narrated && sc.ExplicitVoice != "" {
 			fmt.Fprintf(&out, "voice: %s\n", strings.TrimSpace(sc.ExplicitVoice))
+			if sc.HasVoiceTrim() {
+				ts, te := sc.NormalizedVoiceTrim()
+				fmt.Fprintf(&out, "voice_trim: %.4f, %.4f\n", ts, te)
+			}
 		}
 		text := strings.TrimSpace(sc.Text)
 		if text != "" {

@@ -155,7 +155,7 @@ func preprocessCSSLines(source string) []cssPreprocessedLine {
 
 		// Join multi-line parenthesized values or comma-Lists
 		acc := trimmed
-		for {
+		for mergeStep := 0; mergeStep < len(rawLines); mergeStep++ {
 			openParens := countUnquotedParens(acc)
 			isSelectorComma := strings.HasSuffix(acc, ",") && openParens == 0 && !isCSSPropertyAssignment(acc) && findUnquotedArrow(acc) < 0 && !strings.HasPrefix(acc, "switch ") && !strings.HasPrefix(acc, "@switch ")
 			if openParens <= 0 && !isSelectorComma {
@@ -555,23 +555,45 @@ func evalMultilinePropertyValue(propKey, headerVal string, sub []cssPreprocessed
 }
 
 func evalMultilineSubItems(propKey string, sub []cssPreprocessedLine) []string {
+	if len(sub) == 0 {
+		return nil
+	}
+	work := make([]cssPreprocessedLine, len(sub))
+	for i := range sub {
+		work[i] = cssPreprocessedLine{
+			Indent:  sub[i].Indent,
+			Content: cleanMultilineItemText(propKey, sub[i].Content),
+			LineNum: sub[i].LineNum,
+		}
+	}
+	for pass := 0; pass < len(sub); pass++ {
+		lastParent := -1
+		for i := 0; i+1 < len(work); i++ {
+			if work[i+1].Indent > work[i].Indent {
+				lastParent = i
+			}
+		}
+		if lastParent < 0 {
+			break
+		}
+		childEnd := lastParent + 1
+		for childEnd < len(work) && work[childEnd].Indent > work[lastParent].Indent {
+			childEnd++
+		}
+		var nestedItems []string
+		for k := lastParent + 1; k < childEnd; k++ {
+			if work[k].Content != "" {
+				nestedItems = append(nestedItems, work[k].Content)
+			}
+		}
+		work[lastParent].Content = spliceCSSFunctionArgs(work[lastParent].Content, nestedItems)
+		work = append(work[:lastParent+1], work[childEnd:]...)
+	}
 	var items []string
-	j := 0
-	for j < len(sub) {
-		itemLine := sub[j]
-		itemEnd := j + 1
-		for itemEnd < len(sub) && sub[itemEnd].Indent > itemLine.Indent {
-			itemEnd++
+	for _, w := range work {
+		if w.Content != "" {
+			items = append(items, w.Content)
 		}
-		itemText := cleanMultilineItemText(propKey, itemLine.Content)
-		if itemEnd > j+1 {
-			nestedItems := evalMultilineSubItems(propKey, sub[j+1:itemEnd])
-			itemText = spliceCSSFunctionArgs(itemText, nestedItems)
-		}
-		if itemText != "" {
-			items = append(items, itemText)
-		}
-		j = itemEnd
 	}
 	return items
 }
@@ -1314,192 +1336,203 @@ type cssSwitchedBucket struct {
 	Decls    []string
 }
 
-func emitCSSNode(node *cssNode, currentSelector string, switches map[string]*CSSSwitchDef, ctx *RenderContext, stripDev bool) ([]string, error) {
+type cssEmitTask struct {
+	node            *cssNode
+	currentSelector string
+	closeAtSelector string
+	startOutIdx     int
+}
+
+func emitCSSNode(rootNode *cssNode, rootSelector string, switches map[string]*CSSSwitchDef, ctx *RenderContext, stripDev bool) ([]string, error) {
 	var out []string
+	stack := []cssEmitTask{{node: rootNode, currentSelector: rootSelector}}
 
-	// Evaluate conditional if this is a `-> if ...` node
-	if node.Kind == cssKindCond {
-		cond := node.Cond
-		invert := false
-		if strings.HasPrefix(cond, "not ") {
-			invert = true
-			cond = strings.TrimSpace(cond[4:])
-		}
-		if cond == "dev_mode" && stripDev {
-			if !invert {
-				return nil, nil
-			}
-		} else if ctx != nil {
-			val, ok := resolvePath(ctx, cond)
-			truthy := ok && isTruthy(val)
-			if invert {
-				truthy = !truthy
-			}
-			if !truthy {
-				return nil, nil
-			}
-		}
-	}
+	for step := 0; step < 32768 && len(stack) > 0; step++ {
+		task := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
 
-	// Handle `@media` / `@supports` / `@font-face` rules
-	if node.Kind == cssKindRule && strings.HasPrefix(node.Selector, "@") {
-		if len(node.Decls) > 0 && len(node.Children) == 0 && currentSelector == "" {
-			decls := formatCSSDecls(node.Decls, ctx, "  ")
-			out = append(out, fmt.Sprintf("%s {\n%s\n}", node.Selector, strings.Join(decls, "\n")))
-			return out, nil
-		}
-		bodyNode := *node
-		bodyNode.Kind = cssKindRoot
-		bodyNode.Selector = ""
-		chBlocks, err := emitCSSNode(&bodyNode, currentSelector, switches, ctx, stripDev)
-		if err != nil {
-			return nil, err
-		}
-		var innerBlocks []string
-		for _, b := range chBlocks {
-			indented := "  " + strings.ReplaceAll(b, "\n", "\n  ")
-			innerBlocks = append(innerBlocks, indented)
-		}
-		if len(innerBlocks) > 0 {
-			out = append(out, fmt.Sprintf("%s {\n%s\n}", node.Selector, strings.Join(innerBlocks, "\n\n")))
-		}
-		return out, nil
-	}
-
-	// Collect direct declarations and property-level switches on this node
-	var baseDecls []string
-	if len(node.Decls) > 0 {
-		baseDecls = formatCSSDecls(node.Decls, ctx, "  ")
-	}
-
-	var switchedOrder []string
-	switchedBuckets := make(map[string]*cssSwitchedBucket)
-	var beforeAfterBuckets []*cssSwitchedBucket
-
-	addSwitchedDecl := func(sel, formattedDecl string) {
-		b, ok := switchedBuckets[sel]
-		if !ok {
-			b = &cssSwitchedBucket{Selector: sel}
-			switchedBuckets[sel] = b
-			switchedOrder = append(switchedOrder, sel)
-		}
-		b.Decls = append(b.Decls, formattedDecl)
-	}
-
-	for _, ch := range node.Children {
-		if ch.Kind == cssKindPropSwitch {
-			swDef, ok := switches[ch.SwitchName]
-			if !ok {
-				return nil, fmt.Errorf("css compile error in %s.css:%d: unknown switch %q", ch.File, ch.Line, ch.SwitchName)
-			}
-			propName := normalizeCSSPropKey(ch.PropKey)
-			for _, pc := range ch.PropCases {
-				var branchSelectors []string
-				for _, ck := range pc.CaseKeys {
-					bs, exists := swDef.Cases[ck]
-					if !exists {
-						return nil, fmt.Errorf("css compile error in %s.css:%d: unknown case %q in switch(%s)", ch.File, pc.Line, ck, ch.SwitchName)
-					}
-					branchSelectors = append(branchSelectors, bs)
+		if task.closeAtSelector != "" {
+			chBlocks := out[task.startOutIdx:]
+			out = out[:task.startOutIdx]
+			if len(chBlocks) > 0 {
+				innerBlocks := make([]string, len(chBlocks))
+				for i, b := range chBlocks {
+					innerBlocks[i] = "  " + strings.ReplaceAll(b, "\n", "\n  ")
 				}
-				combinedBranch := strings.Join(branchSelectors, ", ")
-				targetSel := combineSwitchAndRuleSelector(combinedBranch, currentSelector)
-				val := transformCSSValue(pc.Val, ctx)
-
-				if ch.PropKey == "before" || ch.PropKey == "after" {
-					pseudoSel := combineNestedSelectors(targetSel, "::"+ch.PropKey)
-					beforeAfterBuckets = append(beforeAfterBuckets, &cssSwitchedBucket{
-						Selector: pseudoSel,
-						Decls:    []string{fmt.Sprintf("  content: %s;", val)},
-					})
-				} else {
-					addSwitchedDecl(targetSel, fmt.Sprintf("  %s: %s;", propName, val))
-				}
+				out = append(out, fmt.Sprintf("%s {\n%s\n}", task.closeAtSelector, strings.Join(innerBlocks, "\n\n")))
 			}
-		}
-	}
-
-	// Emit base declarations for this node
-	if len(baseDecls) > 0 {
-		if currentSelector == "" {
-			// Top-level `$var` declarations: if there is a switched `:root` bucket, merge into it; otherwise emit `:root`
-			mergedIntoRoot := false
-			for _, sel := range switchedOrder {
-				if strings.Contains(sel, ":root") {
-					switchedBuckets[sel].Decls = append(switchedBuckets[sel].Decls, baseDecls...)
-					mergedIntoRoot = true
-					break
-				}
-			}
-			if !mergedIntoRoot {
-				out = append(out, formatCSSBlock(":root", baseDecls))
-			}
-		} else {
-			out = append(out, formatCSSBlock(currentSelector, baseDecls))
-		}
-	}
-
-	// Emit grouped property-level switch buckets in order
-	for _, sel := range switchedOrder {
-		bucket := switchedBuckets[sel]
-		if len(bucket.Decls) > 0 {
-			out = append(out, formatCSSBlock(bucket.Selector, bucket.Decls))
-		}
-	}
-	for _, ba := range beforeAfterBuckets {
-		out = append(out, formatCSSBlock(ba.Selector, ba.Decls))
-	}
-
-	// Process remaining children (nested rules, block-level switches, conditionals)
-	for _, ch := range node.Children {
-		switch ch.Kind {
-		case cssKindPropSwitch:
 			continue
-		case cssKindRule:
-			if strings.HasPrefix(ch.Selector, "@") {
-				chBlocks, err := emitCSSNode(ch, currentSelector, switches, ctx, stripDev)
-				if err != nil {
-					return nil, err
+		}
+
+		node := task.node
+		currentSelector := task.currentSelector
+		if node == nil {
+			continue
+		}
+
+		// Evaluate conditional if this is a `-> if ...` node
+		if node.Kind == cssKindCond {
+			cond := node.Cond
+			invert := false
+			if strings.HasPrefix(cond, "not ") {
+				invert = true
+				cond = strings.TrimSpace(cond[4:])
+			}
+			if cond == "dev_mode" && stripDev {
+				if !invert {
+					continue
 				}
-				out = append(out, chBlocks...)
+			} else if ctx != nil {
+				val, ok := resolvePath(ctx, cond)
+				truthy := ok && isTruthy(val)
+				if invert {
+					truthy = !truthy
+				}
+				if !truthy {
+					continue
+				}
+			}
+		}
+
+		// Handle `@media` / `@supports` / `@font-face` rules
+		if node.Kind == cssKindRule && strings.HasPrefix(node.Selector, "@") {
+			if len(node.Decls) > 0 && len(node.Children) == 0 && currentSelector == "" {
+				decls := formatCSSDecls(node.Decls, ctx, "  ")
+				out = append(out, fmt.Sprintf("%s {\n%s\n}", node.Selector, strings.Join(decls, "\n")))
 				continue
 			}
-			nextSel := combineNestedSelectors(currentSelector, ch.Selector)
-			chBlocks, err := emitCSSNode(ch, nextSel, switches, ctx, stripDev)
-			if err != nil {
-				return nil, err
-			}
-			out = append(out, chBlocks...)
+			bodyNode := *node
+			bodyNode.Kind = cssKindRoot
+			bodyNode.Selector = ""
+			stack = append(stack,
+				cssEmitTask{closeAtSelector: node.Selector, startOutIdx: len(out)},
+				cssEmitTask{node: &bodyNode, currentSelector: currentSelector},
+			)
+			continue
+		}
 
-		case cssKindBlockSwitch:
-			swDef, ok := switches[ch.SwitchName]
+		// Collect direct declarations and property-level switches on this node
+		var baseDecls []string
+		if len(node.Decls) > 0 {
+			baseDecls = formatCSSDecls(node.Decls, ctx, "  ")
+		}
+
+		var switchedOrder []string
+		switchedBuckets := make(map[string]*cssSwitchedBucket)
+		var beforeAfterBuckets []*cssSwitchedBucket
+
+		addSwitchedDecl := func(sel, formattedDecl string) {
+			b, ok := switchedBuckets[sel]
 			if !ok {
-				return nil, fmt.Errorf("css compile error in %s.css:%d: unknown switch %q", ch.File, ch.Line, ch.SwitchName)
+				b = &cssSwitchedBucket{Selector: sel}
+				switchedBuckets[sel] = b
+				switchedOrder = append(switchedOrder, sel)
 			}
-			for _, caseNode := range ch.Children {
-				var branchSelectors []string
-				for _, ck := range caseNode.CaseKeys {
-					bs, exists := swDef.Cases[ck]
-					if !exists {
-						return nil, fmt.Errorf("css compile error in %s.css:%d: unknown case %q in switch(%s)", ch.File, caseNode.Line, ck, ch.SwitchName)
-					}
-					branchSelectors = append(branchSelectors, bs)
-				}
-				combinedBranch := strings.Join(branchSelectors, ", ")
-				targetSel := combineSwitchAndRuleSelector(combinedBranch, currentSelector)
-				chBlocks, err := emitCSSNode(caseNode, targetSel, switches, ctx, stripDev)
-				if err != nil {
-					return nil, err
-				}
-				out = append(out, chBlocks...)
-			}
+			b.Decls = append(b.Decls, formattedDecl)
+		}
 
-		case cssKindCond:
-			chBlocks, err := emitCSSNode(ch, currentSelector, switches, ctx, stripDev)
-			if err != nil {
-				return nil, err
+		for _, ch := range node.Children {
+			if ch.Kind == cssKindPropSwitch {
+				swDef, ok := switches[ch.SwitchName]
+				if !ok {
+					return nil, fmt.Errorf("css compile error in %s.css:%d: unknown switch %q", ch.File, ch.Line, ch.SwitchName)
+				}
+				propName := normalizeCSSPropKey(ch.PropKey)
+				for _, pc := range ch.PropCases {
+					var branchSelectors []string
+					for _, ck := range pc.CaseKeys {
+						bs, exists := swDef.Cases[ck]
+						if !exists {
+							return nil, fmt.Errorf("css compile error in %s.css:%d: unknown case %q in switch(%s)", ch.File, pc.Line, ck, ch.SwitchName)
+						}
+						branchSelectors = append(branchSelectors, bs)
+					}
+					combinedBranch := strings.Join(branchSelectors, ", ")
+					targetSel := combineSwitchAndRuleSelector(combinedBranch, currentSelector)
+					val := transformCSSValue(pc.Val, ctx)
+
+					if ch.PropKey == "before" || ch.PropKey == "after" {
+						pseudoSel := combineNestedSelectors(targetSel, "::"+ch.PropKey)
+						beforeAfterBuckets = append(beforeAfterBuckets, &cssSwitchedBucket{
+							Selector: pseudoSel,
+							Decls:    []string{fmt.Sprintf("  content: %s;", val)},
+						})
+					} else {
+						addSwitchedDecl(targetSel, fmt.Sprintf("  %s: %s;", propName, val))
+					}
+				}
 			}
-			out = append(out, chBlocks...)
+		}
+
+		// Emit base declarations for this node
+		if len(baseDecls) > 0 {
+			if currentSelector == "" {
+				mergedIntoRoot := false
+				for _, sel := range switchedOrder {
+					if strings.Contains(sel, ":root") {
+						switchedBuckets[sel].Decls = append(switchedBuckets[sel].Decls, baseDecls...)
+						mergedIntoRoot = true
+						break
+					}
+				}
+				if !mergedIntoRoot {
+					out = append(out, formatCSSBlock(":root", baseDecls))
+				}
+			} else {
+				out = append(out, formatCSSBlock(currentSelector, baseDecls))
+			}
+		}
+
+		// Emit grouped property-level switch buckets in order
+		for _, sel := range switchedOrder {
+			bucket := switchedBuckets[sel]
+			if len(bucket.Decls) > 0 {
+				out = append(out, formatCSSBlock(bucket.Selector, bucket.Decls))
+			}
+		}
+		for _, ba := range beforeAfterBuckets {
+			out = append(out, formatCSSBlock(ba.Selector, ba.Decls))
+		}
+
+		// Collect child tasks in forward order, then push in reverse order for pre-order LIFO traversal
+		var childTasks []cssEmitTask
+		for _, ch := range node.Children {
+			switch ch.Kind {
+			case cssKindPropSwitch:
+				continue
+			case cssKindRule:
+				if strings.HasPrefix(ch.Selector, "@") {
+					childTasks = append(childTasks, cssEmitTask{node: ch, currentSelector: currentSelector})
+					continue
+				}
+				nextSel := combineNestedSelectors(currentSelector, ch.Selector)
+				childTasks = append(childTasks, cssEmitTask{node: ch, currentSelector: nextSel})
+
+			case cssKindBlockSwitch:
+				swDef, ok := switches[ch.SwitchName]
+				if !ok {
+					return nil, fmt.Errorf("css compile error in %s.css:%d: unknown switch %q", ch.File, ch.Line, ch.SwitchName)
+				}
+				for _, caseNode := range ch.Children {
+					var branchSelectors []string
+					for _, ck := range caseNode.CaseKeys {
+						bs, exists := swDef.Cases[ck]
+						if !exists {
+							return nil, fmt.Errorf("css compile error in %s.css:%d: unknown case %q in switch(%s)", ch.File, caseNode.Line, ck, ch.SwitchName)
+						}
+						branchSelectors = append(branchSelectors, bs)
+					}
+					combinedBranch := strings.Join(branchSelectors, ", ")
+					targetSel := combineSwitchAndRuleSelector(combinedBranch, currentSelector)
+					childTasks = append(childTasks, cssEmitTask{node: caseNode, currentSelector: targetSel})
+				}
+
+			case cssKindCond:
+				childTasks = append(childTasks, cssEmitTask{node: ch, currentSelector: currentSelector})
+			}
+		}
+		for i := len(childTasks) - 1; i >= 0; i-- {
+			stack = append(stack, childTasks[i])
 		}
 	}
 

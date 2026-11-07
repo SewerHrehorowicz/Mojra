@@ -6,15 +6,17 @@ import (
 	"storyteller/internal/book"
 )
 
-func buildBookModeOptions(activeMode string) (string, []map[string]any) {
+func buildBookModeOptions(activeMode string, lang Lang) (string, []map[string]any) {
 	norm := book.NormalizeBookMode(activeMode)
-	label := "Książka interaktywna"
+	bookLbl := trLang(lang, TrModeInteractiveBook)
+	spLbl := trLang(lang, TrModeScreenplay)
+	label := bookLbl
 	if norm == "screenplay" {
-		label = "Scenariusz filmowy"
+		label = spLbl
 	}
 	return label, []map[string]any{
-		{"value": "book", "label": "Książka interaktywna", "is_active": norm == "book"},
-		{"value": "screenplay", "label": "Scenariusz filmowy", "is_active": norm == "screenplay"},
+		{"value": "book", "label": bookLbl, "is_active": norm == "book"},
+		{"value": "screenplay", "label": spLbl, "is_active": norm == "screenplay"},
 	}
 }
 

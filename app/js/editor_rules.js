@@ -27,25 +27,25 @@ function isClientBoolLiteral(s) {
 function explainClientVarValueError(varName, vDef, op, rhs, varsMap) {
   const cleanRhs = (rhs || "").replace(/^["']|["']$/g, "").trim().toLowerCase();
   if (!cleanRhs) {
-    return "Błąd składni: brak wartości po operatorze '" + op + "' dla zmiennej '" + varName + "'";
+    return trf("err_missing_val_after_op", op, varName);
   }
   if (vDef.kind === "int") {
     if (/^-?\d+$/.test(cleanRhs)) return "";
     const rhsVar = varsMap.get(cleanRhs);
     if (rhsVar && rhsVar.kind === "int") return "";
-    return "Błąd typu: zmienna '" + varName + "' (int) wymaga liczby całkowitej, otrzymano '" + cleanRhs + "'";
+    return trf("err_int_type", varName, cleanRhs);
   }
   if (vDef.kind === "enum") {
     if (op !== "==" && op !== "!=" && op !== "=") {
-      return "Błąd operatora: zmienna '" + varName + "' (enum) obsługuje tylko '=' / '==' lub '!='";
+      return trf("err_enum_op", varName);
     }
     if (vDef.opts.includes(cleanRhs)) return "";
     const rhsVar = varsMap.get(cleanRhs);
     if (rhsVar && rhsVar.kind === "enum") return "";
-    return "Nieznana wartość '" + cleanRhs + "' dla zmiennej '" + varName + "' (dozwolone: " + vDef.opts.join(", ") + ")";
+    return trf("err_enum_val", cleanRhs, varName, vDef.opts.join(", "));
   }
   if (op !== "==" && op !== "!=" && op !== "=") {
-    return "Błąd operatora: zmienna '" + varName + "' (bool) obsługuje tylko '=' / '==' lub '!='";
+    return trf("err_bool_op", varName);
   }
   if (isClientBoolLiteral(cleanRhs)) return "";
   if (cleanRhs.startsWith("!")) {
@@ -54,7 +54,7 @@ function explainClientVarValueError(varName, vDef, op, rhs, varsMap) {
   }
   const rhsVar = varsMap.get(cleanRhs);
   if (rhsVar && rhsVar.kind === "bool") return "";
-  return "Błąd typu: zmienna '" + varName + "' (bool) wymaga wartości true/false lub samej nazwy zmiennej";
+  return trf("err_bool_type", varName);
 }
 
 function explainClientCondExprError(raw, varsMap) {
@@ -64,30 +64,30 @@ function explainClientCondExprError(raw, varsMap) {
   }
   if (s.startsWith("?")) s = s.slice(1).trim();
   if (!s) return "";
-  if (varsMap.size === 0) return "Brak zadeklarowanych zmiennych w książce";
+  if (varsMap.size === 0) return tr("err_no_vars");
   let depth = 0;
   for (let i = 0; i < s.length; i++) {
     if (s[i] === "(") depth++;
     else if (s[i] === ")") {
       depth--;
-      if (depth < 0) return "Błąd składni: niedomknięty nawias w warunku";
+      if (depth < 0) return tr("err_unclosed_paren");
     }
   }
-  if (depth !== 0) return "Błąd składni: niedomknięty nawias w warunku";
+  if (depth !== 0) return tr("err_unclosed_paren");
   const clauses = s.split(/\|\||&&/);
   for (let i = 0; i < clauses.length; i++) {
     let c = clauses[i].replace(/^[()\s]+|[()\s]+$/g, "");
     while ((c.startsWith("!") && !c.startsWith("!=")) || c.startsWith("?")) {
       c = c.slice(1).replace(/^[()\s]+|[()\s]+$/g, "");
     }
-    if (!c) return "Błąd składni: brak wyrażenia po operatorze logicznym";
+    if (!c) return tr("err_empty_after_logic_op");
     for (let m = 0; m < PLAYTXT_MUT_OPS.length; m++) {
       if (c.indexOf(PLAYTXT_MUT_OPS[m]) >= 0) {
-        return "Błąd w if: operator '" + PLAYTXT_MUT_OPS[m] + "' służy do zmiany wartości w polu set:, a w if: podaj porównanie";
+        return trf("err_mut_op_in_if", PLAYTXT_MUT_OPS[m]);
       }
     }
     if (c.indexOf(",") >= 0 || c.indexOf(";") >= 0) {
-      return "Błąd składni w if: użyj '&&' (oraz) lub '||' (lub) zamiast przecinka/średnika";
+      return tr("err_comma_in_if");
     }
     let matchedOp = "";
     let opIdx = -1;
@@ -102,19 +102,19 @@ function explainClientCondExprError(raw, varsMap) {
     if (opIdx >= 0) {
       const lhs = c.slice(0, opIdx).trim().toLowerCase();
       const rhs = c.slice(opIdx + matchedOp.length).trim();
-      if (!lhs) return "Błąd składni: brak nazwy zmiennej przed operatorem '" + matchedOp + "'";
-      if (!rhs) return "Błąd składni: brak wartości po operatorze '" + matchedOp + "' dla zmiennej '" + lhs + "'";
+      if (!lhs) return trf("err_missing_var_before_op", matchedOp);
+      if (!rhs) return trf("err_missing_val_after_op", matchedOp, lhs);
       const vDef = varsMap.get(lhs);
-      if (!vDef) return "Nieznana zmienna '" + lhs + "' — zadeklaruj ją w panelu Zmienne {}";
+      if (!vDef) return trf("err_unknown_var", lhs);
       const errMsg = explainClientVarValueError(lhs, vDef, matchedOp, rhs, varsMap);
       if (errMsg) return errMsg;
     } else {
       const varName = c.trim().toLowerCase();
       if (/[\s=!<>+\-(),:|&]/.test(varName)) {
-        return "Błąd składni w warunku: '" + c.trim() + "'";
+        return trf("err_cond_syntax", c.trim());
       }
       if (!varsMap.has(varName)) {
-        return "Nieznana zmienna '" + varName + "' — zadeklaruj ją w panelu Zmienne {}";
+        return trf("err_unknown_var", varName);
       }
     }
   }
@@ -199,15 +199,15 @@ function explainClientEffectsExprError(raw, varsMap) {
     s = s.slice(2, -2).trim();
   }
   if (!s) return "";
-  if (varsMap.size === 0) return "Brak zadeklarowanych zmiennych w książce";
+  if (varsMap.size === 0) return tr("err_no_vars");
   const rawParts = s.split(/[;,]/).map((p) => p.trim());
-  if (rawParts.length === 0) return "Błąd składni w polu set:";
+  if (rawParts.length === 0) return tr("err_set_syntax_empty");
   const parts = [];
   for (let r = 0; r < rawParts.length; r++) {
     const rp = rawParts[r];
     if (!rp) {
       if (r === rawParts.length - 1 && s.endsWith(";")) continue;
-      return "Błąd składni w set: puste wyrażenie po przecinku";
+      return tr("err_set_empty_after_comma");
     }
     const sub = splitClientSpaceEffectChunk(rp);
     for (let k = 0; k < sub.length; k++) {
@@ -217,43 +217,43 @@ function explainClientEffectsExprError(raw, varsMap) {
   for (let i = 0; i < parts.length; i++) {
     const c = parts[i];
     if (!c) {
-      return "Błąd składni w set: puste wyrażenie po przecinku";
+      return tr("err_set_empty_after_comma");
     }
     if ((c.endsWith("++") || c.endsWith("--")) && !c.includes("=")) {
       const op = c.slice(-2);
       const varName = c.slice(0, -2).trim().toLowerCase();
       const vDef = varsMap.get(varName);
-      if (!vDef) return "Nieznana zmienna '" + varName + "' — zadeklaruj ją w panelu Zmienne {}";
+      if (!vDef) return trf("err_unknown_var", varName);
       if (vDef.kind !== "int") {
-        return "Błąd typu: operator '" + op + "' wymaga zmiennej typu int (zmienna '" + varName + "' jest typu " + vDef.kind + ")";
+        return trf("err_op_requires_int", op, varName, vDef.kind);
       }
       continue;
     }
     if (c.startsWith("!") && !c.includes("=")) {
       const varName = c.slice(1).trim().toLowerCase();
       const vDef = varsMap.get(varName);
-      if (!vDef) return "Nieznana zmienna '" + varName + "' — zadeklaruj ją w panelu Zmienne {}";
+      if (!vDef) return trf("err_unknown_var", varName);
       if (vDef.kind !== "bool") {
-        return "Błąd typu: negacja '!" + varName + "' wymaga zmiennej typu bool (jest typu " + vDef.kind + ")";
+        return trf("err_neg_requires_bool", varName, vDef.kind);
       }
       continue;
     }
     if ((c.startsWith("+") || c.startsWith("-")) && !c.includes("=")) {
       const tokens = c.slice(1).trim().split(/\s+/).filter(Boolean);
-      if (tokens.length === 0 || tokens.length > 2) return "Błąd składni w set: '" + c + "'";
+      if (tokens.length === 0 || tokens.length > 2) return trf("err_set_clause_syntax", c);
       const varName = tokens[0].toLowerCase();
       const vDef = varsMap.get(varName);
-      if (!vDef) return "Nieznana zmienna '" + varName + "' — zadeklaruj ją w panelu Zmienne {}";
+      if (!vDef) return trf("err_unknown_var", varName);
       if (vDef.kind !== "bool" && vDef.kind !== "int") {
-        return "Błąd typu: dla zmiennej '" + varName + "' (enum) użyj przypisania '='";
+        return trf("err_enum_needs_assign", varName);
       }
       if (tokens.length === 2 && (vDef.kind !== "int" || !/^-?\d+$/.test(tokens[1]))) {
-        return "Błąd typu: zmienna '" + varName + "' wymaga liczby całkowitej";
+        return trf("err_var_requires_int", varName);
       }
       continue;
     }
     if (c.includes("==") || c.includes("!=") || c.includes(">=") || c.includes("\x3c=") || c.includes(">") || c.includes("\x3c") || c.includes("&&") || c.includes("||")) {
-      return "Błąd w set: użyj przypisania ('=', '+=', '-=', '++', '--'), a nie operatora warunkowego";
+      return tr("err_cond_op_in_set");
     }
     const plusEq = c.indexOf("+=");
     const minusEq = c.indexOf("-=");
@@ -263,15 +263,15 @@ function explainClientEffectsExprError(raw, varsMap) {
       const lhs = c.slice(0, idx).trim().toLowerCase();
       const rhs = c.slice(idx + 2).trim().toLowerCase();
       const vDef = varsMap.get(lhs);
-      if (!vDef) return "Nieznana zmienna '" + lhs + "' — zadeklaruj ją w panelu Zmienne {}";
+      if (!vDef) return trf("err_unknown_var", lhs);
       if (vDef.kind !== "int") {
-        return "Błąd typu: operator '" + op + "' wymaga zmiennej typu int (zmienna '" + lhs + "' jest typu " + vDef.kind + ")";
+        return trf("err_op_requires_int", op, lhs, vDef.kind);
       }
-      if (!rhs) return "Błąd składni: brak wartości po '" + op + "' dla zmiennej '" + lhs + "'";
+      if (!rhs) return trf("err_missing_val_after_compound", op, lhs);
       if (!/^-?\d+$/.test(rhs)) {
         const rhsVar = varsMap.get(rhs);
         if (!rhsVar || rhsVar.kind !== "int") {
-          return "Błąd typu: zmienna '" + lhs + "' (int) wymaga liczby całkowitej po '" + op + "', otrzymano '" + rhs + "'";
+          return trf("err_int_after_compound", lhs, op, rhs);
         }
       }
       continue;
@@ -281,8 +281,8 @@ function explainClientEffectsExprError(raw, varsMap) {
       const lhs = c.slice(0, eqIdx).trim().toLowerCase();
       const rhs = c.slice(eqIdx + 1).trim();
       const vDef = varsMap.get(lhs);
-      if (!vDef) return "Nieznana zmienna '" + lhs + "' — zadeklaruj ją w panelu Zmienne {}";
-      if (!rhs) return "Błąd składni: brak przypisywanej wartości po '=' dla zmiennej '" + lhs + "'";
+      if (!vDef) return trf("err_unknown_var", lhs);
+      if (!rhs) return trf("err_missing_val_after_eq", lhs);
       const errMsg = explainClientVarValueError(lhs, vDef, "=", rhs, varsMap);
       if (errMsg) return errMsg;
       continue;
@@ -291,12 +291,12 @@ function explainClientEffectsExprError(raw, varsMap) {
     const bareDef = varsMap.get(bareName);
     if (bareDef) {
       if (bareDef.kind === "bool") continue;
-      return "Błąd składni: dla zmiennej '" + bareName + "' (" + bareDef.kind + ") podaj przypisanie (np. " + bareName + " = wartość)";
+      return trf("err_bare_var_needs_assign", bareName, bareDef.kind, bareName);
     }
     if (!/[\s+\-*/=<>!&|,;:]/.test(bareName)) {
-      return "Nieznana zmienna '" + bareName + "' — zadeklaruj ją w panelu Zmienne {}";
+      return trf("err_unknown_var", bareName);
     }
-    return "Błąd składni w set: '" + c + "'";
+    return trf("err_set_clause_syntax", c);
   }
   return "";
 }

@@ -524,7 +524,7 @@ function syncNodeSelectionDOM() {
   const badge = qs("#canvas-selection-badge");
   if (badge) {
     if (selectedNodeIds.size > 1) {
-      badge.textContent = "Zaznaczono: " + selectedNodeIds.size;
+      badge.textContent = tr("selected_count_prefix") + selectedNodeIds.size;
       badge.classList.remove("hidden");
     } else {
       badge.classList.add("hidden");
@@ -562,7 +562,7 @@ function syncNodeSelectionDOM() {
       multiPanel.classList.remove("hidden");
       const countLabel = qs("#multi-select-count-label", multiPanel);
       if (countLabel) {
-        countLabel.textContent = "Zaznaczone sceny (" + selectedItems.length + ")";
+        countLabel.textContent = tr("selected_scenes_prefix") + selectedItems.length + ")";
       }
       const listEl = qs("#context-multi-scene-list", multiPanel);
       if (listEl) {
@@ -592,7 +592,7 @@ function syncNodeSelectionDOM() {
       }
       const delLabel = qs("#btn-delete-selected-scenes-label", multiPanel);
       if (delLabel) {
-        delLabel.textContent = "Usuń zaznaczone sceny (" + selectedItems.length + ")";
+        delLabel.textContent = tr("delete_selected_scenes_prefix") + selectedItems.length + ")";
       }
     }
   }

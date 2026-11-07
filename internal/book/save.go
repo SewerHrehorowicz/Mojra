@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"storyteller/internal/tpl"
 )
 
 const (
@@ -31,18 +33,42 @@ func settingsIniPath(savesDir string) string {
 	return filepath.Join(savesDir, "settings.ini")
 }
 
+// NormalizeLanguage normalizes a UI language code to one of the registered languages in tpl.SupportedLanguages.
+func NormalizeLanguage(raw string) string {
+	return tpl.NormalizeLangCode(raw)
+}
+
+const DefaultScrollSensitivity = "medium"
+
+// NormalizeScrollSensitivity normalizes scroll sensitivity to "high", "medium", "low", or "off".
+func NormalizeScrollSensitivity(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "high", "wysoka", "fast":
+		return "high"
+	case "low", "niska", "slow":
+		return "low"
+	case "off", "none", "false", "0", "disabled", "wyl", "wył":
+		return "off"
+	default:
+		return DefaultScrollSensitivity
+	}
+}
+
 // DefaultAppSettings returns default human-readable INI settings.
 func DefaultAppSettings() *AppSettings {
 	return &AppSettings{
 		Theme:              "dark",
+		Language:           "pl",
 		PreviewMode:        "full",
 		ActiveBookID:       "",
 		ActiveView:         "library",
 		Imageless:          false,
 		UIScale:            "small",
+		ScrollSensitivity:  DefaultScrollSensitivity,
 		PlaybackSpeed:      1.0,
 		AutoChoice:         false,
 		AutoChoiceStrategy: "first",
+		AutoChoiceDelay:    DefaultAutoChoiceDelay,
 		BookExportDirs:     make(map[string]string),
 	}
 }
@@ -108,6 +134,8 @@ func LoadAppSettings(savesDir string) *AppSettings {
 			} else {
 				cfg.Theme = "dark"
 			}
+		case "display.lang", "display.language", ".lang", ".language":
+			cfg.Language = NormalizeLanguage(val)
 		case "display.preview_mode", ".preview_mode":
 			switch val {
 			case "phone", "portrait":
@@ -137,6 +165,8 @@ func LoadAppSettings(savesDir string) *AppSettings {
 			} else {
 				cfg.UIScale = "small"
 			}
+		case "display.scroll_sensitivity", ".scroll_sensitivity":
+			cfg.ScrollSensitivity = NormalizeScrollSensitivity(val)
 		case "audio.speed", ".speed":
 			if f, err := strconv.ParseFloat(val, 64); err == nil && f >= 0.5 && f <= 3.0 {
 				cfg.PlaybackSpeed = f
@@ -148,6 +178,10 @@ func LoadAppSettings(savesDir string) *AppSettings {
 				cfg.AutoChoiceStrategy = "random"
 			} else {
 				cfg.AutoChoiceStrategy = "first"
+			}
+		case "audio.auto_delay", ".auto_delay":
+			if f, err := strconv.ParseFloat(val, 64); err == nil {
+				cfg.AutoChoiceDelay = NormalizeAutoChoiceDelay(f)
 			}
 		case "library.book", "library.path", ".external_book":
 			if val != "" {
@@ -215,6 +249,7 @@ func SaveAppSettings(savesDir string, cfg *AppSettings) error {
 	if cfg.Theme != "light" {
 		cfg.Theme = "dark"
 	}
+	cfg.Language = NormalizeLanguage(cfg.Language)
 	switch cfg.PreviewMode {
 	case "phone":
 		cfg.PreviewMode = "portrait"
@@ -230,20 +265,24 @@ func SaveAppSettings(savesDir string, cfg *AppSettings) error {
 	if cfg.UIScale != "large" && cfg.UIScale != "zen" {
 		cfg.UIScale = "small"
 	}
+	cfg.ScrollSensitivity = NormalizeScrollSensitivity(cfg.ScrollSensitivity)
 	if math.IsNaN(cfg.PlaybackSpeed) || math.IsInf(cfg.PlaybackSpeed, 0) || cfg.PlaybackSpeed < 0.5 || cfg.PlaybackSpeed > 3.0 {
 		cfg.PlaybackSpeed = 1.0
 	}
 	if cfg.AutoChoiceStrategy != "random" {
 		cfg.AutoChoiceStrategy = "first"
 	}
+	cfg.AutoChoiceDelay = NormalizeAutoChoiceDelay(cfg.AutoChoiceDelay)
 
 	var sb strings.Builder
 	sb.WriteString("; StoryTeller — Ustawienia aplikacji (format INI)\n\n")
 	sb.WriteString("[display]\n")
 	fmt.Fprintf(&sb, "theme = %s\n", cfg.Theme)
+	fmt.Fprintf(&sb, "lang = %s\n", cfg.Language)
 	fmt.Fprintf(&sb, "preview_mode = %s\n", cfg.PreviewMode)
 	fmt.Fprintf(&sb, "imageless = %t\n", cfg.Imageless)
 	fmt.Fprintf(&sb, "ui_scale = %s\n", cfg.UIScale)
+	fmt.Fprintf(&sb, "scroll_sensitivity = %s\n", cfg.ScrollSensitivity)
 	fmt.Fprintf(&sb, "active_book = %s\n", cfg.ActiveBookID)
 	if cfg.EditorBookID != "" {
 		fmt.Fprintf(&sb, "editor_book = %s\n", cfg.EditorBookID)
@@ -254,6 +293,7 @@ func SaveAppSettings(savesDir string, cfg *AppSettings) error {
 	fmt.Fprintf(&sb, "speed = %.2f\n", cfg.PlaybackSpeed)
 	fmt.Fprintf(&sb, "auto_choice = %t\n", cfg.AutoChoice)
 	fmt.Fprintf(&sb, "auto_strategy = %s\n", cfg.AutoChoiceStrategy)
+	fmt.Fprintf(&sb, "auto_delay = %.1f\n", cfg.AutoChoiceDelay)
 
 	cleanNewBookDir := filepath.Clean(strings.TrimSpace(cfg.NewBookDir))
 	if cleanNewBookDir == "." {
@@ -324,6 +364,7 @@ func DecodeSaveStateBytes(bookID string, raw []byte, defaultStartSceneID string)
 		PlaybackSpeed:      1.0,
 		AutoChoice:         false,
 		AutoChoiceStrategy: "first",
+		AutoChoiceDelay:    DefaultAutoChoiceDelay,
 		History:            []HistoryEntry{},
 	}
 

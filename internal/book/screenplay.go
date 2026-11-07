@@ -362,7 +362,7 @@ func SplitCharacterCue(raw string) (baseName string, ext string) {
 		return "", ""
 	}
 	var extensions []string
-	for {
+	for step := 0; step < 16 && trimmed != ""; step++ {
 		loc := charParenSuffixRe.FindStringIndex(trimmed)
 		if loc == nil || loc[0] <= 0 {
 			break
@@ -1291,8 +1291,7 @@ func containsWholeWord(haystackUpper, needleUpper string) bool {
 	if needleUpper == "" || haystackUpper == "" {
 		return false
 	}
-	idx := 0
-	for {
+	for idx := 0; idx < len(haystackUpper); {
 		pos := strings.Index(haystackUpper[idx:], needleUpper)
 		if pos < 0 {
 			return false
@@ -1317,8 +1316,6 @@ func containsWholeWord(haystackUpper, needleUpper string) bool {
 			return true
 		}
 		idx = absStart + len(needleUpper)
-		if idx >= len(haystackUpper) {
-			return false
-		}
 	}
+	return false
 }

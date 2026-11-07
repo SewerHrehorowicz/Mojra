@@ -6,11 +6,11 @@ import (
 )
 
 func ValidateConditionExpr(expr string, b *Book) bool {
-	return ExplainConditionExprError(expr, b) == ""
+	return ExplainConditionExprErrorLang(expr, b, "pl") == ""
 }
 
 func ValidateEffectsExpr(expr string, b *Book) bool {
-	return ExplainEffectsExprError(expr, b) == ""
+	return ExplainEffectsExprErrorLang(expr, b, "pl") == ""
 }
 
 func TestVariablesParseSerializeEvaluateAndSaveRoundTrip(t *testing.T) {

@@ -49,6 +49,23 @@ function getSceneCardStartScrollTop(feed, card) {
   return Math.max(0, Math.round(rawTop));
 }
 
+function getCardScrollBounds(feed, card) {
+  const globalMeta = qs("#reader-global-meta", feed);
+  const metaH = globalMeta ? globalMeta.offsetHeight : 0;
+  const viewH = Math.max(1, feed.clientHeight - metaH);
+  const minScroll = getSceneCardStartScrollTop(feed, card);
+  const cardH = card ? card.offsetHeight : 0;
+  const extraScroll = Math.max(0, cardH - viewH);
+  const maxFeedScroll = Math.max(0, feed.scrollHeight - feed.clientHeight);
+  const clampedMin = Math.min(minScroll, maxFeedScroll);
+  const clampedMax = Math.min(minScroll + extraScroll, maxFeedScroll);
+  return {
+    minScroll: clampedMin,
+    maxScroll: Math.max(clampedMin, clampedMax),
+    viewH
+  };
+}
+
 function recordPlayerViewportDimensions(feed) {
   if (!feed) return;
   playerScrollState.lastWidth = feed.clientWidth;
@@ -103,23 +120,22 @@ function restorePlayerScrollPosition(feed) {
   const targetCard = findSceneCardByKey(feed, playerScrollState.cardKey);
   if (!targetCard) return;
 
-  if (manualFocusCard && feed.contains(manualFocusCard)) {
-    manualFocusCard = null;
-  }
+  manualFocusCard = targetCard;
 
   const startTop = getSceneCardStartScrollTop(feed, targetCard);
   const cardH = Math.max(1, targetCard.offsetHeight);
   const sampleHeader = qs(".scene-header-block", targetCard) || qs(".scene-header-block", feed);
-  const headerH = sampleHeader ? sampleHeader.offsetHeight : 44;
+  const headerH = sampleHeader && sampleHeader.offsetHeight > 0 ? sampleHeader.offsetHeight : 44;
 
   let offsetPx = Math.round(playerScrollState.offsetRatio * cardH);
   if (offsetPx > 0) {
     offsetPx = Math.min(offsetPx, Math.max(0, cardH - headerH - 2));
   } else if (offsetPx < 0) {
-    offsetPx = Math.max(offsetPx, -headerH);
+    offsetPx = 0;
   }
 
-  const targetScrollTop = Math.max(0, startTop + offsetPx);
+  const bounds = getCardScrollBounds(feed, targetCard);
+  const targetScrollTop = Math.min(bounds.maxScroll, Math.max(bounds.minScroll, startTop + offsetPx));
   playerScrollState.lastSetScrollTop = targetScrollTop;
   feed.scrollTop = targetScrollTop;
   recordPlayerViewportDimensions(feed);
@@ -194,19 +210,70 @@ function scrollSceneCardToStart(feed, card, durationMs) {
 
 let isAutoAdvancingImplicit = false;
 let implicitOverscrollAccum = 0;
+let implicitOverscrollDir = 1;
 let implicitBottomReachedAt = 0;
+let implicitTopReachedAt = 0;
+let implicitLastNormalScrollAt = 0;
+let lastSnapStartedAt = 0;
+let lastWheelOrTouchAt = 0;
 let implicitTouchStartY = null;
 let implicitSpringResetTimer = null;
-const IMPLICIT_OVERSCROLL_THRESHOLD = 150;
-const IMPLICIT_MAX_PULL_PX = 100;
+const IMPLICIT_MAX_PULL_PX = 84;
 
-function applyOverscrollSpringPull(feed, accum, activePull) {
+function getScrollSensitivityConfig() {
+  const raw =
+    (typeof document !== "undefined" &&
+      document.body &&
+      document.body.getAttribute("data-scroll-sensitivity")) ||
+    "medium";
+  switch (String(raw).toLowerCase()) {
+    case "high":
+      return {
+        mode: "high",
+        wheelThreshold: 180,
+        historyWheelThreshold: 180,
+        touchThreshold: 50,
+        settleMs: 140
+      };
+    case "low":
+      return {
+        mode: "low",
+        wheelThreshold: 520,
+        historyWheelThreshold: 520,
+        touchThreshold: 115,
+        settleMs: 380
+      };
+    case "off":
+      return {
+        mode: "off",
+        wheelThreshold: Infinity,
+        historyWheelThreshold: 520,
+        touchThreshold: 115,
+        settleMs: 380
+      };
+    default:
+      return {
+        mode: "medium",
+        wheelThreshold: 320,
+        historyWheelThreshold: 320,
+        touchThreshold: 80,
+        settleMs: 260
+      };
+  }
+}
+
+function applyOverscrollSpringPull(feed, accum, activePull, thresholdOverride, direction) {
   if (!feed) return;
-  const clamped = Math.max(0, Math.min(IMPLICIT_OVERSCROLL_THRESHOLD, accum));
-  const ratio = clamped / IMPLICIT_OVERSCROLL_THRESHOLD;
+  const threshold =
+    thresholdOverride && Number.isFinite(thresholdOverride) && thresholdOverride > 0
+      ? thresholdOverride
+      : 320;
+  const clamped = Math.max(0, Math.min(threshold, accum));
+  const ratio = clamped / threshold;
   const pullPx = Math.round(IMPLICIT_MAX_PULL_PX * (1 - Math.pow(1 - ratio, 1.45)));
   feed.classList.toggle("is-overscrolling", Boolean(activePull && pullPx > 0));
-  const transformVal = pullPx > 0 ? "translateY(-" + pullPx + "px)" : "";
+  const dir = direction < 0 ? 1 : -1;
+  const transformVal = pullPx > 0 ? "translateY(" + dir * pullPx + "px)" : "";
   const histStack = qs("#history-stack", feed);
   const activeStage = qs("#active-scene-stage", feed);
   if (histStack) histStack.style.transform = transformVal;
@@ -219,10 +286,11 @@ function resetOverscrollSpringPull(feed) {
     implicitSpringResetTimer = null;
   }
   implicitOverscrollAccum = 0;
+  implicitOverscrollDir = 1;
   if (!feed) {
     feed = qs("#story-scroll-feed");
   }
-  applyOverscrollSpringPull(feed, 0, false);
+  applyOverscrollSpringPull(feed, 0, false, 320, 1);
 }
 
 function scheduleOverscrollSpringBack(feed) {
@@ -234,7 +302,7 @@ function scheduleOverscrollSpringBack(feed) {
     if (!isAutoAdvancingImplicit) {
       resetOverscrollSpringPull(feed);
     }
-  }, 150);
+  }, 160);
 }
 
 function triggerImplicitNextAdvance() {
@@ -385,15 +453,34 @@ function resolveClientOperandString(tok, stateMap) {
 
 function evalClientProseAtom(raw, stateMap) {
   let s = (raw || "").trim();
-  if (!s) return true;
-  const unwrapped = trimClientOuterParens(s);
-  if (unwrapped !== s) return evalClientProseCondition(unwrapped, stateMap);
-  if (s.startsWith("?")) return evalClientProseAtom(s.slice(1), stateMap);
-  if (s.startsWith("!") && !s.startsWith("!=")) return !evalClientProseAtom(s.slice(1), stateMap);
+  let invert = false;
+  for (let step = 0; step < 32; step++) {
+    s = s.trim();
+    if (!s) return !invert;
+    const unwrapped = trimClientOuterParens(s);
+    if (unwrapped !== s) {
+      const inner = evalClientProseCondition(unwrapped, stateMap);
+      return invert ? !inner : inner;
+    }
+    if (s.startsWith("?")) {
+      s = s.slice(1);
+      continue;
+    }
+    if (s.startsWith("!") && !s.startsWith("!=")) {
+      invert = !invert;
+      s = s.slice(1);
+      continue;
+    }
+    break;
+  }
+  if (!s) return !invert;
+  let res = true;
+  let matchedOp = false;
   for (let i = 0; i < PLAYTXT_CMP_OPS.length; i++) {
     const op = PLAYTXT_CMP_OPS[i];
     const idx = s.indexOf(op);
     if (idx > 0) {
+      matchedOp = true;
       const lhs = s.slice(0, idx).trim();
       const rhs = s.slice(idx + op.length).trim();
       const lVal = resolveClientOperandString(lhs, stateMap);
@@ -401,25 +488,33 @@ function evalClientProseAtom(raw, stateMap) {
       if (/^-?\d+$/.test(lVal) && /^-?\d+$/.test(rVal)) {
         const lInt = parseInt(lVal, 10);
         const rInt = parseInt(rVal, 10);
-        if (op === "==" || op === "=") return lInt === rInt;
-        if (op === "!=") return lInt !== rInt;
-        if (op === ">=") return lInt >= rInt;
-        if (op === "\x3c=") return lInt <= rInt;
-        if (op === ">") return lInt > rInt;
-        if (op === "\x3c") return lInt < rInt;
+        if (op === "==" || op === "=") res = lInt === rInt;
+        else if (op === "!=") res = lInt !== rInt;
+        else if (op === ">=") res = lInt >= rInt;
+        else if (op === "\x3c=") res = lInt <= rInt;
+        else if (op === ">") res = lInt > rInt;
+        else if (op === "\x3c") res = lInt < rInt;
+        else res = false;
+      } else if (op === "==" || op === "=") {
+        res = lVal.toLowerCase() === rVal.toLowerCase();
+      } else if (op === "!=") {
+        res = lVal.toLowerCase() !== rVal.toLowerCase();
+      } else {
+        res = false;
       }
-      if (op === "==" || op === "=") return lVal.toLowerCase() === rVal.toLowerCase();
-      if (op === "!=") return lVal.toLowerCase() !== rVal.toLowerCase();
-      return false;
+      break;
     }
   }
-  const key = s.toLowerCase();
-  const val = stateMap && stateMap.has(key) ? stateMap.get(key) : "";
-  const lower = String(val).toLowerCase();
-  if (isPlaytxtBoolTrue(lower)) return true;
-  if (isPlaytxtBoolFalse(lower) || lower === "") return false;
-  if (/^-?\d+$/.test(lower)) return parseInt(lower, 10) !== 0;
-  return true;
+  if (!matchedOp) {
+    const key = s.toLowerCase();
+    const val = stateMap && stateMap.has(key) ? stateMap.get(key) : "";
+    const lower = String(val).toLowerCase();
+    if (isPlaytxtBoolTrue(lower)) res = true;
+    else if (isPlaytxtBoolFalse(lower) || lower === "") res = false;
+    else if (/^-?\d+$/.test(lower)) res = parseInt(lower, 10) !== 0;
+    else res = true;
+  }
+  return invert ? !res : res;
 }
 
 function evalClientProseAnd(raw, stateMap) {
@@ -658,64 +753,88 @@ function initSceneTextModalFeed(resetScroll) {
 function updateFocusedSceneByViewport() {
   const feed = qs("#story-scroll-feed");
   if (!feed) return;
-  const remaining = updateFeedScrollCue(feed);
-  if (remaining > 8) {
-    if (implicitOverscrollAccum > 0) {
-      resetOverscrollSpringPull(feed);
-    }
-    implicitBottomReachedAt = 0;
-  } else if (implicitBottomReachedAt === 0) {
-    implicitBottomReachedAt = Date.now();
-  }
+  updateFeedScrollCue(feed);
   const cards = qsa(".scene-card", feed);
   if (cards.length === 0) return;
 
   const globalMeta = qs("#reader-global-meta", feed);
   const metaH = globalMeta ? globalMeta.offsetHeight : 0;
-  const sampleHeader = qs(".scene-header-block", feed);
-  const headerH = sampleHeader ? sampleHeader.offsetHeight : 44;
-  const focalScrollY = feed.scrollTop + metaH + headerH;
+  const headers = qsa(".scene-header-block", feed);
+  let headerH = 44;
+  for (let hIdx = 0; hIdx < headers.length; hIdx++) {
+    if (headers[hIdx].offsetHeight > 0) {
+      headerH = headers[hIdx].offsetHeight;
+      break;
+    }
+  }
+  const viewTop = feed.scrollTop + metaH;
+  const viewBottom = feed.scrollTop + feed.clientHeight;
+  const viewH = Math.max(1, viewBottom - viewTop);
 
   let bestCard = null;
   let bestIdx = -1;
 
   if (manualFocusCard && feed.contains(manualFocusCard)) {
-    const targetStart = getSceneCardStartScrollTop(feed, manualFocusCard);
-    const maxScroll = Math.max(0, feed.scrollHeight - feed.clientHeight);
-    const clampedTarget = Math.min(targetStart, maxScroll);
     bestCard = manualFocusCard;
     bestIdx = cards.indexOf(bestCard);
-    if (Math.abs(feed.scrollTop - clampedTarget) <= 3) {
-      manualFocusCard = null;
-    }
   }
 
-  if (!bestCard) {
-    let lo = 0;
-    let hi = cards.length - 1;
-    let candidateIdx = 0;
-    while (lo <= hi) {
-      const mid = (lo + hi) >> 1;
-      const top = getSceneCardFeedTop(feed, cards[mid]);
-      if (top <= focalScrollY) {
-        candidateIdx = mid;
-        lo = mid + 1;
-      } else {
-        hi = mid - 1;
+  if (!bestCard || bestIdx < 0) {
+    let fullyVisibleIdx = -1;
+    let dominantTopClippedIdx = -1;
+    for (let i = 0; i < cards.length; i++) {
+      const top = getSceneCardFeedTop(feed, cards[i]);
+      const height = cards[i].offsetHeight;
+      const bottom = top + height;
+      const visTop = Math.max(top, viewTop);
+      const visBottom = Math.min(bottom, viewBottom);
+      const visH = Math.max(0, visBottom - visTop);
+      if (visH <= 0) continue;
+      if (top < viewTop - 8 && visH > viewH * 0.52) {
+        dominantTopClippedIdx = i;
+      }
+      if (
+        fullyVisibleIdx < 0 &&
+        top >= viewTop - 8 &&
+        (bottom <= viewBottom + 8 || visH >= height * 0.88)
+      ) {
+        fullyVisibleIdx = i;
       }
     }
-    const candCard = cards[candidateIdx];
-    const candTop = getSceneCardFeedTop(feed, candCard);
-    const candBottom = candTop + candCard.offsetHeight;
-    if (focalScrollY > candBottom && candidateIdx + 1 < cards.length) {
-      const nextCard = cards[candidateIdx + 1];
-      const nextTop = getSceneCardFeedTop(feed, nextCard);
-      if (Math.abs(nextTop - focalScrollY) < Math.abs(candBottom - focalScrollY)) {
-        candidateIdx = candidateIdx + 1;
+
+    if (dominantTopClippedIdx >= 0) {
+      bestIdx = dominantTopClippedIdx;
+    } else if (fullyVisibleIdx >= 0) {
+      bestIdx = fullyVisibleIdx;
+    } else {
+      const focalScrollY = viewTop + Math.min(Math.max(headerH + 40, viewH * 0.3), 220);
+      let lo = 0;
+      let hi = cards.length - 1;
+      let candidateIdx = 0;
+      while (lo <= hi) {
+        const mid = (lo + hi) >> 1;
+        const top = getSceneCardFeedTop(feed, cards[mid]);
+        if (top <= focalScrollY) {
+          candidateIdx = mid;
+          lo = mid + 1;
+        } else {
+          hi = mid - 1;
+        }
       }
+      const candCard = cards[candidateIdx];
+      const candTop = getSceneCardFeedTop(feed, candCard);
+      const candBottom = candTop + candCard.offsetHeight;
+      if (focalScrollY > candBottom && candidateIdx + 1 < cards.length) {
+        const nextCard = cards[candidateIdx + 1];
+        const nextTop = getSceneCardFeedTop(feed, nextCard);
+        if (Math.abs(nextTop - focalScrollY) < Math.abs(candBottom - focalScrollY)) {
+          candidateIdx = candidateIdx + 1;
+        }
+      }
+      bestIdx = candidateIdx;
     }
-    bestIdx = candidateIdx;
     bestCard = cards[bestIdx];
+    manualFocusCard = bestCard;
   }
 
   for (let i = 0; i < cards.length; i++) {
@@ -758,11 +877,15 @@ function updateFocusedSceneByViewport() {
       metaEl.textContent = metaText;
     }
     const audio = qs("#story-audio");
-    if (audio && audio.paused) {
+    if (audio && audio.paused && !pendingSceneAutoPlay && activeScrollAnimFrame === null) {
       const cardAudio = bestCard.getAttribute("data-scene-audio") || "";
       const cardDur = bestCard.getAttribute("data-scene-audio-duration") || "0:00";
+      const cardTrimStart = bestCard.getAttribute("data-scene-audio-trim-start") || "0.0000";
+      const cardTrimEnd = bestCard.getAttribute("data-scene-audio-trim-end") || "1.0000";
       if ((audio.getAttribute("data-audio-url") || "") !== cardAudio) {
         audio.setAttribute("data-audio-url", cardAudio);
+        audio.setAttribute("data-trim-start", cardTrimStart);
+        audio.setAttribute("data-trim-end", cardTrimEnd);
         const curEl = qs("#audio-time-current");
         const totEl = qs("#audio-time-total");
         const slider = qs("#audio-seek-slider");
@@ -810,16 +933,36 @@ function initPlayerScrollAndAudio(savedScrollTop, shouldAutoPlay, preserveTime, 
   if (!feed) return;
 
   implicitOverscrollAccum = 0;
-  implicitBottomReachedAt = 0;
+  implicitOverscrollDir = 1;
+  implicitBottomReachedAt = Date.now();
+  implicitTopReachedAt = Date.now();
+  implicitLastNormalScrollAt = 0;
+  lastSnapStartedAt = Date.now();
   implicitTouchStartY = null;
 
+  const focusAndScrollCard = (targetCard, durationOverride) => {
+    if (!targetCard) return;
+    manualFocusCard = targetCard;
+    playerScrollState.cardKey = getSceneCardKey(targetCard);
+    playerScrollState.offsetRatio = 0;
+    implicitOverscrollAccum = 0;
+    implicitBottomReachedAt = Date.now();
+    implicitTopReachedAt = Date.now();
+    implicitLastNormalScrollAt = 0;
+    lastSnapStartedAt = Date.now();
+    resetOverscrollSpringPull(feed);
+    recordPlayerViewportDimensions(feed);
+    updateFocusedSceneByViewport();
+    scrollSceneCardToStart(feed, targetCard, durationOverride || 460);
+  };
+
   if (animateFromScrollTop !== null && animateFromScrollTop !== undefined) {
-    manualFocusCard = null;
     playerScrollState.cardKey = "present";
     playerScrollState.offsetRatio = 0;
     const presentCard =
       qs('#active-scene-stage .scene-card[data-present-scene="true"]', feed) ||
       qs("#active-scene-stage .scene-card", feed);
+    manualFocusCard = presentCard;
     if (presentCard) {
       presentCard.classList.add("scene-entering");
     }
@@ -828,6 +971,7 @@ function initPlayerScrollAndAudio(savedScrollTop, shouldAutoPlay, preserveTime, 
     updateFocusedSceneByViewport();
     requestAnimationFrame(() => {
       if (presentCard) {
+        lastSnapStartedAt = Date.now();
         scrollSceneCardToStart(feed, presentCard, 1500);
       } else {
         restorePlayerScrollPosition(feed);
@@ -862,40 +1006,165 @@ function initPlayerScrollAndAudio(savedScrollTop, shouldAutoPlay, preserveTime, 
   feed.addEventListener(
     "wheel",
     (e) => {
-      cancelActiveScrollAnim();
-      manualFocusCard = null;
-      const implicitBtn = qs('#active-scene-stage button.choice-btn[data-implicit-next="true"]', feed);
-      if (!implicitBtn || isAutoAdvancingImplicit) {
-        resetOverscrollSpringPull(feed);
-        return;
-      }
-      const remaining = feed.scrollHeight - feed.scrollTop - feed.clientHeight;
-      if (remaining > 6 || e.deltaY <= 0) {
-        if (e.deltaY < 0 && implicitOverscrollAccum > 0) {
-          resetOverscrollSpringPull(feed);
+      if (e.deltaY === 0) return;
+      const cards = qsa(".scene-card", feed);
+      if (cards.length === 0) return;
+      const now = Date.now();
+      lastWheelOrTouchAt = now;
+
+      if (activeScrollAnimFrame !== null) {
+        e.preventDefault();
+        if (now - lastSnapStartedAt >= 520 && manualFocusCard && feed.contains(manualFocusCard)) {
+          cancelActiveScrollAnim();
+          const snapTop = getSceneCardStartScrollTop(feed, manualFocusCard);
+          playerScrollState.lastSetScrollTop = snapTop;
+          feed.scrollTop = snapTop;
+          updateFocusedSceneByViewport();
         }
         return;
       }
-      if (implicitBottomReachedAt === 0) {
-        implicitBottomReachedAt = Date.now();
+
+      if (!manualFocusCard || !feed.contains(manualFocusCard)) {
+        updateFocusedSceneByViewport();
       }
-      implicitOverscrollAccum = Math.min(
-        IMPLICIT_OVERSCROLL_THRESHOLD,
-        implicitOverscrollAccum + Math.abs(e.deltaY)
-      );
-      applyOverscrollSpringPull(feed, implicitOverscrollAccum, true);
+      let focusedIdx = cards.indexOf(manualFocusCard);
+      if (focusedIdx < 0) {
+        focusedIdx = cards.length - 1;
+        manualFocusCard = cards[focusedIdx];
+      }
+
+      const bounds = getCardScrollBounds(feed, manualFocusCard);
+      const cfg = getScrollSensitivityConfig();
+
+      if (e.deltaY < 0) {
+        if (implicitOverscrollDir > 0 && implicitOverscrollAccum > 0) {
+          resetOverscrollSpringPull(feed);
+        }
+        if (feed.scrollTop > bounds.minScroll + 1) {
+          const nextTop = feed.scrollTop + e.deltaY;
+          if (nextTop > bounds.minScroll + 1) {
+            implicitLastNormalScrollAt = now;
+            implicitTopReachedAt = 0;
+            return;
+          }
+          e.preventDefault();
+          playerScrollState.lastSetScrollTop = bounds.minScroll;
+          feed.scrollTop = bounds.minScroll;
+          implicitLastNormalScrollAt = now;
+          implicitTopReachedAt = now;
+          updateFocusedSceneByViewport();
+          capturePlayerScrollState(feed);
+          return;
+        }
+
+        e.preventDefault();
+        if (feed.scrollTop !== bounds.minScroll) {
+          playerScrollState.lastSetScrollTop = bounds.minScroll;
+          feed.scrollTop = bounds.minScroll;
+        }
+        if (focusedIdx <= 0) {
+          resetOverscrollSpringPull(feed);
+          return;
+        }
+        if (implicitTopReachedAt === 0) {
+          implicitTopReachedAt = now;
+        }
+        if (
+          (implicitLastNormalScrollAt > 0 && now - implicitTopReachedAt < cfg.settleMs) ||
+          now - lastSnapStartedAt < Math.max(320, cfg.settleMs)
+        ) {
+          return;
+        }
+        const thresh = cfg.historyWheelThreshold;
+        implicitOverscrollDir = -1;
+        implicitOverscrollAccum = Math.min(thresh, implicitOverscrollAccum + Math.abs(e.deltaY));
+        applyOverscrollSpringPull(feed, implicitOverscrollAccum, true, thresh, -1);
+        scheduleOverscrollSpringBack(feed);
+        if (implicitOverscrollAccum >= thresh) {
+          resetOverscrollSpringPull(feed);
+          focusAndScrollCard(cards[focusedIdx - 1], 440);
+        }
+        return;
+      }
+
+      if (implicitOverscrollDir < 0 && implicitOverscrollAccum > 0) {
+        resetOverscrollSpringPull(feed);
+      }
+      if (feed.scrollTop < bounds.maxScroll - 1) {
+        const nextTop = feed.scrollTop + e.deltaY;
+        if (nextTop < bounds.maxScroll - 1) {
+          implicitLastNormalScrollAt = now;
+          implicitBottomReachedAt = 0;
+          return;
+        }
+        e.preventDefault();
+        playerScrollState.lastSetScrollTop = bounds.maxScroll;
+        feed.scrollTop = bounds.maxScroll;
+        implicitLastNormalScrollAt = now;
+        implicitBottomReachedAt = now;
+        updateFocusedSceneByViewport();
+        capturePlayerScrollState(feed);
+        return;
+      }
+
+      e.preventDefault();
+      if (feed.scrollTop !== bounds.maxScroll) {
+        playerScrollState.lastSetScrollTop = bounds.maxScroll;
+        feed.scrollTop = bounds.maxScroll;
+      }
+
+      if (focusedIdx < cards.length - 1) {
+        if (implicitBottomReachedAt === 0) {
+          implicitBottomReachedAt = now;
+        }
+        if (
+          (implicitLastNormalScrollAt > 0 && now - implicitBottomReachedAt < cfg.settleMs) ||
+          now - lastSnapStartedAt < Math.max(320, cfg.settleMs)
+        ) {
+          return;
+        }
+        const thresh = cfg.historyWheelThreshold;
+        implicitOverscrollDir = 1;
+        implicitOverscrollAccum = Math.min(thresh, implicitOverscrollAccum + Math.abs(e.deltaY));
+        applyOverscrollSpringPull(feed, implicitOverscrollAccum, true, thresh, 1);
+        scheduleOverscrollSpringBack(feed);
+        if (implicitOverscrollAccum >= thresh) {
+          resetOverscrollSpringPull(feed);
+          focusAndScrollCard(cards[focusedIdx + 1], 440);
+        }
+        return;
+      }
+
+      const implicitBtn = qs('#active-scene-stage button.choice-btn[data-implicit-next="true"]', feed);
+      if (!implicitBtn || isAutoAdvancingImplicit || cfg.mode === "off") {
+        resetOverscrollSpringPull(feed);
+        return;
+      }
+      if (implicitBottomReachedAt === 0) {
+        implicitBottomReachedAt = now;
+      }
+      if (
+        (implicitLastNormalScrollAt > 0 && now - implicitBottomReachedAt < cfg.settleMs) ||
+        now - lastSnapStartedAt < Math.max(320, cfg.settleMs)
+      ) {
+        return;
+      }
+      const thresh = cfg.wheelThreshold;
+      implicitOverscrollDir = 1;
+      implicitOverscrollAccum = Math.min(thresh, implicitOverscrollAccum + Math.abs(e.deltaY));
+      applyOverscrollSpringPull(feed, implicitOverscrollAccum, true, thresh, 1);
       scheduleOverscrollSpringBack(feed);
-      if (implicitOverscrollAccum >= IMPLICIT_OVERSCROLL_THRESHOLD) {
+      if (implicitOverscrollAccum >= thresh) {
         triggerImplicitNextAdvance();
       }
     },
-    { passive: true }
+    { passive: false }
   );
 
   feed.addEventListener(
     "touchstart",
     (e) => {
-      cancelActiveScrollAnim();
+      lastWheelOrTouchAt = Date.now();
       if (e.touches && e.touches.length === 1) {
         implicitTouchStartY = e.touches[0].clientY;
       }
@@ -906,27 +1175,76 @@ function initPlayerScrollAndAudio(savedScrollTop, shouldAutoPlay, preserveTime, 
   feed.addEventListener(
     "touchmove",
     (e) => {
-      manualFocusCard = null;
       if (implicitTouchStartY === null || !e.touches || e.touches.length !== 1) return;
-      const implicitBtn = qs('#active-scene-stage button.choice-btn[data-implicit-next="true"]', feed);
-      if (!implicitBtn || isAutoAdvancingImplicit) return;
-      const remaining = feed.scrollHeight - feed.scrollTop - feed.clientHeight;
-      if (remaining > 6) {
-        implicitTouchStartY = e.touches[0].clientY;
-        if (implicitOverscrollAccum > 0) {
+      if (activeScrollAnimFrame !== null) return;
+      const cards = qsa(".scene-card", feed);
+      if (cards.length === 0) return;
+      lastWheelOrTouchAt = Date.now();
+
+      if (!manualFocusCard || !feed.contains(manualFocusCard)) {
+        updateFocusedSceneByViewport();
+      }
+      let focusedIdx = cards.indexOf(manualFocusCard);
+      if (focusedIdx < 0) {
+        focusedIdx = cards.length - 1;
+        manualFocusCard = cards[focusedIdx];
+      }
+      const bounds = getCardScrollBounds(feed, manualFocusCard);
+      const cfg = getScrollSensitivityConfig();
+      const dragUp = implicitTouchStartY - e.touches[0].clientY;
+
+      if (dragUp < 0) {
+        if (feed.scrollTop > bounds.minScroll + 2) {
+          implicitTouchStartY = e.touches[0].clientY;
+          if (implicitOverscrollAccum > 0) resetOverscrollSpringPull(feed);
+          return;
+        }
+        if (focusedIdx <= 0) {
           resetOverscrollSpringPull(feed);
+          return;
+        }
+        const dragDown = -dragUp;
+        const thresh = cfg.historyWheelThreshold;
+        const mappedAccum = Math.min(thresh, (dragDown / cfg.touchThreshold) * thresh);
+        implicitOverscrollDir = -1;
+        implicitOverscrollAccum = mappedAccum;
+        applyOverscrollSpringPull(feed, implicitOverscrollAccum, true, thresh, -1);
+        if (dragDown >= cfg.touchThreshold) {
+          implicitTouchStartY = null;
+          resetOverscrollSpringPull(feed);
+          focusAndScrollCard(cards[focusedIdx - 1], 440);
         }
         return;
       }
-      const dragUp = implicitTouchStartY - e.touches[0].clientY;
-      if (dragUp <= 0) {
-        resetOverscrollSpringPull(feed);
+
+      if (feed.scrollTop < bounds.maxScroll - 2) {
+        implicitTouchStartY = e.touches[0].clientY;
+        if (implicitOverscrollAccum > 0) resetOverscrollSpringPull(feed);
         return;
       }
-      const mappedAccum = Math.min(IMPLICIT_OVERSCROLL_THRESHOLD, (dragUp / 65) * IMPLICIT_OVERSCROLL_THRESHOLD);
+
+      if (focusedIdx < cards.length - 1) {
+        const thresh = cfg.historyWheelThreshold;
+        const mappedAccum = Math.min(thresh, (dragUp / cfg.touchThreshold) * thresh);
+        implicitOverscrollDir = 1;
+        implicitOverscrollAccum = mappedAccum;
+        applyOverscrollSpringPull(feed, implicitOverscrollAccum, true, thresh, 1);
+        if (dragUp >= cfg.touchThreshold) {
+          implicitTouchStartY = null;
+          resetOverscrollSpringPull(feed);
+          focusAndScrollCard(cards[focusedIdx + 1], 440);
+        }
+        return;
+      }
+
+      const implicitBtn = qs('#active-scene-stage button.choice-btn[data-implicit-next="true"]', feed);
+      if (!implicitBtn || isAutoAdvancingImplicit || cfg.mode === "off") return;
+      const thresh = cfg.wheelThreshold;
+      const mappedAccum = Math.min(thresh, (dragUp / cfg.touchThreshold) * thresh);
+      implicitOverscrollDir = 1;
       implicitOverscrollAccum = mappedAccum;
-      applyOverscrollSpringPull(feed, implicitOverscrollAccum, true);
-      if (dragUp >= 65) {
+      applyOverscrollSpringPull(feed, implicitOverscrollAccum, true, thresh, 1);
+      if (dragUp >= cfg.touchThreshold) {
         implicitTouchStartY = null;
         triggerImplicitNextAdvance();
       }
@@ -971,6 +1289,23 @@ function initPlayerScrollAndAudio(savedScrollTop, shouldAutoPlay, preserveTime, 
         updateFocusedSceneByViewport();
         return;
       }
+      if (
+        activeScrollAnimFrame === null &&
+        manualFocusCard &&
+        feed.contains(manualFocusCard) &&
+        Date.now() - lastWheelOrTouchAt <= 260
+      ) {
+        const bounds = getCardScrollBounds(feed, manualFocusCard);
+        if (feed.scrollTop < bounds.minScroll) {
+          playerScrollState.lastSetScrollTop = bounds.minScroll;
+          feed.scrollTop = bounds.minScroll;
+        } else if (feed.scrollTop > bounds.maxScroll) {
+          playerScrollState.lastSetScrollTop = bounds.maxScroll;
+          feed.scrollTop = bounds.maxScroll;
+        }
+      } else if (activeScrollAnimFrame === null && Date.now() - lastWheelOrTouchAt > 260) {
+        manualFocusCard = null;
+      }
       playerScrollState.lastSetScrollTop = null;
       updateFocusedSceneByViewport();
       capturePlayerScrollState(feed);
@@ -990,28 +1325,18 @@ function initPlayerScrollAndAudio(savedScrollTop, shouldAutoPlay, preserveTime, 
     playerResizeObserver.observe(feed);
   }
 
-  const focusAndScrollCard = (targetCard) => {
-    if (!targetCard) return;
-    manualFocusCard = targetCard;
-    playerScrollState.cardKey = getSceneCardKey(targetCard);
-    playerScrollState.offsetRatio = 0;
-    recordPlayerViewportDimensions(feed);
-    updateFocusedSceneByViewport();
-    scrollSceneCardToStart(feed, targetCard);
-  };
-
   qsa("#story-history-rail .history-rail-tick").forEach((tick, idx) => {
     tick.addEventListener("click", (e) => {
       e.preventDefault();
       e.stopPropagation();
-      focusAndScrollCard(qsa(".scene-card", feed)[idx]);
+      focusAndScrollCard(qsa(".scene-card", feed)[idx], 460);
     });
   });
 
   qsa(".scene-card", feed).forEach((card) => {
     card.addEventListener("click", (e) => {
       if (e.target.closest("button") || e.target.closest("[action]")) return;
-      if (card.classList.contains("scene-dimmed")) focusAndScrollCard(card);
+      if (card.classList.contains("scene-dimmed")) focusAndScrollCard(card, 460);
     });
   });
 }

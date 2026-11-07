@@ -54,7 +54,7 @@ func (s *Server) buildBookTargetSuggestions(sc *book.Scene) []map[string]any {
 	}
 	out = append(out, map[string]any{
 		"value": "END",
-		"meta":  "koniec ścieżki",
+		"meta":  s.tr(TrEndOfPathMeta),
 	})
 	return out
 }
@@ -118,8 +118,8 @@ func (s *Server) populateEditorVariablesContext(vars map[string]any) {
 	vars["book_target_suggestions"] = s.buildBookTargetSuggestions(s.findScene(s.SelectedSceneID))
 	vars["syntax_help_cond_rows"] = []map[string]any{
 		{"code": "if: odkryta_prawda && sumienie >= 2", "desc": "bool / int / enum (&&, ||, !, ==, !=, >=, <=)"},
-		{"code": "set: odkryta_prawda = true; sumienie++", "desc": "efekty rozdzielone średnikiem ; (=, +=, -=, ++, --)"},
-		{"code": "exit: ogien_w_kaplicy", "desc": "wyjście do sceny, chapter:<id> lub END"},
+		{"code": "set: odkryta_prawda = true; sumienie++", "desc": s.tr(TrSyntaxHelpSetDesc)},
+		{"code": "exit: ogien_w_kaplicy", "desc": s.tr(TrSyntaxHelpExitDesc)},
 	}
 	if s.ActiveBook == nil {
 		vars["var_flags"] = nil

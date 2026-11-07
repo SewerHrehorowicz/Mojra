@@ -8,28 +8,33 @@ import (
 	"strings"
 )
 
-func validateNodesRecursive(nodes []*Node) error {
-	for i, n := range nodes {
-		if n.Kind == NodeElif || n.Kind == NodeElse {
-			kw := "else"
-			if n.Kind == NodeElif {
-				kw = "elif " + n.Expr
+func validateNodesRecursive(rootNodes []*Node) error {
+	stack := [][]*Node{rootNodes}
+	for step := 0; step < 16384 && len(stack) > 0; step++ {
+		nodes := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		for i, n := range nodes {
+			if n.Kind == NodeElif || n.Kind == NodeElse {
+				kw := "else"
+				if n.Kind == NodeElif {
+					kw = "elif " + n.Expr
+				}
+				if i == 0 {
+					return fmt.Errorf("tpl compile error in %s.tpl:%d: %q must immediately follow an 'if' or 'elif' block", n.File, n.Line, kw)
+				}
+				prevKind := nodes[i-1].Kind
+				if prevKind != NodeIf && prevKind != NodeElif && !(n.Kind == NodeElse && prevKind == NodeWith) {
+					return fmt.Errorf("tpl compile error in %s.tpl:%d: %q must immediately follow an 'if' or 'elif' block", n.File, n.Line, kw)
+				}
 			}
-			if i == 0 {
-				return fmt.Errorf("tpl compile error in %s.tpl:%d: %q must immediately follow an 'if' or 'elif' block", n.File, n.Line, kw)
+			if n.Kind == NodeElement || n.Kind == NodeComponent {
+				if err := validateNoInlineCSSOrJS(n); err != nil {
+					return err
+				}
 			}
-			prevKind := nodes[i-1].Kind
-			if prevKind != NodeIf && prevKind != NodeElif && !(n.Kind == NodeElse && prevKind == NodeWith) {
-				return fmt.Errorf("tpl compile error in %s.tpl:%d: %q must immediately follow an 'if' or 'elif' block", n.File, n.Line, kw)
+			if len(n.Children) > 0 {
+				stack = append(stack, n.Children)
 			}
-		}
-		if n.Kind == NodeElement || n.Kind == NodeComponent {
-			if err := validateNoInlineCSSOrJS(n); err != nil {
-				return err
-			}
-		}
-		if err := validateNodesRecursive(n.Children); err != nil {
-			return err
 		}
 	}
 	return nil
@@ -223,68 +228,73 @@ func validateSafeSVGContent(svgContent, file string, line int, src string) error
 	return nil
 }
 
-func resolveExternalSVGs(templatesDir string, embeddedFS fs.FS, nodes []*Node) error {
+func resolveExternalSVGs(templatesDir string, embeddedFS fs.FS, rootNodes []*Node) error {
 	appDir := ""
 	if templatesDir != "" {
 		appDir = filepath.Dir(templatesDir)
 	}
-	for _, n := range nodes {
-		if (!n.IsComponent && strings.EqualFold(n.Tag, "svg")) || n.Kind == NodeSVG {
-			var src string
-			if n.Kind == NodeSVG {
-				src = strings.TrimSpace(unquoteLiteral(n.Expr))
-				if src != "" && !strings.HasPrefix(src, "/") && !strings.HasSuffix(src, ".svg") {
-					src = "/icons/" + src + ".svg"
-				}
-			} else {
-				for _, a := range n.Attrs {
-					if strings.EqualFold(a.Key, "src") {
-						src = strings.TrimSpace(unquoteLiteral(a.Val))
-						break
+	stack := [][]*Node{rootNodes}
+	for step := 0; step < 16384 && len(stack) > 0; step++ {
+		nodes := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		for _, n := range nodes {
+			if (!n.IsComponent && strings.EqualFold(n.Tag, "svg")) || n.Kind == NodeSVG {
+				var src string
+				if n.Kind == NodeSVG {
+					src = strings.TrimSpace(unquoteLiteral(n.Expr))
+					if src != "" && !strings.HasPrefix(src, "/") && !strings.HasSuffix(src, ".svg") {
+						src = "/icons/" + src + ".svg"
 					}
-				}
-			}
-			rel := filepath.FromSlash(strings.TrimPrefix(src, "/"))
-			if strings.Contains(rel, "..") {
-				return fmt.Errorf("tpl compile error in %s.tpl:%d: path traversal in SVG src %q is forbidden", n.File, n.Line, src)
-			}
-			var raw []byte
-			var err error
-			if templatesDir != "" {
-				svgPath := filepath.Join(appDir, rel)
-				raw, err = os.ReadFile(svgPath)
-				if err != nil {
-					for _, altPath := range []string{
-						filepath.Join(templatesDir, rel),
-						filepath.Join(appDir, "app", rel),
-					} {
-						if altRaw, altErr := os.ReadFile(altPath); altErr == nil {
-							raw = altRaw
-							err = nil
+				} else {
+					for _, a := range n.Attrs {
+						if strings.EqualFold(a.Key, "src") {
+							src = strings.TrimSpace(unquoteLiteral(a.Val))
 							break
 						}
 					}
 				}
-			} else {
-				err = os.ErrNotExist
-			}
-			if err != nil && embeddedFS != nil {
-				if embRaw, embErr := fs.ReadFile(embeddedFS, "app/"+strings.TrimPrefix(src, "/")); embErr == nil {
-					raw = embRaw
-					err = nil
+				rel := filepath.FromSlash(strings.TrimPrefix(src, "/"))
+				if strings.Contains(rel, "..") {
+					return fmt.Errorf("tpl compile error in %s.tpl:%d: path traversal in SVG src %q is forbidden", n.File, n.Line, src)
 				}
+				var raw []byte
+				var err error
+				if templatesDir != "" {
+					svgPath := filepath.Join(appDir, rel)
+					raw, err = os.ReadFile(svgPath)
+					if err != nil {
+						for _, altPath := range []string{
+							filepath.Join(templatesDir, rel),
+							filepath.Join(appDir, "app", rel),
+						} {
+							if altRaw, altErr := os.ReadFile(altPath); altErr == nil {
+								raw = altRaw
+								err = nil
+								break
+							}
+						}
+					}
+				} else {
+					err = os.ErrNotExist
+				}
+				if err != nil && embeddedFS != nil {
+					if embRaw, embErr := fs.ReadFile(embeddedFS, "app/"+strings.TrimPrefix(src, "/")); embErr == nil {
+						raw = embRaw
+						err = nil
+					}
+				}
+				if err != nil {
+					return fmt.Errorf("tpl compile error in %s.tpl:%d: cannot read SVG file %q: %w", n.File, n.Line, src, err)
+				}
+				svgContent := strings.TrimSpace(string(raw))
+				if err := validateSafeSVGContent(svgContent, n.File, n.Line, src); err != nil {
+					return err
+				}
+				n.RawSVG = svgContent
 			}
-			if err != nil {
-				return fmt.Errorf("tpl compile error in %s.tpl:%d: cannot read SVG file %q: %w", n.File, n.Line, src, err)
+			if len(n.Children) > 0 {
+				stack = append(stack, n.Children)
 			}
-			svgContent := strings.TrimSpace(string(raw))
-			if err := validateSafeSVGContent(svgContent, n.File, n.Line, src); err != nil {
-				return err
-			}
-			n.RawSVG = svgContent
-		}
-		if err := resolveExternalSVGs(templatesDir, embeddedFS, n.Children); err != nil {
-			return err
 		}
 	}
 	return nil

@@ -270,6 +270,8 @@ func FinalizeBook(b *Book) {
 		b.AudioFiles = nil
 		for _, sc := range b.Scenes {
 			sc.ExplicitVoice = ""
+			sc.VoiceTrimStart = 0
+			sc.VoiceTrimEnd = 0
 			sc.AudioFile = ""
 			sc.AudioURL = ""
 		}
@@ -309,7 +311,7 @@ func FinalizeBook(b *Book) {
 			if strings.TrimSpace(sc.Name) == "" {
 				sc.Name = fmt.Sprintf("Scena %d", i+1)
 			}
-			for {
+			for maxTries := len(usedIDs) + len(b.Scenes) + 16; maxTries > 0; maxTries-- {
 				cand := fmt.Sprintf("s%d", nextAuto)
 				nextAuto++
 				if !usedIDs[strings.ToLower(cand)] {

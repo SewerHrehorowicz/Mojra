@@ -55,6 +55,8 @@ var actionSpecs = map[string]ActionSpec{
 	"SwitchView":       {StandaloneForbidden: true, FlushFormScene: true, Target: targetAppShell, Handler: (*Server).switchView},
 	"OpenBook":         {StandaloneForbidden: true, ResetCanvas: true, FlushFormScene: true, Target: targetAppShell, Handler: (*Server).openBook},
 	"ToggleTheme":      {KeepScroll: true, Target: targetThemeOrScale, Handler: (*Server).toggleTheme},
+	"ToggleLanguage":   {KeepScroll: true, FlushFormScene: true, Target: targetAppShell, Handler: (*Server).setLanguage},
+	"SetLanguage":      {KeepScroll: true, FlushFormScene: true, Target: targetAppShell, Handler: (*Server).setLanguage},
 	"SetUIScale":       {KeepScroll: true, Target: targetThemeOrScale, Handler: (*Server).toggleUIScale},
 	"ToggleUIScale":    {KeepScroll: true, Target: targetThemeOrScale, Handler: (*Server).toggleUIScale},
 	"SetDeviceMode":    {StandaloneForbidden: true, KeepScroll: true, Target: targetThemeOrScale, Handler: (*Server).setDeviceMode},
@@ -115,9 +117,11 @@ var actionSpecs = map[string]ActionSpec{
 	"RevealHistory":       {Target: targetPlayerView, Handler: (*Server).revealHistory},
 	"FocusHistoryStep":    {Target: targetPlayerView, Handler: (*Server).focusHistoryStep},
 	"FocusPresent":        {Target: targetPlayerView, Handler: (*Server).focusPresent},
-	"CycleAudioSpeed":     {KeepScroll: true, Target: targetNone, Handler: (*Server).cycleAudioSpeed},
-	"ToggleAutoChoice":    {KeepScroll: true, Target: targetNone, Handler: (*Server).toggleAutoChoice},
-	"PlayFromScene":       {StandaloneForbidden: true, FlushFormScene: true, Target: targetAppShell, Handler: (*Server).playFromScene},
+	"CycleAudioSpeed":      {KeepScroll: true, Target: targetNone, Handler: (*Server).cycleAudioSpeed},
+	"ToggleAutoChoice":     {KeepScroll: true, Target: targetNone, Handler: (*Server).toggleAutoChoice},
+	"SetAutoChoiceDelay":   {KeepScroll: true, Target: targetThemeOrScale, Handler: (*Server).setAutoChoiceDelay},
+	"SetScrollSensitivity": {KeepScroll: true, Target: targetThemeOrScale, Handler: (*Server).setScrollSensitivity},
+	"PlayFromScene":        {StandaloneForbidden: true, FlushFormScene: true, Target: targetAppShell, Handler: (*Server).playFromScene},
 
 	// Node Studio & Editor
 	"SelectStudioScene":          {StandaloneForbidden: true, FlushFormScene: true, Target: targetSelectStudioScene, Handler: (*Server).selectStudioScene},
@@ -354,7 +358,11 @@ func isRemoteLANAllowedAction(action, pendingConfirm string) bool {
 		"FocusPresent",
 		"CycleAudioSpeed",
 		"ToggleAutoChoice",
+		"SetAutoChoiceDelay",
+		"SetScrollSensitivity",
 		"ToggleTheme",
+		"ToggleLanguage",
+		"SetLanguage",
 		"SetUIScale",
 		"ToggleUIScale",
 		"ToggleImageless",
@@ -394,6 +402,18 @@ func (s *Server) toggleTheme(_ *http.Request) string {
 		s.Settings.Theme = "dark"
 	} else {
 		s.Settings.Theme = "light"
+	}
+	s.persistSettings()
+	return ""
+}
+
+func (s *Server) setLanguage(r *http.Request) string {
+	reqLang := strings.TrimSpace(r.FormValue("lang"))
+	if reqLang != "" {
+		s.Settings.Language = tpl.NormalizeLangCode(reqLang)
+	} else {
+		next := tpl.NextLang(s.lang())
+		s.Settings.Language = tpl.SupportedLanguages[next].Code
 	}
 	s.persistSettings()
 	return ""
@@ -490,7 +510,7 @@ func (s *Server) closeEditorHelpModal(_ *http.Request) string {
 
 func (s *Server) openExportModal(_ *http.Request) string {
 	if s.ActiveBook == nil {
-		return "Brak aktywnego projektu"
+		return s.tr(TrNoActiveProject)
 	}
 	s.QRModalOpen = false
 	s.NewBookModalOpen = false
@@ -644,7 +664,7 @@ func (s *Server) acceptConfirmModal() (toast, nativeCmd string) {
 			s.HistoryRevealed = false
 			s.FocusedHistoryIdx = -1
 			s.persistSaveState()
-			toast = "Cofnięto opowieść do wybranej sceny."
+			toast = s.tr(TrRewoundStoryToast)
 		}
 	case "ResetProgress":
 		targetID := param
@@ -663,6 +683,7 @@ func (s *Server) acceptConfirmModal() (toast, nativeCmd string) {
 					PlaybackSpeed:      s.Settings.PlaybackSpeed,
 					AutoChoice:         s.Settings.AutoChoice,
 					AutoChoiceStrategy: s.Settings.AutoChoiceStrategy,
+					AutoChoiceDelay:    s.Settings.AutoChoiceDelay,
 				}
 				s.HistoryRevealed = false
 				s.FocusedHistoryIdx = -1
@@ -674,7 +695,7 @@ func (s *Server) acceptConfirmModal() (toast, nativeCmd string) {
 					s.FocusedHistoryIdx = -1
 				}
 			}
-			toast = "Postęp został zresetowany do początku."
+			toast = s.tr(TrResetProgressToast)
 		}
 	case "UnpackPlaybookForStudio":
 		toast = s.unpackPlaybookWorkingCopyForStudio(param)
@@ -805,6 +826,7 @@ func (s *Server) writeActionResponseHeaders(w http.ResponseWriter, action, targe
 	s.writeEditorHistoryHeaders(w)
 	w.Header().Set("X-Target", targetSelector)
 	w.Header().Set("X-Theme", s.Settings.Theme)
+	w.Header().Set("X-Lang", book.NormalizeLanguage(s.Settings.Language))
 	if s.isEffectiveImageless() {
 		w.Header().Set("X-Imageless", "true")
 	} else {
@@ -834,6 +856,8 @@ func (s *Server) writeActionResponseHeaders(w http.ResponseWriter, action, targe
 	if s.Settings.AutoChoiceStrategy != "" {
 		w.Header().Set("X-Auto-Strategy", s.Settings.AutoChoiceStrategy)
 	}
+	w.Header().Set("X-Auto-Delay", fmt.Sprintf("%.2g", book.NormalizeAutoChoiceDelay(s.Settings.AutoChoiceDelay)))
+	w.Header().Set("X-Scroll-Sensitivity", book.NormalizeScrollSensitivity(s.Settings.ScrollSensitivity))
 	if isKeepScrollAction(action) {
 		w.Header().Set("X-Keep-Scroll", "true")
 	}

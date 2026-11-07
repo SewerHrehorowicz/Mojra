@@ -1,10 +1,10 @@
 aside.editor-variables-panel#editor-variables-panel .hidden?: {!show_editor_variables_panel}
     .history-panel-header
-        h3.history-panel-title "Zmienne"
+        h3.history-panel-title {t_variables_title}
         button.node-close-btn
             type: button
             action: CloseEditorVariablesPanel
-            data-hint: "Zamknij panel zmiennych"
+            data-hint: "{t_close_variables_panel}"
             svg.node-close-icon src: /icons/close.svg
 
     .history-panel-body.breakdown-panel-body.variables-panel-body
@@ -136,7 +136,7 @@ aside.editor-variables-panel#editor-variables-panel .hidden?: {!show_editor_vari
                                         type: button
                                         action: AddBookEnumOption
                                         data-var-idx: "{vs.idx}"
-                                        data-hint: "Dodaj wariant"
+                                        data-hint: "{t_add_enum_opt_hint}"
                                         svg.media-plus-icon src: /icons/plus.svg
                                     button.node-icon-btn.var-remove-btn
                                         type: button
@@ -150,7 +150,7 @@ aside.editor-variables-panel#editor-variables-panel .hidden?: {!show_editor_vari
                                             type: text
                                             name: "enum_opt_{opt.opt_idx}"
                                             value: "{opt.value}"
-                                            placeholder: "wariant..."
+                                            placeholder: "{t_enum_opt_placeholder}"
                                             spellcheck: "false"
                                             autocorrect: "off"
                                             autocapitalize: "off"
@@ -164,5 +164,5 @@ aside.editor-variables-panel#editor-variables-panel .hidden?: {!show_editor_vari
                                                     action: RemoveBookEnumOption
                                                     data-var-idx: "{vs.idx}"
                                                     data-opt-idx: "{opt.opt_idx}"
-                                                    data-hint: "Usuń wariant"
+                                                    data-hint: "{t_remove_enum_opt_hint}"
                                                     svg.choice-trash-icon src: /icons/trash.svg

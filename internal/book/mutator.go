@@ -119,10 +119,12 @@ func SaveBookEditorStateToDisk(b *Book) error {
 // NextUniqueSceneName returns a default scene title ("Nowa scena N") that does not collide with any existing scene in the book.
 func NextUniqueSceneName(b *Book) string {
 	n := 1
+	maxTries := 16
 	if b != nil {
 		n = len(b.Scenes) + 1
+		maxTries += len(b.Scenes) * 2
 	}
-	for {
+	for tries := 0; tries < maxTries; tries++ {
 		cand := fmt.Sprintf("Nowa scena %d", n)
 		normCand := NormalizeLookupKey(cand)
 		taken := false
@@ -142,6 +144,7 @@ func NextUniqueSceneName(b *Book) string {
 		}
 		n++
 	}
+	return fmt.Sprintf("Nowa scena %d", n)
 }
 
 // InsertSceneBetween inserts a new scene into the book between parentSceneID and childSceneID

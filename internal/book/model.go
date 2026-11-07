@@ -60,6 +60,8 @@ type Scene struct {
 	ExplicitEnd    bool
 	ExplicitImage  string
 	ExplicitVoice  string
+	VoiceTrimStart float64
+	VoiceTrimEnd   float64
 	AudioFile      string
 	ImageFile      string
 	AudioURL       string
@@ -96,6 +98,31 @@ func (s Scene) ReferenceKey() string {
 		return name
 	}
 	return strings.TrimSpace(s.ID)
+}
+
+// NormalizedVoiceTrim returns the effective non-destructive [startRatio, endRatio] in [0, 1].
+func (s *Scene) NormalizedVoiceTrim() (float64, float64) {
+	if s == nil {
+		return 0, 1
+	}
+	start := s.VoiceTrimStart
+	end := s.VoiceTrimEnd
+	if start < 0 || start >= 1 {
+		start = 0
+	}
+	if end <= 0 || end > 1 {
+		end = 1
+	}
+	if end <= start+0.001 {
+		return 0, 1
+	}
+	return start, end
+}
+
+// HasVoiceTrim reports whether the scene has a non-destructive audio trim range narrower than [0, 1].
+func (s *Scene) HasVoiceTrim() bool {
+	start, end := s.NormalizedVoiceTrim()
+	return start > 0.002 || end < 0.998
 }
 
 // EnsureHTML lazily renders and caches safe HTML paragraphs from s.Text if not already rendered.
@@ -202,6 +229,7 @@ type Book struct {
 	RawStart       string
 	Narrated       bool
 	Imageless      bool
+	AutoChoiceDelay float64
 	CoverFile      string
 	CoverURL       string
 	ExportDir      string
@@ -303,6 +331,16 @@ type HistoryEntry struct {
 	Variables     map[string]string
 }
 
+const DefaultAutoChoiceDelay = 2.0
+
+// NormalizeAutoChoiceDelay clamps an auto-choice delay in seconds to a valid range (default 2.0s).
+func NormalizeAutoChoiceDelay(d float64) float64 {
+	if d <= 0 || d > 30 {
+		return DefaultAutoChoiceDelay
+	}
+	return d
+}
+
 type SaveState struct {
 	BookID             string
 	CurrentSceneID     string
@@ -310,6 +348,7 @@ type SaveState struct {
 	PlaybackSpeed      float64
 	AutoChoice         bool
 	AutoChoiceStrategy string
+	AutoChoiceDelay    float64
 	Variables          map[string]string
 	History            []HistoryEntry
 	UpdatedAtUnix      int64
@@ -317,17 +356,20 @@ type SaveState struct {
 
 type AppSettings struct {
 	Theme              string
+	Language           string
 	PreviewMode        string
 	ActiveBookID       string
 	EditorBookID       string
 	ActiveView         string
 	Imageless          bool
 	UIScale            string
+	ScrollSensitivity  string
 	PlaybackSpeed      float64
 	AutoChoice         bool
 	AutoChoiceStrategy string
-	NewBookDir     string
-	ExportDir      string
-	BookExportDirs map[string]string
-	ExternalBooks  []string
+	AutoChoiceDelay    float64
+	NewBookDir         string
+	ExportDir          string
+	BookExportDirs     map[string]string
+	ExternalBooks      []string
 }

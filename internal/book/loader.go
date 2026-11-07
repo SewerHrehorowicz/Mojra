@@ -1278,7 +1278,7 @@ func IsInsideRepoDir(p string) bool {
 		abs = p
 	}
 	cur := filepath.Clean(abs)
-	for {
+	for depth := 0; depth < 256; depth++ {
 		if info, err := os.Stat(filepath.Join(cur, "go.mod")); err == nil && !info.IsDir() {
 			return true
 		}

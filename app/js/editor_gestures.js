@@ -505,33 +505,38 @@ function handleEditorCanvasClick(e) {
       let needsDoubleNewline = true;
 
       if (charName) {
-        blockText = charName + "\nKwestia dialogowa...";
-        selectTarget = "Kwestia dialogowa...";
+        const dlgLine = tr("sp_ins_dialogue");
+        blockText = charName + "\n" + dlgLine;
+        selectTarget = dlgLine;
       } else if (kind === "dialogue") {
-        blockText = "POSTAĆ\nKwestia dialogowa...";
-        selectTarget = "POSTAĆ";
+        const charHdr = tr("sp_ins_character");
+        blockText = charHdr + "\n" + tr("sp_ins_dialogue");
+        selectTarget = charHdr;
       } else if (kind === "parenthetical") {
-        blockText = "(cicho)\n";
-        selectTarget = "cicho";
+        blockText = tr("sp_ins_paren");
+        selectTarget = tr("sp_ins_paren_sel");
         needsDoubleNewline = false;
       } else if (kind === "action") {
-        blockText = "Opis akcji...";
-        selectTarget = "Opis akcji...";
+        const actLine = tr("sp_ins_action");
+        blockText = actLine;
+        selectTarget = actLine;
       } else if (kind === "dialogue_off") {
-        blockText = (isPL ? "POSTAĆ (OFF)\n" : "POSTAĆ (O.S.)\n") + "Kwestia spoza kadru...";
-        selectTarget = "POSTAĆ";
+        const charHdr = tr("sp_ins_character");
+        blockText = charHdr + trStd(isPL, "sp_ins_off_hdr") + tr("sp_ins_off_line");
+        selectTarget = charHdr;
       } else if (kind === "dialogue_vo") {
-        blockText = "POSTAĆ (V.O.)\nKwestia narratora...";
-        selectTarget = "POSTAĆ";
+        const charHdr = tr("sp_ins_character");
+        blockText = charHdr + tr("sp_ins_vo_hdr") + tr("sp_ins_vo_line");
+        selectTarget = charHdr;
       } else if (kind === "transition_cut") {
-        blockText = isPL ? "> CIĘCIE DO:\n" : "> CUT TO:\n";
+        blockText = trStd(isPL, "sp_ins_cut");
         selectTarget = "";
       } else if (kind === "transition_fade") {
-        blockText = isPL ? "> ŚCIEMNIENIE.\n" : "> FADE OUT.\n";
+        blockText = trStd(isPL, "sp_ins_fade");
         selectTarget = "";
       } else if (kind === "subslug") {
-        blockText = isPL ? "WN. LOKACJA - CIĄG DALSZY\n" : "INT. LOCATION - CONTINUOUS\n";
-        selectTarget = isPL ? "LOKACJA" : "LOCATION";
+        blockText = trStd(isPL, "sp_ins_subslug");
+        selectTarget = trStd(isPL, "sp_ins_location");
       }
 
       if (blockText) {
@@ -771,16 +776,25 @@ function handleEditorCanvasClick(e) {
       if (narrField) narrField.classList.toggle("hidden", isScreenplay);
       if (imgField) imgField.classList.toggle("hidden", isScreenplay);
       if (modalTitle) {
-        modalTitle.textContent = isScreenplay ? "Utwórz Nowy Scenariusz" : "Utwórz Nową Książkę";
+        modalTitle.textContent = isScreenplay
+          ? tr("new_screenplay_modal_title")
+          : tr("new_book_modal_title");
       }
       if (titleLabel) {
-        titleLabel.textContent = "tytuł:";
+        titleLabel.textContent = tr("title_key");
       }
       if (titleInp) {
-        titleInp.setAttribute("placeholder", isScreenplay ? "np. Ostatni Rejs" : "np. Tajemnica Starego Młyna");
+        titleInp.setAttribute(
+          "placeholder",
+          isScreenplay
+            ? tr("new_screenplay_placeholder")
+            : tr("new_book_placeholder")
+        );
       }
       if (submitBtn) {
-        submitBtn.textContent = isScreenplay ? "Utwórz scenariusz" : "Utwórz książkę";
+        submitBtn.textContent = isScreenplay
+          ? tr("create_screenplay_btn")
+          : tr("create_book_btn");
       }
       return true;
     }
@@ -2569,7 +2583,7 @@ function bindEditorCanvasEvents() {
       "";
     const nd = sceneId ? studioGraphState.nodeById.get(sceneId) : null;
     if (e.target && e.target.name === "chapter" && nd) {
-      nd.chapter = e.target.value || "Rozdział 1";
+      nd.chapter = e.target.value || tr("default_chapter");
       nd.chapterLower = nd.chapter.toLowerCase();
       updateChapterGroupFrames();
       drawStudioWires();

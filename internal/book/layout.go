@@ -116,7 +116,7 @@ func canonicalizeAutoSceneIDsAfterReorder(b *Book, sceneMap map[string]*Scene) {
 		if sc.ExplicitID != "" {
 			continue
 		}
-		for {
+		for maxTries := len(usedIDs) + len(b.Scenes) + 16; maxTries > 0; maxTries-- {
 			cand := fmt.Sprintf("s%d", nextAuto)
 			nextAuto++
 			if !usedIDs[strings.ToLower(cand)] {

@@ -14,3 +14,4 @@
 # OS & editor metadata
 .DS_Store
 .kilo/
+*.log

@@ -276,7 +276,16 @@ func CompileEncryptedSTBC(b *Book, media map[string][]byte) (ciphertext []byte, 
 		if sc.ExplicitEnd {
 			scFlags |= 1
 		}
+		hasTrim := b.Narrated && sc.HasVoiceTrim()
+		if hasTrim {
+			scFlags |= 2
+		}
 		plain.WriteByte(scFlags)
+		if hasTrim {
+			ts, te := sc.NormalizedVoiceTrim()
+			_ = binary.Write(&plain, binary.LittleEndian, float32(ts))
+			_ = binary.Write(&plain, binary.LittleEndian, float32(te))
+		}
 		_ = binary.Write(&plain, binary.LittleEndian, uint16(len(sc.Choices)))
 		for _, ch := range sc.Choices {
 			plain.WriteByte(encOps[stbcOpChoice])
@@ -485,6 +494,13 @@ func DecodeEncryptedSTBC(ciphertext []byte, key [32]byte, nonce [12]byte, permSe
 			sc.OrderIndex = int(ord)
 			scFlags, _ := r.ReadByte()
 			sc.ExplicitEnd = (scFlags & 1) != 0
+			if (scFlags & 2) != 0 {
+				var ts, te float32
+				_ = binary.Read(r, binary.LittleEndian, &ts)
+				_ = binary.Read(r, binary.LittleEndian, &te)
+				sc.VoiceTrimStart = float64(ts)
+				sc.VoiceTrimEnd = float64(te)
+			}
 			if sc.AudioFile != "" && b.Narrated {
 				sc.AudioURL = encodeMediaURL(b.ID, sc.AudioFile)
 			}
@@ -661,7 +677,7 @@ func StripEmbeddedSTBCFromWasm(wasmBytes []byte) []byte {
 }
 
 func writeULEB128(buf *bytes.Buffer, v uint64) {
-	for {
+	for step := 0; step < 10; step++ {
 		b := byte(v & 0x7f)
 		v >>= 7
 		if v != 0 {

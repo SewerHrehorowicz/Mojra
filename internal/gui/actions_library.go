@@ -44,9 +44,9 @@ func (s *Server) openBookInStudio(b *book.Book) string {
 	s.closeAllModals()
 	s.persistSettings()
 	if strings.TrimSpace(b.License) != "" {
-		return fmt.Sprintf("Otwarto projekt w Studio: %s (Licencja: %s)", b.Title, b.License)
+		return s.trf(TrOpenedInStudioLicenseFmt, b.Title, b.License)
 	}
-	return "Otwarto projekt w Studio: " + b.Title
+	return s.tr(TrOpenedInStudioPrefix) + b.Title
 }
 
 func (s *Server) promptUnpackPlaybookForStudio(b *book.Book) string {
@@ -58,11 +58,11 @@ func (s *Server) promptUnpackPlaybookForStudio(b *book.Book) string {
 	s.persistSettings()
 	author := strings.TrimSpace(b.Author)
 	if author == "" {
-		author = "Autor Nieznany"
+		author = s.tr(TrUnknownAuthor)
 	}
-	s.ConfirmTitle = "Pakiet wydawniczy .playbook (tylko do odczytu)"
-	s.ConfirmMessage = fmt.Sprintf(
-		"Plik „%s” jest zamkniętym pakietem wydawniczym przeznaczonym do odczytu w Czytniku.\nAutor: %s | Licencja: %s\n\nWszelka modyfikacja lub rozpowszechnianie podlegają prawom autorskim twórcy. Czy chcesz wypakować osobną kopię roboczą do edycji w Studio?",
+	s.ConfirmTitle = s.tr(TrConfirmPlaybookReadonlyTitle)
+	s.ConfirmMessage = s.trf(
+		TrConfirmPlaybookUnpackMsgFmt,
 		b.Title,
 		author,
 		b.EffectiveLicense(),

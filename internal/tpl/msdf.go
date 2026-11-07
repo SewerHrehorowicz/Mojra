@@ -243,187 +243,221 @@ func (f *ttfFont) glyphLocRange(gid int) (int, int) {
 	return f.glyfOffset + o1, f.glyfOffset + o2
 }
 
+type ttfCompositeTask struct {
+	gid                int
+	depth              int
+	a, b, c, d, dx, dy float64
+	identity           bool
+}
+
+func (f *ttfFont) extractSimpleContours(start, end, numContours int) [][]ttfPoint {
+	pos := start + 10
+	endPts := make([]int, numContours)
+	for i := 0; i < numContours; i++ {
+		if pos+2 > end {
+			return nil
+		}
+		endPts[i] = int(binary.BigEndian.Uint16(f.data[pos : pos+2]))
+		pos += 2
+	}
+	numPts := endPts[len(endPts)-1] + 1
+	if pos+2 > end {
+		return nil
+	}
+	instrLen := int(binary.BigEndian.Uint16(f.data[pos : pos+2]))
+	pos += 2 + instrLen
+	if pos > end {
+		return nil
+	}
+	flags := make([]byte, numPts)
+	for i := 0; i < numPts; {
+		if pos >= end {
+			return nil
+		}
+		fl := f.data[pos]
+		pos++
+		flags[i] = fl
+		i++
+		if fl&0x08 != 0 {
+			if pos >= end {
+				return nil
+			}
+			rep := int(f.data[pos])
+			pos++
+			for r := 0; r < rep && i < numPts; r++ {
+				flags[i] = fl
+				i++
+			}
+		}
+	}
+	xs := make([]float64, numPts)
+	var curX int16
+	for i := 0; i < numPts; i++ {
+		fl := flags[i]
+		if fl&0x02 != 0 {
+			if pos >= end {
+				return nil
+			}
+			dx := int16(f.data[pos])
+			pos++
+			if fl&0x10 != 0 {
+				curX += dx
+			} else {
+				curX -= dx
+			}
+		} else if fl&0x10 == 0 {
+			if pos+2 > end {
+				return nil
+			}
+			curX += int16(binary.BigEndian.Uint16(f.data[pos : pos+2]))
+			pos += 2
+		}
+		xs[i] = float64(curX)
+	}
+	ys := make([]float64, numPts)
+	var curY int16
+	for i := 0; i < numPts; i++ {
+		fl := flags[i]
+		if fl&0x04 != 0 {
+			if pos >= end {
+				return nil
+			}
+			dy := int16(f.data[pos])
+			pos++
+			if fl&0x20 != 0 {
+				curY += dy
+			} else {
+				curY -= dy
+			}
+		} else if fl&0x20 == 0 {
+			if pos+2 > end {
+				return nil
+			}
+			curY += int16(binary.BigEndian.Uint16(f.data[pos : pos+2]))
+			pos += 2
+		}
+		ys[i] = float64(curY)
+	}
+	var contours [][]ttfPoint
+	startIdx := 0
+	for _, endIdx := range endPts {
+		if endIdx >= numPts || endIdx < startIdx {
+			break
+		}
+		c := make([]ttfPoint, 0, endIdx-startIdx+1)
+		for i := startIdx; i <= endIdx; i++ {
+			c = append(c, ttfPoint{x: xs[i], y: ys[i], onCurve: flags[i]&0x01 != 0})
+		}
+		contours = append(contours, c)
+		startIdx = endIdx + 1
+	}
+	return contours
+}
+
 func (f *ttfFont) extractContours(gid int, depth int) [][]ttfPoint {
 	if depth > 6 {
 		return nil
 	}
-	start, end := f.glyphLocRange(gid)
-	if start >= end || end > len(f.data) || start+10 > len(f.data) {
-		return nil
-	}
-	numContours := int16(binary.BigEndian.Uint16(f.data[start : start+2]))
-	if numContours == 0 {
-		return nil
-	}
-	if numContours > 0 {
-		pos := start + 10
-		endPts := make([]int, int(numContours))
-		for i := 0; i < int(numContours); i++ {
-			if pos+2 > end {
-				return nil
-			}
-			endPts[i] = int(binary.BigEndian.Uint16(f.data[pos : pos+2]))
-			pos += 2
-		}
-		numPts := endPts[len(endPts)-1] + 1
-		if pos+2 > end {
-			return nil
-		}
-		instrLen := int(binary.BigEndian.Uint16(f.data[pos : pos+2]))
-		pos += 2 + instrLen
-		if pos > end {
-			return nil
-		}
-		flags := make([]byte, numPts)
-		for i := 0; i < numPts; {
-			if pos >= end {
-				return nil
-			}
-			fl := f.data[pos]
-			pos++
-			flags[i] = fl
-			i++
-			if fl&0x08 != 0 {
-				if pos >= end {
-					return nil
-				}
-				rep := int(f.data[pos])
-				pos++
-				for r := 0; r < rep && i < numPts; r++ {
-					flags[i] = fl
-					i++
-				}
-			}
-		}
-		xs := make([]float64, numPts)
-		var curX int16
-		for i := 0; i < numPts; i++ {
-			fl := flags[i]
-			if fl&0x02 != 0 {
-				if pos >= end {
-					return nil
-				}
-				dx := int16(f.data[pos])
-				pos++
-				if fl&0x10 != 0 {
-					curX += dx
-				} else {
-					curX -= dx
-				}
-			} else if fl&0x10 == 0 {
-				if pos+2 > end {
-					return nil
-				}
-				curX += int16(binary.BigEndian.Uint16(f.data[pos : pos+2]))
-				pos += 2
-			}
-			xs[i] = float64(curX)
-		}
-		ys := make([]float64, numPts)
-		var curY int16
-		for i := 0; i < numPts; i++ {
-			fl := flags[i]
-			if fl&0x04 != 0 {
-				if pos >= end {
-					return nil
-				}
-				dy := int16(f.data[pos])
-				pos++
-				if fl&0x20 != 0 {
-					curY += dy
-				} else {
-					curY -= dy
-				}
-			} else if fl&0x20 == 0 {
-				if pos+2 > end {
-					return nil
-				}
-				curY += int16(binary.BigEndian.Uint16(f.data[pos : pos+2]))
-				pos += 2
-			}
-			ys[i] = float64(curY)
-		}
-		var contours [][]ttfPoint
-		startIdx := 0
-		for _, endIdx := range endPts {
-			if endIdx >= numPts || endIdx < startIdx {
-				break
-			}
-			c := make([]ttfPoint, 0, endIdx-startIdx+1)
-			for i := startIdx; i <= endIdx; i++ {
-				c = append(c, ttfPoint{x: xs[i], y: ys[i], onCurve: flags[i]&0x01 != 0})
-			}
-			contours = append(contours, c)
-			startIdx = endIdx + 1
-		}
-		return contours
-	}
-
-	pos := start + 10
 	var allContours [][]ttfPoint
-	for pos+4 <= end {
-		flags := binary.BigEndian.Uint16(f.data[pos : pos+2])
-		subGID := int(binary.BigEndian.Uint16(f.data[pos+2 : pos+4]))
-		pos += 4
-		var dx, dy float64
-		if flags&0x0001 != 0 {
-			if pos+4 > end {
-				break
-			}
-			if flags&0x0002 != 0 {
-				dx = float64(int16(binary.BigEndian.Uint16(f.data[pos : pos+2])))
-				dy = float64(int16(binary.BigEndian.Uint16(f.data[pos+2 : pos+4])))
-			}
-			pos += 4
-		} else {
-			if pos+2 > end {
-				break
-			}
-			if flags&0x0002 != 0 {
-				dx = float64(int8(f.data[pos]))
-				dy = float64(int8(f.data[pos+1]))
-			}
-			pos += 2
+	queue := []ttfCompositeTask{{gid: gid, depth: depth, a: 1, d: 1, identity: true}}
+	for qIdx := 0; qIdx < len(queue) && qIdx < 64; qIdx++ {
+		task := queue[qIdx]
+		if task.depth > 6 {
+			continue
 		}
-		a, b, c, d := 1.0, 0.0, 0.0, 1.0
-		if flags&0x0008 != 0 {
-			if pos+2 > end {
-				break
-			}
-			s := float64(int16(binary.BigEndian.Uint16(f.data[pos:pos+2]))) / 16384.0
-			a, d = s, s
-			pos += 2
-		} else if flags&0x0040 != 0 {
-			if pos+4 > end {
-				break
-			}
-			a = float64(int16(binary.BigEndian.Uint16(f.data[pos:pos+2]))) / 16384.0
-			d = float64(int16(binary.BigEndian.Uint16(f.data[pos+2:pos+4]))) / 16384.0
-			pos += 4
-		} else if flags&0x0080 != 0 {
-			if pos+8 > end {
-				break
-			}
-			a = float64(int16(binary.BigEndian.Uint16(f.data[pos:pos+2]))) / 16384.0
-			b = float64(int16(binary.BigEndian.Uint16(f.data[pos+2:pos+4]))) / 16384.0
-			c = float64(int16(binary.BigEndian.Uint16(f.data[pos+4:pos+6]))) / 16384.0
-			d = float64(int16(binary.BigEndian.Uint16(f.data[pos+6:pos+8]))) / 16384.0
-			pos += 8
+		start, end := f.glyphLocRange(task.gid)
+		if start >= end || end > len(f.data) || start+10 > len(f.data) {
+			continue
 		}
-		subContours := f.extractContours(subGID, depth+1)
-		for _, sc := range subContours {
-			tc := make([]ttfPoint, len(sc))
-			for i, pt := range sc {
-				tc[i] = ttfPoint{
-					x:       a*pt.x + c*pt.y + dx,
-					y:       b*pt.x + d*pt.y + dy,
-					onCurve: pt.onCurve,
+		numContours := int16(binary.BigEndian.Uint16(f.data[start : start+2]))
+		if numContours == 0 {
+			continue
+		}
+		if numContours > 0 {
+			subContours := f.extractSimpleContours(start, end, int(numContours))
+			if task.identity {
+				allContours = append(allContours, subContours...)
+			} else {
+				for _, sc := range subContours {
+					tc := make([]ttfPoint, len(sc))
+					for i, pt := range sc {
+						tc[i] = ttfPoint{
+							x:       task.a*pt.x + task.c*pt.y + task.dx,
+							y:       task.b*pt.x + task.d*pt.y + task.dy,
+							onCurve: pt.onCurve,
+						}
+					}
+					allContours = append(allContours, tc)
 				}
 			}
-			allContours = append(allContours, tc)
+			continue
 		}
-		if flags&0x0020 == 0 {
-			break
+
+		pos := start + 10
+		for pos+4 <= end {
+			flags := binary.BigEndian.Uint16(f.data[pos : pos+2])
+			subGID := int(binary.BigEndian.Uint16(f.data[pos+2 : pos+4]))
+			pos += 4
+			var dx, dy float64
+			if flags&0x0001 != 0 {
+				if pos+4 > end {
+					break
+				}
+				if flags&0x0002 != 0 {
+					dx = float64(int16(binary.BigEndian.Uint16(f.data[pos : pos+2])))
+					dy = float64(int16(binary.BigEndian.Uint16(f.data[pos+2 : pos+4])))
+				}
+				pos += 4
+			} else {
+				if pos+2 > end {
+					break
+				}
+				if flags&0x0002 != 0 {
+					dx = float64(int8(f.data[pos]))
+					dy = float64(int8(f.data[pos+1]))
+				}
+				pos += 2
+			}
+			a, b, c, d := 1.0, 0.0, 0.0, 1.0
+			if flags&0x0008 != 0 {
+				if pos+2 > end {
+					break
+				}
+				s := float64(int16(binary.BigEndian.Uint16(f.data[pos:pos+2]))) / 16384.0
+				a, d = s, s
+				pos += 2
+			} else if flags&0x0040 != 0 {
+				if pos+4 > end {
+					break
+				}
+				a = float64(int16(binary.BigEndian.Uint16(f.data[pos:pos+2]))) / 16384.0
+				d = float64(int16(binary.BigEndian.Uint16(f.data[pos+2:pos+4]))) / 16384.0
+				pos += 4
+			} else if flags&0x0080 != 0 {
+				if pos+8 > end {
+					break
+				}
+				a = float64(int16(binary.BigEndian.Uint16(f.data[pos:pos+2]))) / 16384.0
+				b = float64(int16(binary.BigEndian.Uint16(f.data[pos+2:pos+4]))) / 16384.0
+				c = float64(int16(binary.BigEndian.Uint16(f.data[pos+4:pos+6]))) / 16384.0
+				d = float64(int16(binary.BigEndian.Uint16(f.data[pos+6:pos+8]))) / 16384.0
+				pos += 8
+			}
+			if len(queue) < 64 {
+				queue = append(queue, ttfCompositeTask{
+					gid:   subGID,
+					depth: task.depth + 1,
+					a:     task.a*a + task.c*b,
+					b:     task.b*a + task.d*b,
+					c:     task.a*c + task.c*d,
+					d:     task.b*c + task.d*d,
+					dx:    task.a*dx + task.c*dy + task.dx,
+					dy:    task.b*dx + task.d*dy + task.dy,
+				})
+			}
+			if flags&0x0020 == 0 {
+				break
+			}
 		}
 	}
 	return allContours

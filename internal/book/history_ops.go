@@ -337,7 +337,7 @@ func compactHistoryRevisions(bookRoot string, h *BookHistory, now int64, cache m
 	}
 
 	compacted := false
-	for {
+	for maxPass := len(h.Revisions); maxPass > 0; maxPass-- {
 		mergedInPass := false
 		branchIdxs := h.ActiveBranchRevisions()
 		curBranchPos := -1
@@ -546,7 +546,7 @@ func RecordBookHistoryStep(b *Book, label, kind, coalesceKey, selectedSceneID st
 	h.syncBranchesMetadata()
 
 	// Enforce rolling cap of MaxUnnamedHistoryRevisions after the latest Named Version on the active branch.
-	for {
+	for maxPass := len(h.Revisions); maxPass > 0; maxPass-- {
 		lastNamedIdx := h.LastNamedIndex()
 		unnamedCount := 0
 		oldestUnnamedIdx := -1

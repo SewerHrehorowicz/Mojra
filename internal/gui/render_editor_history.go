@@ -33,6 +33,7 @@ func buildHistoryGraphRows(
 	h *book.BookHistory,
 	curIdx, viewedIdx int,
 	isHistPreview bool,
+	lang Lang,
 ) ([]map[string]any, map[string]string) {
 	revHints, branchHints := book.BuildHistoryHoverSummaries(b, h)
 	if h == nil || len(h.Revisions) == 0 {
@@ -41,11 +42,12 @@ func buildHistoryGraphRows(
 		if b != nil {
 			scenesCount = len(b.Scenes)
 		}
-		defHint := fmt.Sprintf("main • %d scen", scenesCount)
+		defHint := trfLang(lang, TrHistoryMainScenesFmt, scenesCount)
+		initLabel := trLang(lang, TrHistoryInitialState)
 		branchHints["main"] = defHint
 		row := map[string]any{
 			"id":                "r1",
-			"label":             "Stan początkowy",
+			"label":             initLabel,
 			"meta_label":        "r1 • " + nowStr,
 			"branch":            "main",
 			"hover_hint":        defHint,
@@ -538,7 +540,7 @@ func buildHistoryGraphRows(
 		timeStr := formatHistoryCompactTime(rev.TimeUnix)
 		metaLabel := fmt.Sprintf("%s • %s", rev.ID, timeStr)
 		if isPreview {
-			metaLabel = "PODGLĄD • " + rev.ID
+			metaLabel = trLang(lang, TrHistoryPreviewPrefix) + rev.ID
 		}
 
 		rowHint := revHints[rev.ID]
@@ -612,7 +614,7 @@ func (s *Server) populateEditorHistoryContext(vars map[string]any) {
 				vars["history_preview_id"] = s.PreviewRevisionID
 				vars["history_preview_label"] = s.PreviewRevisionLabel
 
-				graphRows, _ = buildHistoryGraphRows(s.ActiveBook, h, curIdx, viewedIdx, isHistPreview)
+				graphRows, _ = buildHistoryGraphRows(s.ActiveBook, h, curIdx, viewedIdx, isHistPreview, s.lang())
 
 				for _, idx := range h.ActiveBranchRevisions() {
 					if h.Revisions[idx].Named {
@@ -622,7 +624,7 @@ func (s *Server) populateEditorHistoryContext(vars map[string]any) {
 			}
 		}
 		if len(graphRows) == 0 {
-			graphRows, _ = buildHistoryGraphRows(s.ActiveBook, nil, -1, -1, false)
+			graphRows, _ = buildHistoryGraphRows(s.ActiveBook, nil, -1, -1, false, s.lang())
 		}
 		if namedVersionsCount == 0 {
 			namedVersionsCount = 1
@@ -635,6 +637,6 @@ func (s *Server) populateEditorHistoryContext(vars map[string]any) {
 	vars["show_editor_history_panel"] = s.EditorHistoryPanelOpen
 	vars["active_branch_name"] = activeBranchName
 	vars["history_graph_rows"] = graphRows
-	vars["default_next_version_name"] = fmt.Sprintf("Wersja %d", namedVersionsCount+1)
-	vars["default_next_branch_name"] = fmt.Sprintf("wariant-%d", branchesCount+1)
+	vars["default_next_version_name"] = s.trf(TrHistoryDefaultVersionFmt, namedVersionsCount+1)
+	vars["default_next_branch_name"] = s.trf(TrHistoryDefaultBranchFmt, branchesCount+1)
 }

@@ -238,6 +238,14 @@ function syncVoiceStripDOM(stripEl) {
   const startHandle = qs('.voice-rec-trim-handle[data-voice-trim="start"]', stripEl);
   const endHandle = qs('.voice-rec-trim-handle[data-voice-trim="end"]', stripEl);
   const playheadEl = qs(".voice-rec-playhead", stripEl);
+  const cutBtn = qs('[data-voice-trim-destructive="true"]', stripEl);
+  const hasTrim =
+    hasAudio &&
+    !voiceAudioState.isRecording &&
+    (voiceAudioState.startRatio > 0.002 || voiceAudioState.endRatio < 0.998);
+  if (cutBtn) {
+    cutBtn.classList.toggle("hidden", !hasTrim);
+  }
 
   if (startHandle) {
     startHandle.style.left = (voiceAudioState.startRatio * 100).toFixed(2) + "%";
@@ -360,17 +368,31 @@ async function loadVoiceStripAudio(stripEl) {
   if (!stripEl || voiceAudioState.isRecording) return;
   const sceneId = (stripEl.getAttribute("data-scene") || "").trim();
   const voiceUrl = (stripEl.getAttribute("data-voice-url") || "").trim();
+  const attrStart = parseFloat(stripEl.getAttribute("data-trim-start") || "0");
+  const attrEnd = parseFloat(stripEl.getAttribute("data-trim-end") || "1");
+  let normStart = Number.isFinite(attrStart) && attrStart >= 0 && attrStart < 1 ? attrStart : 0;
+  let normEnd = Number.isFinite(attrEnd) && attrEnd > 0 && attrEnd <= 1 ? attrEnd : 1;
+  if (normEnd <= normStart + 0.002) {
+    normStart = 0;
+    normEnd = 1;
+  }
 
   if (sceneId !== voiceAudioState.sceneId || voiceUrl !== voiceAudioState.voiceUrl) {
     stopVoicePlayback();
     voiceAudioState.sceneId = sceneId;
     voiceAudioState.voiceUrl = voiceUrl;
-    voiceAudioState.startRatio = 0;
-    voiceAudioState.endRatio = 1;
-    voiceAudioState.playheadRatio = 0;
+    voiceAudioState.startRatio = normStart;
+    voiceAudioState.endRatio = normEnd;
+    voiceAudioState.playheadRatio = normStart;
     voiceAudioState.peaks = null;
     voiceAudioState.pcmSamplesInt16 = null;
     voiceAudioState.durationSec = 0;
+  } else if (!voiceAudioState.dragMode) {
+    voiceAudioState.startRatio = normStart;
+    voiceAudioState.endRatio = normEnd;
+    if (voiceAudioState.playheadRatio < normStart || voiceAudioState.playheadRatio > normEnd) {
+      voiceAudioState.playheadRatio = normStart;
+    }
   }
 
   if (!voiceUrl) {
@@ -798,13 +820,33 @@ function commitVoiceTrimAutoSave(stripEl) {
     (stripEl && (stripEl.getAttribute("data-scene") || "").trim()) ||
     voiceAudioState.sceneId;
   if (!sceneId) return;
+  if (stripEl) {
+    stripEl.setAttribute("data-trim-start", voiceAudioState.startRatio.toFixed(4));
+    stripEl.setAttribute("data-trim-end", voiceAudioState.endRatio.toFixed(4));
+    syncVoiceStripDOM(stripEl);
+  }
+  sendServerAction("TrimSceneVoice", {
+    scene: sceneId,
+    start_ratio: voiceAudioState.startRatio.toFixed(4),
+    end_ratio: voiceAudioState.endRatio.toFixed(4),
+    destructive: "false"
+  });
+}
+
+function commitVoiceTrimDestructive(stripEl) {
+  const sceneId =
+    (stripEl && (stripEl.getAttribute("data-scene") || "").trim()) ||
+    voiceAudioState.sceneId;
+  if (!sceneId) return;
   if (voiceAudioState.startRatio <= 0.002 && voiceAudioState.endRatio >= 0.998) {
     return;
   }
+  stopVoicePlayback();
   const params = {
     scene: sceneId,
     start_ratio: voiceAudioState.startRatio.toFixed(4),
-    end_ratio: voiceAudioState.endRatio.toFixed(4)
+    end_ratio: voiceAudioState.endRatio.toFixed(4),
+    destructive: "true"
   };
   const voiceFile = (stripEl && stripEl.getAttribute("data-voice-file")) || "";
   if (
@@ -816,6 +858,9 @@ function commitVoiceTrimAutoSave(stripEl) {
     params.sample_rate = String(voiceAudioState.sampleRate || 24000);
   }
   voiceDecodedCache.clear();
+  voiceAudioState.startRatio = 0;
+  voiceAudioState.endRatio = 1;
+  voiceAudioState.playheadRatio = 0;
   sendServerAction("TrimSceneVoice", params);
 }
 
@@ -864,6 +909,17 @@ function bindVoiceRecorderEvents() {
       const stripEl = rerecordBtn.closest(".voice-rec-strip");
       if (stripEl) {
         startVoiceRecording(stripEl);
+      }
+      return;
+    }
+
+    const cutBtn = e.target.closest('[data-voice-trim-destructive="true"]');
+    if (cutBtn) {
+      e.preventDefault();
+      e.stopPropagation();
+      const stripEl = cutBtn.closest(".voice-rec-strip");
+      if (stripEl) {
+        commitVoiceTrimDestructive(stripEl);
       }
       return;
     }
