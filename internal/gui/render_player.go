@@ -7,46 +7,6 @@ import (
 	"storyteller/internal/book"
 )
 
-func extractFirstSentence(raw string) string {
-	cleaned := strings.TrimSpace(raw)
-	if cleaned == "" {
-		return "Kliknij, aby wpisać treść sceny..."
-	}
-	if book.HasDynamicProse(cleaned) {
-		var proseLines []string
-		for _, ln := range strings.Split(strings.ReplaceAll(cleaned, "\r\n", "\n"), "\n") {
-			t := strings.TrimSpace(ln)
-			if t == "" || t == "---" || t == "***" {
-				continue
-			}
-			lower := strings.ToLower(t)
-			if lower == ":end" {
-				continue
-			}
-			if colonIdx := strings.IndexByte(t, ':'); colonIdx > 0 {
-				k := strings.ToLower(strings.TrimSpace(t[:colonIdx]))
-				if k == "if" || k == "if?" || k == "gdy" || k == "warunek" || k == "elif" || k == "else if" || k == "else" || k == "endif" || k == "set" || k == "then" {
-					continue
-				}
-			}
-			proseLines = append(proseLines, t)
-		}
-		if len(proseLines) > 0 {
-			cleaned = strings.Join(proseLines, " ")
-		}
-	}
-	flat := strings.Join(strings.Fields(cleaned), " ")
-	runes := []rune(flat)
-	for i, r := range runes {
-		if r == '.' || r == '!' || r == '?' || r == '…' {
-			if i+1 == len(runes) || runes[i+1] == ' ' {
-				return string(runes[:i+1])
-			}
-		}
-	}
-	return flat
-}
-
 func buildPlayerScreenplayBlocks(sc *book.Scene, state map[string]string, b *book.Book, sceneNum int, standard string) []map[string]any {
 	if sc == nil {
 		return nil
@@ -77,7 +37,6 @@ func buildPlayerScreenplayBlocks(sc *book.Scene, state map[string]string, b *boo
 			"scene_num":        sceneNum,
 			"show_scene_num":   showNum,
 			"is_slugline":      blk.Kind == book.BlockSlugline,
-			"is_action":        blk.Kind == book.BlockAction,
 			"is_character":     blk.Kind == book.BlockCharacter,
 			"is_parenthetical": blk.Kind == book.BlockParenthetical,
 			"is_dialogue":      blk.Kind == book.BlockDialogue,
@@ -85,6 +44,25 @@ func buildPlayerScreenplayBlocks(sc *book.Scene, state map[string]string, b *boo
 		})
 	}
 	return out
+}
+
+func resolvePlayerSceneAudio(b *book.Book, sc *book.Scene) (string, string) {
+	if b == nil || !b.Narrated || sc == nil || sc.AudioURL == "" {
+		return "", "0:00"
+	}
+	voiceRel := sc.ExplicitVoice
+	if voiceRel == "" {
+		voiceRel = sc.AudioFile
+	}
+	durLbl, stamp := book.ReadAudioDurationAndStamp(b, voiceRel)
+	if durLbl == "" {
+		durLbl = "0:00"
+	}
+	urlStr := sc.AudioURL
+	if stamp > 0 {
+		urlStr = fmt.Sprintf("%s?v=%d", urlStr, stamp)
+	}
+	return urlStr, durLbl
 }
 
 func (s *Server) populatePlayerContext(vars map[string]any) {
@@ -102,6 +80,13 @@ func (s *Server) populatePlayerContext(vars map[string]any) {
 
 	histCount := 0
 	if s.Save != nil {
+		for i, h := range s.Save.History {
+			if strings.EqualFold(h.SceneID, curScene.ID) {
+				s.Save.History = s.Save.History[:i]
+				s.persistSaveState()
+				break
+			}
+		}
 		histCount = len(s.Save.History)
 		if len(s.Save.Variables) == 0 && len(s.PlayerBook.Variables) > 0 {
 			s.Save.Variables = book.EnsureSaveVariables(s.PlayerBook, s.Save.Variables)
@@ -149,19 +134,22 @@ func (s *Server) populatePlayerContext(vars map[string]any) {
 			if isScreenplay {
 				pastBlocks = buildPlayerScreenplayBlocks(pastScene, pastVars, s.PlayerBook, pastScene.OrderIndex+1, normStd)
 			}
-			pastHTML := book.RenderSceneProseHTML(pastScene, pastVars, s.PlayerBook)
+			pastProse := book.EvaluateSceneProseText(pastScene, pastVars, s.PlayerBook)
+			pastAudioURL, pastAudioDur := resolvePlayerSceneAudio(s.PlayerBook, pastScene)
 			histList = append(histList, map[string]any{
-				"idx":               idx,
-				"header_meta":       pastHeaderMeta,
-				"name":              pastScene.Name,
-				"slugline":          pastScene.Slugline,
-				"rail_title":        pastScene.DisplayName(),
-				"has_title":         pastHasTitle,
-				"html":              pastHTML,
-				"screenplay_blocks": pastBlocks,
-				"has_image":         pastImgURL != "",
-				"image_url":         pastImgURL,
-				"bg_image_url":      lastImageURL,
+				"idx":                  idx,
+				"header_meta":          pastHeaderMeta,
+				"name":                 pastScene.Name,
+				"slugline":             pastScene.Slugline,
+				"rail_title":           pastScene.DisplayName(),
+				"has_title":            pastHasTitle,
+				"prose":                pastProse,
+				"screenplay_blocks":    pastBlocks,
+				"has_image":            pastImgURL != "",
+				"image_url":            pastImgURL,
+				"bg_image_url":         lastImageURL,
+				"audio_url":            pastAudioURL,
+				"audio_duration_label": pastAudioDur,
 			})
 		}
 		vars["history_items"] = histList
@@ -207,23 +195,25 @@ func (s *Server) populatePlayerContext(vars map[string]any) {
 	if isScreenplay {
 		curBlocks = buildPlayerScreenplayBlocks(curScene, curVars, s.PlayerBook, curScene.OrderIndex+1, normStd)
 	}
-	curHTML := book.RenderSceneProseHTML(curScene, curVars, s.PlayerBook)
+	curProse := book.EvaluateSceneProseText(curScene, curVars, s.PlayerBook)
+	curAudioURL, curAudioDur := resolvePlayerSceneAudio(s.PlayerBook, curScene)
 
 	vars["current_scene"] = map[string]any{
-		"name":              curScene.Name,
-		"slugline":          curScene.Slugline,
-		"rail_title":        curScene.DisplayName(),
-		"has_title":         curHasTitle,
-		"header_meta":       curHeaderMeta,
-		"html":              curHTML,
-		"screenplay_blocks": curBlocks,
-		"has_image":         curImgURL != "",
-		"image_url":         curImgURL,
-		"has_bg_image":      !imageless && lastImageURL != "",
-		"bg_image_url":      lastImageURL,
-		"audio_url":         curScene.AudioURL,
-		"is_terminal":       len(curScene.Choices) == 0 || curScene.ExplicitEnd,
-		"choices":           curChoices,
+		"name":                 curScene.Name,
+		"slugline":             curScene.Slugline,
+		"rail_title":           curScene.DisplayName(),
+		"has_title":            curHasTitle,
+		"header_meta":          curHeaderMeta,
+		"prose":                curProse,
+		"screenplay_blocks":    curBlocks,
+		"has_image":            curImgURL != "",
+		"image_url":            curImgURL,
+		"has_bg_image":         !imageless && lastImageURL != "",
+		"bg_image_url":         lastImageURL,
+		"audio_url":            curAudioURL,
+		"audio_duration_label": curAudioDur,
+		"is_terminal":          len(curScene.Choices) == 0 || curScene.ExplicitEnd,
+		"choices":              curChoices,
 	}
 
 	narrated := s.PlayerBook.Narrated

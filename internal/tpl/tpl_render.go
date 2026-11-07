@@ -5,9 +5,124 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 )
+
+var (
+	proseInlineBoldRe   = regexp.MustCompile(`\*\*([^*]+)\*\*`)
+	proseInlineItalicRe = regexp.MustCompile(`\*([^*]+)\*`)
+	proseHTMLTagStripRe = regexp.MustCompile(`<[a-zA-Z/!?][^>]*>`)
+)
+
+// SanitizePlainText strips any HTML tags, control characters, and dangerous payloads
+// so prose text and metadata are guaranteed to be pure plain text without executable code.
+func SanitizePlainText(s string) string {
+	s = strings.ReplaceAll(s, "\x00", "")
+	s = proseHTMLTagStripRe.ReplaceAllString(s, "")
+	var b strings.Builder
+	b.Grow(len(s))
+	runes := []rune(s)
+	inDoubleBraces := 0
+	for i := 0; i < len(runes); i++ {
+		r := runes[i]
+		if r == '{' && i+1 < len(runes) && runes[i+1] == '{' {
+			inDoubleBraces++
+			b.WriteRune('{')
+			b.WriteRune('{')
+			i++
+			continue
+		}
+		if r == '}' && i+1 < len(runes) && runes[i+1] == '}' && inDoubleBraces > 0 {
+			inDoubleBraces--
+			b.WriteRune('}')
+			b.WriteRune('}')
+			i++
+			continue
+		}
+		if r == '\n' {
+			inDoubleBraces = 0
+		}
+		if r == '<' || r == '>' {
+			if inDoubleBraces > 0 {
+				b.WriteRune(r)
+				continue
+			}
+			if r == '>' && b.Len() > 0 && strings.HasSuffix(b.String(), "-") {
+				b.WriteRune(r)
+			} else if r == '>' {
+				cur := b.String()
+				lastNL := strings.LastIndexByte(cur, '\n')
+				linePrefix := cur
+				if lastNL >= 0 {
+					linePrefix = cur[lastNL+1:]
+				}
+				if strings.TrimSpace(linePrefix) == "" {
+					b.WriteRune(r)
+				}
+			}
+			continue
+		}
+		if r == '\n' || r == '\t' || r >= 0x20 {
+			b.WriteRune(r)
+		}
+	}
+	return strings.TrimSpace(b.String())
+}
+
+// RenderSafeProseHTML converts plain text into safe HTML paragraphs (`<p>`, `<strong>`, `<em>`, `<blockquote>`, `<hr>`)
+// after escaping all HTML special characters.
+func RenderSafeProseHTML(raw string) string {
+	lines := strings.Split(strings.ReplaceAll(raw, "\r\n", "\n"), "\n")
+	var blocks []string
+	var para []string
+
+	flushPara := func() {
+		if len(para) == 0 {
+			return
+		}
+		joined := strings.Join(para, "<br />")
+		blocks = append(blocks, "<p>"+joined+"</p>")
+		para = nil
+	}
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			flushPara()
+			continue
+		}
+		if trimmed == "---" || trimmed == "***" {
+			flushPara()
+			blocks = append(blocks, `<hr class="scene-divider" />`)
+			continue
+		}
+		if strings.HasPrefix(trimmed, ">") {
+			flushPara()
+			q := strings.TrimSpace(strings.TrimPrefix(trimmed, ">"))
+			blocks = append(blocks, "<blockquote>"+formatProseInlineSafe(q)+"</blockquote>")
+			continue
+		}
+		para = append(para, formatProseInlineSafe(trimmed))
+	}
+	flushPara()
+
+	if len(blocks) == 0 {
+		return "<p></p>"
+	}
+	return strings.Join(blocks, "\n")
+}
+
+func formatProseInlineSafe(s string) string {
+	clean := SanitizePlainText(s)
+	var eb bytes.Buffer
+	writeEscapedHTML(&eb, clean)
+	escaped := eb.String()
+	escaped = proseInlineBoldRe.ReplaceAllString(escaped, "<strong>$1</strong>")
+	escaped = proseInlineItalicRe.ReplaceAllString(escaped, "<em>$1</em>")
+	return escaped
+}
 
 func hasLeadingDoctype(nodes []*Node) bool {
 	return len(nodes) > 0 && nodes[0].Kind == NodeDoctype
@@ -34,28 +149,6 @@ func RenderTemplateTo(w io.Writer, tplName string, components map[string]*Parsed
 	}
 	_, err := w.Write(buf.Bytes())
 	return err
-}
-
-// RenderTemplate renders a named template (e.g. "index" or "app_shell") with the given RenderContext.
-func RenderTemplate(tplName string, components map[string]*ParsedTemplate, ctx *RenderContext) string {
-	tpl, ok := components[tplName]
-	if !ok {
-		return ""
-	}
-	if ctx == nil {
-		ctx = NewContext(nil)
-	}
-	buf := AcquireBuffer()
-	defer ReleaseBuffer(buf)
-
-	if tplName == "index" && !hasLeadingDoctype(tpl.Nodes) {
-		buf.WriteString("<!DOCTYPE html>")
-	}
-	renderNodesToBuffer(buf, tpl.Nodes, components, ctx, 0)
-	if tplName == "index" {
-		buf.WriteByte('\n')
-	}
-	return buf.String()
 }
 
 // TranspileStaticHTML transpiles a root .tpl document and its @components into plain HTML.
@@ -250,11 +343,11 @@ func renderNodesToBuffer(buf *bytes.Buffer, nodes []*Node, components map[string
 				writeEscapedHTML(buf, txt)
 			}
 
-		case NodeRaw:
-			rawStr := evalRawNodeString(n, ctx)
-			if rawStr != "" {
+		case NodeProse:
+			proseHTML := evalProseNodeHTML(n, ctx)
+			if proseHTML != "" {
 				writeLineIndent(buf, indent)
-				buf.WriteString(rawStr)
+				buf.WriteString(proseHTML)
 			}
 
 		case NodeSVG:
@@ -282,15 +375,17 @@ func evalTextNodeString(n *Node, ctx *RenderContext) string {
 	return ""
 }
 
-func evalRawNodeString(n *Node, ctx *RenderContext) string {
+func evalProseNodeHTML(n *Node, ctx *RenderContext) string {
 	expr := strings.TrimSpace(n.Expr)
+	var plain string
 	if strings.HasPrefix(expr, `"`) && strings.HasSuffix(expr, `"`) && len(expr) >= 2 {
-		return interpolateString(expr[1:len(expr)-1], ctx)
+		plain = interpolateString(expr[1:len(expr)-1], ctx)
+	} else if v, ok := resolvePath(ctx, expr); ok {
+		plain = valToString(v)
+	} else {
+		plain = evaluateValueExpr(expr, ctx)
 	}
-	if v, ok := resolvePath(ctx, expr); ok {
-		return valToString(v)
-	}
-	return evaluateValueExpr(expr, ctx)
+	return RenderSafeProseHTML(plain)
 }
 
 func renderSingleElementNode(buf *bytes.Buffer, n *Node, components map[string]*ParsedTemplate, ctx *RenderContext, indent int) {
@@ -306,7 +401,6 @@ func renderSingleElementNode(buf *bytes.Buffer, n *Node, components map[string]*
 	}
 
 	var inlineText string
-	var inlineRaw bool
 	if n.Expr != "" {
 		inlineText = evaluateValueExpr(n.Expr, ctx)
 	} else if n.Text != "" {
@@ -330,21 +424,17 @@ func renderSingleElementNode(buf *bytes.Buffer, n *Node, components map[string]*
 	buf.WriteByte('>')
 
 	if len(n.Children) == 0 {
-		if inlineRaw {
-			buf.WriteString(inlineText)
-		} else {
-			writeEscapedHTML(buf, inlineText)
-		}
+		writeEscapedHTML(buf, inlineText)
 		buf.WriteString("</")
 		buf.WriteString(n.Tag)
 		buf.WriteByte('>')
 		return
 	}
 
-	if inlineText == "" && len(n.Children) == 1 && (n.Children[0].Kind == NodeText || n.Children[0].Kind == NodeRaw) {
+	if inlineText == "" && len(n.Children) == 1 && (n.Children[0].Kind == NodeText || n.Children[0].Kind == NodeProse) {
 		ch := n.Children[0]
-		if ch.Kind == NodeRaw {
-			buf.WriteString(evalRawNodeString(ch, ctx))
+		if ch.Kind == NodeProse {
+			buf.WriteString(evalProseNodeHTML(ch, ctx))
 		} else {
 			writeEscapedHTML(buf, evalTextNodeString(ch, ctx))
 		}
@@ -362,11 +452,7 @@ func renderSingleElementNode(buf *bytes.Buffer, n *Node, components map[string]*
 	posAfterOpen := buf.Len()
 	if inlineText != "" {
 		writeLineIndent(buf, childIndent)
-		if inlineRaw {
-			buf.WriteString(inlineText)
-		} else {
-			writeEscapedHTML(buf, inlineText)
-		}
+		writeEscapedHTML(buf, inlineText)
 	}
 	posBeforeChildren := buf.Len()
 	renderNodesToBuffer(buf, n.Children, components, ctx, childIndent)
@@ -382,11 +468,7 @@ func renderSingleElementNode(buf *bytes.Buffer, n *Node, components map[string]*
 
 	buf.Truncate(posAfterOpen)
 	if inlineText != "" {
-		if inlineRaw {
-			buf.WriteString(inlineText)
-		} else {
-			writeEscapedHTML(buf, inlineText)
-		}
+		writeEscapedHTML(buf, inlineText)
 	}
 	buf.WriteString("</")
 	buf.WriteString(n.Tag)
@@ -1242,4 +1324,14 @@ func writeEscapedHTML(buf *bytes.Buffer, s string) {
 	if last < len(s) {
 		buf.WriteString(s[last:])
 	}
+}
+
+func escapeHTMLText(s string) string {
+	if !hasHTMLSpecialChars(s) {
+		return s
+	}
+	var buf bytes.Buffer
+	buf.Grow(len(s) + 8)
+	writeEscapedHTML(&buf, s)
+	return buf.String()
 }

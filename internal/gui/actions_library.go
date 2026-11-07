@@ -12,9 +12,6 @@ import (
 )
 
 func (s *Server) openBook(r *http.Request) string {
-	if !s.isHistoryPreview() && r.FormValue("scene_id") != "" {
-		_ = s.saveSceneFromForm(r)
-	}
 	bookID := book.SanitizeBookID(r.FormValue("book"))
 	targetView := strings.TrimSpace(r.FormValue("view"))
 	if targetView == "" {
@@ -30,7 +27,7 @@ func (s *Server) openBook(r *http.Request) string {
 		s.setPlayerBook(b)
 		s.Settings.ActiveView = "player"
 		s.closeAllModals()
-		_ = book.SaveAppSettings(s.SavesDir, s.Settings)
+		s.persistSettings()
 	}
 	return ""
 }
@@ -45,7 +42,7 @@ func (s *Server) openBookInStudio(b *book.Book) string {
 	s.setActiveBook(b)
 	s.Settings.ActiveView = "editor"
 	s.closeAllModals()
-	_ = book.SaveAppSettings(s.SavesDir, s.Settings)
+	s.persistSettings()
 	if strings.TrimSpace(b.License) != "" {
 		return fmt.Sprintf("Otwarto projekt w Studio: %s (Licencja: %s)", b.Title, b.License)
 	}
@@ -58,7 +55,7 @@ func (s *Server) promptUnpackPlaybookForStudio(b *book.Book) string {
 	}
 	s.closeAllModals()
 	s.Settings.ActiveView = "editor"
-	_ = book.SaveAppSettings(s.SavesDir, s.Settings)
+	s.persistSettings()
 	author := strings.TrimSpace(b.Author)
 	if author == "" {
 		author = "Autor Nieznany"
@@ -122,7 +119,7 @@ func (s *Server) unpackPlaybookWorkingCopyForStudio(archivePath string) string {
 	s.setActiveBook(unpacked)
 	s.Settings.ActiveView = "editor"
 	s.closeAllModals()
-	_ = book.SaveAppSettings(s.SavesDir, s.Settings)
+	s.persistSettings()
 	return fmt.Sprintf("Wypakowano kopię roboczą do Studio: %s (%s)", unpacked.Title, unpacked.EffectiveLicense())
 }
 
@@ -134,13 +131,13 @@ func (s *Server) openStudioProjectAction(r *http.Request) string {
 	return "Nie znaleziono projektu"
 }
 
-func (s *Server) browseOpenStudioProject(r *http.Request) string {
+func (s *Server) pickDiskBookPath(r *http.Request) string {
 	mode := strings.ToLower(strings.TrimSpace(r.FormValue("mode")))
-	chooseDir := mode != "file"
-	s.mu.Unlock()
-	picked := PickNativeBookPath(chooseDir)
-	s.mu.Lock()
-	if picked != "" {
+	return s.pickNativeBookPathUnlocked(mode != "file")
+}
+
+func (s *Server) browseOpenStudioProject(r *http.Request) string {
+	if picked := s.pickDiskBookPath(r); picked != "" {
 		return s.openStudioProjectFromDiskPath(picked)
 	}
 	return ""
@@ -178,12 +175,7 @@ func (s *Server) openStudioProjectFromDiskPath(rawPath string) string {
 }
 
 func (s *Server) browseAddBookFromDisk(r *http.Request) string {
-	mode := strings.ToLower(strings.TrimSpace(r.FormValue("mode")))
-	chooseDir := mode != "file"
-	s.mu.Unlock()
-	picked := PickNativeBookPath(chooseDir)
-	s.mu.Lock()
-	if picked != "" {
+	if picked := s.pickDiskBookPath(r); picked != "" {
 		return s.addBookFromDiskPath(picked)
 	}
 	return ""
@@ -203,69 +195,56 @@ func (s *Server) addBookFromURLAction(r *http.Request) string {
 	return s.addBookFromURL(rawURL)
 }
 
-func (s *Server) browseAddBookMedia(r *http.Request) string {
+func (s *Server) prepareBookMediaAction(r *http.Request) (string, string, string, bool) {
 	if s.isHistoryPreview() {
-		return historyPreviewLockedToast
+		return "", "", historyPreviewLockedToast, false
 	}
 	if _, hasSettingsOpen := r.Form["scene_settings_open"]; hasSettingsOpen {
 		s.SceneTextModalSettingsOpen = r.FormValue("scene_settings_open") == "true"
 	}
-	if r.FormValue("scene_id") != "" {
-		_ = s.saveSceneFromForm(r)
+	if s.ActiveBook == nil || s.ActiveBook.IsPacked {
+		return "", "", "", false
 	}
-	if s.ActiveBook != nil && !s.ActiveBook.IsPacked {
-		kind := strings.ToLower(strings.TrimSpace(r.FormValue("kind")))
-		if kind == "" {
-			kind = strings.ToLower(strings.TrimSpace(r.FormValue("media_kind")))
-		}
-		if !s.ActiveBook.Narrated && (kind == "audio" || kind == "voice") {
-			return "Książka nie posiada narracji (narrated: false) — nagrania głosowe są wyłączone"
-		}
-		scID := strings.TrimSpace(r.FormValue("scene"))
-		if scID == "" {
-			scID = strings.TrimSpace(r.FormValue("scene_id"))
-		}
-		if rawPath := strings.TrimSpace(r.FormValue("path")); rawPath != "" {
-			return s.addBookMediaFromDiskPaths([]string{rawPath}, kind, scID)
-		}
-		s.mu.Unlock()
-		picked := PickNativeMediaPaths(kind)
-		s.mu.Lock()
-		if len(picked) == 0 {
-			r.Form.Set("silent", "true")
-			return ""
-		}
-		return s.addBookMediaFromDiskPaths(picked, kind, scID)
+	kind := strings.ToLower(strings.TrimSpace(r.FormValue("kind")))
+	if kind == "" {
+		kind = strings.ToLower(strings.TrimSpace(r.FormValue("media_kind")))
 	}
-	return ""
+	if !s.ActiveBook.Narrated && (kind == "audio" || kind == "voice") {
+		return "", "", "Książka nie posiada narracji (narrated: false) — nagrania głosowe są wyłączone", false
+	}
+	scID := strings.TrimSpace(r.FormValue("scene"))
+	if scID == "" {
+		scID = strings.TrimSpace(r.FormValue("scene_id"))
+	}
+	return kind, scID, "", true
+}
+
+func (s *Server) browseAddBookMedia(r *http.Request) string {
+	kind, scID, errToast, ok := s.prepareBookMediaAction(r)
+	if !ok {
+		return errToast
+	}
+	if rawPath := strings.TrimSpace(r.FormValue("path")); rawPath != "" {
+		return s.addBookMediaFromDiskPaths([]string{rawPath}, kind, scID)
+	}
+	var picked []string
+	s.withUnlocked(func() {
+		picked = PickNativeMediaPaths(kind)
+	})
+	if len(picked) == 0 {
+		r.Form.Set("silent", "true")
+		return ""
+	}
+	return s.addBookMediaFromDiskPaths(picked, kind, scID)
 }
 
 func (s *Server) addBookMediaFromDisk(r *http.Request) string {
-	if s.isHistoryPreview() {
-		return historyPreviewLockedToast
+	kind, scID, errToast, ok := s.prepareBookMediaAction(r)
+	if !ok {
+		return errToast
 	}
-	if _, hasSettingsOpen := r.Form["scene_settings_open"]; hasSettingsOpen {
-		s.SceneTextModalSettingsOpen = r.FormValue("scene_settings_open") == "true"
-	}
-	if r.FormValue("scene_id") != "" {
-		_ = s.saveSceneFromForm(r)
-	}
-	if s.ActiveBook != nil && !s.ActiveBook.IsPacked {
-		kind := strings.ToLower(strings.TrimSpace(r.FormValue("kind")))
-		if kind == "" {
-			kind = strings.ToLower(strings.TrimSpace(r.FormValue("media_kind")))
-		}
-		if !s.ActiveBook.Narrated && (kind == "audio" || kind == "voice") {
-			return "Książka nie posiada narracji (narrated: false) — nagrania głosowe są wyłączone"
-		}
-		scID := strings.TrimSpace(r.FormValue("scene"))
-		if scID == "" {
-			scID = strings.TrimSpace(r.FormValue("scene_id"))
-		}
-		rawPath := strings.TrimSpace(r.FormValue("path"))
-		return s.addBookMediaFromDiskPaths([]string{rawPath}, kind, scID)
-	}
-	return ""
+	rawPath := strings.TrimSpace(r.FormValue("path"))
+	return s.addBookMediaFromDiskPaths([]string{rawPath}, kind, scID)
 }
 
 func (s *Server) browseNewBookFolder(r *http.Request) string {
@@ -287,9 +266,7 @@ func (s *Server) browseNewBookFolder(r *http.Request) string {
 		}
 	}
 
-	s.mu.Unlock()
-	picked := PickNativeBookPath(true)
-	s.mu.Lock()
+	picked := s.pickNativeBookPathUnlocked(true)
 
 	if picked != "" {
 		if expanded, err := book.ExpandLocalPath(picked); err == nil && expanded != "" {
@@ -298,7 +275,7 @@ func (s *Server) browseNewBookFolder(r *http.Request) string {
 		s.NewBookDraftDir = picked
 		if s.Settings != nil {
 			s.Settings.NewBookDir = picked
-			_ = s.saveAppSettings()
+			s.persistSettings()
 		}
 	}
 	return ""
@@ -328,14 +305,7 @@ func (s *Server) createNewBook(r *http.Request) string {
 	}
 
 	if created, err := book.CreateNewBookWithMode(targetDir, title, author, mode, standard, narrated, imageless); err == nil && created != nil {
-		s.NewBookModalOpen = false
-		s.NewBookDraftTitle = ""
-		s.NewBookDraftAuthor = ""
-		s.NewBookDraftMode = ""
-		s.NewBookDraftStandard = ""
-		s.NewBookDraftNarrated = false
-		s.NewBookDraftImageless = false
-		s.NewBookDraftDir = ""
+		s.resetNewBookModalState()
 
 		if rawSavePath != "" && s.Settings != nil {
 			s.Settings.NewBookDir = filepath.Dir(created.RootPath)
@@ -346,7 +316,7 @@ func (s *Server) createNewBook(r *http.Request) string {
 		}
 		s.setActiveBook(created)
 		s.Settings.ActiveView = "editor"
-		_ = s.saveAppSettings()
+		s.persistSettings()
 		if created.IsScreenplay() {
 			return "Utworzono nowy scenariusz: " + created.Title
 		}
@@ -357,44 +327,8 @@ func (s *Server) createNewBook(r *http.Request) string {
 	return ""
 }
 
-func (s *Server) promptRemoveBook(r *http.Request) string {
-	reqBookID := book.SanitizeBookID(r.FormValue("book"))
-	if b, err := s.findBookByID(reqBookID); err == nil && b != nil {
-		if b.IsExternal {
-			s.ConfirmTitle = "Odepnij książkę z biblioteki"
-			s.ConfirmMessage = fmt.Sprintf("Czy chcesz usunąć książkę „%s” z listy w bibliotece? Oryginalne pliki na dysku (%s) nie zostaną usunięte.", b.Title, b.RootPath)
-		} else {
-			s.ConfirmTitle = "Usuń książkę z biblioteki"
-			s.ConfirmMessage = fmt.Sprintf("Czy na pewno chcesz usunąć książkę „%s” z katalogu biblioteki?", b.Title)
-		}
-		s.ConfirmPendingAction = "RemoveBook"
-		s.ConfirmPendingParam = b.ID
-	}
-	return ""
-}
-
 func (s *Server) removeBookFromForm(r *http.Request) string {
 	return s.removeBookByID(book.SanitizeBookID(r.FormValue("book")))
-}
-
-func (s *Server) packActiveBook(r *http.Request) string {
-	if s.ActiveBook != nil && !s.ActiveBook.IsPacked {
-		exportDir, errMsg, ok := s.resolveOrPickBookExportDir(r)
-		if !ok {
-			return errMsg
-		}
-		if err := os.MkdirAll(exportDir, 0755); err != nil {
-			return err.Error()
-		}
-		outZip := filepath.Join(exportDir, s.ActiveBook.ID+".playbook")
-		if err := book.PackBookToZip(s.ActiveBook.RootPath, outZip); err == nil {
-			s.revealExportedFileInOS(outZip)
-			return "Spakowano archiwum: " + outZip
-		} else {
-			return err.Error()
-		}
-	}
-	return ""
 }
 
 func (s *Server) extractEmbeddedBookAction(_ *http.Request) string {
@@ -429,7 +363,7 @@ func (s *Server) addBookFromDiskPath(rawPath string) string {
 	if firstAdded != nil {
 		s.setPlayerBook(firstAdded)
 	}
-	_ = book.SaveAppSettings(s.SavesDir, s.Settings)
+	s.persistSettings()
 
 	if len(resolvedPaths) > 1 {
 		return fmt.Sprintf("Dodano %d książek z dysku (bez kopiowania)", len(resolvedPaths))
@@ -445,9 +379,11 @@ func (s *Server) addBookFromURL(rawURL string) string {
 	if !book.IsTempDir(s.RootDir) || book.IsInsideRepoDir(s.RootDir) {
 		targetBooksDir = book.DefaultProjectsDir()
 	}
-	s.mu.Unlock()
-	downloaded, err := book.DownloadBookFromURL(targetBooksDir, rawURL)
-	s.mu.Lock()
+	var downloaded *book.Book
+	var err error
+	s.withUnlocked(func() {
+		downloaded, err = book.DownloadBookFromURL(targetBooksDir, rawURL)
+	})
 	if err != nil {
 		return err.Error()
 	}
@@ -460,7 +396,7 @@ func (s *Server) addBookFromURL(rawURL string) string {
 	} else {
 		s.setPlayerBook(downloaded)
 	}
-	_ = book.SaveAppSettings(s.SavesDir, s.Settings)
+	s.persistSettings()
 	return "Pobrano książkę z URL: " + downloaded.Title
 }
 
@@ -529,7 +465,7 @@ func (s *Server) removeBookByID(bookID string) string {
 	msg := ""
 	if b.IsExternal {
 		s.Settings.RemoveExternalBook(b.RootPath)
-		_ = book.SaveAppSettings(s.SavesDir, s.Settings)
+		s.persistSettings()
 		msg = "Odpięto książkę z biblioteki (pliki na dysku zachowane): " + b.Title
 	} else if b.IsPacked {
 		_ = os.Remove(b.RootPath)
@@ -546,11 +482,11 @@ func (s *Server) removeBookByID(bookID string) string {
 		if remaining, err := s.loadBooks(); err == nil && len(remaining) > 0 {
 			s.setPlayerBook(remaining[0])
 		}
-		_ = book.SaveAppSettings(s.SavesDir, s.Settings)
+		s.persistSettings()
 	}
 	if s.ActiveBook != nil && s.ActiveBook.ID == b.ID {
 		s.setActiveBook(nil)
-		_ = book.SaveAppSettings(s.SavesDir, s.Settings)
+		s.persistSettings()
 	}
 	return msg
 }
@@ -559,17 +495,32 @@ func (s *Server) extractEmbeddedDefaultBook() string {
 	if s.EmbeddedFS == nil {
 		return "Brak wbudowanego systemu plików z książką"
 	}
-	const embedPrefix = "books/nie-boj-sie-policji-rzecznej"
-	if _, err := fs.Stat(s.EmbeddedFS, embedPrefix+"/"+book.BookDataFileName); err != nil {
+	entries, err := fs.ReadDir(s.EmbeddedFS, "books")
+	if err != nil {
 		return "Wbudowana książka nie została znaleziona w binarium"
 	}
+	embeddedID := ""
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		candPrefix := "books/" + e.Name()
+		if _, statErr := fs.Stat(s.EmbeddedFS, candPrefix+"/"+book.BookDataFileName); statErr == nil {
+			embeddedID = e.Name()
+			break
+		}
+	}
+	if embeddedID == "" {
+		return "Wbudowana książka nie została znaleziona w binarium"
+	}
+	embedPrefix := "books/" + embeddedID
 
 	targetBooksDir := s.BooksDir
 	if !book.IsTempDir(s.RootDir) || book.IsInsideRepoDir(s.RootDir) {
 		targetBooksDir = book.DefaultProjectsDir()
 	}
-	sampleDir := filepath.Join(targetBooksDir, "nie-boj-sie-policji-rzecznej")
-	_ = os.Remove(filepath.Join(targetBooksDir, "nie-boj-sie-policji-rzecznej.stbook"))
+	sampleDir := filepath.Join(targetBooksDir, embeddedID)
+	_ = os.Remove(filepath.Join(targetBooksDir, embeddedID+".stbook"))
 	_ = os.RemoveAll(sampleDir)
 
 	var extractErr error
@@ -610,9 +561,9 @@ func (s *Server) extractEmbeddedDefaultBook() string {
 		s.Settings.AddExternalBook(sampleDir)
 	}
 	s.QRModalOpen = false
-	if b, err := s.findBookByID("nie-boj-sie-policji-rzecznej"); err == nil && b != nil {
+	if b, err := s.findBookByID(embeddedID); err == nil && b != nil {
 		s.setActiveBook(b)
-		_ = book.SaveAppSettings(s.SavesDir, s.Settings)
+		s.persistSettings()
 		return "Wypakowano wbudowaną książkę: " + b.Title
 	}
 	return "Wypakowano wbudowaną książkę do katalogu books/"

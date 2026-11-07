@@ -28,11 +28,6 @@ func EncodeBookVariablesSpec(b *Book) string {
 	return strings.Join(parts, ";")
 }
 
-// ValidateConditionExpr checks whether a choice or block condition expression only references declared variables with valid operators and values.
-func ValidateConditionExpr(expr string, b *Book) bool {
-	return ExplainConditionExprError(expr, b) == ""
-}
-
 // ExplainConditionExprError returns a human-readable Polish syntax/type error explanation for an invalid condition expression, or "" when valid.
 func ExplainConditionExprError(expr string, b *Book) string {
 	clean := CleanConditionExpr(expr)
@@ -159,10 +154,6 @@ func isBoolLiteralString(s string) bool {
 	}
 }
 
-func validateVarValueMatch(vDef *VariableDef, op string, rhs string, b *Book) bool {
-	return explainVarValueMatchError(vDef, op, rhs, b) == ""
-}
-
 func explainVarValueMatchError(vDef *VariableDef, op string, rhs string, b *Book) string {
 	switch vDef.Kind {
 	case VarKindInt:
@@ -204,11 +195,6 @@ func explainVarValueMatchError(vDef *VariableDef, op string, rhs string, b *Book
 		}
 		return fmt.Sprintf("Błąd typu: zmienna '%s' (bool) wymaga wartości true/false lub samej nazwy zmiennej", vDef.Name)
 	}
-}
-
-// ValidateEffectsExpr checks whether a scene or choice effects expression only mutates declared variables with valid C/C#-style syntax.
-func ValidateEffectsExpr(expr string, b *Book) bool {
-	return ExplainEffectsExprError(expr, b) == ""
 }
 
 // ExplainEffectsExprError returns a human-readable Polish syntax/type error explanation for an invalid effects expression, or "" when valid.
@@ -284,42 +270,22 @@ func ExplainEffectsExprError(expr string, b *Book) string {
 		if strings.Contains(c, "==") || strings.Contains(c, "!=") || strings.Contains(c, ">=") || strings.Contains(c, "<=") || strings.Contains(c, ">") || strings.Contains(c, "<") || strings.Contains(c, "&&") || strings.Contains(c, "||") {
 			return "Błąd w set: użyj przypisania ('=', '+=', '-=', '++', '--'), a nie operatora warunkowego"
 		}
-		if idx := strings.Index(c, "+="); idx > 0 {
+		if op, idx := findCompoundAssignOp(c); idx > 0 {
 			lhs := strings.TrimSpace(c[:idx])
-			rhs := strings.TrimSpace(c[idx+2:])
+			rhs := strings.TrimSpace(c[idx+len(op):])
 			vDef := b.FindVariable(lhs)
 			if vDef == nil {
 				return fmt.Sprintf("Nieznana zmienna '%s' — zadeklaruj ją w panelu Zmienne {}", lhs)
 			}
 			if vDef.Kind != VarKindInt {
-				return fmt.Sprintf("Błąd typu: operator '+=' wymaga zmiennej typu int (zmienna '%s' jest typu %s)", vDef.Name, vDef.Kind)
+				return fmt.Sprintf("Błąd typu: operator '%s' wymaga zmiennej typu int (zmienna '%s' jest typu %s)", op, vDef.Name, vDef.Kind)
 			}
 			if rhs == "" {
-				return fmt.Sprintf("Błąd składni: brak wartości po '+=' dla zmiennej '%s'", vDef.Name)
+				return fmt.Sprintf("Błąd składni: brak wartości po '%s' dla zmiennej '%s'", op, vDef.Name)
 			}
 			if _, err := strconv.Atoi(rhs); err != nil {
 				if rhsVar := b.FindVariable(rhs); rhsVar == nil || rhsVar.Kind != VarKindInt {
-					return fmt.Sprintf("Błąd typu: zmienna '%s' (int) wymaga liczby całkowitej po '+=', otrzymano '%s'", vDef.Name, rhs)
-				}
-			}
-			continue
-		}
-		if idx := strings.Index(c, "-="); idx > 0 {
-			lhs := strings.TrimSpace(c[:idx])
-			rhs := strings.TrimSpace(c[idx+2:])
-			vDef := b.FindVariable(lhs)
-			if vDef == nil {
-				return fmt.Sprintf("Nieznana zmienna '%s' — zadeklaruj ją w panelu Zmienne {}", lhs)
-			}
-			if vDef.Kind != VarKindInt {
-				return fmt.Sprintf("Błąd typu: operator '-=' wymaga zmiennej typu int (zmienna '%s' jest typu %s)", vDef.Name, vDef.Kind)
-			}
-			if rhs == "" {
-				return fmt.Sprintf("Błąd składni: brak wartości po '-=' dla zmiennej '%s'", vDef.Name)
-			}
-			if _, err := strconv.Atoi(rhs); err != nil {
-				if rhsVar := b.FindVariable(rhs); rhsVar == nil || rhsVar.Kind != VarKindInt {
-					return fmt.Sprintf("Błąd typu: zmienna '%s' (int) wymaga liczby całkowitej po '-=', otrzymano '%s'", vDef.Name, rhs)
+					return fmt.Sprintf("Błąd typu: zmienna '%s' (int) wymaga liczby całkowitej po '%s', otrzymano '%s'", vDef.Name, op, rhs)
 				}
 			}
 			continue
@@ -352,4 +318,14 @@ func ExplainEffectsExprError(expr string, b *Book) string {
 		return fmt.Sprintf("Błąd składni w set: '%s'", c)
 	}
 	return ""
+}
+
+func findCompoundAssignOp(clause string) (string, int) {
+	if idx := strings.Index(clause, "+="); idx > 0 {
+		return "+=", idx
+	}
+	if idx := strings.Index(clause, "-="); idx > 0 {
+		return "-=", idx
+	}
+	return "", -1
 }

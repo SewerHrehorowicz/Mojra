@@ -196,28 +196,22 @@
         .modal-card#modal-export-project
             .modal-header
                 h3.modal-title "Eksport projektu"
+                span.export-selection-count {export_selected_count_label}
             form.modal-body#form-export-project
                 action: ExportProject
                 .node-meta-fields.modal-meta-fields
-                    .node-meta-row
-                        span.node-meta-key "format:"
-                        .custom-select.node-media-select.export-format-select
-                            input.custom-select-input
-                                type: hidden
-                                name: format
-                                value: "{export_modal_format}"
-                            button.custom-select-trigger.modal-field-select-trigger
-                                type: button
-                                data-select-toggle: "true"
-                                span.custom-select-label {export_modal_format_label}
-                                svg.custom-select-caret src: /icons/chevron-down.svg
-                            .custom-select-menu.hidden
-                                {for fmt_opt in export_modal_format_options}
-                                    button.custom-select-option .active?: {fmt_opt.is_active}
-                                        type: button
-                                        data-select-value: "{fmt_opt.value}"
-                                        data-select-label: "{fmt_opt.label}"
-                                        {fmt_opt.label}
+                    .node-meta-row.export-formats-row
+                        span.node-meta-key "formaty:"
+                        .export-format-list
+                            {for fmt_item in export_primary_formats}
+                                button.export-format-item .active?: {fmt_item.is_selected}
+                                    type: button
+                                    action: ToggleExportFormat
+                                    data-format: "{fmt_item.id}"
+                                    span.export-format-name {fmt_item.label}
+                                    span.export-format-right
+                                        span.export-format-ext {fmt_item.ext}
+                                        span.export-format-check
                     .node-meta-row
                         span.node-meta-key "folder:"
                         .node-media-picker-row
@@ -231,6 +225,44 @@
                                 action: BrowseExportModalFolder
                                 data-hint: "Wybierz folder"
                                 svg.folder-browse-icon src: /icons/folder.svg
+                button.export-advanced-toggle .open?: {export_advanced_open}
+                    type: button
+                    action: ToggleExportModalAdvanced
+                    span.export-advanced-label "ZAAWANSOWANE"
+                    svg.export-advanced-caret src: /icons/chevron-down.svg
+                .export-advanced-body .hidden?: {!export_advanced_open}
+                    .node-meta-fields.modal-meta-fields
+                        .node-meta-row.export-formats-row
+                            span.node-meta-key
+                            .export-format-list
+                                {for adv_fmt in export_advanced_formats}
+                                    button.export-format-item .active?: {adv_fmt.is_selected}
+                                        type: button
+                                        action: ToggleExportFormat
+                                        data-format: "{adv_fmt.id}"
+                                        span.export-format-name {adv_fmt.label}
+                                        span.export-format-right
+                                            span.export-format-ext {adv_fmt.ext}
+                                            span.export-format-check
+                        .node-meta-row
+                            span.node-meta-key "norma:"
+                            .custom-select.node-media-select.export-standard-select
+                                input.custom-select-input
+                                    type: hidden
+                                    name: standard
+                                    value: "{export_modal_standard}"
+                                button.custom-select-trigger.modal-field-select-trigger
+                                    type: button
+                                    data-select-toggle: "true"
+                                    span.custom-select-label {export_modal_standard_label}
+                                    svg.custom-select-caret src: /icons/chevron-down.svg
+                                .custom-select-menu.hidden
+                                    {for std_opt in export_modal_standard_options}
+                                        button.custom-select-option .active?: {std_opt.is_active}
+                                            type: button
+                                            data-select-value: "{std_opt.value}"
+                                            data-select-label: "{std_opt.label}"
+                                            {std_opt.label}
                 .modal-actions
                     button.btn
                         type: button
@@ -238,7 +270,8 @@
                         "Anuluj"
                     button.btn.btn-primary#export-modal-submit-btn
                         type: submit
-                        "Eksportuj"
+                        disabled?: {!export_has_selected}
+                        "Eksportuj ({export_selected_count})"
 
 {if show_add_book_modal}
     .modal-backdrop
@@ -433,6 +466,12 @@
                                                 type: button
                                                 action: ToggleSceneTestVarsPopover
                                                 svg.scene-settings-icon src: /icons/braces.svg
+                                        {if scene_text_modal_book_narrated}
+                                            button.contextual-rewind-btn.icon-toggle-btn.voice-rec-toggle-btn#btn-modal-voice-recorder .active?: {voice_recorder_open}
+                                                type: button
+                                                action: ToggleSceneVoiceRecorder
+                                                data-scene: "{scene_text_modal_id}"
+                                                svg.scene-settings-icon src: /icons/mic.svg
                                         button.contextual-rewind-btn.scene-settings-toggle-btn .active?: {scene_text_modal_settings_open}
                                             type: button
                                             data-scene-settings-toggle: "true"
@@ -601,6 +640,47 @@
                                                 data-kind: audio
                                                 data-scene: "{scene_text_modal_id}"
                                                 svg.media-plus-icon src: /icons/plus.svg
+                                            button.node-icon-btn.node-media-add-btn.icon-toggle-btn.voice-rec-toggle-btn .active?: {voice_recorder_open}
+                                                type: button
+                                                action: ToggleSceneVoiceRecorder
+                                                data-scene: "{scene_text_modal_id}"
+                                                svg.media-plus-icon src: /icons/mic.svg
+                            {if scene_text_modal_book_narrated}
+                                {if not is_history_preview}
+                                    .voice-rec-strip.modal-voice-rec-strip#modal-voice-rec-strip .hidden?: {!voice_recorder_open}
+                                        data-scene: "{scene_text_modal_id}"
+                                        data-voice-url: "{scene_text_modal_voice_url}"
+                                        data-voice-file: "{scene_text_modal_current_voice}"
+                                        button.voice-rec-transport-btn
+                                            type: button
+                                            data-voice-transport: "true"
+                                            svg.voice-rec-icon.voice-rec-icon-play .hidden?: {!scene_text_modal_has_voice} src: /icons/voice-play.svg
+                                            svg.voice-rec-icon.voice-rec-icon-mic .hidden?: {scene_text_modal_has_voice} src: /icons/mic.svg
+                                            svg.voice-rec-icon.voice-rec-icon-pause.hidden src: /icons/voice-pause.svg
+                                            svg.voice-rec-icon.voice-rec-icon-stop.hidden src: /icons/voice-stop.svg
+                                        .voice-rec-waveform-wrap
+                                            data-voice-waveform-wrap: "true"
+                                            canvas.voice-rec-waveform-canvas
+                                                width: "510"
+                                                height: "30"
+                                            span.voice-rec-playhead
+                                                data-voice-playhead: "true"
+                                            span.voice-rec-trim-handle.trim-start
+                                                data-voice-trim: "start"
+                                            span.voice-rec-trim-handle.trim-end
+                                                data-voice-trim: "end"
+                                        span.voice-rec-timer
+                                            data-voice-timer: "true"
+                                            {scene_text_modal_voice_duration_label}
+                                        button.voice-rec-action-btn.voice-rec-rerecord-btn .hidden?: {!scene_text_modal_has_voice}
+                                            type: button
+                                            data-voice-record-start: "true"
+                                            svg.voice-rec-btn-icon src: /icons/mic.svg
+                                        button.voice-rec-action-btn.voice-rec-delete-btn .hidden?: {!scene_text_modal_has_voice}
+                                            type: button
+                                            action: DeleteSceneVoice
+                                            data-scene: "{scene_text_modal_id}"
+                                            svg.voice-rec-btn-icon src: /icons/trash.svg
                         {if scene_text_modal_has_image}
                             .scene-illustration-spacer
                                 img.scene-portrait-img
@@ -690,7 +770,7 @@
                             {if not is_scene_preview_normal}
                                 .scene-prose.scene-prose-preview-stage#scene-prose-preview-stage .is-screenplay?: {is_screenplay_mode} .mode-highlight?: {is_scene_preview_highlight} .mode-output?: {is_scene_preview_output}
                                     {if is_scene_preview_output}
-                                        {raw scene_text_modal_output_html}
+                                        {prose scene_text_modal_output_prose}
                                     {else}
                                         {for para in scene_text_modal_preview_paragraphs}
                                             {if para.is_divider}

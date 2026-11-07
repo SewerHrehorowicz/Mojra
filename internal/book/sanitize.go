@@ -5,11 +5,11 @@ import (
 	"regexp"
 	"strings"
 	"unicode"
+
+	"storyteller/internal/tpl"
 )
 
 var (
-	inlineBoldRe   = regexp.MustCompile(`\*\*([^*]+)\*\*`)
-	inlineItalicRe = regexp.MustCompile(`\*([^*]+)\*`)
 	htmlTagStripRe = regexp.MustCompile(`<[a-zA-Z/!?][^>]*>`)
 	safeIDRe       = regexp.MustCompile(`^[\p{L}\p{N}_\-]+$`)
 	headerKeyRe    = regexp.MustCompile(`^[a-zA-ZąćęłńóśźżĄĆĘŁŃÓŚŹŻ_]+$`)
@@ -18,56 +18,7 @@ var (
 // SanitizePlainText strips any HTML tags, control characters, and dangerous payloads
 // so book text and metadata are guaranteed to be pure plain text without executable code.
 func SanitizePlainText(s string) string {
-	s = strings.ReplaceAll(s, "\x00", "")
-	s = htmlTagStripRe.ReplaceAllString(s, "")
-	var b strings.Builder
-	b.Grow(len(s))
-	runes := []rune(s)
-	inDoubleBraces := 0
-	for i := 0; i < len(runes); i++ {
-		r := runes[i]
-		if r == '{' && i+1 < len(runes) && runes[i+1] == '{' {
-			inDoubleBraces++
-			b.WriteRune('{')
-			b.WriteRune('{')
-			i++
-			continue
-		}
-		if r == '}' && i+1 < len(runes) && runes[i+1] == '}' && inDoubleBraces > 0 {
-			inDoubleBraces--
-			b.WriteRune('}')
-			b.WriteRune('}')
-			i++
-			continue
-		}
-		if r == '\n' {
-			inDoubleBraces = 0
-		}
-		if r == '<' || r == '>' {
-			if inDoubleBraces > 0 {
-				b.WriteRune(r)
-				continue
-			}
-			if r == '>' && b.Len() > 0 && strings.HasSuffix(b.String(), "-") {
-				b.WriteRune(r)
-			} else if r == '>' {
-				cur := b.String()
-				lastNL := strings.LastIndexByte(cur, '\n')
-				linePrefix := cur
-				if lastNL >= 0 {
-					linePrefix = cur[lastNL+1:]
-				}
-				if strings.TrimSpace(linePrefix) == "" {
-					b.WriteRune(r)
-				}
-			}
-			continue
-		}
-		if r == '\n' || r == '\t' || r >= 0x20 {
-			b.WriteRune(r)
-		}
-	}
-	return strings.TrimSpace(b.String())
+	return tpl.SanitizePlainText(s)
 }
 
 // SanitizeChapterID normalizes a chapter title or ID into a clean lowercase ASCII/underscore identifier
@@ -179,61 +130,14 @@ func SanitizeBookID(s string) string {
 // RenderSafeProseHTML converts plain text into safe HTML paragraphs (`<p>`, `<strong>`, `<em>`, `<blockquote>`, `<hr>`)
 // after escaping all HTML special characters.
 func RenderSafeProseHTML(raw string) string {
-	lines := strings.Split(strings.ReplaceAll(raw, "\r\n", "\n"), "\n")
-	var blocks []string
-	var para []string
-
-	flushPara := func() {
-		if len(para) == 0 {
-			return
-		}
-		joined := strings.Join(para, "<br />")
-		blocks = append(blocks, "<p>"+joined+"</p>")
-		para = nil
-	}
-
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" {
-			flushPara()
-			continue
-		}
-		if trimmed == "---" || trimmed == "***" {
-			flushPara()
-			blocks = append(blocks, `<hr class="scene-divider" />`)
-			continue
-		}
-		if strings.HasPrefix(trimmed, ">") {
-			flushPara()
-			q := strings.TrimSpace(strings.TrimPrefix(trimmed, ">"))
-			blocks = append(blocks, "<blockquote>"+formatInlineSafe(q)+"</blockquote>")
-			continue
-		}
-		para = append(para, formatInlineSafe(trimmed))
-	}
-	flushPara()
-
-	if len(blocks) == 0 {
-		return "<p></p>"
-	}
-	return strings.Join(blocks, "\n")
+	return tpl.RenderSafeProseHTML(raw)
 }
 
-func formatInlineSafe(s string) string {
-	clean := SanitizePlainText(s)
-	escaped := htmlEscape(clean)
-	escaped = inlineBoldRe.ReplaceAllString(escaped, "<strong>$1</strong>")
-	escaped = inlineItalicRe.ReplaceAllString(escaped, "<em>$1</em>")
-	return escaped
-}
-
-func htmlEscape(s string) string {
-	r := strings.NewReplacer(
-		"&", "&amp;",
-		"<", "&lt;",
-		">", "&gt;",
-		`"`, "&quot;",
-		"'", "&#39;",
-	)
-	return r.Replace(s)
+func hasDisallowedMediaSignature(lowerProbe string) bool {
+	for _, sig := range []string{"<!doctype", "<html", "<script", "<svg", "<?xml", "#!/", "\x7felf"} {
+		if strings.Contains(lowerProbe, sig) {
+			return true
+		}
+	}
+	return false
 }

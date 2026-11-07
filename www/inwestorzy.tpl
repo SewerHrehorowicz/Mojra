@@ -151,10 +151,34 @@ html lang: pl
                 .pitch-section-header
                     span.pitch-num "02 / ARCHITEKTURA PRODUKTU"
                     h2.pitch-heading "Jedno źródło. Cztery rynki zbytu"
-                    p.pitch-text "W Playbook Studio twórca pracuje na jednym żywym grafie (WebGL 120fps) z wbudowanym Gitem dla wariantów fabuły i rentgenem produkcyjnym na żywo (1/8 strony, czas nagrań, dni zdjęciowe, kwestie per aktor)."
+                    p.pitch-text
+                        "W Playbook Studio twórca pracuje na jednym żywym grafie (WebGL 120fps) z wbudowanym Gitem dla wariantów fabuły, natywnym składem polskiego scenariusza PDF (standard PISF) "
+                        a.cite-ref
+                            href: "https://pisf.pl/wp-content/uploads/2020/01/format_scenariusza_filmowego_opis.pdf"
+                            target: _blank
+                            rel: "noopener noreferrer"
+                            "[4]"
+                        " oraz rentgenem produkcyjnym na żywo (1/8 strony, czas nagrań, dni zdjęciowe, kwestie per aktor)."
 
                 .pitch-diagram-wrap
+                    .pitch-diag-left
+                        span.pitch-diag-kicker "JEDNO ŹRÓDŁO"
+                        p.pitch-diag-source "Playbook Studio"
+                        p.pitch-diag-sub "Tekst + Głos + Warianty + Zmienne"
                     svg.pitch-diagram-svg src: /icons/pitch-diagram.svg
+                    .pitch-diag-right
+                        .pitch-diag-row
+                            span.pitch-diag-target "Interaktywny Audiobook i E-book (.playbook)"
+                            span.pitch-diag-tag "CZYTNIK MOJRA"
+                        .pitch-diag-row
+                            span.pitch-diag-target "Scenariusz Filmowy PDF (PISF) + Raport 1/8 str."
+                            span.pitch-diag-tag "FILM & SERIAL"
+                        .pitch-diag-row
+                            span.pitch-diag-target "Słuchowisko Wieloobsadowe i Skrypty Ról"
+                            span.pitch-diag-tag "STUDIA AUDIO"
+                        .pitch-diag-row
+                            span.pitch-diag-target "Gra Narracyjna (WASM / Desktop / Mobile)"
+                            span.pitch-diag-tag "GAMEDEV"
 
             section.pitch-section
                 .pitch-section-header
@@ -222,9 +246,9 @@ html lang: pl
                         rel: "noopener noreferrer"
                         "[3] Pick a Voice & Grand View Research — Raport Rynku Audiobookowego w Polsce 2025 (227,9 mln zł w 2025 r., ~300 mln zł e-commerce, prognoza 352,3 mln zł do 2030 r., 3,7 mln słuchaczy, 35 superprodukcji Audioteki)"
                     a.pitch-source-item
-                        href: "https://pisf.pl/"
+                        href: "https://pisf.pl/wp-content/uploads/2020/01/format_scenariusza_filmowego_opis.pdf"
                         target: _blank
                         rel: "noopener noreferrer"
-                        "[4] Polski Instytut Sztuki Filmowej (PISF) — Programy Operacyjne i standardy formatowania scenariuszy filmowych w Polsce"
+                        "[4] Polski Instytut Sztuki Filmowej (PISF) — Oficjalna specyfikacja: Format scenariusza filmowego (PDF)"
 
         script src: /app.js

@@ -8,18 +8,6 @@ import (
 	"storyteller/internal/book"
 )
 
-func formatHistoryTimestamp(ts int64) string {
-	if ts <= 0 {
-		return "—"
-	}
-	t := time.Unix(ts, 0)
-	now := time.Now()
-	if t.Year() == now.Year() && t.YearDay() == now.YearDay() {
-		return t.Format("15:04:05")
-	}
-	return t.Format("2006-01-02 15:04")
-}
-
 func formatHistoryCompactTime(ts int64) string {
 	if ts <= 0 {
 		return "—"
@@ -58,11 +46,9 @@ func buildHistoryGraphRows(
 		row := map[string]any{
 			"id":                "r1",
 			"label":             "Stan początkowy",
-			"time_label":        nowStr,
 			"meta_label":        "r1 • " + nowStr,
 			"branch":            "main",
 			"hover_hint":        defHint,
-			"node_action":       "PreviewHistoryRevision",
 			"is_unnamed_step":   false,
 			"is_current":        true,
 			"is_active_head":    true,
@@ -560,19 +546,12 @@ func buildHistoryGraphRows(
 			rowHint = branchHints[e.branch]
 		}
 
-		nodeAction := "PreviewHistoryRevision"
-		if !isActiveBranch {
-			nodeAction = "SwitchHistoryBranch"
-		}
-
 		outRows = append(outRows, map[string]any{
 			"id":                rev.ID,
 			"label":             rev.Label,
-			"time_label":        timeStr,
 			"meta_label":        metaLabel,
 			"branch":            e.branch,
 			"hover_hint":        rowHint,
-			"node_action":       nodeAction,
 			"is_unnamed_step":   e.isUnnamedStep,
 			"is_current":        isViewed,
 			"is_active_head":    isActiveHead,
@@ -589,18 +568,10 @@ func buildHistoryGraphRows(
 }
 
 func (s *Server) populateEditorHistoryContext(vars map[string]any) {
-	canUndo := false
-	canRedo := false
-	undoTitle := "Brak zmian do cofnięcia od ostatniej wersji (Ctrl+Z)"
-	redoTitle := "Brak zmian do ponowienia (Ctrl+Shift+Z)"
-	unnamedCount := 0
-	var unnamedItems []map[string]any
-	var namedVersions []map[string]any
 	var graphRows []map[string]any
 	activeBranchName := "main"
-	var branchItems []map[string]any
-	branchDiffSummary := ""
-	hasBranchDiff := false
+	namedVersionsCount := 0
+	branchesCount := 0
 
 	if s.ActiveBook != nil && !s.StandaloneMode {
 		if !s.ActiveBook.IsPacked {
@@ -609,7 +580,7 @@ func (s *Server) populateEditorHistoryContext(vars map[string]any) {
 			}
 			if h := s.loadActiveBookHistory(); h != nil {
 				activeBranchName = h.NormalizedActiveBranch()
-				unnamedCount = h.UnnamedEditsCount()
+				branchesCount = len(h.Branches)
 				curIdx := h.CursorIndex()
 				previewIdx := -1
 				if s.PreviewRevisionID != "" {
@@ -641,157 +612,29 @@ func (s *Server) populateEditorHistoryContext(vars map[string]any) {
 				vars["history_preview_id"] = s.PreviewRevisionID
 				vars["history_preview_label"] = s.PreviewRevisionLabel
 
-				canUndo = !isHistPreview && h.CanUndo()
-				canRedo = !isHistPreview && h.CanRedo()
+				graphRows, _ = buildHistoryGraphRows(s.ActiveBook, h, curIdx, viewedIdx, isHistPreview)
 
-				var branchHints map[string]string
-				graphRows, branchHints = buildHistoryGraphRows(s.ActiveBook, h, curIdx, viewedIdx, isHistPreview)
-
-				for _, br := range h.Branches {
-					isAct := strings.EqualFold(br.Name, activeBranchName)
-					branchItems = append(branchItems, map[string]any{
-						"name":        br.Name,
-						"head_rev_id": br.HeadRevID,
-						"base_rev_id": br.BaseRevID,
-						"time_label":  formatHistoryTimestamp(br.CreatedAtUnix),
-						"hover_hint":  branchHints[normalizeGraphBranchName(br.Name)],
-						"is_active":   isAct,
-						"can_delete":  !isAct && !strings.EqualFold(br.Name, "main"),
-					})
-				}
-
-				if activeBranchName != "main" {
-					if cmp, err := book.CompareBookBranches(s.ActiveBook, "main", activeBranchName); err == nil && cmp != nil {
-						branchDiffSummary = cmp.SummaryLabel
-						hasBranchDiff = true
-					}
-				}
-
-				branchIdxs := h.ActiveBranchRevisions()
-				curBranchPos := len(branchIdxs) - 1
-				floorBranchPos := 0
-				for j, idx := range branchIdxs {
-					if idx == curIdx {
-						curBranchPos = j
-					}
+				for _, idx := range h.ActiveBranchRevisions() {
 					if h.Revisions[idx].Named {
-						floorBranchPos = j
+						namedVersionsCount++
 					}
-				}
-
-				if canUndo && curIdx >= 0 && curIdx < len(h.Revisions) {
-					undoTitle = "Cofnij: " + h.Revisions[curIdx].Label + " (Ctrl+Z)"
-				} else if isHistPreview {
-					undoTitle = historyPreviewLockedToast
-				}
-				if canRedo && curBranchPos >= 0 && curBranchPos+1 < len(branchIdxs) {
-					redoTitle = "Ponów: " + h.Revisions[branchIdxs[curBranchPos+1]].Label + " (Ctrl+Shift+Z)"
-				} else if isHistPreview {
-					redoTitle = historyPreviewLockedToast
-				}
-
-				hasAnyUnnamed := false
-				for j := floorBranchPos + 1; j < len(branchIdxs); j++ {
-					if !h.Revisions[branchIdxs[j]].Named {
-						hasAnyUnnamed = true
-						break
-					}
-				}
-				if hasAnyUnnamed && len(branchIdxs) > 0 {
-					for j := len(branchIdxs) - 1; j >= floorBranchPos; j-- {
-						idx := branchIdxs[j]
-						rev := h.Revisions[idx]
-						isActiveHead := idx == curIdx
-						isViewed := idx == viewedIdx
-						isPreview := isHistPreview && isViewed
-						isUndone := j > curBranchPos
-						statusLabel := ""
-						if isPreview {
-							statusLabel = "PODGLĄD"
-						} else if isActiveHead {
-							statusLabel = "AKTYWNY"
-						} else if isUndone {
-							statusLabel = "COFNIĘTO"
-						} else if rev.Named {
-							statusLabel = "WERSJA BAZOWA"
-						}
-						unnamedItems = append(unnamedItems, map[string]any{
-							"id":             rev.ID,
-							"label":          rev.Label,
-							"time_label":     formatHistoryTimestamp(rev.TimeUnix),
-							"is_current":     isViewed,
-							"is_active_head": isActiveHead,
-							"is_preview":     isPreview,
-							"is_undone":      isUndone,
-							"status_label":   statusLabel,
-						})
-					}
-				}
-
-				for j := len(branchIdxs) - 1; j >= 0; j-- {
-					idx := branchIdxs[j]
-					rev := h.Revisions[idx]
-					if !rev.Named {
-						continue
-					}
-					isActiveHead := idx == curIdx
-					isViewed := idx == viewedIdx
-					isPreview := isHistPreview && isViewed
-					namedVersions = append(namedVersions, map[string]any{
-						"id":             rev.ID,
-						"label":          rev.Label,
-						"time_label":     formatHistoryTimestamp(rev.TimeUnix),
-						"is_current":     isViewed,
-						"is_active_head": isActiveHead,
-						"is_preview":     isPreview,
-					})
 				}
 			}
 		}
 		if len(graphRows) == 0 {
 			graphRows, _ = buildHistoryGraphRows(s.ActiveBook, nil, -1, -1, false)
 		}
-		if len(namedVersions) == 0 {
-			namedVersions = append(namedVersions, map[string]any{
-				"id":             "r1",
-				"label":          "Stan początkowy",
-				"time_label":     formatHistoryTimestamp(time.Now().Unix()),
-				"is_current":     true,
-				"is_active_head": true,
-				"is_preview":     false,
-			})
+		if namedVersionsCount == 0 {
+			namedVersionsCount = 1
 		}
-		if len(branchItems) == 0 {
-			branchItems = append(branchItems, map[string]any{
-				"name":        "main",
-				"head_rev_id": "r1",
-				"base_rev_id": "r1",
-				"time_label":  formatHistoryTimestamp(time.Now().Unix()),
-				"hover_hint":  "main",
-				"is_active":   true,
-				"can_delete":  false,
-			})
+		if branchesCount == 0 {
+			branchesCount = 1
 		}
 	}
 
-	vars["can_undo"] = canUndo
-	vars["can_redo"] = canRedo
-	vars["undo_title"] = undoTitle
-	vars["redo_title"] = redoTitle
-	vars["has_unnamed_edits"] = unnamedCount > 0
-	vars["unnamed_edits_count"] = unnamedCount
 	vars["show_editor_history_panel"] = s.EditorHistoryPanelOpen
 	vars["active_branch_name"] = activeBranchName
-	vars["history_branches"] = branchItems
-	vars["has_multiple_branches"] = len(branchItems) > 1
-	vars["branch_diff_summary"] = branchDiffSummary
-	vars["has_branch_diff"] = hasBranchDiff
-	vars["history_unnamed_items"] = unnamedItems
-	vars["has_history_unnamed_items"] = len(unnamedItems) > 0
-	vars["history_named_versions"] = namedVersions
-	vars["has_history_named_versions"] = len(namedVersions) > 0
 	vars["history_graph_rows"] = graphRows
-	vars["has_history_graph_rows"] = len(graphRows) > 0
-	vars["default_next_version_name"] = fmt.Sprintf("Wersja %d", len(namedVersions)+1)
-	vars["default_next_branch_name"] = fmt.Sprintf("wariant-%d", len(branchItems)+1)
+	vars["default_next_version_name"] = fmt.Sprintf("Wersja %d", namedVersionsCount+1)
+	vars["default_next_branch_name"] = fmt.Sprintf("wariant-%d", branchesCount+1)
 }

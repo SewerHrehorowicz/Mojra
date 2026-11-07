@@ -551,10 +551,6 @@ func isTrackedBookHistoryFile(name string) bool {
 	return lower == EditorStateFileName
 }
 
-func writeHistoryBlob(bookRoot string, data []byte) (string, error) {
-	return writeHistoryBlobWithSet(bookRoot, data, nil)
-}
-
 func writeHistoryBlobWithSet(bookRoot string, data []byte, existingBlobs map[string]bool) (string, error) {
 	sum := sha256.Sum256(data)
 	hashHex := hex.EncodeToString(sum[:])

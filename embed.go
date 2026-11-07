@@ -1,4 +1,4 @@
-//go:build !prod_embed
+//go:build !prod_embed && !(js && wasm)
 
 package storyteller
 

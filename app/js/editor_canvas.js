@@ -11,17 +11,29 @@ function closeCanvasContextMenu() {
   }
 }
 
+function getNodeFooterBtnX(node, kind, isPreview) {
+  if (kind === "add") {
+    return node.x + CARD.pad;
+  }
+  if (kind === "delete") {
+    return node.x + node.w - CARD.pad - CARD.btnSize;
+  }
+  const offset = isPreview ? CARD.btnSize : CARD.btnSize * 2 + 6;
+  return node.x + node.w - CARD.pad - offset;
+}
+
 function recomputeNodeMetrics(node) {
-  node.w = NODE_CARD_WIDTH;
+  node.w = CARD.w;
   const portCount = node.hasChoices && node.ports ? node.ports.length : 0;
-  node.h = portCount > 0 ? NODE_BASE_HEIGHT + portCount * NODE_CHOICE_ROW_HEIGHT : NODE_BASE_HEIGHT;
+  node.h = portCount > 0 ? CARD.baseH + portCount * CARD.choiceH : CARD.baseH;
   node.left = node.x;
   node.right = node.x + node.w;
   node.top = node.y;
   node.bottom = node.y + node.h;
-  node.inOx = NODE_CARD_WIDTH * 0.5;
-  node.inOy = 0;
+  node.inX = node.x + CARD.halfW;
+  node.inY = node.y;
   node.hasInputPort = !node.isStart;
+
   if (node.branchRole === "primary" || node.branchRole === "secondary") {
     const estBadgeOffset = node.isStart ? 54 : node.isEntry ? 64 : 0;
     node.branchRadioX = node.x + node.w - 16 - estBadgeOffset;
@@ -34,34 +46,42 @@ function recomputeNodeMetrics(node) {
   if (portCount > 0) {
     for (let i = 0; i < node.ports.length; i++) {
       const p = node.ports[i];
+      const oy = choiceRowY(i) + CARD.choiceH * 0.5;
       p.isBottom = false;
-      p.ox = NODE_CARD_WIDTH;
-      p.oy = NODE_HEADER_HEIGHT + i * NODE_CHOICE_ROW_HEIGHT + NODE_CHOICE_ROW_HEIGHT * 0.5;
+      p.ox = CARD.w;
+      p.oy = oy;
+      p.x = node.x + CARD.w;
+      p.y = node.y + oy;
       p.connected = Boolean((p.targetId && p.targetId.toUpperCase() !== "END") || (p.targetChapter && p.targetChapter.trim()));
     }
     node.implicitPort = null;
   } else {
-    const impTarget = node.impTarget || "";
-    const impChapter = node.impChapter || "";
-    const impConnected = Boolean((impTarget && impTarget.toUpperCase() !== "END") || (impChapter && impChapter.trim()));
+    const implicitTarget = node.implicitTarget || node.impTarget || "";
+    const implicitChapter = node.implicitChapter || node.impChapter || "";
+    const impConnected = Boolean((implicitTarget && implicitTarget.toUpperCase() !== "END") || (implicitChapter && implicitChapter.trim()));
     if (!node.implicitPort) {
       node.implicitPort = {
         idx: 0,
         label: "Dalej",
-        targetId: impTarget,
-        targetChapter: impChapter,
+        targetId: implicitTarget,
+        targetChapter: implicitChapter,
         connected: impConnected,
         isBottom: true,
-        ox: NODE_CARD_WIDTH * 0.5,
-        oy: node.h
+        ox: CARD.halfW,
+        oy: node.h,
+        x: node.x + CARD.halfW,
+        y: node.y + node.h
       };
     } else {
-      node.implicitPort.targetId = impTarget;
-      node.implicitPort.targetChapter = impChapter;
-      node.implicitPort.connected = impConnected;
-      node.implicitPort.isBottom = true;
-      node.implicitPort.ox = NODE_CARD_WIDTH * 0.5;
-      node.implicitPort.oy = node.h;
+      const ip = node.implicitPort;
+      ip.targetId = implicitTarget;
+      ip.targetChapter = implicitChapter;
+      ip.connected = impConnected;
+      ip.isBottom = true;
+      ip.ox = CARD.halfW;
+      ip.oy = node.h;
+      ip.x = node.x + CARD.halfW;
+      ip.y = node.y + node.h;
     }
   }
 }
@@ -92,20 +112,20 @@ function recomputeChapterInputPortPosition(ch) {
       }
     }
     if (entryNode) {
-      desiredInX = entryNode.x + (entryNode.inOx || NODE_CARD_WIDTH * 0.5);
+      desiredInX = entryNode.inX;
     }
   }
-  const minEdgeX = ch.x + 24;
-  const maxEdgeX = Math.max(minEdgeX, ch.x + ch.w - 24);
+  const minEdgeX = ch.x + GAP.grid;
+  const maxEdgeX = Math.max(minEdgeX, ch.x + ch.w - GAP.grid);
   ch.inX = Math.max(minEdgeX, Math.min(maxEdgeX, desiredInX));
 }
 
 function recomputeChapterPortPositions(ch) {
   recomputeChapterInputPortPosition(ch);
-  const minEdgeX = ch.x + 24;
+  const minEdgeX = ch.x + GAP.grid;
   const maxEdgeX = Math.max(minEdgeX, ch.x + ch.w - 16);
-  const minEdgeY = ch.y + 48;
-  const maxEdgeY = Math.max(minEdgeY, ch.y + ch.h - 24);
+  const minEdgeY = ch.y + GAP.node;
+  const maxEdgeY = Math.max(minEdgeY, ch.y + ch.h - GAP.grid);
 
   if (!ch.outPorts || ch.outPorts.length === 0) {
     ch.outPorts = [
@@ -144,11 +164,11 @@ function recomputeChapterPortPositions(ch) {
     op.connected = Boolean(op.targetLower);
     const toCh = op.targetLower ? studioGraphState.chapterByKey.get(op.targetLower) : null;
     const targetX = toCh ? (toCh.inX || toCh.x + toCh.w * 0.5) : ch.x + ch.w * 0.5;
-    const targetY = toCh ? (toCh.inY || toCh.y) : ch.y + ch.h + 120;
+    const targetY = toCh ? (toCh.inY || toCh.y) : ch.y + ch.h + CARD.minChapterH;
 
     let sumX = 0;
     let sumY = 0;
-    let maxSrcBottom = ch.y + 96;
+    let maxSrcBottom = ch.y + PAD.h;
     let srcCount = 0;
     let lastSrcNode = null;
     let hasBlockedDropToBottom = false;
@@ -170,10 +190,10 @@ function recomputeChapterPortPositions(ch) {
             tLower === op.targetLower ||
             (toCh && (tLower === toCh.nameLower || tLower === toCh.refLower))
           ) {
-            const sy = nd.y + pt.oy;
+            const sy = pt.y;
             let candX;
             if (pt.isBottom) {
-              candX = nd.x + (nd.inOx || NODE_CARD_WIDTH * 0.5);
+              candX = nd.inX;
               if (typeof linecastVertical === "function") {
                 if (linecastVertical(candX, sy + 6, ch.y + ch.h, chNodes, nd, null, 10)) {
                   hasBlockedDropToBottom = true;
@@ -184,13 +204,13 @@ function recomputeChapterPortPositions(ch) {
               }
             } else {
               const stubRank = Math.max(0, portList.length - 1 - k);
-              const rightLaneX = nd.x + pt.ox + 16 + stubRank * 14;
-              const nodeCenterX = nd.x + (nd.inOx || NODE_CARD_WIDTH * 0.5);
-              if (toCh && toCh.inX <= nd.x + nd.w && portList.length > 1) {
-                const desiredUnderNodeX = Math.max(nd.x + 24, Math.min(nd.x + nd.w - 24, toCh.inX || nodeCenterX));
+              const rightLaneX = pt.x + 16 + stubRank * 14;
+              const nodeCenterX = nd.inX;
+              if (toCh && toCh.inX <= nd.right && portList.length > 1) {
+                const desiredUnderNodeX = Math.max(nd.x + GAP.grid, Math.min(nd.right - GAP.grid, toCh.inX || nodeCenterX));
                 if (
                   typeof linecastVertical !== "function" ||
-                  !linecastVertical(desiredUnderNodeX, nd.y + nd.h + 4, ch.y + ch.h, chNodes, nd, null, 10)
+                  !linecastVertical(desiredUnderNodeX, nd.bottom + 4, ch.y + ch.h, chNodes, nd, null, 10)
                 ) {
                   candX = desiredUnderNodeX;
                 } else {
@@ -200,14 +220,14 @@ function recomputeChapterPortPositions(ch) {
                 candX = rightLaneX;
               }
               if (typeof linecastVertical === "function") {
-                if (linecastVertical(candX, (candX <= nd.x + nd.w ? nd.y + nd.h : sy) + 6, ch.y + ch.h, chNodes, nd, null, 10)) {
+                if (linecastVertical(candX, (candX <= nd.right ? nd.bottom : sy) + 6, ch.y + ch.h, chNodes, nd, null, 10)) {
                   hasBlockedDropToBottom = true;
                 }
               }
               if (typeof resolveClearX === "function") {
                 candX = resolveClearX(
                   candX,
-                  candX <= nd.x + nd.w ? nd.y + nd.h + 4 : sy,
+                  candX <= nd.right ? nd.bottom + 4 : sy,
                   ch.y + ch.h,
                   chNodes,
                   nd,
@@ -231,12 +251,12 @@ function recomputeChapterPortPositions(ch) {
 
     let side = "bottom";
     if (toCh && !toCh.hidden) {
-      const isLeftAdjacent = toCh.right <= ch.left + 24;
-      const isRightAdjacent = toCh.left >= ch.right - 24;
-      const isSideVerticalBand = toCh.top < ch.bottom - 24;
-      if (isLeftAdjacent && (isSideVerticalBand || (hasBlockedDropToBottom && toCh.top <= ch.bottom + 24))) {
+      const isLeftAdjacent = toCh.right <= ch.left + GAP.chapter;
+      const isRightAdjacent = toCh.left >= ch.right - GAP.chapter;
+      const isSideVerticalBand = toCh.top < ch.bottom - GAP.chapter;
+      if (isLeftAdjacent && (isSideVerticalBand || (hasBlockedDropToBottom && toCh.top <= ch.bottom + GAP.chapter))) {
         side = "left";
-      } else if (isRightAdjacent && (isSideVerticalBand || (hasBlockedDropToBottom && toCh.top <= ch.bottom + 24))) {
+      } else if (isRightAdjacent && (isSideVerticalBand || (hasBlockedDropToBottom && toCh.top <= ch.bottom + GAP.chapter))) {
         side = "right";
       }
     }
@@ -244,7 +264,7 @@ function recomputeChapterPortPositions(ch) {
 
     if (side === "left" || side === "right") {
       op.x = side === "left" ? ch.x : ch.x + ch.w;
-      let idealY = srcCount > 0 ? maxSrcBottom + 24 : (ch.y + ch.h) * 0.5;
+      let idealY = srcCount > 0 ? maxSrcBottom + GAP.grid : (ch.y + ch.h) * 0.5;
       if (side === "right" && srcCount === 1 && lastSrcNode && !lastSrcNode.implicitPort) {
         const directY = sumY / srcCount;
         if (
@@ -273,7 +293,7 @@ function recomputeChapterPortPositions(ch) {
       } else if (op.targetLower && toCh) {
         idealX = targetX;
       } else if (chNodes.length === 1) {
-        idealX = chNodes[0].x + (chNodes[0].inOx || NODE_CARD_WIDTH * 0.5);
+        idealX = chNodes[0].inX;
       }
       op.y = ch.y + ch.h;
       op._idealX = Math.max(minEdgeX, Math.min(maxEdgeX, idealX));
@@ -282,8 +302,7 @@ function recomputeChapterPortPositions(ch) {
     }
   }
 
-  const minGap = 24;
-  const minBottomPortGap = 24;
+  const minGap = GAP.grid;
   if (bottomPorts.length > 1) {
     const sortedIdealSlots = bottomPorts.map((p) => p._idealX).sort((a, b) => a - b);
     bottomPorts.sort((a, b) => {
@@ -300,8 +319,8 @@ function recomputeChapterPortPositions(ch) {
     bottomPorts[i].y = ch.y + ch.h;
   }
   if (bottomPorts.length > 1) {
-    let firstX = bottomPorts[0]._idealX;
-    let lastX = bottomPorts[bottomPorts.length - 1]._idealX;
+    const firstX = bottomPorts[0]._idealX;
+    const lastX = bottomPorts[bottomPorts.length - 1]._idealX;
     if (Math.abs(lastX - firstX) <= 6) {
       const center = (firstX + lastX) * 0.5;
       const totalSpan = (bottomPorts.length - 1) * minGap;
@@ -312,15 +331,15 @@ function recomputeChapterPortPositions(ch) {
     }
   }
   for (let i = 1; i < bottomPorts.length; i++) {
-    if (bottomPorts[i].x < bottomPorts[i - 1].x + minBottomPortGap) {
-      bottomPorts[i].x = bottomPorts[i - 1].x + minBottomPortGap;
+    if (bottomPorts[i].x < bottomPorts[i - 1].x + minGap) {
+      bottomPorts[i].x = bottomPorts[i - 1].x + minGap;
     }
   }
   if (bottomPorts.length > 0 && bottomPorts[bottomPorts.length - 1].x > maxEdgeX) {
     bottomPorts[bottomPorts.length - 1].x = maxEdgeX;
     for (let i = bottomPorts.length - 2; i >= 0; i--) {
-      if (bottomPorts[i].x > bottomPorts[i + 1].x - minBottomPortGap) {
-        bottomPorts[i].x = Math.max(minEdgeX, bottomPorts[i + 1].x - minBottomPortGap);
+      if (bottomPorts[i].x > bottomPorts[i + 1].x - minGap) {
+        bottomPorts[i].x = Math.max(minEdgeX, bottomPorts[i + 1].x - minGap);
       }
     }
   }
@@ -367,13 +386,12 @@ function parseStudioGraphPayload(rawText) {
   studioGraphState.nodeById.clear();
   studioGraphState.wires = [];
   studioGraphState.wirePins.clear();
-  studioGraphState.bundleOverlays = [];
   studioGraphState.collectorBars = [];
   studioGraphState.hoveredItem = null;
   studioGraphState.staticBatchDirty = true;
   studioGraphState.overlayBatchDirty = true;
 
-  let vpInfo = { panX: 0, panY: 0, zoom: 1.0, hasView: false };
+  const vpInfo = { panX: 0, panY: 0, zoom: 1.0, hasView: false };
   if (!rawText) return vpInfo;
 
   const lines = rawText.split("\n");
@@ -387,9 +405,7 @@ function parseStudioGraphPayload(rawText) {
       const seg = parts[j];
       const colonIdx = seg.indexOf(":");
       if (colonIdx > 0) {
-        const k = seg.slice(0, colonIdx).trim();
-        const v = seg.slice(colonIdx + 1).trim();
-        kv[k] = v;
+        kv[seg.slice(0, colonIdx).trim()] = seg.slice(colonIdx + 1).trim();
       }
     }
 
@@ -438,6 +454,8 @@ function parseStudioGraphPayload(rawText) {
       const id = kv.id || "";
       if (!id) continue;
       const chName = kv.chapter || "Rozdział 1";
+      const impTarget = kv.imp_target || "";
+      const impChapter = kv.imp_chapter || "";
       const node = {
         id: id,
         name: kv.name || id,
@@ -450,8 +468,10 @@ function parseStudioGraphPayload(rawText) {
         isEntry: kv.entry === "1",
         unreachable: kv.unreachable === "1",
         hasChoices: kv.has_choices === "1",
-        impTarget: kv.imp_target || "",
-        impChapter: kv.imp_chapter || "",
+        implicitTarget: impTarget,
+        implicitChapter: impChapter,
+        impTarget: impTarget,
+        impChapter: impChapter,
         branchRole: kv.branch_role || "",
         branchParentId: kv.branch_parent || "",
         ports: []
@@ -464,6 +484,7 @@ function parseStudioGraphPayload(rawText) {
       const node = studioGraphState.nodeById.get(sceneId);
       if (!node) continue;
       const idx = parseInt(kv.idx || String(node.ports.length), 10) || 0;
+      const oy = choiceRowY(idx) + CARD.choiceH * 0.5;
       node.ports.push({
         idx: idx,
         label: kv.label || "Wybór " + (idx + 1),
@@ -471,8 +492,10 @@ function parseStudioGraphPayload(rawText) {
         targetChapter: kv.target_chapter || "",
         isConditional: kv.cond === "1",
         isBottom: false,
-        ox: NODE_CARD_WIDTH,
-        oy: NODE_HEADER_HEIGHT + idx * NODE_CHOICE_ROW_HEIGHT + NODE_CHOICE_ROW_HEIGHT * 0.5
+        ox: CARD.w,
+        oy: oy,
+        x: node.x + CARD.w,
+        y: node.y + oy
       });
       node.hasChoices = node.ports.length >= 2;
       recomputeNodeMetrics(node);
@@ -499,7 +522,6 @@ function parseStudioGraphPayload(rawText) {
     }
   }
 
-  studioGraphState.topologyDirty = true;
   return vpInfo;
 }
 
@@ -517,14 +539,14 @@ function buildSpatialGridForNodes(nodeList) {
 
 function insertNodeIntoSpatialGrid(grid, nd) {
   if (!grid || !nd || nd.hidden) return;
-  const gx0 = (nd.left - 48) >> SPATIAL_CELL_SHIFT;
-  const gx1 = (nd.right + 48) >> SPATIAL_CELL_SHIFT;
-  const gy0 = (nd.top - 48) >> SPATIAL_CELL_SHIFT;
-  const gy1 = (nd.bottom + 48) >> SPATIAL_CELL_SHIFT;
-  nd._gx0 = gx0;
-  nd._gx1 = gx1;
-  nd._gy0 = gy0;
-  nd._gy1 = gy1;
+  const gx0 = toSpatialCell(nd.left - GAP.node);
+  const gx1 = toSpatialCell(nd.right + GAP.node);
+  const gy0 = toSpatialCell(nd.top - GAP.node);
+  const gy1 = toSpatialCell(nd.bottom + GAP.node);
+  nd._gridMinX = gx0;
+  nd._gridMaxX = gx1;
+  nd._gridMinY = gy0;
+  nd._gridMaxY = gy1;
   for (let gy = gy0; gy <= gy1; gy++) {
     const rowMask = (gy & 0xffff) << 16;
     for (let gx = gx0; gx <= gx1; gx++) {
@@ -541,10 +563,10 @@ function insertNodeIntoSpatialGrid(grid, nd) {
 }
 
 function removeNodeFromSpatialGrid(grid, nd) {
-  if (!grid || !nd || nd._gx0 === undefined) return;
-  for (let gy = nd._gy0; gy <= nd._gy1; gy++) {
+  if (!grid || !nd || nd._gridMinX === undefined) return;
+  for (let gy = nd._gridMinY; gy <= nd._gridMaxY; gy++) {
     const rowMask = (gy & 0xffff) << 16;
-    for (let gx = nd._gx0; gx <= nd._gx1; gx++) {
+    for (let gx = nd._gridMinX; gx <= nd._gridMaxX; gx++) {
       const key = rowMask | (gx & 0xffff);
       const cell = grid.get(key);
       if (cell) {
@@ -574,10 +596,10 @@ function hasSpatialNodeOverlap(grid, nodesFallback, nx, ny, nw, nh) {
   const nr = nx + nw;
   const nb = ny + nh;
   if (grid && grid.size > 0) {
-    const gx0 = (nx - 48) >> SPATIAL_CELL_SHIFT;
-    const gx1 = (nr + 48) >> SPATIAL_CELL_SHIFT;
-    const gy0 = (ny - 48) >> SPATIAL_CELL_SHIFT;
-    const gy1 = (nb + 48) >> SPATIAL_CELL_SHIFT;
+    const gx0 = toSpatialCell(nx - GAP.node);
+    const gx1 = toSpatialCell(nr + GAP.node);
+    const gy0 = toSpatialCell(ny - GAP.node);
+    const gy1 = toSpatialCell(nb + GAP.node);
     for (let gy = gy0; gy <= gy1; gy++) {
       const rowMask = (gy & 0xffff) << 16;
       for (let gx = gx0; gx <= gx1; gx++) {
@@ -587,10 +609,10 @@ function hasSpatialNodeOverlap(grid, nodesFallback, nx, ny, nw, nh) {
           const other = cell[i];
           if (other._isDragging) continue;
           if (
-            nx < other.right + 48 &&
-            nr + 48 > other.left &&
-            ny < other.bottom + 48 &&
-            nb + 48 > other.top
+            nx < other.right + GAP.node &&
+            nr + GAP.node > other.left &&
+            ny < other.bottom + GAP.node &&
+            nb + GAP.node > other.top
           ) {
             return true;
           }
@@ -603,10 +625,10 @@ function hasSpatialNodeOverlap(grid, nodesFallback, nx, ny, nw, nh) {
     const other = nodesFallback[i];
     if (other._isDragging) continue;
     if (
-      nx < other.right + 48 &&
-      nr + 48 > other.left &&
-      ny < other.bottom + 48 &&
-      nb + 48 > other.top
+      nx < other.right + GAP.node &&
+      nr + GAP.node > other.left &&
+      ny < other.bottom + GAP.node &&
+      nb + GAP.node > other.top
     ) {
       return true;
     }
@@ -615,8 +637,8 @@ function hasSpatialNodeOverlap(grid, nodesFallback, nx, ny, nw, nh) {
 }
 
 function findClosestChapterAtWorldCoords(worldX, worldY) {
-  const px = worldX + 96;
-  const py = worldY + 48;
+  const px = worldX + CARD.halfW;
+  const py = worldY + GAP.node;
   let bestCh = "";
   let bestDistSq = Infinity;
   for (let i = 0; i < studioGraphState.chapters.length; i++) {
@@ -634,8 +656,8 @@ function findClosestChapterAtWorldCoords(worldX, worldY) {
 }
 
 function resolveNonOverlappingNodeCoords(baseX, baseY, chapterName, nodeW, nodeH) {
-  const w = nodeW || NODE_CARD_WIDTH;
-  const h = nodeH || NODE_BASE_HEIGHT;
+  const w = nodeW || CARD.w;
+  const h = nodeH || CARD.baseH;
   const nodes = studioGraphState.nodes || [];
   const chapters = studioGraphState.chapters || [];
   const chKey = (chapterName || "").trim().toLowerCase();
@@ -652,18 +674,18 @@ function resolveNonOverlappingNodeCoords(baseX, baseY, chapterName, nodeW, nodeH
     for (let i = 0; i < nodes.length; i++) {
       const other = nodes[i];
       if (
-        cx < other.right + 48 &&
-        cx + w + 48 > other.left &&
-        cy < other.bottom + 48 &&
-        cy + h + 48 > other.top
+        cx < other.right + GAP.node &&
+        cx + w + GAP.node > other.left &&
+        cy < other.bottom + GAP.node &&
+        cy + h + GAP.node > other.top
       ) {
         return true;
       }
     }
-    let candLeft = cx - 36;
-    let candTop = cy - 52;
-    let candRight = cx + w + 36;
-    let candBottom = cy + Math.max(h, 120) + 44;
+    let candLeft = cx - PAD.x;
+    let candTop = cy - PAD.top;
+    let candRight = cx + w + PAD.x;
+    let candBottom = cy + Math.max(h, CARD.minChapterH) + PAD.bottom;
     if (checkChapterUnion && targetCh) {
       if (targetCh.left < candLeft) candLeft = targetCh.left;
       if (targetCh.top < candTop) candTop = targetCh.top;
@@ -674,10 +696,10 @@ function resolveNonOverlappingNodeCoords(baseX, baseY, chapterName, nodeW, nodeH
       const ch = chapters[i];
       if (ch.hidden || ch === targetCh || ch.nameLower === chKey || ch.refLower === chKey) continue;
       if (
-        candLeft < ch.right + 24 &&
-        candRight + 24 > ch.left &&
-        candTop < ch.bottom + 24 &&
-        candBottom + 24 > ch.top
+        candLeft < ch.right + GAP.chapter &&
+        candRight + GAP.chapter > ch.left &&
+        candTop < ch.bottom + GAP.chapter &&
+        candBottom + GAP.chapter > ch.top
       ) {
         return true;
       }
@@ -713,53 +735,10 @@ function resolveNonOverlappingNodeCoords(baseX, baseY, chapterName, nodeW, nodeH
   return { x: baseX, y: baseY };
 }
 
-function resolveValidChapterDragDelta(ch, items, desiredDx, desiredDy, lastValidDx, lastValidDy) {
-  const chapters = studioGraphState.chapters || [];
-  if (chapters.length <= 1 || !items || items.length === 0) {
-    return { dx: desiredDx, dy: desiredDy };
-  }
-  let baseMinX = Infinity;
-  let baseMinY = Infinity;
-  let baseMaxX = -Infinity;
-  let baseMaxY = -Infinity;
-  for (let i = 0; i < items.length; i++) {
-    const it = items[i];
-    const nd = it.node;
-    const nh = Math.max(nd.h || 74, 120);
-    if (it.startX < baseMinX) baseMinX = it.startX;
-    if (it.startY < baseMinY) baseMinY = it.startY;
-    if (it.startX + nd.w > baseMaxX) baseMaxX = it.startX + nd.w;
-    if (it.startY + nh > baseMaxY) baseMaxY = it.startY + nh;
-  }
-  const baseLeft = baseMinX - 36;
-  const baseTop = baseMinY - 52;
-  const baseRight = baseMaxX + 36;
-  const baseBottom = baseMaxY + 44;
-
-  const isDeltaValid = (dx, dy) => {
-    const l = baseLeft + dx;
-    const t = baseTop + dy;
-    const r = baseRight + dx;
-    const b = baseBottom + dy;
-    for (let i = 0; i < chapters.length; i++) {
-      const other = chapters[i];
-      if (other === ch || other.hidden) continue;
-      if (
-        l < other.right + 24 &&
-        r + 24 > other.left &&
-        t < other.bottom + 24 &&
-        b + 24 > other.top
-      ) {
-        return false;
-      }
-    }
-    return true;
-  };
-
+function findClosestValidDragDelta(desiredDx, desiredDy, lastValidDx, lastValidDy, maxSearchPx, isDeltaValid) {
   if (isDeltaValid(desiredDx, desiredDy)) {
     return { dx: desiredDx, dy: desiredDy };
   }
-
   let bestDx = lastValidDx;
   let bestDy = lastValidDy;
   let bestDistSq = Infinity;
@@ -783,16 +762,59 @@ function resolveValidChapterDragDelta(ch, items, desiredDx, desiredDy, lastValid
   for (let cx = desiredDx; cx !== lastValidDx; cx += stepX) {
     tryCandidate(cx, desiredDy);
     tryCandidate(cx, lastValidDy);
-    if (Math.abs(cx - desiredDx) > 960) break;
+    if (Math.abs(cx - desiredDx) > maxSearchPx) break;
   }
   const stepY = desiredDy >= lastValidDy ? -EDITOR_GRID_SIZE : EDITOR_GRID_SIZE;
   for (let cy = desiredDy; cy !== lastValidDy; cy += stepY) {
     tryCandidate(desiredDx, cy);
     tryCandidate(lastValidDx, cy);
-    if (Math.abs(cy - desiredDy) > 960) break;
+    if (Math.abs(cy - desiredDy) > maxSearchPx) break;
   }
-
   return { dx: bestDx, dy: bestDy };
+}
+
+function resolveValidChapterDragDelta(ch, items, desiredDx, desiredDy, lastValidDx, lastValidDy) {
+  const chapters = studioGraphState.chapters || [];
+  if (chapters.length <= 1 || !items || items.length === 0) {
+    return { dx: desiredDx, dy: desiredDy };
+  }
+  let baseMinX = Infinity;
+  let baseMinY = Infinity;
+  let baseMaxX = -Infinity;
+  let baseMaxY = -Infinity;
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i];
+    const nd = it.node;
+    const nh = Math.max(nd.h || CARD.baseH, CARD.minChapterH);
+    if (it.startX < baseMinX) baseMinX = it.startX;
+    if (it.startY < baseMinY) baseMinY = it.startY;
+    if (it.startX + nd.w > baseMaxX) baseMaxX = it.startX + nd.w;
+    if (it.startY + nh > baseMaxY) baseMaxY = it.startY + nh;
+  }
+  const baseLeft = baseMinX - PAD.x;
+  const baseTop = baseMinY - PAD.top;
+  const baseRight = baseMaxX + PAD.x;
+  const baseBottom = baseMaxY + PAD.bottom;
+
+  return findClosestValidDragDelta(desiredDx, desiredDy, lastValidDx, lastValidDy, 960, (dx, dy) => {
+    const l = baseLeft + dx;
+    const t = baseTop + dy;
+    const r = baseRight + dx;
+    const b = baseBottom + dy;
+    for (let i = 0; i < chapters.length; i++) {
+      const other = chapters[i];
+      if (other === ch || other.hidden) continue;
+      if (
+        l < other.right + GAP.chapter &&
+        r + GAP.chapter > other.left &&
+        t < other.bottom + GAP.chapter &&
+        b + GAP.chapter > other.top
+      ) {
+        return false;
+      }
+    }
+    return true;
+  });
 }
 
 function resolveValidNodeDragDelta(items, desiredDx, desiredDy, lastValidDx, lastValidDy) {
@@ -806,7 +828,6 @@ function resolveValidNodeDragDelta(items, desiredDx, desiredDy, lastValidDx, las
     items[i].node._isDragging = true;
   }
 
-  // Precompute stationary chapter bounds once so candidate testing is O(items.length), not O(chNodes.length)
   const affectedChapters = [];
   for (let i = 0; i < items.length; i++) {
     const ch = items[i].node.chapterObj;
@@ -822,7 +843,7 @@ function resolveValidNodeDragDelta(items, desiredDx, desiredDy, lastValidDx, las
       const chNodes = ch.nodes || [];
       for (let j = 0; j < chNodes.length; j++) {
         const nd = chNodes[j];
-        const nh = Math.max(nd.h || 74, 120);
+        const nh = Math.max(nd.h || CARD.baseH, CARD.minChapterH);
         if (nd.x < iMinX) iMinX = nd.x;
         if (nd.y < iMinY) iMinY = nd.y;
         if (nd.x + nd.w > iMaxX) iMaxX = nd.x + nd.w;
@@ -833,21 +854,21 @@ function resolveValidNodeDragDelta(items, desiredDx, desiredDy, lastValidDx, las
         if (nd.x + nd.w > sMaxX) sMaxX = nd.x + nd.w;
         if (nd.y + nh > sMaxY) sMaxY = nd.y + nh;
       }
-      ch._statMinX = sMinX;
-      ch._statMinY = sMinY;
-      ch._statMaxX = sMaxX;
-      ch._statMaxY = sMaxY;
-      ch._initLeft = iMinX - 36;
-      ch._initTop = iMinY - 52;
-      ch._initRight = iMaxX + 36;
-      ch._initBottom = iMaxY + 44;
+      ch._staticMinX = sMinX;
+      ch._staticMinY = sMinY;
+      ch._staticMaxX = sMaxX;
+      ch._staticMaxY = sMaxY;
+      ch._initialLeft = iMinX - PAD.x;
+      ch._initialTop = iMinY - PAD.top;
+      ch._initialRight = iMaxX + PAD.x;
+      ch._initialBottom = iMaxY + PAD.bottom;
       affectedChapters.push(ch);
     }
   }
 
   const globalGrid = studioGraphState.nodeSpatialGrid;
 
-  const isDeltaValid = (dx, dy) => {
+  const res = findClosestValidDragDelta(desiredDx, desiredDy, lastValidDx, lastValidDy, 720, (dx, dy) => {
     for (let i = 0; i < items.length; i++) {
       const it = items[i];
       const nd = it.node;
@@ -860,49 +881,49 @@ function resolveValidNodeDragDelta(items, desiredDx, desiredDy, lastValidDx, las
 
     for (let c = 0; c < affectedChapters.length; c++) {
       const ch = affectedChapters[c];
-      let minX = ch._statMinX;
-      let minY = ch._statMinY;
-      let maxX = ch._statMaxX;
-      let maxY = ch._statMaxY;
+      let minX = ch._staticMinX;
+      let minY = ch._staticMinY;
+      let maxX = ch._staticMaxX;
+      let maxY = ch._staticMaxY;
       for (let k = 0; k < items.length; k++) {
         const it = items[k];
         const nd = it.node;
         if (nd.chapterObj !== ch) continue;
         const nx = snapToEditorGrid(it.startX + dx);
         const ny = snapToEditorGrid(it.startY + dy);
-        const nh = Math.max(nd.h || 74, 120);
+        const nh = Math.max(nd.h || CARD.baseH, CARD.minChapterH);
         if (nx < minX) minX = nx;
         if (ny < minY) minY = ny;
         if (nx + nd.w > maxX) maxX = nx + nd.w;
         if (ny + nh > maxY) maxY = ny + nh;
       }
-      const cLeft = minX - 36;
-      const cTop = minY - 52;
-      const cRight = maxX + 36;
-      const cBottom = maxY + 44;
+      const cLeft = minX - PAD.x;
+      const cTop = minY - PAD.top;
+      const cRight = maxX + PAD.x;
+      const cBottom = maxY + PAD.bottom;
 
       for (let o = 0; o < chapters.length; o++) {
         const otherCh = chapters[o];
         if (otherCh === ch || otherCh.hidden) continue;
         if (
-          cLeft < otherCh.right + 24 &&
-          cRight + 24 > otherCh.left &&
-          cTop < otherCh.bottom + 24 &&
-          cBottom + 24 > otherCh.top
+          cLeft < otherCh.right + GAP.chapter &&
+          cRight + GAP.chapter > otherCh.left &&
+          cTop < otherCh.bottom + GAP.chapter &&
+          cBottom + GAP.chapter > otherCh.top
         ) {
           const wasOverlapping =
-            ch._initLeft < otherCh.right + 24 &&
-            ch._initRight + 24 > otherCh.left &&
-            ch._initTop < otherCh.bottom + 24 &&
-            ch._initBottom + 24 > otherCh.top;
+            ch._initialLeft < otherCh.right + GAP.chapter &&
+            ch._initialRight + GAP.chapter > otherCh.left &&
+            ch._initialTop < otherCh.bottom + GAP.chapter &&
+            ch._initialBottom + GAP.chapter > otherCh.top;
           if (!wasOverlapping) {
             return false;
           }
           if (
-            cLeft < ch._initLeft ||
-            cRight > ch._initRight ||
-            cTop < ch._initTop ||
-            cBottom > ch._initBottom
+            cLeft < ch._initialLeft ||
+            cRight > ch._initialRight ||
+            cTop < ch._initialTop ||
+            cBottom > ch._initialBottom
           ) {
             return false;
           }
@@ -910,48 +931,12 @@ function resolveValidNodeDragDelta(items, desiredDx, desiredDy, lastValidDx, las
       }
     }
     return true;
-  };
-
-  let resDx = desiredDx;
-  let resDy = desiredDy;
-  if (!isDeltaValid(desiredDx, desiredDy)) {
-    resDx = lastValidDx;
-    resDy = lastValidDy;
-    let bestDistSq = Infinity;
-
-    const tryCandidate = (cx, cy) => {
-      if (!isDeltaValid(cx, cy)) return;
-      const ddx = cx - desiredDx;
-      const ddy = cy - desiredDy;
-      const dSq = ddx * ddx + ddy * ddy;
-      if (dSq < bestDistSq) {
-        bestDistSq = dSq;
-        resDx = cx;
-        resDy = cy;
-      }
-    };
-
-    tryCandidate(desiredDx, lastValidDy);
-    tryCandidate(lastValidDx, desiredDy);
-
-    const stepX = desiredDx >= lastValidDx ? -EDITOR_GRID_SIZE : EDITOR_GRID_SIZE;
-    for (let cx = desiredDx; cx !== lastValidDx; cx += stepX) {
-      tryCandidate(cx, desiredDy);
-      tryCandidate(cx, lastValidDy);
-      if (Math.abs(cx - desiredDx) > 720) break;
-    }
-    const stepY = desiredDy >= lastValidDy ? -EDITOR_GRID_SIZE : EDITOR_GRID_SIZE;
-    for (let cy = desiredDy; cy !== lastValidDy; cy += stepY) {
-      tryCandidate(desiredDx, cy);
-      tryCandidate(lastValidDx, cy);
-      if (Math.abs(cy - desiredDy) > 720) break;
-    }
-  }
+  });
 
   for (let i = 0; i < items.length; i++) {
     items[i].node._isDragging = false;
   }
-  return { dx: resDx, dy: resDy };
+  return res;
 }
 
 function createSceneNodeAtWorldCoords(worldX, worldY, chapterName) {
@@ -967,7 +952,7 @@ function createSceneNodeAtWorldCoords(worldX, worldY, chapterName) {
   const baseX = snapToEditorGrid(worldX);
   const baseY = snapToEditorGrid(worldY);
   const resolvedChapter = chapterName || findClosestChapterAtWorldCoords(baseX, baseY);
-  const cleanCoords = resolveNonOverlappingNodeCoords(baseX, baseY, resolvedChapter, NODE_CARD_WIDTH, NODE_BASE_HEIGHT);
+  const cleanCoords = resolveNonOverlappingNodeCoords(baseX, baseY, resolvedChapter, CARD.w, CARD.baseH);
   const params = {
     x: cleanCoords.x,
     y: cleanCoords.y
@@ -999,7 +984,7 @@ function areAllNodesOutOfViewport(viewport) {
     const sx2 = (nd.x + nd.w) * z + px;
     const sy1 = nd.y * z + py;
     const sy2 = (nd.y + nd.h) * z + py;
-    if (sx2 > 24 && sx1 < vw - 24 && sy2 > 24 && sy1 < vh - 24) {
+    if (sx2 > GAP.grid && sx1 < vw - GAP.grid && sy2 > GAP.grid && sy1 < vh - GAP.grid) {
       return false;
     }
   }
@@ -1022,16 +1007,16 @@ function fitCanvasToAllNodes(viewport) {
 
   for (let i = 0; i < nodes.length; i++) {
     const nd = nodes[i];
-    if (nd.x - 24 < minX) minX = nd.x - 24;
-    if (nd.y - 52 < minY) minY = nd.y - 52;
-    if (nd.x + nd.w + 24 > maxX) maxX = nd.x + nd.w + 24;
-    if (nd.y + nd.h + 24 > maxY) maxY = nd.y + nd.h + 24;
+    if (nd.x - GAP.grid < minX) minX = nd.x - GAP.grid;
+    if (nd.y - PAD.top < minY) minY = nd.y - PAD.top;
+    if (nd.x + nd.w + GAP.grid > maxX) maxX = nd.x + nd.w + GAP.grid;
+    if (nd.y + nd.h + GAP.grid > maxY) maxY = nd.y + nd.h + GAP.grid;
   }
 
   const vw = studioGraphState.viewW || (viewport && viewport.clientWidth) || window.innerWidth || 1200;
   const vh = studioGraphState.viewH || (viewport && viewport.clientHeight) || window.innerHeight || 700;
-  const padX = 48;
-  const padY = 48;
+  const padX = GAP.node;
+  const padY = GAP.node;
   const contentW = Math.max(240, maxX - minX);
   const contentH = Math.max(160, maxY - minY);
   const availW = Math.max(200, vw - padX * 2);
@@ -1048,7 +1033,14 @@ function fitCanvasToAllNodes(viewport) {
 }
 
 function resetCanvasToFirstNode(viewport) {
-  const vw = studioGraphState.viewW || (viewport && viewport.clientWidth) || window.innerWidth || 1200;
+  const editorBody = qs("#editor-workspace-body");
+  const fullW =
+    editorBody &&
+    editorBody.clientWidth > 0 &&
+    (typeof isPortraitPhoneStudioLayout !== "function" || !isPortraitPhoneStudioLayout())
+      ? editorBody.clientWidth
+      : 0;
+  const vw = fullW || studioGraphState.viewW || (viewport && viewport.clientWidth) || window.innerWidth || 1200;
   const nodes = studioGraphState.nodes;
   let startNode = null;
   for (let i = 0; i < nodes.length; i++) {
@@ -1060,57 +1052,11 @@ function resetCanvasToFirstNode(viewport) {
   if (!startNode && nodes.length > 0) {
     startNode = nodes[0];
   }
-  const fx = startNode ? startNode.x + 96 : 960;
+  const fx = startNode ? startNode.inX : 960;
   const fy = startNode ? startNode.y : 96;
   editorCanvasState.zoom = 1.0;
   editorCanvasState.panX = Math.round(vw * 0.5 - fx);
-  editorCanvasState.panY = Math.round(72 - fy);
-}
-
-function ensureNodeVisibleInCanvasViewport(nodeId) {
-  if (!nodeId || typeof studioGraphState === "undefined" || !studioGraphState.nodeById) return;
-  const nd = studioGraphState.nodeById.get(String(nodeId));
-  if (!nd) return;
-  const viewport = qs("#timeline-scroll-viewport");
-  const vw = studioGraphState.viewW || (viewport && viewport.clientWidth) || (typeof window !== "undefined" && window.innerWidth) || 1200;
-  const vh = studioGraphState.viewH || (viewport && viewport.clientHeight) || (typeof window !== "undefined" && window.innerHeight) || 700;
-  const z = editorCanvasState.zoom || 1.0;
-  const modalEl = qs("#modal-scene-text");
-  const isHalfModalOpen = Boolean(
-    modalEl &&
-      !modalEl.classList.contains("mode-full") &&
-      (typeof isPortraitPhoneStudioLayout !== "function" || !isPortraitPhoneStudioLayout())
-  );
-  const minScreenX = isHalfModalOpen ? Math.round(vw * 0.5) + 24 : 24;
-  const maxScreenX = vw - 24;
-  const minScreenY = 24;
-  const maxScreenY = vh - 24;
-  if (maxScreenX <= minScreenX + 80 || maxScreenY <= minScreenY + 80) return;
-
-  const nodeW = nd.w || 192;
-  const nodeH = nd.h || 84;
-  const nodeLeft = nd.x * z + editorCanvasState.panX;
-  const nodeRight = (nd.x + nodeW) * z + editorCanvasState.panX;
-  const nodeTop = nd.y * z + editorCanvasState.panY;
-  const nodeBottom = (nd.y + nodeH) * z + editorCanvasState.panY;
-
-  let changed = false;
-  if (nodeLeft < minScreenX || nodeRight > maxScreenX) {
-    const targetCenterX = (minScreenX + maxScreenX) * 0.5;
-    const nodeCenterX = (nd.x + nodeW * 0.5) * z;
-    editorCanvasState.panX = Math.round(targetCenterX - nodeCenterX);
-    changed = true;
-  }
-  if (nodeTop < minScreenY || nodeBottom > maxScreenY) {
-    const targetCenterY = (minScreenY + maxScreenY) * 0.5;
-    const nodeCenterY = (nd.y + nodeH * 0.5) * z;
-    editorCanvasState.panY = Math.round(targetCenterY - nodeCenterY);
-    changed = true;
-  }
-  if (changed) {
-    applyEditorCanvasTransform();
-    scheduleSaveEditorViewport();
-  }
+  editorCanvasState.panY = Math.round(PAD.w - fy);
 }
 
 function scheduleSaveEditorViewport() {
@@ -1125,10 +1071,6 @@ function scheduleSaveEditorViewport() {
       zoom: editorCanvasState.zoom.toFixed(2)
     });
   }, 220);
-}
-
-function saveNodePositionOnServer(sceneId, x, y) {
-  saveBatchNodePositionsOnServer([{ sceneId: sceneId, x: x, y: y }]);
 }
 
 function saveBatchNodePositionsOnServer(items) {
@@ -1166,23 +1108,34 @@ function saveWirePinsOnServer(wireKey, pins) {
   });
 }
 
+function applyFloatingInputBoxStyle(inp, worldX, worldY, worldW, worldH, baseFontPx, baseLetterSpacing) {
+  const z = editorCanvasState.zoom || 1.0;
+  const px = editorCanvasState.panX || 0;
+  const py = editorCanvasState.panY || 0;
+  inp.style.left = (worldX * z + px).toFixed(2) + "px";
+  inp.style.top = (worldY * z + 0.5 + py).toFixed(2) + "px";
+  inp.style.width = Math.max(24, worldW * z).toFixed(2) + "px";
+  inp.style.height = Math.max(4, worldH * z).toFixed(2) + "px";
+  inp.style.fontSize = (baseFontPx * z).toFixed(2) + "px";
+  if (baseLetterSpacing !== undefined) {
+    inp.style.letterSpacing = (baseLetterSpacing * z).toFixed(2) + "px";
+  }
+}
+
+function showFloatingCanvasInputEl(inp, positionFn) {
+  studioGraphState.staticBatchDirty = true;
+  inp.classList.remove("hidden");
+  positionFn();
+  inp.focus();
+  inp.select();
+  renderStudioCanvas();
+}
+
 function positionFloatingChapterInput() {
   const inp = qs("#canvas-chapter-input");
   const ch = studioGraphState.editingChapter;
   if (!inp || !ch || inp.classList.contains("hidden")) return;
-  const z = editorCanvasState.zoom || 1.0;
-  const px = editorCanvasState.panX || 0;
-  const py = editorCanvasState.panY || 0;
-  const left = (ch.x + 28) * z + px;
-  const top = (ch.y + 4.703) * z + 0.5 + py;
-  const width = Math.max(24, (ch.w - 38) * z);
-  const height = Math.max(4, 20 * z);
-  inp.style.left = left.toFixed(2) + "px";
-  inp.style.top = top.toFixed(2) + "px";
-  inp.style.width = width.toFixed(2) + "px";
-  inp.style.height = height.toFixed(2) + "px";
-  inp.style.fontSize = (11 * z).toFixed(2) + "px";
-  inp.style.letterSpacing = (0.65 * z).toFixed(2) + "px";
+  applyFloatingInputBoxStyle(inp, ch.x + 28, ch.y + 4.703, ch.w - 38, 20, 11, 0.65);
 }
 
 function openFloatingChapterInput(ch) {
@@ -1191,22 +1144,15 @@ function openFloatingChapterInput(ch) {
   hideFloatingNodeTitleInput(true);
   hideFloatingChoiceInput(true);
   studioGraphState.editingChapter = ch;
-  studioGraphState.staticBatchDirty = true;
   inp.value = ch.name;
   inp.setAttribute("data-old-chapter", ch.name);
-  inp.classList.remove("hidden");
-  positionFloatingChapterInput();
-  inp.focus();
-  inp.select();
-  renderStudioCanvas();
+  showFloatingCanvasInputEl(inp, positionFloatingChapterInput);
 }
 
 function hideFloatingChapterInput(shouldCommit) {
   const inp = qs("#canvas-chapter-input");
   if (!inp || inp.classList.contains("hidden")) return;
-  if (shouldCommit && typeof commitChapterTitleInput === "function") {
-    commitChapterTitleInput(inp);
-  }
+  if (shouldCommit && typeof commitChapterTitleInput === "function") commitChapterTitleInput(inp);
   studioGraphState.editingChapter = null;
   studioGraphState.staticBatchDirty = true;
   inp.classList.add("hidden");
@@ -1217,20 +1163,9 @@ function positionFloatingNodeTitleInput() {
   const inp = qs("#canvas-node-title-input");
   const nd = studioGraphState.editingNodeTitle;
   if (!inp || !nd || inp.classList.contains("hidden")) return;
-  const z = editorCanvasState.zoom || 1.0;
-  const px = editorCanvasState.panX || 0;
-  const py = editorCanvasState.panY || 0;
   const radioReserve = nd.branchRole === "primary" || nd.branchRole === "secondary" ? 16 : 0;
   const badgeReserve = (nd.isStart || nd.isEntry ? 50 : 8) + radioReserve;
-  const left = (nd.x + 28) * z + px;
-  const top = (nd.y + 6.715) * z + 0.5 + py;
-  const width = Math.max(24, (nd.w - 28 - badgeReserve) * z);
-  const height = Math.max(4, 22 * z);
-  inp.style.left = left.toFixed(2) + "px";
-  inp.style.top = top.toFixed(2) + "px";
-  inp.style.width = width.toFixed(2) + "px";
-  inp.style.height = height.toFixed(2) + "px";
-  inp.style.fontSize = (13 * z).toFixed(2) + "px";
+  applyFloatingInputBoxStyle(inp, nd.x + 28, nd.y + 6.715, nd.w - 28 - badgeReserve, 22, 13);
 }
 
 function commitNodeTitleInput(inp) {
@@ -1242,10 +1177,7 @@ function commitNodeTitleInput(inp) {
   nd.name = newName;
   studioGraphState.staticBatchDirty = true;
   renderStudioCanvas();
-  postServerActionSilent("AutoSaveScene", {
-    scene_id: nd.id,
-    name: newName
-  });
+  postServerActionSilent("AutoSaveScene", { scene_id: nd.id, name: newName });
 }
 
 function openFloatingNodeTitleInput(nd) {
@@ -1254,22 +1186,15 @@ function openFloatingNodeTitleInput(nd) {
   hideFloatingChapterInput(true);
   hideFloatingChoiceInput(true);
   studioGraphState.editingNodeTitle = nd;
-  studioGraphState.staticBatchDirty = true;
   inp.value = nd.name || nd.id || "";
   inp.setAttribute("data-scene-id", nd.id);
-  inp.classList.remove("hidden");
-  positionFloatingNodeTitleInput();
-  inp.focus();
-  inp.select();
-  renderStudioCanvas();
+  showFloatingCanvasInputEl(inp, positionFloatingNodeTitleInput);
 }
 
 function hideFloatingNodeTitleInput(shouldCommit) {
   const inp = qs("#canvas-node-title-input");
   if (!inp || inp.classList.contains("hidden")) return;
-  if (shouldCommit) {
-    commitNodeTitleInput(inp);
-  }
+  if (shouldCommit) commitNodeTitleInput(inp);
   studioGraphState.editingNodeTitle = null;
   studioGraphState.staticBatchDirty = true;
   inp.classList.add("hidden");
@@ -1281,20 +1206,8 @@ function positionFloatingChoiceInput() {
   const ec = studioGraphState.editingChoice;
   if (!inp || !ec || !ec.node || inp.classList.contains("hidden")) return;
   const nd = ec.node;
-  const idx = ec.idx;
-  const z = editorCanvasState.zoom || 1.0;
-  const px = editorCanvasState.panX || 0;
-  const py = editorCanvasState.panY || 0;
-  const rowY = nd.y + NODE_HEADER_HEIGHT + idx * NODE_CHOICE_ROW_HEIGHT;
-  const left = (nd.x + 21) * z + px;
-  const top = (rowY + 2.703) * z + 0.5 + py;
-  const width = Math.max(24, (nd.w - 47) * z);
-  const height = Math.max(4, (NODE_CHOICE_ROW_HEIGHT - 6) * z);
-  inp.style.left = left.toFixed(2) + "px";
-  inp.style.top = top.toFixed(2) + "px";
-  inp.style.width = width.toFixed(2) + "px";
-  inp.style.height = height.toFixed(2) + "px";
-  inp.style.fontSize = (11 * z).toFixed(2) + "px";
+  const rowY = nd.y + CARD.headerH + ec.idx * CARD.choiceH;
+  applyFloatingInputBoxStyle(inp, nd.x + 21, rowY + 2.703, nd.w - 47, CARD.choiceH - 6, 11);
 }
 
 function commitChoiceInput(inp) {
@@ -1320,23 +1233,16 @@ function openFloatingChoiceInput(nd, choiceIdx) {
   hideFloatingChapterInput(true);
   hideFloatingNodeTitleInput(true);
   studioGraphState.editingChoice = { node: nd, idx: choiceIdx };
-  studioGraphState.staticBatchDirty = true;
   inp.value = nd.ports[choiceIdx].label || "Wybór " + (choiceIdx + 1);
   inp.setAttribute("data-scene-id", nd.id);
   inp.setAttribute("data-choice-idx", String(choiceIdx));
-  inp.classList.remove("hidden");
-  positionFloatingChoiceInput();
-  inp.focus();
-  inp.select();
-  renderStudioCanvas();
+  showFloatingCanvasInputEl(inp, positionFloatingChoiceInput);
 }
 
 function hideFloatingChoiceInput(shouldCommit) {
   const inp = qs("#canvas-choice-input");
   if (!inp || inp.classList.contains("hidden")) return;
-  if (shouldCommit) {
-    commitChoiceInput(inp);
-  }
+  if (shouldCommit) commitChoiceInput(inp);
   studioGraphState.editingChoice = null;
   studioGraphState.staticBatchDirty = true;
   inp.classList.add("hidden");
@@ -1403,6 +1309,29 @@ function zoomEditorAtPoint(newZoom, clientX, clientY) {
   scheduleSaveEditorViewport();
 }
 
+function computeChapterFrameRect(matching) {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (let j = 0; j < matching.length; j++) {
+    const nd = matching[j];
+    const h = Math.max(nd.h || CARD.baseH, CARD.minChapterH);
+    const laneSpread = nd.hasChoices && nd.ports && nd.ports.length > 0 ? 10 + nd.ports.length * 14 : 0;
+    const rightEdge = nd.x + nd.w + laneSpread;
+    if (nd.x < minX) minX = nd.x;
+    if (nd.y < minY) minY = nd.y;
+    if (rightEdge > maxX) maxX = rightEdge;
+    if (nd.y + h > maxY) maxY = nd.y + h;
+  }
+  return {
+    x: minX - PAD.x,
+    y: minY - PAD.top,
+    w: maxX - minX + PAD.w,
+    h: maxY - minY + PAD.h
+  };
+}
+
 function updateChapterGroupFrames(onlyChaptersSet, hasInterChapterPortMove) {
   const nodes = studioGraphState.nodes;
   const chapters = studioGraphState.chapters;
@@ -1413,32 +1342,15 @@ function updateChapterGroupFrames(onlyChaptersSet, hasInterChapterPortMove) {
     onlyChaptersSet.forEach((ch) => {
       const matching = ch.nodes;
       if (!matching || matching.length === 0) return;
-      let minX = Infinity;
-      let minY = Infinity;
-      let maxX = -Infinity;
-      let maxY = -Infinity;
-      for (let j = 0; j < matching.length; j++) {
-        const nd = matching[j];
-        const h = Math.max(nd.h || 74, 120);
-        const laneSpread = nd.hasChoices && nd.ports && nd.ports.length > 0 ? 10 + nd.ports.length * 14 : 0;
-        const rightEdge = nd.x + nd.w + laneSpread;
-        if (nd.x < minX) minX = nd.x;
-        if (nd.y < minY) minY = nd.y;
-        if (rightEdge > maxX) maxX = rightEdge;
-        if (nd.y + h > maxY) maxY = nd.y + h;
-      }
-      const nextX = minX - 36;
-      const nextY = minY - 52;
-      const nextW = maxX - minX + 72;
-      const nextH = maxY - minY + 96;
+      const rect = computeChapterFrameRect(matching);
       const frameChanged =
-        ch.x !== nextX || ch.y !== nextY || ch.w !== nextW || ch.h !== nextH;
+        ch.x !== rect.x || ch.y !== rect.y || ch.w !== rect.w || ch.h !== rect.h;
       const prevInX = ch.inX;
       const prevInY = ch.inY;
-      ch.x = nextX;
-      ch.y = nextY;
-      ch.w = nextW;
-      ch.h = nextH;
+      ch.x = rect.x;
+      ch.y = rect.y;
+      ch.w = rect.w;
+      ch.h = rect.h;
       recomputeChapterInputPortPosition(ch);
       const inPortChanged = ch.inX !== prevInX || ch.inY !== prevInY;
       if (frameChanged || inPortChanged || hasInterChapterPortMove) {
@@ -1499,26 +1411,14 @@ function updateChapterGroupFrames(onlyChaptersSet, hasInterChapterPortMove) {
       continue;
     }
     ch.hidden = false;
-
-    let minX = Infinity;
-    let minY = Infinity;
-    let maxX = -Infinity;
-    let maxY = -Infinity;
     for (let j = 0; j < matching.length; j++) {
-      const nd = matching[j];
-      nd.chapterObj = ch;
-      const h = Math.max(nd.h || 74, 120);
-      const laneSpread = nd.hasChoices && nd.ports && nd.ports.length > 0 ? 10 + nd.ports.length * 14 : 0;
-      const rightEdge = nd.x + nd.w + laneSpread;
-      if (nd.x < minX) minX = nd.x;
-      if (nd.y < minY) minY = nd.y;
-      if (rightEdge > maxX) maxX = rightEdge;
-      if (nd.y + h > maxY) maxY = nd.y + h;
+      matching[j].chapterObj = ch;
     }
-    ch.x = minX - 36;
-    ch.y = minY - 52;
-    ch.w = maxX - minX + 72;
-    ch.h = maxY - minY + 96;
+    const rect = computeChapterFrameRect(matching);
+    ch.x = rect.x;
+    ch.y = rect.y;
+    ch.w = rect.w;
+    ch.h = rect.h;
     recomputeChapterInputPortPosition(ch);
   }
   for (let i = 0; i < chapters.length; i++) {
@@ -1617,7 +1517,6 @@ function initNodeEditorCanvas() {
   const contextForm = qs("#editor-context-form");
   const chapterForm = qs("#editor-chapter-form");
   const bookForm = qs("#editor-book-form");
-  const contextPanel = qs("#editor-context-panel");
   const isChapterOpen = Boolean(chapterForm && !chapterForm.classList.contains("hidden"));
   const isBookOpen = Boolean(bookForm && !bookForm.classList.contains("hidden"));
   if (isChapterOpen || isBookOpen) {

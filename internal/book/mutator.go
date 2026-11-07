@@ -50,10 +50,9 @@ func SaveBookScenesToDisk(b *Book) error {
 		filesSet[tf] = true
 		trackedFiles[strings.ToLower(filepath.Base(tf))] = true
 	}
-	defaultCh := "Rozdział 1"
+	defaultCh := b.DefaultChapterName()
 	defaultFile := DefaultChapterFile
 	if b.IsScreenplay() {
-		defaultCh = "Akt I"
 		defaultFile = DefaultActFile
 	}
 	for _, sc := range b.Scenes {
@@ -166,7 +165,7 @@ func InsertSceneBetween(b *Book, parentSceneID, childSceneID, newSceneName strin
 		}
 	}
 
-	chapterName := "Rozdział 1"
+	chapterName := b.DefaultChapterName()
 	chapterID := ""
 	sourceFile := DefaultChapterFile
 	if parent != nil {
@@ -299,7 +298,7 @@ func InsertSceneBefore(b *Book, targetSceneID, newSceneName string) (*Scene, err
 		targetIdx = 0
 	}
 
-	chapterName := "Rozdział 1"
+	chapterName := b.DefaultChapterName()
 	chapterID := ""
 	sourceFile := DefaultChapterFile
 	targetRef := ""
@@ -372,11 +371,6 @@ func InsertSceneBefore(b *Book, targetSceneID, newSceneName string) (*Scene, err
 	return newScene, nil
 }
 
-// CreateStandaloneScene appends a new unconnected scene to the book and optionally sets its (x, y) node coordinates.
-func CreateStandaloneScene(b *Book, newSceneName string, x, y int, hasCoords bool) (*Scene, error) {
-	return CreateStandaloneSceneInChapter(b, newSceneName, "", x, y, hasCoords)
-}
-
 // CreateStandaloneSceneInChapter appends a new unconnected scene in the specified chapter (or last chapter if empty)
 // without any artificial coordinate bounds.
 func CreateStandaloneSceneInChapter(b *Book, newSceneName, targetChapter string, x, y int, hasCoords bool) (*Scene, error) {
@@ -398,7 +392,7 @@ func CreateStandaloneSceneInChapter(b *Book, newSceneName, targetChapter string,
 		last := b.Scenes[len(b.Scenes)-1]
 		if chapterName == "" {
 			if hasCoords {
-				px := x + 96
+				px := x + NodeCardHalfWidth
 				py := y + 48
 				type chBounds struct {
 					name    string
@@ -414,7 +408,7 @@ func CreateStandaloneSceneInChapter(b *Book, newSceneName, targetChapter string,
 				for _, sc := range b.Scenes {
 					chN := strings.TrimSpace(sc.Chapter)
 					if chN == "" {
-						chN = "Rozdział 1"
+						chN = b.DefaultChapterName()
 					}
 					k := strings.ToLower(chN)
 					g, ok := byCh[k]
@@ -426,28 +420,23 @@ func CreateStandaloneSceneInChapter(b *Book, newSceneName, targetChapter string,
 					if g.id == "" && sc.ChapterID != "" {
 						g.id = sc.ChapterID
 					}
-					sx, sy := sc.X, sc.Y
-					sw := 192
-					sh := sceneCanvasHeight(sc)
-					if sh < 120 {
-						sh = 120
-					}
+					l, t, r, bt := ComputeChapterFrameBounds([]*Scene{sc})
 					if !g.hasNode {
-						g.minX, g.minY = sx-36, sy-52
-						g.maxX, g.maxY = sx+sw+36, sy+sh+44
+						g.minX, g.minY = l, t
+						g.maxX, g.maxY = r, bt
 						g.hasNode = true
 					} else {
-						if sx-36 < g.minX {
-							g.minX = sx - 36
+						if l < g.minX {
+							g.minX = l
 						}
-						if sy-52 < g.minY {
-							g.minY = sy - 52
+						if t < g.minY {
+							g.minY = t
 						}
-						if sx+sw+36 > g.maxX {
-							g.maxX = sx + sw + 36
+						if r > g.maxX {
+							g.maxX = r
 						}
-						if sy+sh+44 > g.maxY {
-							g.maxY = sy + sh + 44
+						if bt > g.maxY {
+							g.maxY = bt
 						}
 					}
 				}
@@ -509,12 +498,11 @@ func CreateStandaloneSceneInChapter(b *Book, newSceneName, targetChapter string,
 		}
 	}
 	if chapterName == "" {
+		chapterName = b.DefaultChapterName()
 		if b.IsScreenplay() {
-			chapterName = "Akt I"
 			chapterID = "akt_1"
 			sourceFile = DefaultActFile
 		} else {
-			chapterName = "Rozdział 1"
 			chapterID = "rozdzial_1"
 			sourceFile = DefaultChapterFile
 		}
@@ -606,17 +594,10 @@ func resolveNonCollidingStandaloneCoords(b *Book, targetChapter string, baseX, b
 	for _, sc := range b.Scenes {
 		chN := strings.TrimSpace(sc.Chapter)
 		if chN == "" {
-			chN = "Rozdział 1"
+			chN = b.DefaultChapterName()
 		}
 		k := strings.ToLower(chN)
-		sh := sceneCanvasHeight(sc)
-		if sh < 120 {
-			sh = 120
-		}
-		l := sc.X - 36
-		t := sc.Y - 52
-		r := sc.X + nodeW + 36
-		bt := sc.Y + sh + 44
+		l, t, r, bt := ComputeChapterFrameBounds([]*Scene{sc})
 		rect, ok := byCh[k]
 		if !ok {
 			rect = &chRect{key: k, left: l, top: t, right: r, bottom: bt}
@@ -647,10 +628,10 @@ func resolveNonCollidingStandaloneCoords(b *Book, targetChapter string, baseX, b
 	}
 
 	collidesChapterAt := func(cx, cy int) bool {
-		cLeft := cx - 36
-		cTop := cy - 52
-		cRight := cx + nodeW + 36
-		cBottom := cy + 120 + 44
+		cLeft := cx - ChapterFramePadX
+		cTop := cy - ChapterFramePadTop
+		cRight := cx + nodeW + ChapterFramePadX
+		cBottom := cy + NodeMinLogicalHeight + ChapterFramePadBottom
 		if targetRect != nil {
 			if targetRect.left < cLeft {
 				cLeft = targetRect.left
@@ -787,7 +768,7 @@ func CreateNewBookWithMode(booksDir, title, author, mode, standard string, narra
 			Imageless:      true,
 			RootPath:       bookDir,
 			Chapters: []Chapter{
-				{ID: "akt_1", ExplicitID: "akt_1", Name: "Akt I", SourceFile: "akt_1.playtxt"},
+				{ID: "akt_1", ExplicitID: "akt_1", Name: DefaultScreenplayActName, SourceFile: "akt_1.playtxt"},
 				{ID: "akt_2", ExplicitID: "akt_2", Name: "Akt II", SourceFile: "akt_2.playtxt"},
 				{ID: "akt_3", ExplicitID: "akt_3", Name: "Akt III", SourceFile: "akt_3.playtxt"},
 			},
@@ -797,7 +778,7 @@ func CreateNewBookWithMode(booksDir, title, author, mode, standard string, narra
 					ExplicitID:   "poczatek",
 					Name:         "Scena 1",
 					Slugline:     defaultSlug,
-					Chapter:      "Akt I",
+					Chapter:      DefaultScreenplayActName,
 					ChapterID:    "akt_1",
 					ExplicitNext: "chapter:akt_2",
 					Text:         "Opis akcji w pierwszym akcie.",
@@ -1150,6 +1131,65 @@ func PackBookToZip(bookDir, outZipPath string) error {
 		return err
 	}
 	return nil
+}
+
+// ExportPlaytxtProject copies a book's unpacked .playtxt and media files into <exportDir>/<book.ID>-playtxt/.
+func ExportPlaytxtProject(b *Book, exportDir string) (string, error) {
+	if b == nil {
+		return "", fmt.Errorf("brak aktywnego projektu do eksportu")
+	}
+	outDir := filepath.Join(exportDir, SanitizeBookID(b.ID)+"-playtxt")
+	if err := os.MkdirAll(outDir, 0755); err != nil {
+		return "", err
+	}
+	if !b.IsPacked && b.RootPath != "" {
+		err := filepath.WalkDir(b.RootPath, func(path string, d fs.DirEntry, wErr error) error {
+			if wErr != nil {
+				return wErr
+			}
+			if d.Type()&os.ModeSymlink != 0 {
+				if d.IsDir() {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			if d.IsDir() {
+				if path != b.RootPath && strings.HasPrefix(d.Name(), ".") {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			isRootEditor := filepath.Clean(filepath.Dir(path)) == filepath.Clean(b.RootPath) && strings.EqualFold(d.Name(), EditorStateFileName)
+			if (strings.HasPrefix(d.Name(), ".") && !isRootEditor) || !IsSafePathInsideRoot(b.RootPath, path) {
+				return nil
+			}
+			rel, err := filepath.Rel(b.RootPath, path)
+			if err != nil {
+				return err
+			}
+			dstPath := filepath.Join(outDir, rel)
+			if err := os.MkdirAll(filepath.Dir(dstPath), 0755); err != nil {
+				return err
+			}
+			raw, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			return os.WriteFile(dstPath, raw, 0644)
+		})
+		if err != nil {
+			return "", err
+		}
+		return outDir, nil
+	}
+
+	if err := os.WriteFile(filepath.Join(outDir, BookDataFileName), []byte(SerializeDataFile(b)), 0644); err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(filepath.Join(outDir, DefaultStoryFile), []byte(SerializeScenesForFile(b, "")), 0644); err != nil {
+		return "", err
+	}
+	return outDir, nil
 }
 
 // RenameScreenplayCharacter updates all matching character dialogue cues across all scenes in the book.

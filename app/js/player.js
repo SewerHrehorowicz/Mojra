@@ -301,13 +301,6 @@ function parseClientProseBlockDirective(trimmed) {
   return null;
 }
 
-function isProseSyntaxDirectiveLine(line) {
-  const trimmed = (line || "").trim();
-  if (!trimmed) return false;
-  if (trimmed === "---" || trimmed === "***") return true;
-  return parseClientProseBlockDirective(trimmed) !== null;
-}
-
 function parseClientTestVarsMap(ta) {
   const map = new Map();
   if (!ta) return map;
@@ -365,6 +358,18 @@ function splitClientTopLevelLogical(s, op) {
   return parts;
 }
 
+const PLAYTXT_CMP_OPS = ["==", "!=", ">=", "\x3c=", ">", "\x3c", "="];
+const PLAYTXT_TRUE_SET = new Set(["true", "tak", "yes", "on"]);
+const PLAYTXT_FALSE_SET = new Set(["false", "nie", "no", "off"]);
+
+function isPlaytxtBoolTrue(s) {
+  return PLAYTXT_TRUE_SET.has(String(s || "").trim().toLowerCase());
+}
+
+function isPlaytxtBoolFalse(s) {
+  return PLAYTXT_FALSE_SET.has(String(s || "").trim().toLowerCase());
+}
+
 function resolveClientOperandString(tok, stateMap) {
   let clean = (tok || "").trim();
   if ((clean.startsWith('"') && clean.endsWith('"')) || (clean.startsWith("'") && clean.endsWith("'"))) {
@@ -372,8 +377,8 @@ function resolveClientOperandString(tok, stateMap) {
   }
   if (/^-?\d+$/.test(clean)) return clean;
   const lower = clean.toLowerCase();
-  if (lower === "true" || lower === "tak" || lower === "yes") return "true";
-  if (lower === "false" || lower === "nie" || lower === "no") return "false";
+  if (isPlaytxtBoolTrue(lower)) return "true";
+  if (isPlaytxtBoolFalse(lower)) return "false";
   if (stateMap && stateMap.has(lower)) return stateMap.get(lower);
   return clean;
 }
@@ -385,9 +390,8 @@ function evalClientProseAtom(raw, stateMap) {
   if (unwrapped !== s) return evalClientProseCondition(unwrapped, stateMap);
   if (s.startsWith("?")) return evalClientProseAtom(s.slice(1), stateMap);
   if (s.startsWith("!") && !s.startsWith("!=")) return !evalClientProseAtom(s.slice(1), stateMap);
-  const ops = ["==", "!=", ">=", "\x3c=", ">", "\x3c", "="];
-  for (let i = 0; i < ops.length; i++) {
-    const op = ops[i];
+  for (let i = 0; i < PLAYTXT_CMP_OPS.length; i++) {
+    const op = PLAYTXT_CMP_OPS[i];
     const idx = s.indexOf(op);
     if (idx > 0) {
       const lhs = s.slice(0, idx).trim();
@@ -412,8 +416,8 @@ function evalClientProseAtom(raw, stateMap) {
   const key = s.toLowerCase();
   const val = stateMap && stateMap.has(key) ? stateMap.get(key) : "";
   const lower = String(val).toLowerCase();
-  if (lower === "true" || lower === "tak" || lower === "yes") return true;
-  if (lower === "false" || lower === "nie" || lower === "no" || lower === "") return false;
+  if (isPlaytxtBoolTrue(lower)) return true;
+  if (isPlaytxtBoolFalse(lower) || lower === "") return false;
   if (/^-?\d+$/.test(lower)) return parseInt(lower, 10) !== 0;
   return true;
 }
@@ -753,6 +757,29 @@ function updateFocusedSceneByViewport() {
     if (metaEl && metaText) {
       metaEl.textContent = metaText;
     }
+    const audio = qs("#story-audio");
+    if (audio && audio.paused) {
+      const cardAudio = bestCard.getAttribute("data-scene-audio") || "";
+      const cardDur = bestCard.getAttribute("data-scene-audio-duration") || "0:00";
+      if ((audio.getAttribute("data-audio-url") || "") !== cardAudio) {
+        audio.setAttribute("data-audio-url", cardAudio);
+        const curEl = qs("#audio-time-current");
+        const totEl = qs("#audio-time-total");
+        const slider = qs("#audio-seek-slider");
+        if (curEl) curEl.textContent = "0:00";
+        if (totEl) totEl.textContent = cardDur;
+        if (slider) {
+          slider.value = "0";
+          slider.style.setProperty("--seek-pct", "0%");
+        }
+        if (cardAudio) {
+          audio.src = cardAudio;
+          audio.load();
+        } else {
+          audio.removeAttribute("src");
+        }
+      }
+    }
   }
 
   const bgStage = qs("#player-bg-stage");
@@ -963,35 +990,28 @@ function initPlayerScrollAndAudio(savedScrollTop, shouldAutoPlay, preserveTime, 
     playerResizeObserver.observe(feed);
   }
 
+  const focusAndScrollCard = (targetCard) => {
+    if (!targetCard) return;
+    manualFocusCard = targetCard;
+    playerScrollState.cardKey = getSceneCardKey(targetCard);
+    playerScrollState.offsetRatio = 0;
+    recordPlayerViewportDimensions(feed);
+    updateFocusedSceneByViewport();
+    scrollSceneCardToStart(feed, targetCard);
+  };
+
   qsa("#story-history-rail .history-rail-tick").forEach((tick, idx) => {
     tick.addEventListener("click", (e) => {
       e.preventDefault();
       e.stopPropagation();
-      const cards = qsa(".scene-card", feed);
-      const targetCard = cards[idx];
-      if (!targetCard) return;
-      manualFocusCard = targetCard;
-      playerScrollState.cardKey = getSceneCardKey(targetCard);
-      playerScrollState.offsetRatio = 0;
-      recordPlayerViewportDimensions(feed);
-      updateFocusedSceneByViewport();
-      scrollSceneCardToStart(feed, targetCard);
+      focusAndScrollCard(qsa(".scene-card", feed)[idx]);
     });
   });
 
   qsa(".scene-card", feed).forEach((card) => {
     card.addEventListener("click", (e) => {
-      if (e.target.closest("button") || e.target.closest("[action]")) {
-        return;
-      }
-      if (card.classList.contains("scene-dimmed")) {
-        manualFocusCard = card;
-        playerScrollState.cardKey = getSceneCardKey(card);
-        playerScrollState.offsetRatio = 0;
-        recordPlayerViewportDimensions(feed);
-        updateFocusedSceneByViewport();
-        scrollSceneCardToStart(feed, card);
-      }
+      if (e.target.closest("button") || e.target.closest("[action]")) return;
+      if (card.classList.contains("scene-dimmed")) focusAndScrollCard(card);
     });
   });
 }

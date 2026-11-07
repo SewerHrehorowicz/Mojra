@@ -338,33 +338,26 @@ body.wasm-open .wasm-overlay, body.beta-open .beta-overlay
   height 15px
 
 .wasm-viewport
-  display flex
-  flex-direction column
-  align-items center
-  justify-content center
-  gap 18px
-  padding 24px
-  text-align center
-  background-image linear-gradient(to right, #0d0d0d 1px, transparent 1px), linear-gradient(to bottom, #0d0d0d 1px, transparent 1px)
-  background-size 24px 24px
+  position relative
+  display grid
+  grid-template-rows 1fr
+  grid-template-columns 100%
+  width 100%
+  height 100%
+  min-width 0
+  min-height 0
+  overflow hidden
+  padding 0
+  text-align left
+  background --bg-obsidian
 
-.wasm-viewport svg
-  width 44px
-  height 44px
-  color --text-primary
-  opacity 0.9
-
-.wasm-status-title
-  font-family --font-serif, Georgia, serif
-  font-size 18px
-  font-weight 400
-  color --text-primary
-
-.wasm-status-code
-  font-family "SF Mono", Menlo, Consolas, monospace
-  font-size 11px
-  letter-spacing 2px
-  color #666666
+.wasm-viewport .workspace, .wasm-viewport .modals-root
+  grid-row 1
+  grid-column 1
+  width 100%
+  height 100%
+  min-width 0
+  min-height 0
 
 .beta-modal
   width min(460px, 100%)
@@ -620,16 +613,16 @@ body.pitch-page .loom-canvas
   border-right none
 
 .pitch-kpi-val
-  font-family --font-serif, Georgia, serif
+  font-family --font-serif
   font-size 32px
   font-weight 400
   line-height 1
   color --text-primary
 
 .pitch-kpi-lbl
-  font-family "SF Mono", Menlo, Consolas, monospace
-  font-size 9px
-  font-weight 600
+  font-family --font-sans
+  font-size 9.5px
+  font-weight 700
   letter-spacing 1.6px
   color #686868
 
@@ -646,14 +639,14 @@ body.pitch-page .loom-canvas
   max-width 720px
 
 .pitch-num
-  font-family "SF Mono", Menlo, Consolas, monospace
+  font-family --font-sans
   font-size 10px
-  font-weight 600
+  font-weight 700
   letter-spacing 2.2px
   color #686868
 
 .pitch-heading
-  font-family --font-serif, Georgia, serif
+  font-family --font-serif
   font-size 28px
   font-weight 400
   line-height 1.32
@@ -678,9 +671,9 @@ body.pitch-page .loom-canvas
   border-top 1px solid #262626
 
 .pitch-chart-title
-  font-family "SF Mono", Menlo, Consolas, monospace
+  font-family --font-sans
   font-size 9.5px
-  font-weight 600
+  font-weight 700
   letter-spacing 1.8px
   color #787878
 
@@ -689,30 +682,25 @@ body.pitch-page .loom-canvas
   flex-direction column
   gap 14px
 
-.pitch-bar-Row
-  display grid
-  grid-template-columns 60px 1fr 68px
-  align-items center
-  gap 14px
-
 .pitch-bar-row
   display grid
-  grid-template-columns 60px 1fr 68px
+  grid-template-columns 64px 1fr 72px
   align-items center
   gap 14px
 
 .pitch-bar-label
-  font-family "SF Mono", Menlo, Consolas, monospace
-  font-size 10.5px
+  font-family --font-sans
+  font-size 11px
+  font-weight 400
   color #787878
 
 .pitch-bar-label-wide
-  font-size 12px
+  font-size 12.5px
   font-weight 400
   color #b0b0b0
 
 .pitch-charts-grid:last-child .pitch-bar-row
-  grid-template-columns 156px 1fr 54px
+  grid-template-columns 164px 1fr 56px
 
 .pitch-bar-track
   width 100%
@@ -752,9 +740,9 @@ body.pitch-page .loom-canvas
   width 100%
 
 .pitch-bar-value
-  font-family "SF Mono", Menlo, Consolas, monospace
-  font-size 11px
-  font-weight 600
+  font-family --font-sans
+  font-size 11.5px
+  font-weight 700
   color --text-primary
   text-align right
 
@@ -768,7 +756,7 @@ body.pitch-page .loom-canvas
   display flex
   align-items center
   padding 0 12px
-  font-family "SF Mono", Menlo, Consolas, monospace
+  font-family --font-sans
   font-size 9.5px
   font-weight 700
   letter-spacing 1.4px
@@ -790,14 +778,79 @@ body.pitch-page .loom-canvas
   color #787878
 
 .pitch-diagram-wrap
-  padding 28px 0 8px
+  display grid
+  grid-template-columns 236px 180px 1fr
+  align-items center
+  padding 28px 0
   border-top 1px solid #242424
   border-bottom 1px solid #242424
 
+.pitch-diag-left
+  position relative
+  padding-left 22px
+  border-left 1px solid #262626
+  display flex
+  flex-direction column
+  gap 6px
+
+.pitch-diag-left::before
+  content ""
+  position absolute
+  left -4px
+  top 50%
+  transform translateY(-50%)
+  width 7px
+  height 7px
+  background --text-primary
+
+.pitch-diag-kicker
+  font-family --font-sans
+  font-size 9.5px
+  font-weight 700
+  letter-spacing 2px
+  color #686868
+
+.pitch-diag-source
+  font-family --font-serif
+  font-size 20px
+  font-weight 400
+  color --text-primary
+
+.pitch-diag-sub
+  font-family --font-sans
+  font-size 12.5px
+  font-weight 300
+  color #787878
+
 .pitch-diagram-svg
-  width 100%
-  height auto
+  width 180px
+  height 220px
   display block
+
+.pitch-diag-right
+  display grid
+  grid-template-rows repeat(4, 55px)
+  padding-left 16px
+
+.pitch-diag-row
+  display flex
+  align-items center
+  justify-content space-between
+  gap 16px
+
+.pitch-diag-target
+  font-family --font-serif
+  font-size 15px
+  font-weight 400
+  color --text-primary
+
+.pitch-diag-tag
+  font-family --font-sans
+  font-size 9.5px
+  font-weight 700
+  letter-spacing 1.8px
+  color #686868
+  white-space nowrap
 
 .pitch-footer-cta
   display flex
@@ -830,9 +883,9 @@ body.pitch-page .loom-canvas
   border-top 1px solid #191919
 
 .pitch-sources-title
-  font-family "SF Mono", Menlo, Consolas, monospace
-  font-size 9px
-  font-weight 600
+  font-family --font-sans
+  font-size 9.5px
+  font-weight 700
   letter-spacing 2px
   color #555555
   margin-bottom 14px
@@ -856,9 +909,10 @@ body.pitch-page .loom-canvas
 .cite-ref
   color #888888
   text-decoration none
-  font-family "SF Mono", Menlo, Consolas, monospace
+  font-family --font-sans
+  font-weight 700
   font-size 0.85em
-  margin-left 1px
+  margin-left 2px
   transition color 0.18s ease
 
 .cite-ref:hover
@@ -877,6 +931,11 @@ body.pitch-page .loom-canvas
   .pitch-charts-grid
     grid-template-columns 1fr
     gap 32px
+  .pitch-diagram-wrap
+    grid-template-columns 1fr
+    gap 24px
+  .pitch-diagram-svg
+    display none
 
 @media (max-width: 640px)
   .brand-logo-svg

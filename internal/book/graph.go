@@ -6,10 +6,6 @@ import (
 	"strings"
 )
 
-func (b *Book) ensureChapter(name string) {
-	b.ensureChapterWithMeta(name, "", "", "")
-}
-
 func (b *Book) ensureChapterWithMeta(name, fallbackID, explicitID, sourceFile string) {
 	cleanName := strings.TrimSpace(name)
 	cleanExp := SanitizeSceneID(explicitID)
@@ -45,10 +41,6 @@ func (b *Book) ensureChapterWithMeta(name, fallbackID, explicitID, sourceFile st
 		Name:       cleanName,
 		SourceFile: sourceFile,
 	})
-}
-
-func (b *Book) addSceneToChapter(chapterName, sceneID string) {
-	b.addSceneToChapterWithMeta(chapterName, "", "", sceneID)
 }
 
 func (b *Book) addSceneToChapterWithMeta(chapterName, explicitID, sourceFile, sceneID string) {
@@ -239,11 +231,6 @@ func chapterCanReach(edges map[string][]string, startKey, targetKey string) bool
 	return false
 }
 
-// IsMultiFileBook reports whether the book uses separate per-chapter .playtxt files rather than a single story.playtxt.
-func (b *Book) IsMultiFileBook() bool {
-	return true
-}
-
 // ChapterFileNameFor returns the target .playtxt filename for a chapter, using its ID primarily.
 func (b *Book) ChapterFileNameFor(chapterName, chapterID string) string {
 	if cleanID := SanitizeChapterID(chapterID); cleanID != "" && cleanID != "book" {
@@ -314,10 +301,7 @@ func FinalizeBook(b *Book) {
 		}
 	}
 
-	defaultChName := "Rozdział 1"
-	if b.IsScreenplay() {
-		defaultChName = "Akt I"
-	}
+	defaultChName := b.DefaultChapterName()
 
 	nextAuto := 1
 	for i, sc := range b.Scenes {
@@ -398,64 +382,11 @@ func FinalizeBook(b *Book) {
 	// Build initial chapter index and assign each chapter's single entry point (StartSceneID)
 	b.Chapters = nil
 	for _, sc := range b.Scenes {
-		expID := sc.ChapterID
-		sf := sc.SourceFile
-		chKey := strings.ToLower(strings.TrimSpace(sc.Chapter))
-		if meta, ok := prevChapterMeta[chKey]; ok {
-			if expID == "" {
-				expID = meta.ExplicitID
-			}
-			if sf == "" {
-				sf = meta.SourceFile
-			}
-		}
-		b.addSceneToChapterWithMeta(sc.Chapter, expID, sf, sc.ID)
+		b.appendSceneToChaptersFromMeta(sc, prevChapterMeta)
 	}
-	for i := range b.Chapters {
-		ch := &b.Chapters[i]
-		if ch.ID == "" {
-			ch.ID = ch.ReferenceKey()
-		}
-		if ch.ExplicitStart == "" {
-			if meta, ok := prevChapterMeta[strings.ToLower(strings.TrimSpace(ch.Name))]; ok && meta.ExplicitStart != "" {
-				ch.ExplicitStart = meta.ExplicitStart
-			} else if meta, ok := prevChapterMeta[strings.ToLower(strings.TrimSpace(ch.ExplicitID))]; ok && meta.ExplicitStart != "" {
-				ch.ExplicitStart = meta.ExplicitStart
-			} else if meta, ok := prevChapterMeta[strings.ToLower(strings.TrimSpace(ch.ID))]; ok && meta.ExplicitStart != "" {
-				ch.ExplicitStart = meta.ExplicitStart
-			}
-		}
-		if len(ch.SceneIDs) > 0 {
-			ch.StartSceneID = ch.SceneIDs[0]
-			for _, sid := range ch.SceneIDs {
-				if strings.EqualFold(sid, b.StartSceneID) {
-					ch.StartSceneID = b.StartSceneID
-					break
-				}
-			}
-			if expStart := strings.TrimSpace(ch.ExplicitStart); expStart != "" {
-				matched := ""
-				normStart := NormalizeLookupKey(expStart)
-				for _, sid := range ch.SceneIDs {
-					sc := sceneByID[strings.ToLower(sid)]
-					if sc == nil {
-						continue
-					}
-					if strings.EqualFold(sc.ID, expStart) ||
-						(sc.ExplicitID != "" && strings.EqualFold(sc.ExplicitID, expStart)) ||
-						(normStart != "" && NormalizeLookupKey(sc.Name) == normStart) {
-						matched = sc.ID
-						break
-					}
-				}
-				if matched != "" {
-					ch.StartSceneID = matched
-				} else {
-					b.Warnings = append(b.Warnings, fmt.Sprintf("Rozdział „%s”: scena początkowa „%s” nie istnieje w tym rozdziale", ch.DisplayName(), expStart))
-				}
-			}
-		}
-	}
+	b.resolveChapterEntryPoints(prevChapterMeta, func(sid string) *Scene {
+		return sceneByID[strings.ToLower(sid)]
+	}, true)
 
 	rootChKey := b.rootChapterKey()
 	chapterEdges := make(map[string][]string, len(b.Chapters))
@@ -616,4 +547,67 @@ func FinalizeBook(b *Book) {
 	}
 
 	ComputeTimelineLayout(b)
+}
+
+func (b *Book) appendSceneToChaptersFromMeta(sc *Scene, prevChapterMeta map[string]Chapter) {
+	expID := sc.ChapterID
+	sf := sc.SourceFile
+	chKey := strings.ToLower(strings.TrimSpace(sc.Chapter))
+	if meta, ok := prevChapterMeta[chKey]; ok {
+		if expID == "" {
+			expID = meta.ExplicitID
+		}
+		if sf == "" {
+			sf = meta.SourceFile
+		}
+	}
+	b.addSceneToChapterWithMeta(sc.Chapter, expID, sf, sc.ID)
+}
+
+func (b *Book) resolveChapterEntryPoints(prevChapterMeta map[string]Chapter, lookupScene func(sid string) *Scene, emitWarnings bool) {
+	for i := range b.Chapters {
+		ch := &b.Chapters[i]
+		if ch.ID == "" {
+			ch.ID = ch.ReferenceKey()
+		}
+		if ch.ExplicitStart == "" {
+			for _, key := range []string{ch.Name, ch.ExplicitID, ch.ID} {
+				if meta, ok := prevChapterMeta[strings.ToLower(strings.TrimSpace(key))]; ok && meta.ExplicitStart != "" {
+					ch.ExplicitStart = meta.ExplicitStart
+					break
+				}
+			}
+		}
+		if len(ch.SceneIDs) == 0 {
+			continue
+		}
+		ch.StartSceneID = ch.SceneIDs[0]
+		for _, sid := range ch.SceneIDs {
+			if strings.EqualFold(sid, b.StartSceneID) {
+				ch.StartSceneID = b.StartSceneID
+				break
+			}
+		}
+		if expStart := strings.TrimSpace(ch.ExplicitStart); expStart != "" {
+			matched := ""
+			normStart := NormalizeLookupKey(expStart)
+			for _, sid := range ch.SceneIDs {
+				sc := lookupScene(sid)
+				if sc == nil {
+					continue
+				}
+				if strings.EqualFold(sc.ID, expStart) ||
+					(sc.ExplicitID != "" && strings.EqualFold(sc.ExplicitID, expStart)) ||
+					(normStart != "" && NormalizeLookupKey(sc.Name) == normStart) {
+					matched = sc.ID
+					break
+				}
+			}
+			if matched != "" {
+				ch.StartSceneID = matched
+			} else if emitWarnings {
+				b.Warnings = append(b.Warnings, fmt.Sprintf("Rozdział „%s”: scena początkowa „%s” nie istnieje w tym rozdziale", ch.DisplayName(), expStart))
+			}
+		}
+	}
 }

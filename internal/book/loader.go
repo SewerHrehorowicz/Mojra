@@ -313,6 +313,17 @@ func validateZipArchiveLimits(files []*zip.File) error {
 	return nil
 }
 
+func readLimitedTextReader(r io.Reader, limitErrMsg string) (string, error) {
+	data, err := io.ReadAll(io.LimitReader(r, MaxZipSingleTextBytes+1))
+	if err != nil {
+		return "", err
+	}
+	if len(data) > MaxZipSingleTextBytes {
+		return "", fmt.Errorf("%s", limitErrMsg)
+	}
+	return string(data), nil
+}
+
 func readSafeBookTextFile(bookDir, relName string) (string, error) {
 	fullPath := filepath.Join(bookDir, relName)
 	if !IsSafePathInsideRoot(bookDir, fullPath) {
@@ -323,14 +334,7 @@ func readSafeBookTextFile(bookDir, relName string) (string, error) {
 		return "", err
 	}
 	defer f.Close()
-	data, err := io.ReadAll(io.LimitReader(f, MaxZipSingleTextBytes+1))
-	if err != nil {
-		return "", err
-	}
-	if len(data) > MaxZipSingleTextBytes {
-		return "", fmt.Errorf("plik tekstowy %s przekracza limit rozmiaru (4 MB)", relName)
-	}
-	return string(data), nil
+	return readLimitedTextReader(f, fmt.Sprintf("plik tekstowy %s przekracza limit rozmiaru (4 MB)", relName))
 }
 
 func fileLooksLikeBookStory(path string) bool {
@@ -377,6 +381,66 @@ func HasBookFilesInDir(dir string) bool {
 	return false
 }
 
+func normalizeZipEntryRelPath(f *zip.File, commonPrefix string) (string, string, bool) {
+	relSlash := filepath.ToSlash(f.Name)
+	if isIgnoredZipEntry(relSlash) {
+		return "", "", false
+	}
+	if commonPrefix != "" && strings.HasPrefix(relSlash, commonPrefix) {
+		relSlash = strings.TrimPrefix(relSlash, commonPrefix)
+	}
+	relSlash = SanitizeRelativeMediaPath(relSlash)
+	if relSlash == "" || isHiddenNonEditorFile(relSlash) {
+		return "", "", false
+	}
+	return relSlash, strings.ToLower(relSlash), true
+}
+
+func findZipEntryByRelPath(files []*zip.File, cleanRel string) *zip.File {
+	commonPrefix := detectZipCommonPrefix(files)
+	for _, f := range files {
+		if f.FileInfo().IsDir() {
+			continue
+		}
+		entryRel, _, ok := normalizeZipEntryRelPath(f, commonPrefix)
+		if ok && strings.EqualFold(entryRel, cleanRel) {
+			return f
+		}
+	}
+	return nil
+}
+
+func readZipTextWithTotalCap(f *zip.File, totalTextBytes *int) (string, error) {
+	content, err := readZipEntryText(f)
+	if err != nil {
+		return "", err
+	}
+	*totalTextBytes += len(content)
+	if *totalTextBytes > MaxZipTotalTextBytes {
+		return "", fmt.Errorf("archiwum ZIP przekracza łączny limit rozmiaru plików tekstowych (32 MB)")
+	}
+	return content, nil
+}
+
+func ensureFallbackEmptyScene(b *Book, warnMsg, fallbackText string) {
+	if len(b.Scenes) > 0 {
+		return
+	}
+	b.Warnings = append(b.Warnings, warnMsg)
+	b.Scenes = []*Scene{
+		{
+			ID:          "s1",
+			Name:        "Pusta scena",
+			Chapter:     DefaultBookChapterName,
+			ChapterID:   "rozdzial_1",
+			Text:        fallbackText,
+			HTML:        RenderSafeProseHTML(fallbackText),
+			SourceFile:  DefaultChapterFile,
+			ExplicitEnd: true,
+		},
+	}
+}
+
 // ValidateBookZip checks whether a .stbook or .zip archive is a valid zip containing StoryTeller .playtxt files.
 func ValidateBookZip(zipPath string) error {
 	zr, err := zip.OpenReader(zipPath)
@@ -394,18 +458,10 @@ func ValidateBookZip(zipPath string) error {
 		if f.FileInfo().IsDir() {
 			continue
 		}
-		relSlash := filepath.ToSlash(f.Name)
-		if isIgnoredZipEntry(relSlash) {
+		relSlash, lower, ok := normalizeZipEntryRelPath(f, commonPrefix)
+		if !ok {
 			continue
 		}
-		if commonPrefix != "" && strings.HasPrefix(relSlash, commonPrefix) {
-			relSlash = strings.TrimPrefix(relSlash, commonPrefix)
-		}
-		relSlash = SanitizeRelativeMediaPath(relSlash)
-		if relSlash == "" || isHiddenNonEditorFile(relSlash) {
-			continue
-		}
-		lower := strings.ToLower(relSlash)
 		if lower == BookDataFileName || lower == DefaultStoryFile || (!strings.Contains(relSlash, "/") && strings.HasSuffix(lower, PlaytxtExt)) {
 			return nil
 		}
@@ -850,21 +906,10 @@ func LoadBookFromDir(bookDir string) (*Book, error) {
 		ParseStoryFile(raw, sf, b)
 	}
 
-	if len(b.Scenes) == 0 {
-		b.Warnings = append(b.Warnings, "Błąd parsowania książki: nie znaleziono żadnych scen w plikach .playtxt (dodaj nagłówek scene: Nazwa sceny).")
-		b.Scenes = []*Scene{
-			{
-				ID:          "s1",
-				Name:        "Pusta scena",
-				Chapter:     "Rozdział 1",
-				ChapterID:   "rozdzial_1",
-				Text:        "Ta książka nie zawierała żadnych poprawnych scen podczas wczytywania.",
-				HTML:        RenderSafeProseHTML("Ta książka nie zawierała żadnych poprawnych scen podczas wczytywania."),
-				SourceFile:  DefaultChapterFile,
-				ExplicitEnd: true,
-			},
-		}
-	}
+	ensureFallbackEmptyScene(b,
+		"Błąd parsowania książki: nie znaleziono żadnych scen w plikach .playtxt (dodaj nagłówek scene: Nazwa sceny).",
+		"Ta książka nie zawierała żadnych poprawnych scen podczas wczytywania.",
+	)
 
 	FinalizeBook(b)
 	matchBookMedia(b, audioFiles, imageFiles)
@@ -879,14 +924,22 @@ func LoadBookFromZip(zipPath string) (*Book, error) {
 	}
 	defer zr.Close()
 
-	if err := validateZipArchiveLimits(zr.File); err != nil {
-		return nil, err
-	}
-
 	base := filepath.Base(zipPath)
 	ext := filepath.Ext(base)
 	stem := strings.TrimSuffix(base, ext)
+	b, _, err := loadBookFromZipFiles(zr.File, stem, zipPath, false)
+	return b, err
+}
+
+func loadBookFromZipFiles(files []*zip.File, stem, zipPath string, extractMediaBytes bool) (*Book, map[string][]byte, error) {
+	if err := validateZipArchiveLimits(files); err != nil {
+		return nil, nil, err
+	}
+
 	bookID := SanitizeBookID(stem)
+	if bookID == "" {
+		bookID = "book"
+	}
 
 	b := &Book{
 		ID:             bookID,
@@ -901,69 +954,68 @@ func LoadBookFromZip(zipPath string) (*Book, error) {
 	}
 
 	textMap := make(map[string]string)
+	var mediaBytes map[string][]byte
+	if extractMediaBytes {
+		mediaBytes = make(map[string][]byte)
+	}
 	var storyFiles []string
 	var audioFiles []string
 	var imageFiles []string
 	var totalTextBytes int
+	var totalMediaBytes int64
 
 	// Detect optional common top-level prefix inside zip if every entry shares one folder
-	commonPrefix := detectZipCommonPrefix(zr.File)
+	commonPrefix := detectZipCommonPrefix(files)
 
-	for _, f := range zr.File {
+	for _, f := range files {
 		if f.FileInfo().IsDir() || f.Mode()&os.ModeSymlink != 0 {
 			continue
 		}
-		relSlash := filepath.ToSlash(f.Name)
-		if isIgnoredZipEntry(relSlash) {
+		relSlash, lower, ok := normalizeZipEntryRelPath(f, commonPrefix)
+		if !ok {
 			continue
 		}
-		if commonPrefix != "" && strings.HasPrefix(relSlash, commonPrefix) {
-			relSlash = strings.TrimPrefix(relSlash, commonPrefix)
-		}
-		relSlash = SanitizeRelativeMediaPath(relSlash)
-		if relSlash == "" || isHiddenNonEditorFile(relSlash) {
-			continue
-		}
-		lower := strings.ToLower(relSlash)
 
 		switch {
 		case lower == BookDataFileName:
-			content, err := readZipEntryText(f)
+			content, err := readZipTextWithTotalCap(f, &totalTextBytes)
 			if err != nil {
-				return nil, err
-			}
-			totalTextBytes += len(content)
-			if totalTextBytes > MaxZipTotalTextBytes {
-				return nil, fmt.Errorf("archiwum ZIP przekracza łączny limit rozmiaru plików tekstowych (32 MB)")
+				return nil, nil, err
 			}
 			ParseDataFile(content, b)
 		case lower == EditorStateFileName || lower == "editor.cfg":
-			content, err := readZipEntryText(f)
+			content, err := readZipTextWithTotalCap(f, &totalTextBytes)
 			if err != nil {
-				return nil, err
-			}
-			totalTextBytes += len(content)
-			if totalTextBytes > MaxZipTotalTextBytes {
-				return nil, fmt.Errorf("archiwum ZIP przekracza łączny limit rozmiaru plików tekstowych (32 MB)")
+				return nil, nil, err
 			}
 			ParseEditorFile(content, b)
 		case !strings.Contains(relSlash, "/") && strings.HasSuffix(lower, PlaytxtExt):
-			content, err := readZipEntryText(f)
+			content, err := readZipTextWithTotalCap(f, &totalTextBytes)
 			if err != nil {
-				return nil, err
-			}
-			totalTextBytes += len(content)
-			if totalTextBytes > MaxZipTotalTextBytes {
-				return nil, fmt.Errorf("archiwum ZIP przekracza łączny limit rozmiaru plików tekstowych (32 MB)")
+				return nil, nil, err
 			}
 			textMap[relSlash] = content
 			storyFiles = append(storyFiles, relSlash)
 		case isAudioFilename(relSlash):
 			audioFiles = append(audioFiles, relSlash)
-			b.PackedMedia[strings.ToLower(relSlash)] = indexPackedMediaEntry(f, relSlash)
+			b.PackedMedia[lower] = indexPackedMediaEntry(f, relSlash)
+			if extractMediaBytes {
+				rawMedia, err := readValidatedZipMediaBytes(f, relSlash, &totalMediaBytes)
+				if err != nil {
+					return nil, nil, err
+				}
+				mediaBytes[relSlash] = rawMedia
+			}
 		case isRasterImageFilename(relSlash):
 			imageFiles = append(imageFiles, relSlash)
-			b.PackedMedia[strings.ToLower(relSlash)] = indexPackedMediaEntry(f, relSlash)
+			b.PackedMedia[lower] = indexPackedMediaEntry(f, relSlash)
+			if extractMediaBytes {
+				rawMedia, err := readValidatedZipMediaBytes(f, relSlash, &totalMediaBytes)
+				if err != nil {
+					return nil, nil, err
+				}
+				mediaBytes[relSlash] = rawMedia
+			}
 		}
 	}
 
@@ -973,25 +1025,42 @@ func LoadBookFromZip(zipPath string) (*Book, error) {
 		ParseStoryFile(textMap[sf], sf, b)
 	}
 
-	if len(b.Scenes) == 0 {
-		b.Warnings = append(b.Warnings, "Błąd parsowania archiwum .stbook: nie znaleziono żadnych scen w plikach .playtxt.")
-		b.Scenes = []*Scene{
-			{
-				ID:          "s1",
-				Name:        "Pusta scena",
-				Chapter:     "Rozdział 1",
-				ChapterID:   "rozdzial_1",
-				Text:        "Archiwum książki nie zawierało żadnych poprawnych scen.",
-				HTML:        RenderSafeProseHTML("Archiwum książki nie zawierało żadnych poprawnych scen."),
-				SourceFile:  DefaultChapterFile,
-				ExplicitEnd: true,
-			},
-		}
-	}
+	ensureFallbackEmptyScene(b,
+		"Błąd parsowania archiwum .stbook: nie znaleziono żadnych scen w plikach .playtxt.",
+		"Archiwum książki nie zawierało żadnych poprawnych scen.",
+	)
 
 	FinalizeBook(b)
 	matchBookMedia(b, audioFiles, imageFiles)
-	return b, nil
+	return b, mediaBytes, nil
+}
+
+func readValidatedZipMediaBytes(f *zip.File, relSlash string, totalBytes *int64) ([]byte, error) {
+	if f.UncompressedSize64 > maxMediaEntryBytes {
+		return nil, fmt.Errorf("plik multimedialny %s przekracza limit rozmiaru (100 MB)", relSlash)
+	}
+	rc, err := f.Open()
+	if err != nil {
+		return nil, err
+	}
+	defer rc.Close()
+	data, err := io.ReadAll(io.LimitReader(rc, maxMediaEntryBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > maxMediaEntryBytes {
+		return nil, fmt.Errorf("plik multimedialny %s przekracza limit rozmiaru (100 MB)", relSlash)
+	}
+	if totalBytes != nil {
+		*totalBytes += int64(len(data))
+		if *totalBytes > MaxZipTotalUncompressedBytes {
+			return nil, fmt.Errorf("archiwum ZIP przekracza łączny limit rozmiaru multimediów (500 MB)")
+		}
+	}
+	if !validateMediaHeader(relSlash, data) {
+		return nil, fmt.Errorf("nieprawidłowy lub zamaskowany nagłówek pliku multimedialnego: %s", relSlash)
+	}
+	return data, nil
 }
 
 // UnpackBookZip extracts a packed .stbook or .zip archive into targetDir so it can be edited in Node Studio.
@@ -1016,18 +1085,10 @@ func UnpackBookZip(zipPath, targetDir string) error {
 		if f.FileInfo().IsDir() || f.Mode()&os.ModeSymlink != 0 {
 			continue
 		}
-		relSlash := filepath.ToSlash(f.Name)
-		if isIgnoredZipEntry(relSlash) {
+		relSlash, lower, ok := normalizeZipEntryRelPath(f, commonPrefix)
+		if !ok {
 			continue
 		}
-		if commonPrefix != "" && strings.HasPrefix(relSlash, commonPrefix) {
-			relSlash = strings.TrimPrefix(relSlash, commonPrefix)
-		}
-		relSlash = SanitizeRelativeMediaPath(relSlash)
-		if relSlash == "" || isHiddenNonEditorFile(relSlash) {
-			continue
-		}
-		lower := strings.ToLower(relSlash)
 		isRootTxt := !strings.Contains(relSlash, "/") && (strings.HasSuffix(lower, PlaytxtExt) || lower == EditorStateFileName || lower == "editor.cfg")
 		if !isRootTxt && !isAudioFilename(relSlash) && !isRasterImageFilename(relSlash) {
 			continue
@@ -1136,22 +1197,16 @@ func indexPackedMediaEntry(f *zip.File, relSlash string) PackedMediaEntry {
 }
 
 func readZipEntryText(f *zip.File) (string, error) {
+	limitMsg := fmt.Sprintf("plik tekstowy %s w archiwum przekracza limit rozmiaru (4 MB)", f.Name)
 	if f.UncompressedSize64 > MaxZipSingleTextBytes {
-		return "", fmt.Errorf("plik tekstowy %s w archiwum przekracza limit rozmiaru (4 MB)", f.Name)
+		return "", fmt.Errorf("%s", limitMsg)
 	}
 	rc, err := f.Open()
 	if err != nil {
 		return "", err
 	}
 	defer rc.Close()
-	data, err := io.ReadAll(io.LimitReader(rc, MaxZipSingleTextBytes+1))
-	if err != nil {
-		return "", err
-	}
-	if len(data) > MaxZipSingleTextBytes {
-		return "", fmt.Errorf("plik tekstowy %s w archiwum przekracza limit rozmiaru (4 MB)", f.Name)
-	}
-	return string(data), nil
+	return readLimitedTextReader(rc, limitMsg)
 }
 
 func sortStoryFiles(files []string) {
@@ -1183,9 +1238,14 @@ func IsTempDir(p string) bool {
 		abs = p
 	}
 	clean := filepath.ToSlash(filepath.Clean(abs))
-	if strings.HasPrefix(clean, "/tmp/") || strings.HasPrefix(clean, "/private/tmp/") ||
-		strings.HasPrefix(clean, "/var/folders/") || strings.HasPrefix(clean, "/private/var/folders/") {
+	if strings.HasPrefix(clean, "/tmp/") || strings.HasPrefix(clean, "/private/tmp/") {
 		return true
+	}
+	if resolvedP, err := filepath.EvalSymlinks(abs); err == nil && resolvedP != "" {
+		resPClean := filepath.ToSlash(filepath.Clean(resolvedP))
+		if strings.HasPrefix(resPClean, "/tmp/") || strings.HasPrefix(resPClean, "/private/tmp/") {
+			return true
+		}
 	}
 	if td := os.TempDir(); td != "" {
 		tdClean := filepath.ToSlash(filepath.Clean(td))
@@ -1196,6 +1256,12 @@ func IsTempDir(p string) bool {
 			resClean := filepath.ToSlash(filepath.Clean(resolved))
 			if strings.HasPrefix(clean, resClean+"/") || clean == resClean {
 				return true
+			}
+			if resolvedP, errP := filepath.EvalSymlinks(abs); errP == nil && resolvedP != "" {
+				resPClean := filepath.ToSlash(filepath.Clean(resolvedP))
+				if strings.HasPrefix(resPClean, resClean+"/") || resPClean == resClean {
+					return true
+				}
 			}
 		}
 	}

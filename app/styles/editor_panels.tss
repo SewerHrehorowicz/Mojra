@@ -267,7 +267,59 @@
   font-size 12px
 
 .var-options-input
-  font-family --font-sans
+  font-family --font-mono
+
+.var-enum-form
+  display flex
+  flex-direction column
+  align-items stretch
+  gap 2px
+  padding 4px 0
+
+.var-enum-header-row
+  width 100%
+  padding 0
+  gap 6px
+
+.var-enum-name-input
+  flex 1 1 auto !important
+  width auto !important
+  min-width 0
+
+.var-enum-options-list
+  display flex
+  flex-direction column
+  gap 2px
+  margin-left 6px
+  padding-left 10px
+  border-left 1px solid --border-subtle
+
+.var-enum-option-row
+  display flex
+  align-items center
+  gap 6px
+
+.var-enum-add-opt-btn, .var-enum-opt-remove-btn
+  width 24px
+  height 24px
+  padding 0
+  display inline-flex
+  align-items center
+  justify-content center
+  color --text-muted
+  flex-shrink 0
+
+.var-enum-add-opt-btn:hover
+  color --text-primary
+
+.var-enum-opt-remove-btn:hover
+  color --accent-danger
+
+.var-enum-add-opt-btn .media-plus-icon
+  width 14px
+  height 14px
+  display block
+  pointer-events none
 
 .var-bool-toggle-btn
   flex 1

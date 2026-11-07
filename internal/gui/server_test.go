@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"image/color"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -17,6 +18,39 @@ import (
 	"storyteller/internal/book"
 	"storyteller/internal/tpl"
 )
+
+func NewServer(rootDir string, embeddedFS fs.FS) *Server {
+	return NewServerWithOptions(rootDir, embeddedFS, false)
+}
+
+func NewStandaloneServer(rootDir string, embeddedFS fs.FS, standaloneBook *book.Book) *Server {
+	savesDir := book.ResolveSavesDir(rootDir)
+	_ = os.MkdirAll(savesDir, 0755)
+
+	settings := book.LoadAppSettings(savesDir)
+	settings.PreviewMode = "full"
+	settings.ActiveView = "player"
+
+	s := &Server{
+		RootDir:           rootDir,
+		BooksDir:          filepath.Join(rootDir, "books"),
+		SavesDir:          savesDir,
+		AppDir:            filepath.Join(rootDir, "app"),
+		EmbeddedFS:        embeddedFS,
+		DevMode:           false,
+		StandaloneMode:    true,
+		ShutdownCh:        make(chan struct{}),
+		Settings:          settings,
+		FocusedHistoryIdx: -1,
+	}
+	s.ensureTemplatesLoaded()
+
+	if standaloneBook != nil {
+		s.StandaloneBookID = standaloneBook.ID
+		s.setActiveBook(standaloneBook)
+	}
+	return s
+}
 
 func TestServerActionLifecycleAndSecurity(t *testing.T) {
 	rootDir := t.TempDir()
@@ -713,16 +747,11 @@ end: true
 	}
 
 	// 5. Unlink external disk book from library and verify files on disk are NOT deleted
-	promptRem := url.Values{}
-	promptRem.Set("action", "PromptRemoveBook")
-	promptRem.Set("book", "nocny-pociag")
-	r8, _ := http.PostForm(ts.URL+"/api/action", promptRem)
+	remForm := url.Values{}
+	remForm.Set("action", "RemoveBook")
+	remForm.Set("book", "nocny-pociag")
+	r8, _ := http.PostForm(ts.URL+"/api/action", remForm)
 	_ = r8.Body.Close()
-
-	confirmRem := url.Values{}
-	confirmRem.Set("action", "ConfirmModalAccept")
-	r9, _ := http.PostForm(ts.URL+"/api/action", confirmRem)
-	_ = r9.Body.Close()
 
 	if _, err := os.Stat(filepath.Join(diskBookPath, "story.playtxt")); err != nil {
 		t.Fatalf("expected original files of external book on disk to remain untouched after removing from library: %v", err)
@@ -1252,7 +1281,7 @@ func TestStandaloneBookModeSecurity(t *testing.T) {
 		"AssignChapterToScenes",
 		"CreateChapterGroup",
 		"AutoLayoutNodes",
-		"PackBook",
+		"ExportProject",
 		"RemoveBook",
 		"UndoEditor",
 		"RedoEditor",

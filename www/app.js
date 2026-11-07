@@ -18,6 +18,10 @@
 
   function closeWasmStage() {
     document.body.classList.remove("wasm-open");
+    var storyAudio = document.getElementById("story-audio");
+    if (storyAudio && typeof storyAudio.pause === "function") {
+      storyAudio.pause();
+    }
   }
 
   function openBetaModal() {

@@ -15,10 +15,8 @@ import (
 )
 
 const (
-	saveMagic     = "STSV"
-	saveVersion   = byte(1)
-	layoutMagic   = "STLY"
-	layoutVersion = byte(1)
+	saveMagic   = "STSV"
+	saveVersion = byte(1)
 
 	// Byte offset of float64 AudioTime inside .sav header ("STSV" + version byte = offset 5)
 	audioTimeOffset = 5
@@ -309,6 +307,16 @@ func SaveAppSettings(savesDir string, cfg *AppSettings) error {
 // LoadSaveState reads the binary SaveState from saves/<book-id>.sav.
 func LoadSaveState(savesDir, bookID string, defaultStartSceneID string) *SaveState {
 	safeID := SanitizeBookID(bookID)
+	raw, err := os.ReadFile(saveFilePath(savesDir, safeID))
+	if err != nil {
+		return DecodeSaveStateBytes(safeID, nil, defaultStartSceneID)
+	}
+	return DecodeSaveStateBytes(safeID, raw, defaultStartSceneID)
+}
+
+// DecodeSaveStateBytes decodes a binary SaveState (STSV\x01) from raw bytes.
+func DecodeSaveStateBytes(bookID string, raw []byte, defaultStartSceneID string) *SaveState {
+	safeID := SanitizeBookID(bookID)
 	st := &SaveState{
 		BookID:             safeID,
 		CurrentSceneID:     defaultStartSceneID,
@@ -319,8 +327,7 @@ func LoadSaveState(savesDir, bookID string, defaultStartSceneID string) *SaveSta
 		History:            []HistoryEntry{},
 	}
 
-	raw, err := os.ReadFile(saveFilePath(savesDir, safeID))
-	if err != nil || len(raw) < 22 {
+	if len(raw) < 22 {
 		return st
 	}
 
@@ -444,10 +451,10 @@ func LoadSaveState(savesDir, bookID string, defaultStartSceneID string) *SaveSta
 	return st
 }
 
-// WriteSaveState atomically writes SaveState in binary format to saves/<book-id>.sav.
-func WriteSaveState(savesDir string, state *SaveState) error {
-	if err := os.MkdirAll(savesDir, 0755); err != nil {
-		return err
+// EncodeSaveStateBytes serializes SaveState into binary STSV\x01 format in memory.
+func EncodeSaveStateBytes(state *SaveState) []byte {
+	if state == nil {
+		return nil
 	}
 	state.BookID = SanitizeBookID(state.BookID)
 	state.CurrentSceneID = SanitizePlainText(state.CurrentSceneID)
@@ -496,10 +503,18 @@ func WriteSaveState(savesDir string, state *SaveState) error {
 	for _, h := range state.History {
 		writeVariablesMapBinary(&buf, h.Variables)
 	}
+	return buf.Bytes()
+}
 
+// WriteSaveState atomically writes SaveState in binary format to saves/<book-id>.sav.
+func WriteSaveState(savesDir string, state *SaveState) error {
+	if err := os.MkdirAll(savesDir, 0755); err != nil {
+		return err
+	}
+	raw := EncodeSaveStateBytes(state)
 	target := saveFilePath(savesDir, state.BookID)
 	tmp := target + ".tmp"
-	if err := os.WriteFile(tmp, buf.Bytes(), 0644); err != nil {
+	if err := os.WriteFile(tmp, raw, 0644); err != nil {
 		return err
 	}
 	return os.Rename(tmp, target)
@@ -538,66 +553,6 @@ func DeleteSaveState(savesDir, bookID string) error {
 	return err
 }
 
-// EncodeLayoutBinary serializes node studio timeline positions into binary .layout.dat format.
-func EncodeLayoutBinary(layout map[string]NodePosition) []byte {
-	var buf bytes.Buffer
-	buf.WriteString(layoutMagic)
-	buf.WriteByte(layoutVersion)
-
-	keys := make([]string, 0, len(layout))
-	for k := range layout {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-
-	_ = binary.Write(&buf, binary.LittleEndian, uint32(len(keys)))
-	for _, k := range keys {
-		pos := layout[k]
-		writeLengthPrefixedString(&buf, k)
-		_ = binary.Write(&buf, binary.LittleEndian, int32(pos.Row))
-		_ = binary.Write(&buf, binary.LittleEndian, int32(pos.Col))
-	}
-	return buf.Bytes()
-}
-
-// DecodeLayoutBinary parses binary .layout.dat bytes into map[string]NodePosition.
-func DecodeLayoutBinary(raw []byte) map[string]NodePosition {
-	out := make(map[string]NodePosition)
-	if len(raw) < 9 {
-		return out
-	}
-	r := bytes.NewReader(raw)
-	magic := make([]byte, 4)
-	if _, err := io.ReadFull(r, magic); err != nil || string(magic) != layoutMagic {
-		return out
-	}
-	ver, err := r.ReadByte()
-	if err != nil || ver != layoutVersion {
-		return out
-	}
-	var count uint32
-	if err := binary.Read(r, binary.LittleEndian, &count); err != nil || count > 10000 {
-		return out
-	}
-	for i := uint32(0); i < count; i++ {
-		id, err := readLengthPrefixedString(r)
-		if err != nil {
-			break
-		}
-		var row, col int32
-		if err := binary.Read(r, binary.LittleEndian, &row); err != nil {
-			break
-		}
-		if err := binary.Read(r, binary.LittleEndian, &col); err != nil {
-			break
-		}
-		if id != "" && row > 0 && col > 0 {
-			out[id] = NodePosition{Row: int(row), Col: int(col)}
-		}
-	}
-	return out
-}
-
 func writeVariablesMapBinary(buf *bytes.Buffer, vars map[string]string) {
 	if len(vars) == 0 {
 		_ = binary.Write(buf, binary.LittleEndian, uint32(0))
@@ -626,12 +581,8 @@ func writeLengthPrefixedString(buf *bytes.Buffer, s string) {
 	buf.Write(b)
 }
 
-func readLengthPrefixedString(r io.Reader) (string, error) {
-	var n uint16
-	if err := binary.Read(r, binary.LittleEndian, &n); err != nil {
-		return "", err
-	}
-	if n == 0 {
+func readBytesOfLen(r io.Reader, n int) (string, error) {
+	if n <= 0 {
 		return "", nil
 	}
 	b := make([]byte, n)
@@ -639,4 +590,12 @@ func readLengthPrefixedString(r io.Reader) (string, error) {
 		return "", err
 	}
 	return string(b), nil
+}
+
+func readLengthPrefixedString(r io.Reader) (string, error) {
+	var n uint16
+	if err := binary.Read(r, binary.LittleEndian, &n); err != nil {
+		return "", err
+	}
+	return readBytesOfLen(r, int(n))
 }

@@ -38,7 +38,7 @@
   - No inline `style="..."` attributes, `<style>` tags, `<script>` blocks (only `<script src="/app.js">`), `on*=` event attributes, `<iframe>`/`<object>`/`<embed>`/`<foreignObject>`, or `javascript:`/`data:` URLs.
   - No inline `<svg>` elements in `.tpl`; put all SVGs in `app/icons/*.svg` and include via `svg.class src: /icons/name.svg`.
   - **Minimal JavaScript Bridge & Zero Dynamic Markup**: Keep business/state logic on the Go side (`internal/gui/`, `internal/book/`) and render all markup in `.tpl` templates. Client JS (`app/js/*.js`) is a minimal declarative bridge for `POST /api/action`, audio/scroll bindings, and WebGL canvas rendering—never create DOM elements dynamically (`document.createElement`) or use HTML string literals (`<div`, `<span`, `<button`, `<input`, `<label`, `<svg`, `</`) in `app/js/*.js` (enforced by `TestNoHTMLStringLiteralsInClientJS`).
-  - Dynamic context strings (`{var}`, `"{var}"`) are HTML-escaped and never undergo secondary `{...}` interpolation. `{raw var}` is restricted to `book.RenderSafeProseHTML` output.
+  - Dynamic context strings (`{var}`, `"{var}"`) are HTML-escaped and never undergo secondary `{...}` interpolation. `{raw ...}` is forbidden at compile time; use `{prose var}` so the `.tpl` engine escapes and formats plain-text prose via `tpl.RenderSafeProseHTML`.
 - **`.tss` Stylesheet Rules (`internal/tpl/tss.go`)**:
   - Indentation-based rules without `{}` or `;`. Define theme/preview tokens in `app/styles/colors.tss` using `light-dark(lightVal, darkVal)` and `--var` references.
   - Wrap device preview rules in `/* @dev-only-start */ ... /* @dev-only-end */` and template nodes in `{if dev_mode}` so production builds strip them completely.

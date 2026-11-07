@@ -1,11 +1,192 @@
 package book
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func CreateStandaloneScene(b *Book, newSceneName string, x, y int, hasCoords bool) (*Scene, error) {
+	return CreateStandaloneSceneInChapter(b, newSceneName, "", x, y, hasCoords)
+}
+
+func DeleteBookBranch(b *Book, branchName string) error {
+	if b == nil || b.IsPacked || strings.TrimSpace(b.RootPath) == "" {
+		return fmt.Errorf("brak rozpakowanej książki na dysku")
+	}
+	cleanBranch := normalizeRevisionBranch(branchName)
+	if cleanBranch == "main" {
+		return fmt.Errorf("nie można usunąć głównej gałęzi „main”")
+	}
+	h, err := LoadBookHistory(b)
+	if err != nil {
+		return err
+	}
+	if h.NormalizedActiveBranch() == cleanBranch {
+		return fmt.Errorf("nie można usunąć aktualnie aktywnej gałęzi „%s” — najpierw przełącz na inną gałąź", cleanBranch)
+	}
+
+	found := false
+	var keptBranches []HistoryBranch
+	referencedBases := make(map[string]bool)
+	for _, br := range h.Branches {
+		if strings.EqualFold(br.Name, cleanBranch) {
+			found = true
+			continue
+		}
+		keptBranches = append(keptBranches, br)
+		if br.BaseRevID != "" {
+			referencedBases[br.BaseRevID] = true
+		}
+		if br.HeadRevID != "" {
+			referencedBases[br.HeadRevID] = true
+		}
+	}
+	if !found {
+		return fmt.Errorf("nie znaleziono gałęzi „%s”", cleanBranch)
+	}
+
+	var keptRevs []HistoryRevision
+	for _, rev := range h.Revisions {
+		if normalizeRevisionBranch(rev.Branch) == cleanBranch && !referencedBases[rev.ID] {
+			continue
+		}
+		keptRevs = append(keptRevs, rev)
+	}
+
+	h.Branches = keptBranches
+	h.Revisions = keptRevs
+	h.syncBranchesMetadata()
+	if err := SaveBookHistory(b, h); err != nil {
+		return err
+	}
+	PruneUnreferencedBlobs(b, h)
+	return nil
+}
+
+func formatSignedInt(delta int) string {
+	if delta > 0 {
+		return fmt.Sprintf("+%d", delta)
+	}
+	return fmt.Sprintf("%d", delta)
+}
+
+func CompareBookBranches(b *Book, branchA, branchB string) (*BranchComparison, error) {
+	if b == nil || b.IsPacked || strings.TrimSpace(b.RootPath) == "" {
+		return nil, fmt.Errorf("brak rozpakowanej książki na dysku")
+	}
+	h, err := LoadBookHistory(b)
+	if err != nil {
+		return nil, err
+	}
+	normA := normalizeRevisionBranch(branchA)
+	normB := normalizeRevisionBranch(branchB)
+
+	findHeadRev := func(brName string) (HistoryRevision, bool) {
+		for _, br := range h.Branches {
+			if strings.EqualFold(br.Name, brName) && br.HeadRevID != "" {
+				for _, rev := range h.Revisions {
+					if rev.ID == br.HeadRevID {
+						return rev, true
+					}
+				}
+			}
+		}
+		for i := len(h.Revisions) - 1; i >= 0; i-- {
+			if normalizeRevisionBranch(h.Revisions[i].Branch) == brName {
+				return h.Revisions[i], true
+			}
+		}
+		return HistoryRevision{}, false
+	}
+
+	revA, okA := findHeadRev(normA)
+	revB, okB := findHeadRev(normB)
+	if !okA {
+		return nil, fmt.Errorf("nie znaleziono gałęzi „%s”", normA)
+	}
+	if !okB {
+		return nil, fmt.Errorf("nie znaleziono gałęzi „%s”", normB)
+	}
+
+	bookA, err := loadBookFromHistoryRevision(b.RootPath, revA)
+	if err != nil {
+		return nil, err
+	}
+	bookB, err := loadBookFromHistoryRevision(b.RootPath, revB)
+	if err != nil {
+		return nil, err
+	}
+
+	bdA := AnalyzeScreenplay(bookA)
+	bdB := AnalyzeScreenplay(bookB)
+
+	scenesMapA := make(map[string]*Scene, len(bookA.Scenes))
+	for _, sc := range bookA.Scenes {
+		scenesMapA[sc.ID] = sc
+	}
+	scenesMapB := make(map[string]*Scene, len(bookB.Scenes))
+	for _, sc := range bookB.Scenes {
+		scenesMapB[sc.ID] = sc
+	}
+
+	var added, removed, modified []string
+	for _, scB := range bookB.Scenes {
+		scA, exists := scenesMapA[scB.ID]
+		if !exists {
+			added = append(added, scB.DisplayName())
+		} else if scA.Text != scB.Text || scA.Slugline != scB.Slugline || scA.Name != scB.Name {
+			modified = append(modified, scB.DisplayName())
+		}
+	}
+	for _, scA := range bookA.Scenes {
+		if _, exists := scenesMapB[scA.ID]; !exists {
+			removed = append(removed, scA.DisplayName())
+		}
+	}
+
+	eighthsDelta := bdB.TotalEighths - bdA.TotalEighths
+	pagesDeltaStr := "0 str."
+	if eighthsDelta > 0 {
+		pagesDeltaStr = "+" + FormatEighths(eighthsDelta)
+	} else if eighthsDelta < 0 {
+		pagesDeltaStr = "-" + FormatEighths(-eighthsDelta)
+	}
+
+	cmp := &BranchComparison{
+		BranchA:             normA,
+		BranchB:             normB,
+		ScenesA:             len(bookA.Scenes),
+		ScenesB:             len(bookB.Scenes),
+		SceneDelta:          len(bookB.Scenes) - len(bookA.Scenes),
+		AddedScenes:         added,
+		RemovedScenes:       removed,
+		ModifiedScenes:      modified,
+		EighthsA:            bdA.TotalEighths,
+		EighthsB:            bdB.TotalEighths,
+		EighthsDelta:        eighthsDelta,
+		PagesDeltaFormatted: pagesDeltaStr,
+		MinutesA:            bdA.EstimatedMinutes,
+		MinutesB:            bdB.EstimatedMinutes,
+		MinutesDelta:        bdB.EstimatedMinutes - bdA.EstimatedMinutes,
+		LocationsA:          len(bdA.Locations),
+		LocationsB:          len(bdB.Locations),
+		LocationDelta:       len(bdB.Locations) - len(bdA.Locations),
+		CharactersA:         len(bdA.Characters),
+		CharactersB:         len(bdB.Characters),
+		CharacterDelta:      len(bdB.Characters) - len(bdA.Characters),
+	}
+
+	if cmp.SceneDelta == 0 && cmp.EighthsDelta == 0 && len(cmp.ModifiedScenes) == 0 {
+		cmp.SummaryLabel = fmt.Sprintf("Zgodna z %s (brak różnic)", normA)
+	} else {
+		cmp.SummaryLabel = fmt.Sprintf("vs %s: sceny %s, objętość %s, zmodyfikowane: %d",
+			normA, formatSignedInt(cmp.SceneDelta), cmp.PagesDeltaFormatted, len(cmp.ModifiedScenes))
+	}
+	return cmp, nil
+}
 
 func TestBookHistoryLifecycleAndNamedVersions(t *testing.T) {
 	booksDir := t.TempDir()

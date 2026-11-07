@@ -326,43 +326,6 @@ func EnsureSaveVariables(b *Book, current map[string]string) map[string]string {
 	return out
 }
 
-// IsStandaloneSceneEffectLine reports whether a trimmed line at the top of a scene is a {{ ... }} effect statement
-// (e.g. "{{+odwiedzono_sluze, zaufanie += 1}}") rather than a conditional prose block opener ("{{latarka}}").
-func IsStandaloneSceneEffectLine(trimmed string) (string, bool) {
-	if !strings.HasPrefix(trimmed, "{{") || !strings.HasSuffix(trimmed, "}}") || len(trimmed) < 5 {
-		return "", false
-	}
-	inner := strings.TrimSpace(trimmed[2 : len(trimmed)-2])
-	if inner == "" || inner == "/" || inner == ":" || strings.Contains(inner, "{{") || strings.Contains(inner, "}}") {
-		return "", false
-	}
-	if strings.Contains(inner, ":") || strings.Contains(inner, "&&") || strings.Contains(inner, "||") {
-		return "", false
-	}
-	clauses := strings.Split(inner, ",")
-	for _, rawClause := range clauses {
-		c := strings.TrimSpace(rawClause)
-		if c == "" {
-			return "", false
-		}
-		if strings.HasPrefix(c, "+") || strings.HasPrefix(c, "-") || (strings.HasPrefix(c, "!") && !strings.HasPrefix(c, "!=") && !strings.HasPrefix(c, "!?")) {
-			rest := SanitizeVarName(c[1:])
-			if rest == "" {
-				return "", false
-			}
-			continue
-		}
-		if strings.Contains(c, "==") || strings.Contains(c, "!=") || strings.Contains(c, ">=") || strings.Contains(c, "<=") || strings.Contains(c, ">") || strings.Contains(c, "<") {
-			return "", false
-		}
-		if strings.Contains(c, "+=") || strings.Contains(c, "-=") || strings.Contains(c, "=") {
-			continue
-		}
-		return "", false
-	}
-	return inner, true
-}
-
 // ParseChoiceRuleTokens extracts optional leading {{condition}} and trailing {{effects}} around a choice label.
 func ParseChoiceRuleTokens(rawLeft string) (label string, cond string, effects string, showLocked bool) {
 	s := strings.TrimSpace(rawLeft)
@@ -393,32 +356,6 @@ func ParseChoiceRuleTokens(rawLeft string) (label string, cond string, effects s
 		}
 	}
 	return strings.TrimSpace(s), cond, effects, showLocked
-}
-
-// FormatChoiceLeftWithRules formats the left side of a choice line ("{{cond}} Label {{effects}}") for story.txt.
-func FormatChoiceLeftWithRules(ch Choice) string {
-	lbl := strings.TrimSpace(ch.Label)
-	if lbl == "" {
-		lbl = "Dalej"
-	}
-	var sb strings.Builder
-	cond := StripOuterDoubleBraces(ch.Condition)
-	if cond != "" {
-		sb.WriteString("{{")
-		if ch.ShowWhenLocked && !strings.HasPrefix(cond, "?") {
-			sb.WriteString("? ")
-		}
-		sb.WriteString(cond)
-		sb.WriteString("}} ")
-	}
-	sb.WriteString(lbl)
-	eff := StripOuterDoubleBraces(ch.Effects)
-	if eff != "" {
-		sb.WriteString(" {{")
-		sb.WriteString(eff)
-		sb.WriteString("}}")
-	}
-	return sb.String()
 }
 
 // splitEffectClauses splits an effects expression by ';', ',', or whitespace between complete clauses.
@@ -558,7 +495,13 @@ func ApplyEffects(expr string, state map[string]string, b *Book) {
 			}
 			continue
 		}
-		if strings.HasPrefix(c, "+") && !strings.Contains(c, "=") {
+		if (strings.HasPrefix(c, "+") || strings.HasPrefix(c, "-")) && !strings.Contains(c, "=") {
+			sign := 1
+			boolLiteral := "true"
+			if strings.HasPrefix(c, "-") {
+				sign = -1
+				boolLiteral = "false"
+			}
 			rest := strings.Fields(strings.TrimSpace(c[1:]))
 			if len(rest) == 0 {
 				continue
@@ -571,72 +514,34 @@ func ApplyEffects(expr string, state map[string]string, b *Book) {
 			if len(rest) >= 2 {
 				if delta, err := strconv.Atoi(rest[1]); err == nil {
 					cur, _ := strconv.Atoi(state[varName])
-					state[varName] = strconv.Itoa(cur + delta)
+					state[varName] = strconv.Itoa(cur + sign*delta)
 					continue
 				}
 			}
 			if vDef != nil && vDef.Kind == VarKindInt {
 				cur, _ := strconv.Atoi(state[varName])
-				state[varName] = strconv.Itoa(cur + 1)
+				state[varName] = strconv.Itoa(cur + sign)
 			} else if curVal, ok := state[varName]; ok {
 				if curInt, err := strconv.Atoi(curVal); err == nil {
-					state[varName] = strconv.Itoa(curInt + 1)
+					state[varName] = strconv.Itoa(curInt + sign)
 				} else {
-					state[varName] = "true"
+					state[varName] = boolLiteral
 				}
 			} else {
-				state[varName] = "true"
+				state[varName] = boolLiteral
 			}
 			continue
 		}
-		if strings.HasPrefix(c, "-") && !strings.Contains(c, "=") {
-			rest := strings.Fields(strings.TrimSpace(c[1:]))
-			if len(rest) == 0 {
-				continue
-			}
-			varName := SanitizeVarName(rest[0])
-			if varName == "" {
-				continue
-			}
-			vDef := b.FindVariable(varName)
-			if len(rest) >= 2 {
-				if delta, err := strconv.Atoi(rest[1]); err == nil {
-					cur, _ := strconv.Atoi(state[varName])
-					state[varName] = strconv.Itoa(cur - delta)
-					continue
-				}
-			}
-			if vDef != nil && vDef.Kind == VarKindInt {
-				cur, _ := strconv.Atoi(state[varName])
-				state[varName] = strconv.Itoa(cur - 1)
-			} else if curVal, ok := state[varName]; ok {
-				if curInt, err := strconv.Atoi(curVal); err == nil {
-					state[varName] = strconv.Itoa(curInt - 1)
-				} else {
-					state[varName] = "false"
-				}
-			} else {
-				state[varName] = "false"
-			}
-			continue
-		}
-		if idx := strings.Index(c, "+="); idx > 0 {
+		if op, idx := findCompoundAssignOp(c); idx > 0 {
 			varName := SanitizeVarName(c[:idx])
-			rhs := strings.TrimSpace(c[idx+2:])
+			rhs := strings.TrimSpace(c[idx+len(op):])
 			if varName != "" {
 				delta, _ := strconv.Atoi(resolveOperandString(rhs, state, b))
+				if op == "-=" {
+					delta = -delta
+				}
 				cur, _ := strconv.Atoi(resolveOperandString(varName, state, b))
 				state[varName] = strconv.Itoa(cur + delta)
-			}
-			continue
-		}
-		if idx := strings.Index(c, "-="); idx > 0 {
-			varName := SanitizeVarName(c[:idx])
-			rhs := strings.TrimSpace(c[idx+2:])
-			if varName != "" {
-				delta, _ := strconv.Atoi(resolveOperandString(rhs, state, b))
-				cur, _ := strconv.Atoi(resolveOperandString(varName, state, b))
-				state[varName] = strconv.Itoa(cur - delta)
 			}
 			continue
 		}

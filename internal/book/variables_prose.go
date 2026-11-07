@@ -19,16 +19,62 @@ func HasDynamicProse(raw string) bool {
 	return false
 }
 
-// RenderSceneProseHTML is the single canonical prose evaluation + HTML rendering pipeline
-// shared by Player mode (#view-player) and Editor output preview (#modal-scene-text).
-func RenderSceneProseHTML(sc *Scene, state map[string]string, b *Book) string {
+// EvaluateSceneProseText evaluates dynamic blocks (if:/elif:/else:/endif:) and inline variables ({{var}})
+// on a scene's plain text without converting to HTML.
+func EvaluateSceneProseText(sc *Scene, state map[string]string, b *Book) string {
 	if sc == nil {
-		return "<p></p>"
+		return ""
 	}
 	if !HasDynamicProse(sc.Text) {
-		return sc.EnsureHTML()
+		return sc.Text
 	}
-	return RenderSafeProseHTML(EvaluateProseText(sc.Text, state, b))
+	return EvaluateProseText(sc.Text, state, b)
+}
+
+type proseBlockFrame struct {
+	branchTaken  bool
+	branchActive bool
+}
+
+func isProseBlockStackActive(stack []proseBlockFrame) bool {
+	for _, f := range stack {
+		if !f.branchActive {
+			return false
+		}
+	}
+	return true
+}
+
+func stepProseBlockStack(stack *[]proseBlockFrame, kind, condExpr string, state map[string]string, b *Book) {
+	s := *stack
+	switch kind {
+	case "endif":
+		if len(s) > 0 {
+			*stack = s[:len(s)-1]
+		}
+	case "else":
+		if len(s) > 0 {
+			top := &(*stack)[len(s)-1]
+			top.branchActive = !top.branchTaken
+			top.branchTaken = true
+		}
+	case "elif":
+		if len(s) > 0 {
+			top := &(*stack)[len(s)-1]
+			if top.branchTaken {
+				top.branchActive = false
+			} else {
+				met := EvaluateCondition(condExpr, state, b)
+				top.branchActive = met
+				if met {
+					top.branchTaken = true
+				}
+			}
+		}
+	case "if":
+		met := EvaluateCondition(condExpr, state, b)
+		*stack = append(s, proseBlockFrame{branchTaken: met, branchActive: met})
+	}
 }
 
 // EvaluateProseText evaluates multi-paragraph if:/elif:/else:/endif: blocks and inline {{...}} tokens,
@@ -38,60 +84,16 @@ func EvaluateProseText(raw string, state map[string]string, b *Book) string {
 		return raw
 	}
 	lines := strings.Split(strings.ReplaceAll(raw, "\r\n", "\n"), "\n")
-	type blockFrame struct {
-		branchTaken  bool
-		branchActive bool
-	}
-	var stack []blockFrame
-	isCurrentlyActive := func() bool {
-		for _, f := range stack {
-			if !f.branchActive {
-				return false
-			}
-		}
-		return true
-	}
+	var stack []proseBlockFrame
 
 	var outLines []string
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
 		if kind, condExpr, ok := parseProseBlockDirective(trimmed, state, b); ok {
-			switch kind {
-			case "endif":
-				if len(stack) > 0 {
-					stack = stack[:len(stack)-1]
-				}
-				continue
-			case "else":
-				if len(stack) > 0 {
-					top := &stack[len(stack)-1]
-					top.branchActive = !top.branchTaken
-					top.branchTaken = true
-				}
-				continue
-			case "elif":
-				if len(stack) > 0 {
-					top := &stack[len(stack)-1]
-					if top.branchTaken {
-						top.branchActive = false
-					} else {
-						met := EvaluateCondition(condExpr, state, b)
-						top.branchActive = met
-						if met {
-							top.branchTaken = true
-						}
-					}
-				}
-				continue
-			case "if":
-				met := EvaluateCondition(condExpr, state, b)
-				stack = append(stack, blockFrame{branchTaken: met, branchActive: met})
-				continue
-			case "set":
-				continue
-			}
+			stepProseBlockStack(&stack, kind, condExpr, state, b)
+			continue
 		}
-		if !isCurrentlyActive() {
+		if !isProseBlockStackActive(stack) {
 			continue
 		}
 		if strings.Contains(line, "{{") {
@@ -143,17 +145,6 @@ func isProseSyntaxDirective(trimmed string) bool {
 	return ok
 }
 
-func isProseSyntaxLine(line string) bool {
-	trimmed := strings.TrimSpace(line)
-	if trimmed == "" {
-		return false
-	}
-	if trimmed == "---" || trimmed == "***" {
-		return true
-	}
-	return isProseSyntaxDirective(trimmed)
-}
-
 // EncodeVariablesStateSpec encodes current variable state values as "name=val;..." for client-side live condition evaluation.
 func EncodeVariablesStateSpec(state map[string]string, b *Book) string {
 	if b == nil || len(b.Variables) == 0 {
@@ -199,53 +190,14 @@ func BuildSceneProseHighlightSegments(raw string, state map[string]string, b *Bo
 		segs = append(segs, segItem{text: txt, syn: syn})
 	}
 
-	type blockFrame struct {
-		branchTaken  bool
-		branchActive bool
-	}
-	var stack []blockFrame
-	isCurrentlyActive := func() bool {
-		for _, f := range stack {
-			if !f.branchActive {
-				return false
-			}
-		}
-		return true
-	}
+	var stack []proseBlockFrame
 
 	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
 		if kind, condExpr, ok := parseProseBlockDirective(trimmed, state, b); ok {
-			switch kind {
-			case "endif":
-				if len(stack) > 0 {
-					stack = stack[:len(stack)-1]
-				}
-			case "else":
-				if len(stack) > 0 {
-					top := &stack[len(stack)-1]
-					top.branchActive = !top.branchTaken
-					top.branchTaken = true
-				}
-			case "elif":
-				if len(stack) > 0 {
-					top := &stack[len(stack)-1]
-					if top.branchTaken {
-						top.branchActive = false
-					} else {
-						met := EvaluateCondition(condExpr, state, b)
-						top.branchActive = met
-						if met {
-							top.branchTaken = true
-						}
-					}
-				}
-			case "if":
-				met := EvaluateCondition(condExpr, state, b)
-				stack = append(stack, blockFrame{branchTaken: met, branchActive: met})
-			}
+			stepProseBlockStack(&stack, kind, condExpr, state, b)
 			appendSeg(line, true)
-		} else if trimmed == "---" || trimmed == "***" || !isCurrentlyActive() {
+		} else if trimmed == "---" || trimmed == "***" || !isProseBlockStackActive(stack) {
 			appendSeg(line, true)
 		} else {
 			rest := line
@@ -287,28 +239,6 @@ func BuildSceneProseHighlightSegments(raw string, state map[string]string, b *Bo
 		}
 	}
 	return out
-}
-
-func isStandaloneBlockDirective(trimmed string) bool {
-	if !strings.HasPrefix(trimmed, "{{") || !strings.HasSuffix(trimmed, "}}") || len(trimmed) < 3 {
-		return false
-	}
-	inner := trimmed[2 : len(trimmed)-2]
-	return !strings.Contains(inner, "{{") && !strings.Contains(inner, "}}")
-}
-
-func isPureVariableLookup(inner string, state map[string]string, b *Book) bool {
-	clean := strings.TrimSpace(inner)
-	if clean == "" || strings.ContainsAny(clean, " !&|=<>+-()") {
-		return false
-	}
-	vDef := b.FindVariable(clean)
-	if vDef != nil {
-		// Standalone line "{{latarka}}" for a bool variable is a block condition opener,
-		// whereas "{{naboje}}" or "{{frakcja}}" in inline prose is interpolation.
-		return vDef.Kind != VarKindBool
-	}
-	return false
 }
 
 func evaluateInlineProseTokens(line string, state map[string]string, b *Book) string {
@@ -420,20 +350,25 @@ func BuildSceneProsePreviewParagraphs(raw string, mode string, state map[string]
 		branchTaken  bool
 		branchActive bool
 	}
-	var stack []blockFrame
+	var stack []proseBlockFrame
 	blockState := func() (inBlock bool, active bool) {
 		if len(stack) == 0 {
 			return false, true
 		}
-		for _, f := range stack {
-			if !f.branchActive {
-				return true, false
-			}
-		}
-		return true, true
+		return true, isProseBlockStackActive(stack)
 	}
 
 	var out []map[string]any
+	appendSyntaxLine := func(text string, inB, act bool) {
+		out = append(out, map[string]any{
+			"is_divider":  false,
+			"is_active":   isHighlight && inB && act,
+			"is_inactive": isHighlight && inB && !act,
+			"segments": []map[string]any{
+				{"text": text, "is_syntax": true},
+			},
+		})
+	}
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
 		if trimmed == "" {
@@ -444,85 +379,16 @@ func BuildSceneProsePreviewParagraphs(raw string, mode string, state map[string]
 			continue
 		}
 		if kind, condExpr, ok := parseProseBlockDirective(trimmed, state, b); ok {
-			switch kind {
-			case "endif":
+			if kind == "endif" {
 				inB, act := blockState()
-				if len(stack) > 0 {
-					stack = stack[:len(stack)-1]
-				}
-				out = append(out, map[string]any{
-					"is_divider":  false,
-					"is_active":   isHighlight && inB && act,
-					"is_inactive": isHighlight && inB && !act,
-					"segments": []map[string]any{
-						{"text": trimmed, "is_syntax": true},
-					},
-				})
-				continue
-			case "else":
-				if len(stack) > 0 {
-					top := &stack[len(stack)-1]
-					top.branchActive = !top.branchTaken
-					top.branchTaken = true
-				}
+				stepProseBlockStack(&stack, kind, condExpr, state, b)
+				appendSyntaxLine(trimmed, inB, act)
+			} else {
+				stepProseBlockStack(&stack, kind, condExpr, state, b)
 				inB, act := blockState()
-				out = append(out, map[string]any{
-					"is_divider":  false,
-					"is_active":   isHighlight && inB && act,
-					"is_inactive": isHighlight && inB && !act,
-					"segments": []map[string]any{
-						{"text": trimmed, "is_syntax": true},
-					},
-				})
-				continue
-			case "elif":
-				if len(stack) > 0 {
-					top := &stack[len(stack)-1]
-					if top.branchTaken {
-						top.branchActive = false
-					} else {
-						met := EvaluateCondition(condExpr, state, b)
-						top.branchActive = met
-						if met {
-							top.branchTaken = true
-						}
-					}
-				}
-				inB, act := blockState()
-				out = append(out, map[string]any{
-					"is_divider":  false,
-					"is_active":   isHighlight && inB && act,
-					"is_inactive": isHighlight && inB && !act,
-					"segments": []map[string]any{
-						{"text": trimmed, "is_syntax": true},
-					},
-				})
-				continue
-			case "if":
-				met := EvaluateCondition(condExpr, state, b)
-				stack = append(stack, blockFrame{branchTaken: met, branchActive: met})
-				inB, act := blockState()
-				out = append(out, map[string]any{
-					"is_divider":  false,
-					"is_active":   isHighlight && inB && act,
-					"is_inactive": isHighlight && inB && !act,
-					"segments": []map[string]any{
-						{"text": trimmed, "is_syntax": true},
-					},
-				})
-				continue
-			case "set":
-				inB, act := blockState()
-				out = append(out, map[string]any{
-					"is_divider":  false,
-					"is_active":   isHighlight && inB && act,
-					"is_inactive": isHighlight && inB && !act,
-					"segments": []map[string]any{
-						{"text": trimmed, "is_syntax": true},
-					},
-				})
-				continue
+				appendSyntaxLine(trimmed, inB, act)
 			}
+			continue
 		}
 
 		inB, act := blockState()

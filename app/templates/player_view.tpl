@@ -31,6 +31,8 @@ section.view-panel#view-player
                             data-history-idx: "{h.idx}"
                             data-scene-image: "{h.bg_image_url}"
                             data-scene-meta: "{h.header_meta}"
+                            data-scene-audio: "{h.audio_url}"
+                            data-scene-audio-duration: "{h.audio_duration_label}"
                             {if h.has_title}
                                 .scene-header-block
                                     .scene-title-row
@@ -81,7 +83,7 @@ section.view-panel#view-player
                                             {else}
                                                 p.sp-action {blk.text}
                                     {else}
-                                        {raw h.html}
+                                        {prose h.prose}
 
             .active-scene-stage#active-scene-stage
                 data-prefetch-urls: "{prefetch_media_urls}"
@@ -89,6 +91,8 @@ section.view-panel#view-player
                     data-present-scene: true
                     data-scene-image: "{current_scene.bg_image_url}"
                     data-scene-meta: "{current_scene.header_meta}"
+                    data-scene-audio: "{current_scene.audio_url}"
+                    data-scene-audio-duration: "{current_scene.audio_duration_label}"
                     {if current_scene.has_title}
                         .scene-header-block
                             .scene-title-row
@@ -123,7 +127,7 @@ section.view-panel#view-player
                                     {else}
                                         p.sp-action {blk.text}
                             {else}
-                                {raw current_scene.html}
+                                {prose current_scene.prose}
                         .scene-choices-list
                             {if current_scene.is_terminal}
                                 button.choice-btn
@@ -184,7 +188,7 @@ section.view-panel#view-player
                         span.audio-time-display
                             span#audio-time-current "0:00"
                             span " / "
-                            span#audio-time-total "0:00"
+                            span#audio-time-total "{current_scene.audio_duration_label}"
 
                     .audio-options-col
                         button.deck-chip#btn-audio-speed

@@ -110,14 +110,18 @@ aside.editor-variables-panel#editor-variables-panel .hidden?: {!show_editor_vari
             {if has_var_states}
                 .breakdown-entity-list
                     {for vs in var_states}
-                        .var-panel-row
-                            form.var-panel-inline-form
-                                action: UpdateBookVariable
-                                input
-                                    type: hidden
-                                    name: var_idx
-                                    value: "{vs.idx}"
-                                input.node-meta-input.var-name-input
+                        form.var-panel-inline-form.var-enum-form
+                            action: UpdateBookVariable
+                            input
+                                type: hidden
+                                name: var_idx
+                                value: "{vs.idx}"
+                            input
+                                type: hidden
+                                name: opt_count
+                                value: "{vs.opt_count}"
+                            .var-panel-row.var-enum-header-row
+                                input.node-meta-input.var-name-input.var-enum-name-input
                                     type: text
                                     name: var_name
                                     value: "{vs.name}"
@@ -127,19 +131,38 @@ aside.editor-variables-panel#editor-variables-panel .hidden?: {!show_editor_vari
                                     autocomplete: "off"
                                     disabled?: {is_history_preview}
                                     readonly?: {is_history_preview}
-                                input.node-meta-input.var-val-input.var-options-input
-                                    type: text
-                                    name: var_value
-                                    value: "{vs.options_csv}"
-                                    spellcheck: "false"
-                                    autocorrect: "off"
-                                    autocapitalize: "off"
-                                    autocomplete: "off"
-                                    disabled?: {is_history_preview}
-                                    readonly?: {is_history_preview}
-                            {if not is_history_preview}
-                                button.node-icon-btn.var-remove-btn
-                                    type: button
-                                    action: RemoveBookVariable
-                                    data-var-idx: "{vs.idx}"
-                                    svg.choice-trash-icon src: /icons/trash.svg
+                                {if not is_history_preview}
+                                    button.node-icon-btn.var-enum-add-opt-btn
+                                        type: button
+                                        action: AddBookEnumOption
+                                        data-var-idx: "{vs.idx}"
+                                        data-hint: "Dodaj wariant"
+                                        svg.media-plus-icon src: /icons/plus.svg
+                                    button.node-icon-btn.var-remove-btn
+                                        type: button
+                                        action: RemoveBookVariable
+                                        data-var-idx: "{vs.idx}"
+                                        svg.choice-trash-icon src: /icons/trash.svg
+                            .var-enum-options-list
+                                {for opt in vs.options}
+                                    .var-enum-option-row
+                                        input.node-meta-input.var-val-input.var-options-input
+                                            type: text
+                                            name: "enum_opt_{opt.opt_idx}"
+                                            value: "{opt.value}"
+                                            placeholder: "wariant..."
+                                            spellcheck: "false"
+                                            autocorrect: "off"
+                                            autocapitalize: "off"
+                                            autocomplete: "off"
+                                            disabled?: {is_history_preview}
+                                            readonly?: {is_history_preview}
+                                        {if vs.can_remove_opt}
+                                            {if not is_history_preview}
+                                                button.node-icon-btn.var-enum-opt-remove-btn
+                                                    type: button
+                                                    action: RemoveBookEnumOption
+                                                    data-var-idx: "{vs.idx}"
+                                                    data-opt-idx: "{opt.opt_idx}"
+                                                    data-hint: "Usuń wariant"
+                                                    svg.choice-trash-icon src: /icons/trash.svg

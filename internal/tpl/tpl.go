@@ -25,7 +25,7 @@ const (
 	NodeFor
 	NodeWith
 	NodeText
-	NodeRaw
+	NodeProse
 	NodeSVG
 )
 
@@ -315,11 +315,14 @@ func ParseTemplateString(source, name string) (*ParsedTemplate, error) {
 			}
 
 		case strings.HasPrefix(trimmed, "raw:"):
-			expr := unwrapOuterBraces(strings.TrimSpace(trimmed[4:]))
+			return nil, fmt.Errorf("tpl compile error in %s.tpl:%d: raw: is strictly forbidden for security; use {prose ...}", name, lineNum)
+
+		case strings.HasPrefix(trimmed, "prose:"):
+			expr := unwrapOuterBraces(strings.TrimSpace(trimmed[6:]))
 			if expr == "" {
-				return nil, fmt.Errorf("tpl compile error in %s.tpl:%d: empty raw:", name, lineNum)
+				return nil, fmt.Errorf("tpl compile error in %s.tpl:%d: empty prose:", name, lineNum)
 			}
-			if err := appendNode(&Node{Kind: NodeRaw, Expr: expr, Indent: indent, Line: lineNum, File: name}); err != nil {
+			if err := appendNode(&Node{Kind: NodeProse, Expr: expr, Indent: indent, Line: lineNum, File: name}); err != nil {
 				return nil, err
 			}
 
@@ -418,9 +421,9 @@ func findUnquotedArrow(s string) int {
 	return -1
 }
 
-func isBraceWrapped(s string) bool {
+func isBalancedWrapped(s string, openCh, closeCh byte) bool {
 	s = strings.TrimSpace(s)
-	if len(s) < 2 || s[0] != '{' || s[len(s)-1] != '}' {
+	if len(s) < 2 || s[0] != openCh || s[len(s)-1] != closeCh {
 		return false
 	}
 	depth := 0
@@ -441,9 +444,9 @@ func isBraceWrapped(s string) bool {
 			inQuotes = true
 			continue
 		}
-		if ch == '{' {
+		if ch == openCh {
 			depth++
-		} else if ch == '}' {
+		} else if ch == closeCh {
 			depth--
 			if depth == 0 && i < len(s)-1 {
 				return false
@@ -453,39 +456,12 @@ func isBraceWrapped(s string) bool {
 	return depth == 0
 }
 
+func isBraceWrapped(s string) bool {
+	return isBalancedWrapped(s, '{', '}')
+}
+
 func isParenWrapped(s string) bool {
-	s = strings.TrimSpace(s)
-	if len(s) < 2 || s[0] != '(' || s[len(s)-1] != ')' {
-		return false
-	}
-	depth := 0
-	inQuotes := false
-	for i := 0; i < len(s); i++ {
-		ch := s[i]
-		if inQuotes {
-			if ch == '\\' && i+1 < len(s) {
-				i++
-				continue
-			}
-			if ch == '"' {
-				inQuotes = false
-			}
-			continue
-		}
-		if ch == '"' {
-			inQuotes = true
-			continue
-		}
-		if ch == '(' {
-			depth++
-		} else if ch == ')' {
-			depth--
-			if depth == 0 && i < len(s)-1 {
-				return false
-			}
-		}
-	}
-	return depth == 0
+	return isBalancedWrapped(s, '(', ')')
 }
 
 func unwrapOuterBraces(s string) string {
@@ -579,11 +555,14 @@ func parseBraceLine(trimmed string, indent int, fileName string, lineNum int) (*
 		return parseForSpec(strings.TrimSpace(inner[3:]), indent, fileName, lineNum)
 
 	case hasBraceKeyword(inner, "raw"):
-		rest := strings.TrimSpace(inner[3:])
+		return nil, fmt.Errorf("tpl compile error in %s.tpl:%d: {raw} is strictly forbidden for security; use {prose ...}", fileName, lineNum)
+
+	case hasBraceKeyword(inner, "prose"):
+		rest := strings.TrimSpace(inner[5:])
 		if rest == "" {
-			return nil, fmt.Errorf("tpl compile error in %s.tpl:%d: empty {raw}", fileName, lineNum)
+			return nil, fmt.Errorf("tpl compile error in %s.tpl:%d: empty {prose}", fileName, lineNum)
 		}
-		return &Node{Kind: NodeRaw, Expr: rest, Indent: indent, Line: lineNum, File: fileName}, nil
+		return &Node{Kind: NodeProse, Expr: rest, Indent: indent, Line: lineNum, File: fileName}, nil
 
 	case hasBraceKeyword(inner, "svg"):
 		rest := strings.TrimSpace(inner[3:])
@@ -603,7 +582,7 @@ func isAttrOrCondClassContinuation(trimmed string) bool {
 	if strings.HasPrefix(trimmed, "@") || strings.HasPrefix(trimmed, `"`) || strings.HasPrefix(trimmed, "$") || strings.HasPrefix(trimmed, "(") || strings.HasPrefix(trimmed, "{") {
 		return false
 	}
-	for _, kw := range []string{"def:", "if:", "elif:", "else:", "for:", "with:", "raw:", "svg:", "doctype "} {
+	for _, kw := range []string{"def:", "if:", "elif:", "else:", "for:", "with:", "raw:", "prose:", "svg:", "doctype "} {
 		if strings.HasPrefix(trimmed, kw) || trimmed == "else:" {
 			return false
 		}
@@ -723,20 +702,15 @@ func nextTPLToken(s string, start int) (string, int) {
 	return b.String(), i
 }
 
-func parseComponentLine(trimmed string, indent int, fileName string, lineNum int) (*Node, error) {
-	firstTok, nextIdx := nextTPLToken(trimmed, 0)
-	rawSel := strings.TrimPrefix(firstTok, "@")
-	if rawSel == "" {
-		return nil, fmt.Errorf("tpl compile error in %s.tpl:%d: missing component name after @", fileName, lineNum)
-	}
-	compName, id, classes, condClasses, err := parseSelectorToken(rawSel, fileName, lineNum)
+func parseSelectorNodeLine(rawSel, rest string, kind NodeKind, isComp bool, indent int, fileName string, lineNum int) (*Node, error) {
+	tag, id, classes, condClasses, err := parseSelectorToken(rawSel, fileName, lineNum)
 	if err != nil {
 		return nil, err
 	}
 	n := &Node{
-		Kind:        NodeComponent,
-		Tag:         compName,
-		IsComponent: true,
+		Kind:        kind,
+		Tag:         tag,
+		IsComponent: isComp,
 		ID:          id,
 		Classes:     classes,
 		CondClasses: condClasses,
@@ -744,7 +718,6 @@ func parseComponentLine(trimmed string, indent int, fileName string, lineNum int
 		Line:        lineNum,
 		File:        fileName,
 	}
-	rest := strings.TrimSpace(trimmed[nextIdx:])
 	if rest != "" {
 		if err := parseTokensIntoNode(n, rest, fileName, lineNum); err != nil {
 			return nil, err
@@ -753,29 +726,18 @@ func parseComponentLine(trimmed string, indent int, fileName string, lineNum int
 	return n, nil
 }
 
+func parseComponentLine(trimmed string, indent int, fileName string, lineNum int) (*Node, error) {
+	firstTok, nextIdx := nextTPLToken(trimmed, 0)
+	rawSel := strings.TrimPrefix(firstTok, "@")
+	if rawSel == "" {
+		return nil, fmt.Errorf("tpl compile error in %s.tpl:%d: missing component name after @", fileName, lineNum)
+	}
+	return parseSelectorNodeLine(rawSel, strings.TrimSpace(trimmed[nextIdx:]), NodeComponent, true, indent, fileName, lineNum)
+}
+
 func parseElementLine(trimmed string, indent int, fileName string, lineNum int) (*Node, error) {
 	selTok, nextIdx := nextTPLToken(trimmed, 0)
-	tag, id, classes, condClasses, err := parseSelectorToken(selTok, fileName, lineNum)
-	if err != nil {
-		return nil, err
-	}
-	n := &Node{
-		Kind:        NodeElement,
-		Tag:         tag,
-		ID:          id,
-		Classes:     classes,
-		CondClasses: condClasses,
-		Indent:      indent,
-		Line:        lineNum,
-		File:        fileName,
-	}
-	rest := strings.TrimSpace(trimmed[nextIdx:])
-	if rest != "" {
-		if err := parseTokensIntoNode(n, rest, fileName, lineNum); err != nil {
-			return nil, err
-		}
-	}
-	return n, nil
+	return parseSelectorNodeLine(selTok, strings.TrimSpace(trimmed[nextIdx:]), NodeElement, false, indent, fileName, lineNum)
 }
 
 func parseSelectorToken(sel string, fileName string, lineNum int) (tag string, id string, classes []string, condClasses []CondClass, err error) {
@@ -1046,41 +1008,39 @@ func LoadTemplatesFromDir(templatesDir string, embeddedFS fs.FS) (map[string]*Pa
 	templates := make(map[string]*ParsedTemplate)
 
 	entries, err := os.ReadDir(templatesDir)
+	registerTplBytes := func(name string, raw []byte, readErr error) error {
+		if readErr != nil {
+			return readErr
+		}
+		parsed, err := ParseTemplateString(string(raw), name)
+		if err != nil {
+			return err
+		}
+		if err := resolveExternalSVGs(templatesDir, embeddedFS, parsed.Nodes); err != nil {
+			return err
+		}
+		templates[name] = parsed
+		registerDefsFromNodes(templates, parsed.Nodes)
+		return nil
+	}
+
 	if err == nil {
 		for _, e := range entries {
 			if e.IsDir() || !strings.HasSuffix(e.Name(), ".tpl") {
 				continue
 			}
 			name := strings.TrimSuffix(e.Name(), ".tpl")
-			raw, err := os.ReadFile(filepath.Join(templatesDir, e.Name()))
-			if err != nil {
+			raw, readErr := os.ReadFile(filepath.Join(templatesDir, e.Name()))
+			if err := registerTplBytes(name, raw, readErr); err != nil {
 				return nil, err
 			}
-			parsed, err := ParseTemplateString(string(raw), name)
-			if err != nil {
-				return nil, err
-			}
-			if err := resolveExternalSVGs(templatesDir, embeddedFS, parsed.Nodes); err != nil {
-				return nil, err
-			}
-			templates[name] = parsed
-			registerDefsFromNodes(templates, parsed.Nodes)
 		}
 		for _, compTplPath := range discoverComponentFiles(filepath.Dir(templatesDir), ".tpl") {
 			name := strings.TrimSuffix(filepath.Base(compTplPath), ".tpl")
-			raw, err := os.ReadFile(compTplPath)
-			if err != nil {
+			raw, readErr := os.ReadFile(compTplPath)
+			if err := registerTplBytes(name, raw, readErr); err != nil {
 				return nil, err
 			}
-			parsed, err := ParseTemplateString(string(raw), name)
-			if err != nil {
-				return nil, err
-			}
-			if err := resolveExternalSVGs(templatesDir, embeddedFS, parsed.Nodes); err != nil {
-				return nil, err
-			}
-			templates[name] = parsed
-			registerDefsFromNodes(templates, parsed.Nodes)
 		}
 		return templates, nil
 	}
@@ -1095,19 +1055,10 @@ func LoadTemplatesFromDir(templatesDir string, embeddedFS fs.FS) (map[string]*Pa
 				continue
 			}
 			name := strings.TrimSuffix(e.Name(), ".tpl")
-			raw, err := fs.ReadFile(embeddedFS, "app/templates/"+e.Name())
-			if err != nil {
+			raw, readErr := fs.ReadFile(embeddedFS, "app/templates/"+e.Name())
+			if err := registerTplBytes(name, raw, readErr); err != nil {
 				return nil, err
 			}
-			parsed, err := ParseTemplateString(string(raw), name)
-			if err != nil {
-				return nil, err
-			}
-			if err := resolveExternalSVGs(templatesDir, embeddedFS, parsed.Nodes); err != nil {
-				return nil, err
-			}
-			templates[name] = parsed
-			registerDefsFromNodes(templates, parsed.Nodes)
 		}
 		return templates, nil
 	}

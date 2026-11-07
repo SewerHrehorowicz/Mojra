@@ -22,6 +22,7 @@ type ModalState struct {
 	SceneTextModalID           string
 	SceneTextModalWidthMode    string
 	SceneTextModalSettingsOpen bool
+	VoiceRecorderOpen          bool
 	QRModalOpen                bool
 	NewBookModalOpen           bool
 	NewBookDraftTitle          string
@@ -33,6 +34,9 @@ type ModalState struct {
 	NewBookDraftDir            string
 	ExportModalOpen            bool
 	ExportModalFormat          string
+	ExportModalFormats         map[string]bool
+	ExportModalAdvancedOpen    bool
+	ExportModalStandard        string
 	ExportModalDir             string
 	AddBookModalOpen           bool
 	StudioProjectModalOpen     bool
@@ -104,11 +108,7 @@ type Server struct {
 	assetCacheState
 }
 
-func (s *Server) closeAllModals() {
-	s.QRModalOpen = false
-	s.SceneTextModalID = ""
-	s.SceneTextModalSettingsOpen = false
-	s.EditorHelpModalOpen = false
+func (s *Server) resetNewBookModalState() {
 	s.NewBookModalOpen = false
 	s.NewBookDraftTitle = ""
 	s.NewBookDraftAuthor = ""
@@ -117,13 +117,43 @@ func (s *Server) closeAllModals() {
 	s.NewBookDraftNarrated = false
 	s.NewBookDraftImageless = false
 	s.NewBookDraftDir = ""
+}
+
+func (s *Server) resetExportModalState() {
 	s.ExportModalOpen = false
 	s.ExportModalFormat = ""
+	s.ExportModalFormats = nil
+	s.ExportModalAdvancedOpen = false
+	s.ExportModalStandard = ""
 	s.ExportModalDir = ""
+}
+
+func (s *Server) closeAllModals() {
+	s.QRModalOpen = false
+	s.SceneTextModalID = ""
+	s.SceneTextModalSettingsOpen = false
+	s.EditorHelpModalOpen = false
+	s.resetNewBookModalState()
+	s.resetExportModalState()
 	s.AddBookModalOpen = false
 	s.StudioProjectModalOpen = false
 	s.ConfirmPendingAction = ""
 	s.ConfirmPendingParam = ""
+}
+
+func (s *Server) withUnlocked(fn func()) {
+	mu := &s.mu
+	mu.Unlock()
+	defer mu.Lock()
+	fn()
+}
+
+func (s *Server) pickNativeBookPathUnlocked(chooseDir bool) string {
+	var picked string
+	s.withUnlocked(func() {
+		picked = PickNativeBookPath(chooseDir)
+	})
+	return picked
 }
 
 func (s *Server) loadBooks() ([]*book.Book, error) {
@@ -217,39 +247,6 @@ func (s *Server) ensureTemplatesLoaded() {
 			tpl.StripDevNodesFromTemplates(s.Templates)
 		}
 	}
-}
-
-func NewServer(rootDir string, embeddedFS fs.FS) *Server {
-	return NewServerWithOptions(rootDir, embeddedFS, false)
-}
-
-func NewStandaloneServer(rootDir string, embeddedFS fs.FS, standaloneBook *book.Book) *Server {
-	savesDir := book.ResolveSavesDir(rootDir)
-	_ = os.MkdirAll(savesDir, 0755)
-
-	settings := book.LoadAppSettings(savesDir)
-	settings.PreviewMode = "full"
-	settings.ActiveView = "player"
-
-	s := &Server{
-		RootDir:           rootDir,
-		BooksDir:          filepath.Join(rootDir, "books"),
-		SavesDir:          savesDir,
-		AppDir:            filepath.Join(rootDir, "app"),
-		EmbeddedFS:        embeddedFS,
-		DevMode:           false,
-		StandaloneMode:    true,
-		ShutdownCh:        make(chan struct{}),
-		Settings:          settings,
-		FocusedHistoryIdx: -1,
-	}
-	s.ensureTemplatesLoaded()
-
-	if standaloneBook != nil {
-		s.StandaloneBookID = standaloneBook.ID
-		s.setActiveBook(standaloneBook)
-	}
-	return s
 }
 
 func NewServerWithOptions(rootDir string, embeddedFS fs.FS, devMode bool) *Server {
@@ -357,7 +354,7 @@ func (s *Server) persistActiveBookExportDir(dir string) {
 		if dir != "" {
 			s.Settings.ExportDir = dir
 		}
-		_ = s.saveAppSettings()
+		s.persistSettings()
 	}
 }
 
@@ -384,9 +381,7 @@ func (s *Server) resolveOrPickBookExportDir(r *http.Request) (string, string, bo
 		return expanded, "", true
 	}
 	if !isRunningUnderGoTestBinary() {
-		s.mu.Unlock()
-		picked := PickNativeBookPath(true)
-		s.mu.Lock()
+		picked := s.pickNativeBookPathUnlocked(true)
 		if picked == "" {
 			if r != nil {
 				r.Form.Set("silent", "true")
@@ -434,6 +429,30 @@ func (s *Server) saveAppSettings() error {
 		return nil
 	}
 	return book.SaveAppSettings(s.SavesDir, s.Settings)
+}
+
+func (s *Server) persistSettings() {
+	if err := s.saveAppSettings(); err != nil {
+		return
+	}
+}
+
+func (s *Server) persistSaveState() {
+	if s.Save == nil || s.isHistoryPreview() {
+		return
+	}
+	if err := book.WriteSaveState(s.SavesDir, s.Save); err != nil {
+		return
+	}
+}
+
+func (s *Server) persistAudioTimeInPlace(t float64) {
+	if s.PlayerBook == nil || s.Save == nil || s.isHistoryPreview() {
+		return
+	}
+	if err := book.UpdateSaveAudioTimeInPlace(s.SavesDir, s.PlayerBook.ID, t, s.PlayerBook.StartSceneID); err != nil {
+		return
+	}
 }
 
 func (s *Server) setPlayerBook(b *book.Book) {
@@ -828,7 +847,9 @@ func (s *Server) handleRootAndAssets(w http.ResponseWriter, r *http.Request) {
 		ctx := s.BuildTargetedRenderContext("index", books)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-cache")
-		_ = tpl.RenderTemplateTo(w, "index", s.Templates, ctx)
+		if err := tpl.RenderTemplateTo(w, "index", s.Templates, ctx); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
 		return
 	}
 	if reqPath == "/favicon.ico" {
@@ -845,6 +866,10 @@ func (s *Server) handleRootAndAssets(w http.ResponseWriter, r *http.Request) {
 	}
 	if reqPath == "/studio-atlas.png" {
 		s.serveUIAsset(w, r, "studio-atlas.png", "image/png")
+		return
+	}
+	if reqPath == "/studio-ui.png" {
+		s.serveUIAsset(w, r, "studio-ui.png", "image/png")
 		return
 	}
 	if reqPath == "/style.css" {
@@ -950,6 +975,11 @@ func (s *Server) serveUIAsset(w http.ResponseWriter, r *http.Request, relAppPath
 					return
 				}
 			}
+		case "studio-ui.png":
+			if pngBytes, err := tpl.BuildStudioUIAtlas(); err == nil && len(pngBytes) > 0 {
+				_, _ = w.Write(pngBytes)
+				return
+			}
 		}
 	}
 
@@ -1026,6 +1056,11 @@ func (s *Server) serveUIAsset(w http.ResponseWriter, r *http.Request, relAppPath
 			}
 		case "studio-atlas.png":
 			if pngBytes, _, err := tpl.BuildStudioMSDFAtlasFromFS(s.EmbeddedFS); err == nil && len(pngBytes) > 0 {
+				writeAsset(pngBytes)
+				return
+			}
+		case "studio-ui.png":
+			if pngBytes, err := tpl.BuildStudioUIAtlas(); err == nil && len(pngBytes) > 0 {
 				writeAsset(pngBytes)
 				return
 			}

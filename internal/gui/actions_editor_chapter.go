@@ -39,7 +39,7 @@ func (s *Server) renameActiveBookChapter(r *http.Request) string {
 		for _, sc := range b.Scenes {
 			scCh := strings.TrimSpace(sc.Chapter)
 			if scCh == "" {
-				scCh = "Rozdział 1"
+				scCh = b.DefaultChapterName()
 			}
 			if strings.EqualFold(scCh, oldCh) {
 				sc.Chapter = newCh
@@ -100,7 +100,7 @@ func (s *Server) setChapterStartScene(r *http.Request) string {
 		}
 		targetCh := strings.TrimSpace(target.Chapter)
 		if targetCh == "" {
-			targetCh = "Rozdział 1"
+			targetCh = b.DefaultChapterName()
 		}
 		if !strings.EqualFold(targetCh, strings.TrimSpace(ch.Name)) {
 			return "", "", "", false
@@ -108,11 +108,7 @@ func (s *Server) setChapterStartScene(r *http.Request) string {
 		ch.ExplicitStart = target.ReferenceKey()
 		ch.StartSceneID = target.ID
 		s.SelectedChapter = ch.Name
-		s.BookSettingsOpen = false
-		s.EditorBreakdownPanelOpen = false
-		s.EditorVariablesPanelOpen = false
-		s.EditorHistoryPanelOpen = false
-		s.EditorHelpModalOpen = false
+		s.activateStudioRightPanel("chapter")
 		if b.IsScreenplay() {
 			return fmt.Sprintf("Ustawiono scenę początkową aktu „%s”: %s", ch.DisplayName(), target.DisplayName()), "chapter", "setchapterstart", true
 		}
@@ -151,7 +147,7 @@ func (s *Server) assignChapterToScenes(r *http.Request) string {
 			targetChID = chMeta.ExplicitID
 			targetSF = chMeta.SourceFile
 		}
-		if targetSF == "" && b.IsMultiFileBook() {
+		if targetSF == "" {
 			targetSF = b.ChapterFileNameFor(targetCh, targetChID)
 		}
 		updated := 0
@@ -180,13 +176,10 @@ func (s *Server) createChapterGroup(r *http.Request) string {
 	if s.isHistoryPreview() {
 		return historyPreviewLockedToast
 	}
-	if r.FormValue("scene_id") != "" {
-		_ = s.saveSceneFromForm(r)
-	}
 	if s.ActiveBook == nil && !s.StandaloneMode {
 		if createdBook, err := book.CreateNewBook(s.BooksDir, "Nowa Opowieść", "Autor", false); err == nil && createdBook != nil {
 			s.setActiveBook(createdBook)
-			_ = book.SaveAppSettings(s.SavesDir, s.Settings)
+			s.persistSettings()
 		}
 	}
 	if s.ActiveBook == nil || s.ActiveBook.IsPacked {
@@ -211,8 +204,8 @@ func (s *Server) createChapterGroup(r *http.Request) string {
 				maxY = sc.Y
 			}
 		}
-		x = 768
-		y = book.SnapToGrid(maxY + 552)
+		x = book.NewChapterDefaultOffsetX
+		y = book.SnapToGrid(maxY + book.NewChapterDefaultOffsetY)
 		hasCoords = true
 	}
 	newName := book.NextUniqueSceneName(s.ActiveBook)
@@ -386,7 +379,7 @@ func (s *Server) connectChoiceOnScene(r *http.Request) string {
 	}
 	resToast := s.commitScenesMutation(toast, "graph", "")
 	if nonEndingTargets >= 2 && resToast == toast {
-		return toast + " (rozwidlenie — kliknij kwadrat na równoległym węźle, aby wybrać główną ścieżkę)"
+		return toast + " (rozwidlenie ścieżki)"
 	}
 	return resToast
 }
@@ -394,9 +387,6 @@ func (s *Server) connectChoiceOnScene(r *http.Request) string {
 func (s *Server) connectChapterTransition(r *http.Request) string {
 	if s.isHistoryPreview() {
 		return historyPreviewLockedToast
-	}
-	if r.FormValue("scene_id") != "" {
-		_ = s.saveSceneFromForm(r)
 	}
 	if s.ActiveBook == nil || s.ActiveBook.IsPacked {
 		return ""

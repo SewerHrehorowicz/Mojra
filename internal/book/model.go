@@ -6,12 +6,14 @@ import (
 )
 
 const (
-	BookDataFileName    = "book.playtxt"
-	DefaultStoryFile    = "story.playtxt"
-	DefaultChapterFile  = "rozdzial_1.playtxt"
-	DefaultActFile      = "akt_1.playtxt"
-	EditorStateFileName = ".editor.cfg"
-	PlaytxtExt          = ".playtxt"
+	BookDataFileName         = "book.playtxt"
+	DefaultStoryFile         = "story.playtxt"
+	DefaultChapterFile       = "rozdzial_1.playtxt"
+	DefaultActFile           = "akt_1.playtxt"
+	DefaultBookChapterName   = "Rozdział 1"
+	DefaultScreenplayActName = "Akt I"
+	EditorStateFileName      = ".editor.cfg"
+	PlaytxtExt               = ".playtxt"
 )
 
 type Choice struct {
@@ -220,9 +222,11 @@ type Book struct {
 	EditorPanX     int
 	EditorPanY     int
 	EditorZoom     float64
-	HasEditorView  bool
-	Warnings       []string
-	deferProseHTML bool
+	HasEditorView        bool
+	Warnings             []string
+	deferProseHTML       bool
+	cachedBreakdown      *ScreenplayBreakdown
+	cachedBreakdownStamp uint64
 }
 
 // NormalizeBookMode normalizes a project mode string to "screenplay" or "book".
@@ -266,6 +270,19 @@ func (b *Book) NormalizedStandard() string {
 		return "pl"
 	}
 	return NormalizeScriptStandard(b.ScriptStandard)
+}
+
+// DefaultChapterNameForKind returns the default first chapter or act title.
+func DefaultChapterNameForKind(isScreenplay bool) string {
+	if isScreenplay {
+		return DefaultScreenplayActName
+	}
+	return DefaultBookChapterName
+}
+
+// DefaultChapterName returns "Akt I" for screenplays or "Rozdział 1" for books.
+func (b *Book) DefaultChapterName() string {
+	return DefaultChapterNameForKind(b.IsScreenplay())
 }
 
 // EffectiveLicense returns the book's explicit license or the default copyright notice.

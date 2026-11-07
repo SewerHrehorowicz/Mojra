@@ -124,10 +124,7 @@ func ParseStoryFile(content string, sourceFileName string, b *Book) {
 	inChapterHeaderBlock := false
 	inExitChoiceBlock := false
 
-	defaultChName := "Rozdział 1"
-	if b.IsScreenplay() {
-		defaultChName = "Akt I"
-	}
+	defaultChName := b.DefaultChapterName()
 
 	trimTrailingSceneSeparators := func() {
 		for len(proseLines) > 0 {
@@ -169,10 +166,7 @@ func ParseStoryFile(content string, sourceFileName string, b *Book) {
 		inExitChoiceBlock = false
 	}
 
-	startScene := func(sceneName string, explicitSceneHeader bool) {
-		flushScene()
-		inChapterHeaderBlock = false
-		cleanName := SanitizePlainText(sceneName)
+	ensureCurrentChapter := func() {
 		if currentChapter == "" {
 			if currentChapterExplicitID != "" {
 				currentChapter = currentChapterExplicitID
@@ -181,8 +175,15 @@ func ParseStoryFile(content string, sourceFileName string, b *Book) {
 			} else {
 				currentChapter = defaultChName
 			}
-			b.ensureChapterWithMeta(currentChapter, fileChapterID, currentChapterExplicitID, sourceFileName)
 		}
+		b.ensureChapterWithMeta(currentChapter, fileChapterID, currentChapterExplicitID, sourceFileName)
+	}
+
+	startScene := func(sceneName string, explicitSceneHeader bool) {
+		flushScene()
+		inChapterHeaderBlock = false
+		cleanName := SanitizePlainText(sceneName)
+		ensureCurrentChapter()
 		explicitID := pendingSceneID
 		pendingSceneID = ""
 		sceneID := explicitID
@@ -222,16 +223,7 @@ func ParseStoryFile(content string, sourceFileName string, b *Book) {
 		if currentScene != nil {
 			return
 		}
-		if currentChapter == "" {
-			if currentChapterExplicitID != "" {
-				currentChapter = currentChapterExplicitID
-			} else if fileChapterID != "" {
-				currentChapter = fileChapterID
-			} else {
-				currentChapter = defaultChName
-			}
-			b.ensureChapterWithMeta(currentChapter, fileChapterID, currentChapterExplicitID, sourceFileName)
-		}
+		ensureCurrentChapter()
 		startScene(currentChapter, false)
 	}
 
@@ -420,16 +412,7 @@ func ParseStoryFile(content string, sourceFileName string, b *Book) {
 			case "start", "first_scene", "pierwsza_scena", "wejscie", "wejście":
 				if inChapterHeaderBlock && currentScene == nil {
 					startRef := SanitizePlainText(val)
-					if currentChapter == "" {
-						if currentChapterExplicitID != "" {
-							currentChapter = currentChapterExplicitID
-						} else if fileChapterID != "" {
-							currentChapter = fileChapterID
-						} else {
-							currentChapter = defaultChName
-						}
-					}
-					b.ensureChapterWithMeta(currentChapter, fileChapterID, currentChapterExplicitID, sourceFileName)
+					ensureCurrentChapter()
 					if startRef != "" {
 						if ch := b.FindChapter(currentChapter); ch != nil {
 							ch.ExplicitStart = startRef
@@ -611,19 +594,7 @@ func ParseStoryFile(content string, sourceFileName string, b *Book) {
 
 		// If text/choices appear after a chapter header without an explicit scene: line,
 		// create a scene named after the current chapter (or default).
-		if currentScene == nil {
-			if currentChapter == "" {
-				if currentChapterExplicitID != "" {
-					currentChapter = currentChapterExplicitID
-				} else if fileChapterID != "" {
-					currentChapter = fileChapterID
-				} else {
-					currentChapter = defaultChName
-				}
-				b.ensureChapterWithMeta(currentChapter, fileChapterID, currentChapterExplicitID, sourceFileName)
-			}
-			startScene(currentChapter, false)
-		}
+		ensureCurrentSceneStarted()
 
 		// Check if line is a choice: "Choice Label -> Target Scene"
 		// Escaped arrow "\->" is treated as literal prose text, not a choice transition.

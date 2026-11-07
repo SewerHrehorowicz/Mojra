@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"storyteller"
+	"storyteller/internal/audit"
 	"storyteller/internal/book"
 	"storyteller/internal/gui"
 	"storyteller/internal/tpl"
@@ -68,6 +69,8 @@ func main() {
 		packCmd(args)
 	case "add", "import":
 		addCmd(args)
+	case "audit", "lint":
+		auditCmd(args)
 	case "help", "-h", "--help":
 		printUsage()
 	default:
@@ -106,7 +109,10 @@ Użycie / Usage:
       Pakuje folder książki z katalogu books/<id> do archiwum dist/<id>.playbook.
 
   storyteller add <ścieżka-na-dysku | url>
-      Dodaje książkę do biblioteki z dysku (bez kopiowania plików) lub pobiera z adresu URL (.playbook / .zip).`)
+      Dodaje książkę do biblioteki z dysku (bez kopiowania plików) lub pobiera z adresu URL (.playbook / .zip).
+
+  storyteller audit [--js | --go | --tpl | --lang <język>] [--category <kategoria>] [--out <plik.log>] [--strict]
+      Uruchamia statyczny audyt kodu Go, szablonów .tpl i skryptów .js.`)
 }
 
 func printBuildUsage() {
@@ -504,21 +510,48 @@ func prepareBuildAssets(rootDir string) error {
 		return fmt.Errorf("błąd generowania favicon.ico: %w", err)
 	}
 	if png256, err := encodeStoryTellerIconPNG(256); err == nil {
-		_ = os.WriteFile(filepath.Join(appDir, "icons", "icon.png"), png256, 0644)
+		if err := os.WriteFile(filepath.Join(appDir, "icons", "icon.png"), png256, 0644); err != nil {
+			return fmt.Errorf("błąd generowania icon.png: %w", err)
+		}
 	}
 	if err := tpl.BuildApp(appDir); err != nil {
 		return fmt.Errorf("błąd kompilacji .tpl/CSS/JS: %w", err)
 	}
+	baseWasm, _, err := book.BuildBaseWasmAssets(rootDir)
+	if err != nil {
+		return fmt.Errorf("błąd kompilacji mojra.wasm: %w", err)
+	}
 	if err := tpl.BuildWWW(rootDir); err != nil {
 		return fmt.Errorf("błąd kompilacji strony WWW: %w", err)
 	}
-	_ = os.Remove(filepath.Join(booksDir, "nie-boj-sie-policji-rzecznej.playbook"))
-	_ = os.Remove(filepath.Join(booksDir, "nie-boj-sie-policji-rzecznej.stbook"))
+	if entries, rErr := os.ReadDir(booksDir); rErr == nil {
+		for _, e := range entries {
+			if !e.IsDir() || strings.HasPrefix(e.Name(), ".") {
+				continue
+			}
+			sampleID := e.Name()
+			sampleBookDir := filepath.Join(booksDir, sampleID)
+			if !book.HasBookFilesInDir(sampleBookDir) {
+				continue
+			}
+			if sampleBook, lErr := book.LoadBookFromDir(sampleBookDir); lErr == nil && sampleBook != nil {
+				if embeddedWasm, wErr := book.EmbedSTBCIntoWasm(baseWasm, sampleBook, nil); wErr == nil {
+					if err := os.WriteFile(filepath.Join(rootDir, "dist", "www", "mojra.wasm"), embeddedWasm, 0644); err != nil {
+						return err
+					}
+				}
+			}
+			_ = os.Remove(filepath.Join(booksDir, sampleID+".playbook"))
+			_ = os.Remove(filepath.Join(booksDir, sampleID+".stbook"))
+			fmt.Printf("✓ Zweryfikowano przykładową książkę -> books/%s/\n", sampleID)
+			break
+		}
+	}
 	fmt.Println("✓ Skompilowano app/templates/*.tpl -> build/app/index.html")
 	fmt.Println("✓ Połączono arkusze CSS -> build/app/style.css")
 	fmt.Println("✓ Połączono moduły JS -> build/app/app.js")
-	fmt.Println("✓ Zbudowano statyczną stronę WWW -> dist/www/")
-	fmt.Println("✓ Zweryfikowano przykładową książkę -> books/nie-boj-sie-policji-rzecznej/")
+	fmt.Println("✓ Skompilowano bazowy runtime WASM -> build/wasm/mojra.wasm")
+	fmt.Println("✓ Zbudowano statyczną stronę WWW z zaszytym STBC w mojra.wasm -> dist/www/")
 	return nil
 }
 
@@ -693,7 +726,10 @@ func buildCmd(args []string) {
 		appDir := filepath.Join(rootDir, "app")
 		_ = writeWindowsAppIconICO(filepath.Join(appDir, "icons", "favicon.ico"))
 		if png256, err := encodeStoryTellerIconPNG(256); err == nil {
-			_ = os.WriteFile(filepath.Join(appDir, "icons", "icon.png"), png256, 0644)
+			if wErr := os.WriteFile(filepath.Join(appDir, "icons", "icon.png"), png256, 0644); wErr != nil {
+				fmt.Fprintf(os.Stderr, "błąd zapisu icon.png: %v\n", wErr)
+				os.Exit(1)
+			}
 		}
 		if err := tpl.BuildWWW(rootDir); err != nil {
 			fmt.Fprintf(os.Stderr, "błąd kompilacji strony WWW: %v\n", err)
@@ -875,6 +911,24 @@ func adhocSignMacOSPath(targetPath string) {
 		return
 	}
 	if codesignPath, err := exec.LookPath("codesign"); err == nil && codesignPath != "" {
+		entitlementsXML := `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>com.apple.security.device.audio-input</key>
+	<true/>
+</dict>
+</plist>
+`
+		tmpEnt, tmpErr := os.CreateTemp("", "mojra-entitlements-*.plist")
+		if tmpErr == nil {
+			entPath := tmpEnt.Name()
+			_, _ = tmpEnt.WriteString(entitlementsXML)
+			_ = tmpEnt.Close()
+			defer os.Remove(entPath)
+			_ = exec.Command(codesignPath, "--force", "--sign", "-", "--entitlements", entPath, targetPath).Run()
+			return
+		}
 		_ = exec.Command(codesignPath, "--force", "--sign", "-", targetPath).Run()
 	}
 }
@@ -955,6 +1009,8 @@ func packageMacOSBundle(rootDir string, archBins map[string]string) error {
 	<string>AppIcon</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Mojra potrzebuje dostępu do mikrofonu, aby nagrywać ścieżki lektorskie scen.</string>
 </dict>
 </plist>
 `
@@ -1205,7 +1261,9 @@ func packageAndroidBundle(rootDir string, archBins map[string]string) error {
 	_ = os.MkdirAll(assetsBooksDir, 0755)
 
 	if pngIcon, err := encodeStoryTellerIconPNG(192); err == nil {
-		_ = os.WriteFile(filepath.Join(resDir, "ic_launcher.png"), pngIcon, 0644)
+		if wErr := os.WriteFile(filepath.Join(resDir, "ic_launcher.png"), pngIcon, 0644); wErr != nil {
+			return wErr
+		}
 	}
 	if err := packageBooksForDist(filepath.Join(rootDir, "books"), assetsBooksDir); err != nil {
 		return err
@@ -1993,7 +2051,7 @@ func zipDirRecursive(srcDir, outZipPath, rootPrefix string) error {
 
 func packCmd(args []string) {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "Podaj identyfikator książki, np.: storyteller pack nie-boj-sie-policji-rzecznej")
+		fmt.Fprintln(os.Stderr, "Podaj identyfikator książki, np.: storyteller pack <book-id>")
 		os.Exit(1)
 	}
 	bookID := book.SanitizeBookID(args[0])
@@ -2034,7 +2092,9 @@ func addCmd(args []string) {
 			}
 			settings.AddExternalBook(b.RootPath)
 			settings.ActiveBookID = b.ID
-			_ = book.SaveAppSettings(savesDir, settings)
+			if err := book.SaveAppSettings(savesDir, settings); err != nil {
+				fmt.Fprintf(os.Stderr, "Błąd zapisu ustawień: %v\n", err)
+			}
 			fmt.Printf("✓ Pobrano i dodano książkę do biblioteki: %s (%s)\n", b.Title, b.RootPath)
 			continue
 		}
@@ -2053,6 +2113,63 @@ func addCmd(args []string) {
 				fmt.Printf("✓ Dodano książkę z dysku (bez kopiowania): %s -> %s\n", b.Title, p)
 			}
 		}
-		_ = book.SaveAppSettings(savesDir, settings)
+		if err := book.SaveAppSettings(savesDir, settings); err != nil {
+			fmt.Fprintf(os.Stderr, "Błąd zapisu ustawień: %v\n", err)
+		}
 	}
 }
+
+func auditCmd(args []string) {
+	fs := flag.NewFlagSet("audit", flag.ExitOnError)
+	category := fs.String("category", "", "Filtruj po kategorii (np. DEAD_CODE, GHOST_CALL, UNUSED_TPL_VAR, HARDCODED_GEOMETRY, DOM_ID_IN_GO, SUSPICIOUS_STRING, AST_DUPLICATE)")
+	lang := fs.String("lang", "", "Filtruj po języku: js, go, tpl")
+	onlyJS := fs.Bool("js", false, "Skanuj i wyświetl wyłącznie wyniki dla plików JavaScript (app/js/*.js)")
+	onlyGo := fs.Bool("go", false, "Skanuj i wyświetl wyłącznie wyniki dla plików Go (*.go)")
+	onlyTpl := fs.Bool("tpl", false, "Skanuj i wyświetl wyłącznie wyniki dla szablonów (*.tpl / *.tss)")
+	outPath := fs.String("out", "", "Opcjonalna ścieżka zapisu raportu do pliku")
+	strict := fs.Bool("strict", false, "Zwróć kod wyjścia 1 jeśli wykryto jakiekolwiek problemy")
+	_ = fs.Parse(args)
+
+	filterLang := strings.ToLower(strings.TrimSpace(*lang))
+	if *onlyJS {
+		filterLang = "js"
+	} else if *onlyGo {
+		filterLang = "go"
+	} else if *onlyTpl {
+		filterLang = "tpl"
+	}
+
+	filter := *category
+	for _, posArg := range fs.Args() {
+		lower := strings.ToLower(strings.TrimSpace(posArg))
+		if filterLang == "" && (lower == "js" || lower == "javascript" || lower == "go" || lower == "golang" || lower == "tpl") {
+			filterLang = lower
+		} else if filter == "" {
+			filter = posArg
+		}
+	}
+
+	rootDir := resolveRepoRootDir()
+	findings, err := audit.Run(rootDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Błąd audytu kodu: %v\n", err)
+		os.Exit(1)
+	}
+
+	var buf bytes.Buffer
+	count := audit.PrintReportWithLang(&buf, findings, filter, filterLang)
+	os.Stdout.Write(buf.Bytes())
+
+	if *outPath != "" {
+		if err := os.WriteFile(*outPath, buf.Bytes(), 0644); err != nil {
+			fmt.Fprintf(os.Stderr, "Błąd zapisu raportu do %s: %v\n", *outPath, err)
+			os.Exit(1)
+		}
+		fmt.Printf("\n✓ Zapisano raport audytu do: %s\n", *outPath)
+	}
+
+	if *strict && count > 0 {
+		os.Exit(1)
+	}
+}
+

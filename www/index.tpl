@@ -75,9 +75,18 @@ html lang: pl
                         aria-label: "Zamknij"
                         svg.wasm-close-icon src: /icons/close.svg
                 .wasm-viewport#wasm-mount
-                    svg.wasm-stage-icon src: /icons/playbook.svg
-                    p.wasm-status-title "Mojra + Playbook Studio"
-                    p.wasm-status-code "WASM RUNTIME SLOT • COMING SOON"
+                    data-wasm-src: mojra.wasm
+                    data-book-id: nie-boj-sie-policji-rzecznej
+                    .wasm-splash#wasm-splash
+                        h1.wasm-splash-title "Nie bój się policji rzecznej"
+                        p.wasm-splash-author "Tytus Czyżewski"
+                        button.wasm-splash-play-btn#btn-wasm-play
+                            type: button
+                            data-wasm-play: "true"
+                            data-wasm-src: mojra.wasm
+                            data-book-id: nie-boj-sie-policji-rzecznej
+                            aria-label: "Odtwórz"
+                            svg.wasm-splash-play-icon src: /icons/play.svg
 
         .beta-overlay#beta-overlay
             role: dialog

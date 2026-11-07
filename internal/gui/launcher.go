@@ -43,26 +43,22 @@ func StopPreviousInstance(rootDir string) {
 	_ = os.Remove(pidPath)
 }
 
-// Launch starts the in-process StoryTeller engine in production mode and opens the Native OS Window.
-func Launch(rootDir string, embeddedFS fs.FS, port int, headless bool) error {
-	return LaunchWithOptions(rootDir, embeddedFS, port, headless, false)
-}
-
 // LaunchWithOptions starts the in-process StoryTeller engine and opens the Native OS Window (WKWebView on macOS / Edge WebView2 on Windows).
 func LaunchWithOptions(rootDir string, embeddedFS fs.FS, port int, headless bool, devMode bool) error {
 	nativeWindowDevMode = devMode
 	StopPreviousInstance(rootDir)
 
 	pidPath := pidFilePath(rootDir)
-	_ = os.WriteFile(pidPath, []byte(strconv.Itoa(os.Getpid())), 0600)
-	defer func() {
-		_ = os.Remove(pidPath)
-	}()
+	if err := os.WriteFile(pidPath, []byte(strconv.Itoa(os.Getpid())), 0600); err == nil {
+		defer func() {
+			_ = os.Remove(pidPath)
+		}()
+	}
 
 	srv := NewServerWithOptions(rootDir, embeddedFS, devMode)
 	bindHost := "127.0.0.1"
 	if devMode && (runtime.GOOS != "windows" || os.Getenv("ST_LAN") == "1") {
-		bindHost = "0.0.0.0"
+		bindHost = ""
 	}
 	listenAddr := fmt.Sprintf("%s:%d", bindHost, port)
 	ln, err := net.Listen("tcp", listenAddr)

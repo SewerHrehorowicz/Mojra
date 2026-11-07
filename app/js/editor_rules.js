@@ -18,9 +18,10 @@ function parseBookVarsSpec(specStr) {
   return map;
 }
 
+const PLAYTXT_MUT_OPS = ["++", "--", "+=", "-="];
+
 function isClientBoolLiteral(s) {
-  const v = (s || "").trim().toLowerCase();
-  return v === "true" || v === "false" || v === "tak" || v === "nie" || v === "yes" || v === "no" || v === "on" || v === "off";
+  return isPlaytxtBoolTrue(s) || isPlaytxtBoolFalse(s);
 }
 
 function explainClientVarValueError(varName, vDef, op, rhs, varsMap) {
@@ -80,22 +81,20 @@ function explainClientCondExprError(raw, varsMap) {
       c = c.slice(1).replace(/^[()\s]+|[()\s]+$/g, "");
     }
     if (!c) return "Błąd składni: brak wyrażenia po operatorze logicznym";
-    const mutOps = ["++", "--", "+=", "-="];
-    for (let m = 0; m < mutOps.length; m++) {
-      if (c.indexOf(mutOps[m]) >= 0) {
-        return "Błąd w if: operator '" + mutOps[m] + "' służy do zmiany wartości w polu set:, a w if: podaj porównanie";
+    for (let m = 0; m < PLAYTXT_MUT_OPS.length; m++) {
+      if (c.indexOf(PLAYTXT_MUT_OPS[m]) >= 0) {
+        return "Błąd w if: operator '" + PLAYTXT_MUT_OPS[m] + "' służy do zmiany wartości w polu set:, a w if: podaj porównanie";
       }
     }
     if (c.indexOf(",") >= 0 || c.indexOf(";") >= 0) {
       return "Błąd składni w if: użyj '&&' (oraz) lub '||' (lub) zamiast przecinka/średnika";
     }
-    const ops = ["==", "!=", ">=", "\x3c=", ">", "\x3c", "="];
     let matchedOp = "";
     let opIdx = -1;
-    for (let j = 0; j < ops.length; j++) {
-      const idx = c.indexOf(ops[j]);
+    for (let j = 0; j < PLAYTXT_CMP_OPS.length; j++) {
+      const idx = c.indexOf(PLAYTXT_CMP_OPS[j]);
       if (idx >= 0) {
-        matchedOp = ops[j];
+        matchedOp = PLAYTXT_CMP_OPS[j];
         opIdx = idx;
         break;
       }
@@ -120,10 +119,6 @@ function explainClientCondExprError(raw, varsMap) {
     }
   }
   return "";
-}
-
-function validateClientCondExpr(raw, varsMap) {
-  return explainClientCondExprError(raw, varsMap) === "";
 }
 
 function splitClientSpaceEffectChunk(chunk) {
@@ -306,10 +301,6 @@ function explainClientEffectsExprError(raw, varsMap) {
   return "";
 }
 
-function validateClientEffectsExpr(raw, varsMap) {
-  return explainClientEffectsExprError(raw, varsMap) === "";
-}
-
 function validateRuleInputElement(inputEl, form) {
   if (!inputEl || !form) return;
   const name = inputEl.name || "";
@@ -401,6 +392,36 @@ function replaceCurrentTypingToken(inputEl, varName) {
 function getVisibleSynDropdownItems(dropdown) {
   if (!dropdown) return [];
   return qsa(".syn-dropdown-item", dropdown).filter((btn) => !btn.classList.contains("hidden"));
+}
+
+function showAndAnchorSynDropdown(dropdown, inputEl, anchorSel, matchCount) {
+  if (matchCount === 0) {
+    dropdown.classList.add("hidden");
+    return;
+  }
+  const anchor = inputEl.closest(anchorSel);
+  if (anchor && dropdown.parentNode !== anchor) {
+    anchor.appendChild(dropdown);
+  }
+  dropdown.classList.remove("hidden");
+  setSynDropdownActiveIndex(dropdown, 0);
+}
+
+function commitChosenSynItem(itemBtn, inputEl, form, dropdown) {
+  if (!itemBtn || !inputEl) return;
+  const kind = itemBtn.getAttribute("data-syn-kind") || "var";
+  if (kind === "target") {
+    const targetVal = itemBtn.getAttribute("data-syn-target-value") || "";
+    if (!targetVal) return;
+    replaceChoiceTargetToken(inputEl, targetVal);
+  } else {
+    const varName = itemBtn.getAttribute("data-syn-var-name") || "";
+    if (!varName) return;
+    replaceCurrentTypingToken(inputEl, varName);
+    if (form) validateRuleInputElement(inputEl, form);
+  }
+  if (dropdown) dropdown.classList.add("hidden");
+  if (form && typeof scheduleNodeLiveSave === "function") scheduleNodeLiveSave(form);
 }
 
 function setSynDropdownActiveIndex(dropdown, nextIdx) {
@@ -531,24 +552,13 @@ function updateChoiceTargetAutocompleteOnInput(inputEl, forceAll) {
     btn.classList.toggle("hidden", !show);
     if (show) matchCount++;
   });
-  if (matchCount === 0) {
-    dropdown.classList.add("hidden");
-    return;
-  }
-  const anchor = inputEl.closest(".choice-triple-row, .choice-inline-wrap");
-  if (anchor && dropdown.parentNode !== anchor) {
-    anchor.appendChild(dropdown);
-  }
-  dropdown.classList.remove("hidden");
-  setSynDropdownActiveIndex(dropdown, 0);
+  showAndAnchorSynDropdown(dropdown, inputEl, ".choice-triple-row, .choice-inline-wrap", matchCount);
 }
 
 function updateSynAutocompleteOnInput(inputEl, forceAll) {
-  if (!inputEl || typeof document === "undefined") return;
-  if (inputEl.id === "modal-scene-textarea") return;
+  if (!inputEl || typeof document === "undefined" || inputEl.id === "modal-scene-textarea") return;
   const form = inputEl.closest("form.editor-context-form, form#form-scene-text");
-  if (!form) return;
-  const dropdown = qs(".syn-autocomplete-dropdown", form);
+  const dropdown = form ? qs(".syn-autocomplete-dropdown", form) : null;
   if (!dropdown) return;
   activeSynRuleInput = inputEl;
   lastSynRuleInputName = inputEl.name || "";
@@ -579,24 +589,14 @@ function updateSynAutocompleteOnInput(inputEl, forceAll) {
         const kind = btn.getAttribute("data-syn-kind") || "var";
         const btnEnumVar = (btn.getAttribute("data-syn-enum-var") || "").toLowerCase();
         const optVal = (btn.getAttribute("data-syn-var-name") || "").toLowerCase();
-        if (kind !== "enum_val" || btnEnumVar !== enumVarName) {
-          btn.classList.add("hidden");
-          return;
-        }
-        const show = forceAll || hasQuestion || !enumPrefix || (optVal.startsWith(enumPrefix) && optVal !== enumPrefix);
+        const show =
+          kind === "enum_val" &&
+          btnEnumVar === enumVarName &&
+          (forceAll || hasQuestion || !enumPrefix || (optVal.startsWith(enumPrefix) && optVal !== enumPrefix));
         btn.classList.toggle("hidden", !show);
         if (show) matchCount++;
       });
-      if (matchCount === 0) {
-        dropdown.classList.add("hidden");
-        return;
-      }
-      const anchor = inputEl.closest(".choice-triple-row, .syn-input-wrap, .scene-body-block");
-      if (anchor && dropdown.parentNode !== anchor) {
-        anchor.appendChild(dropdown);
-      }
-      dropdown.classList.remove("hidden");
-      setSynDropdownActiveIndex(dropdown, 0);
+      showAndAnchorSynDropdown(dropdown, inputEl, ".choice-triple-row, .syn-input-wrap, .scene-body-block", matchCount);
       return;
     }
   }
@@ -621,31 +621,16 @@ function updateSynAutocompleteOnInput(inputEl, forceAll) {
   let matchCount = 0;
   items.forEach((btn) => {
     const kind = btn.getAttribute("data-syn-kind") || "var";
-    if (kind !== "var") {
-      btn.classList.add("hidden");
-      return;
-    }
     const vName = (btn.getAttribute("data-syn-var-name") || "").toLowerCase();
-    if (usedVars.has(vName)) {
-      btn.classList.add("hidden");
-      return;
-    }
-    const show = forceAll || triggeredByQuestionMark || touchSlot || (token.length > 0 && vName.startsWith(token) && vName !== token);
+    const show =
+      kind === "var" &&
+      !usedVars.has(vName) &&
+      (forceAll || triggeredByQuestionMark || touchSlot || (token.length > 0 && vName.startsWith(token) && vName !== token));
     btn.classList.toggle("hidden", !show);
     if (show) matchCount++;
   });
 
-  if (matchCount === 0) {
-    dropdown.classList.add("hidden");
-    return;
-  }
-
-  const anchor = inputEl.closest(".choice-triple-row, .syn-input-wrap, .scene-body-block");
-  if (anchor && dropdown.parentNode !== anchor) {
-    anchor.appendChild(dropdown);
-  }
-  dropdown.classList.remove("hidden");
-  setSynDropdownActiveIndex(dropdown, 0);
+  showAndAnchorSynDropdown(dropdown, inputEl, ".choice-triple-row, .syn-input-wrap, .scene-body-block", matchCount);
 }
 
 function bindSynAutocompleteDropdown() {
@@ -734,23 +719,7 @@ function bindSynAutocompleteDropdown() {
       e.preventDefault();
       e.stopPropagation();
       const chosenBtn = visibleItems.find((btn) => btn.classList.contains("active")) || visibleItems[0];
-      const kind = chosenBtn.getAttribute("data-syn-kind") || "var";
-      if (kind === "target") {
-        const chosenTarget = chosenBtn.getAttribute("data-syn-target-value") || "";
-        if (chosenTarget) {
-          replaceChoiceTargetToken(t, chosenTarget);
-          dropdown.classList.add("hidden");
-          if (typeof scheduleNodeLiveSave === "function") scheduleNodeLiveSave(form);
-        }
-      } else {
-        const chosen = chosenBtn.getAttribute("data-syn-var-name") || "";
-        if (chosen) {
-          replaceCurrentTypingToken(t, chosen);
-          dropdown.classList.add("hidden");
-          validateRuleInputElement(t, form);
-          if (typeof scheduleNodeLiveSave === "function") scheduleNodeLiveSave(form);
-        }
-      }
+      commitChosenSynItem(chosenBtn, t, form, dropdown);
     } else if (e.key === "Escape") {
       e.preventDefault();
       e.stopPropagation();
@@ -765,11 +734,8 @@ function bindSynAutocompleteDropdown() {
     if (!itemBtn || itemBtn.classList.contains("hidden")) return;
     const dropdown = itemBtn.closest(".syn-autocomplete-dropdown");
     if (!dropdown || dropdown.classList.contains("hidden")) return;
-    const visibleItems = getVisibleSynDropdownItems(dropdown);
-    const idx = visibleItems.indexOf(itemBtn);
-    if (idx >= 0) {
-      setSynDropdownActiveIndex(dropdown, idx);
-    }
+    const idx = getVisibleSynDropdownItems(dropdown).indexOf(itemBtn);
+    if (idx >= 0) setSynDropdownActiveIndex(dropdown, idx);
   });
 
   document.addEventListener("pointerdown", (e) => {
@@ -781,25 +747,8 @@ function bindSynAutocompleteDropdown() {
     if (itemBtn && activeSynRuleInput) {
       e.preventDefault();
       e.stopPropagation();
-      const kind = itemBtn.getAttribute("data-syn-kind") || "var";
-      if (kind === "target") {
-        const targetVal = itemBtn.getAttribute("data-syn-target-value") || "";
-        replaceChoiceTargetToken(activeSynRuleInput, targetVal);
-      } else {
-        const varName = itemBtn.getAttribute("data-syn-var-name") || "";
-        replaceCurrentTypingToken(activeSynRuleInput, varName);
-      }
-      const dropdown = itemBtn.closest(".syn-autocomplete-dropdown");
-      if (dropdown) dropdown.classList.add("hidden");
       const form = activeSynRuleInput.closest("form.editor-context-form, form#form-scene-text");
-      if (form) {
-        if (kind !== "target") {
-          validateRuleInputElement(activeSynRuleInput, form);
-        }
-        if (typeof scheduleNodeLiveSave === "function") {
-          scheduleNodeLiveSave(form);
-        }
-      }
+      commitChosenSynItem(itemBtn, activeSynRuleInput, form, itemBtn.closest(".syn-autocomplete-dropdown"));
       activeSynRuleInput.focus();
       return;
     }

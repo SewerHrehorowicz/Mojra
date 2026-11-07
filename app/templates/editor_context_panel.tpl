@@ -183,6 +183,46 @@ aside.editor-context-panel#editor-context-panel .hidden?: {is_context_panel_hidd
                                     data-kind: audio
                                     data-scene: "{selected_node.id}"
                                     svg.media-plus-icon src: /icons/plus.svg
+                                button.node-icon-btn.node-media-add-btn.icon-toggle-btn.voice-rec-toggle-btn#btn-inspector-voice-recorder .active?: {voice_recorder_open}
+                                    type: button
+                                    action: ToggleSceneVoiceRecorder
+                                    data-scene: "{selected_node.id}"
+                                    svg.media-plus-icon src: /icons/mic.svg
+                        {if not is_history_preview}
+                            .voice-rec-strip#inspector-voice-rec-strip .hidden?: {!voice_recorder_open}
+                                data-scene: "{selected_node.id}"
+                                data-voice-url: "{selected_node.current_voice_url}"
+                                data-voice-file: "{selected_node.current_voice}"
+                                button.voice-rec-transport-btn
+                                    type: button
+                                    data-voice-transport: "true"
+                                    svg.voice-rec-icon.voice-rec-icon-play .hidden?: {!selected_node.has_voice_file} src: /icons/voice-play.svg
+                                    svg.voice-rec-icon.voice-rec-icon-mic .hidden?: {selected_node.has_voice_file} src: /icons/mic.svg
+                                    svg.voice-rec-icon.voice-rec-icon-pause.hidden src: /icons/voice-pause.svg
+                                    svg.voice-rec-icon.voice-rec-icon-stop.hidden src: /icons/voice-stop.svg
+                                .voice-rec-waveform-wrap
+                                    data-voice-waveform-wrap: "true"
+                                    canvas.voice-rec-waveform-canvas
+                                        width: "216"
+                                        height: "28"
+                                    span.voice-rec-playhead
+                                        data-voice-playhead: "true"
+                                    span.voice-rec-trim-handle.trim-start
+                                        data-voice-trim: "start"
+                                    span.voice-rec-trim-handle.trim-end
+                                        data-voice-trim: "end"
+                                span.voice-rec-timer
+                                    data-voice-timer: "true"
+                                    {selected_node.voice_duration_label}
+                                button.voice-rec-action-btn.voice-rec-rerecord-btn .hidden?: {!selected_node.has_voice_file}
+                                    type: button
+                                    data-voice-record-start: "true"
+                                    svg.voice-rec-btn-icon src: /icons/mic.svg
+                                button.voice-rec-action-btn.voice-rec-delete-btn .hidden?: {!selected_node.has_voice_file}
+                                    type: button
+                                    action: DeleteSceneVoice
+                                    data-scene: "{selected_node.id}"
+                                    svg.voice-rec-btn-icon src: /icons/trash.svg
 
             .context-panel-section
                 button.btn.btn-sm.node-edit-text-btn

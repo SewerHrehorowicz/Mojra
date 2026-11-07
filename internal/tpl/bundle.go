@@ -87,16 +87,20 @@ func BundleFilesToString(files []string, stripDev bool) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("read %s: %w", path, err)
 		}
-		content := string(raw)
-		if stripDev {
-			content = StripDevOnlyBlocks(content)
-		}
-		if i > 0 && len(content) > 0 && sb.Len() > 0 {
-			sb.WriteString("\n")
-		}
-		sb.WriteString(content)
+		appendBundledJSChunk(&sb, i, raw, stripDev)
 	}
 	return sb.String(), nil
+}
+
+func appendBundledJSChunk(sb *strings.Builder, idx int, raw []byte, stripDev bool) {
+	content := string(raw)
+	if stripDev {
+		content = StripDevOnlyBlocks(content)
+	}
+	if idx > 0 && len(content) > 0 && sb.Len() > 0 {
+		sb.WriteString("\n")
+	}
+	sb.WriteString(content)
 }
 
 // BundleJSFiles concatenates the handwritten JS modules in order into a single production JS output file.
@@ -117,36 +121,21 @@ func BundleCSSFiles(cssFiles []string, cssOutPath string) error {
 	return os.WriteFile(cssOutPath, []byte(bundled), 0644)
 }
 
-// BundleCSSFromFS transpiles and bundles embedded app/styles/*.tss modules from fsys.
-func BundleCSSFromFS(fsys fs.FS, stripDev bool) (string, error) {
+func bundleCSSPathsFromFS(fsys fs.FS, paths []string, stripDev bool) (string, error) {
 	if fsys == nil {
 		return "", fmt.Errorf("nil fs")
 	}
 	switches := DefaultCSSSwitches()
 	var sb strings.Builder
-	for _, path := range CSSModuleFiles("app") {
+	for _, path := range paths {
 		slashPath := filepath.ToSlash(path)
 		raw, err := fs.ReadFile(fsys, slashPath)
 		if err != nil {
 			return "", fmt.Errorf("read %s: %w", slashPath, err)
 		}
-		src := string(raw)
-		if stripDev {
-			src = StripDevOnlyBlocks(src)
-		}
-		name := strings.TrimSuffix(strings.TrimSuffix(filepath.Base(slashPath), ".tss"), ".css")
-		rendered, err := transpileCSSWithSwitches(src, name, nil, switches, stripDev)
-		if err != nil {
+		if err := appendTranspiledCSSChunk(&sb, raw, slashPath, nil, switches, stripDev); err != nil {
 			return "", err
 		}
-		rendered = strings.TrimSpace(rendered)
-		if rendered == "" {
-			continue
-		}
-		if sb.Len() > 0 {
-			sb.WriteString("\n\n")
-		}
-		sb.WriteString(rendered)
 	}
 	if sb.Len() > 0 {
 		sb.WriteString("\n")
@@ -154,31 +143,45 @@ func BundleCSSFromFS(fsys fs.FS, stripDev bool) (string, error) {
 	return sb.String(), nil
 }
 
-// BundleJSFromFS concatenates embedded app/js/*.js modules from fsys and prepends MSDF glyph metrics.
-func BundleJSFromFS(fsys fs.FS, stripDev bool) (string, error) {
+// BundleCSSFromFS transpiles and bundles embedded app/styles/*.tss modules from fsys.
+func BundleCSSFromFS(fsys fs.FS, stripDev bool) (string, error) {
+	return bundleCSSPathsFromFS(fsys, CSSModuleFiles("app"), stripDev)
+}
+
+func bundleJSPathsFromFS(fsys fs.FS, paths []string, stripDev bool, prependMSDF bool) (string, error) {
 	if fsys == nil {
 		return "", fmt.Errorf("nil fs")
 	}
 	var sb strings.Builder
-	if _, metricsJS, err := BuildStudioMSDFAtlasFromFS(fsys); err == nil && metricsJS != "" {
-		sb.WriteString(metricsJS)
+	if prependMSDF {
+		if _, metricsJS, err := BuildStudioMSDFAtlasFromFS(fsys); err == nil && metricsJS != "" {
+			sb.WriteString(metricsJS)
+		}
 	}
-	for i, path := range JSModuleFiles("app") {
+	for i, path := range paths {
 		slashPath := filepath.ToSlash(path)
 		raw, err := fs.ReadFile(fsys, slashPath)
 		if err != nil {
 			return "", fmt.Errorf("read %s: %w", slashPath, err)
 		}
-		content := string(raw)
-		if stripDev {
-			content = StripDevOnlyBlocks(content)
-		}
-		if i > 0 && len(content) > 0 && sb.Len() > 0 {
-			sb.WriteString("\n")
-		}
-		sb.WriteString(content)
+		appendBundledJSChunk(&sb, i, raw, stripDev)
 	}
 	return sb.String(), nil
+}
+
+// BundleJSFromFS concatenates embedded app/js/*.js modules from fsys and prepends MSDF glyph metrics.
+func BundleJSFromFS(fsys fs.FS, stripDev bool) (string, error) {
+	return bundleJSPathsFromFS(fsys, JSModuleFiles("app"), stripDev, true)
+}
+
+// BundlePlayerCSSFromFS transpiles and bundles player-only app/styles/*.tss modules from fsys.
+func BundlePlayerCSSFromFS(fsys fs.FS, stripDev bool) (string, error) {
+	return bundleCSSPathsFromFS(fsys, CSSPlayerModuleFiles("app"), stripDev)
+}
+
+// BundlePlayerJSFromFS concatenates player-only app/js/*.js modules from fsys.
+func BundlePlayerJSFromFS(fsys fs.FS, stripDev bool) (string, error) {
+	return bundleJSPathsFromFS(fsys, JSPlayerModuleFiles("app"), stripDev, false)
 }
 
 // discoverComponentFiles returns sorted paths matching appDir/components/*/*<ext>.
@@ -260,6 +263,7 @@ func JSModuleFiles(appDir string) []string {
 		"editor_canvas.js",
 		"editor_wires.js",
 		"editor_inspector.js",
+		"editor_voice.js",
 		"editor_rules.js",
 		"editor_gestures.js",
 		"editor_perf.js",
@@ -317,49 +321,50 @@ func BuildApp(appDir string) error {
 			return fmt.Errorf("write studio-atlas.png: %w", err)
 		}
 	}
+	if uiPngBytes, err := BuildStudioUIAtlas(); err == nil && len(uiPngBytes) > 0 {
+		if err := os.WriteFile(filepath.Join(outDir, "studio-ui.png"), uiPngBytes, 0644); err != nil {
+			return fmt.Errorf("write studio-ui.png: %w", err)
+		}
+	}
 	return nil
 }
 
-// BuildPlayerOnlyApp builds a player-only bundle into outDir, omitting library and editor templates, CSS, and JS.
-func BuildPlayerOnlyApp(appDir, outDir string) error {
-	if outDir == "" {
-		outDir = filepath.Join(filepath.Dir(filepath.Clean(appDir)), "build", "app")
+// RenderWasmSplashPageHTML renders the standalone Web/WASM splash page HTML document.
+func RenderWasmSplashPageHTML(title, author, bookID, imagelessAttr, wasmSrc, playSVG string) string {
+	if strings.TrimSpace(playSVG) == "" {
+		playSVG = `<svg class="wasm-splash-play-icon" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm-2.5 5.5 7.5 4.5-7.5 4.5v-9z"/></svg>`
+	} else if !strings.Contains(playSVG, "wasm-splash-play-icon") {
+		playSVG = strings.Replace(playSVG, "<svg", `<svg class="wasm-splash-play-icon"`, 1)
 	}
-	if err := os.MkdirAll(outDir, 0755); err != nil {
-		return fmt.Errorf("mkdir %s: %w", outDir, err)
+	escTitle := escapeHTMLText(title)
+	escAuthor := escapeHTMLText(author)
+	escWasm := escapeHTMLText(wasmSrc)
+	escBookID := escapeHTMLText(bookID)
+
+	var sb strings.Builder
+	sb.WriteString("<!DOCTYPE html>\n<html lang=\"pl\">\n<head>\n")
+	sb.WriteString("  <meta charset=\"UTF-8\">\n")
+	sb.WriteString("  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover\">\n")
+	fmt.Fprintf(&sb, "  <title>%s</title>\n", escTitle)
+	sb.WriteString("  <link rel=\"icon\" type=\"image/png\" sizes=\"256x256\" href=\"icon.png\">\n")
+	sb.WriteString("  <link rel=\"icon\" type=\"image/x-icon\" href=\"favicon.ico\">\n")
+	sb.WriteString("  <link rel=\"stylesheet\" href=\"style.css\">\n")
+	sb.WriteString("</head>\n")
+	fmt.Fprintf(&sb, "<body data-theme=\"dark\" data-imageless=\"%s\" data-imageless-locked=\"%s\" data-ui-scale=\"small\">\n", imagelessAttr, imagelessAttr)
+	fmt.Fprintf(&sb, "  <div class=\"app-root wasm-player-root\" id=\"app\" data-wasm-src=\"%s\" data-book-id=\"%s\">\n", escWasm, escBookID)
+	sb.WriteString("    <div class=\"wasm-splash\" id=\"wasm-splash\">\n")
+	fmt.Fprintf(&sb, "      <h1 class=\"wasm-splash-title\">%s</h1>\n", escTitle)
+	if author != "" {
+		fmt.Fprintf(&sb, "      <p class=\"wasm-splash-author\">%s</p>\n", escAuthor)
 	}
-	templates, err := LoadTemplatesFromDir(filepath.Join(appDir, "templates"), nil)
-	if err != nil {
-		return fmt.Errorf("tpl load error: %w", err)
-	}
-	delete(templates, "library_view")
-	delete(templates, "editor_view")
-	delete(templates, "editor_context_panel")
-	delete(templates, "editor_history_panel")
-	delete(templates, "editor_breakdown_panel")
-	delete(templates, "editor_variables_panel")
-	StripDevNodesFromTemplates(templates)
-	idxTpl, ok := templates["index"]
-	if !ok {
-		return fmt.Errorf("missing index.tpl in %s", filepath.Join(appDir, "templates"))
-	}
-	htmlStr := TranspileStaticHTML(idxTpl, templates)
-	if err := os.WriteFile(filepath.Join(outDir, "index.html"), []byte(htmlStr), 0644); err != nil {
-		return fmt.Errorf("write index.html: %w", err)
-	}
-	if err := BundleCSSFiles(
-		CSSPlayerModuleFiles(appDir),
-		filepath.Join(outDir, "style.css"),
-	); err != nil {
-		return fmt.Errorf("css bundle error: %w", err)
-	}
-	if err := BundleJSFiles(
-		JSPlayerModuleFiles(appDir),
-		filepath.Join(outDir, "app.js"),
-	); err != nil {
-		return fmt.Errorf("js bundle error: %w", err)
-	}
-	return nil
+	fmt.Fprintf(&sb, "      <button class=\"wasm-splash-play-btn\" id=\"btn-wasm-play\" type=\"button\" data-wasm-play=\"true\" data-wasm-src=\"%s\" data-book-id=\"%s\" aria-label=\"Odtwórz\">\n", escWasm, escBookID)
+	sb.WriteString("        " + playSVG + "\n")
+	sb.WriteString("      </button>\n")
+	sb.WriteString("    </div>\n")
+	sb.WriteString("  </div>\n")
+	sb.WriteString("  <script src=\"app.js\"></script>\n")
+	sb.WriteString("</body>\n</html>\n")
+	return sb.String()
 }
 
 // BuildWWW compiles the standalone website from rootDir/www/{index.tpl,style.tss,app.js}
@@ -390,21 +395,29 @@ func BuildWWW(rootDir string) error {
 		}
 	}
 	styleCSSPath := filepath.Join(outDir, "style.css")
+	wwwCSSFiles := append([]string{}, CSSPlayerModuleFiles(appDir)...)
+	wwwCSSFiles = append(wwwCSSFiles, filepath.Join(wwwDir, "style.tss"))
 	if err := BundleCSSFiles(
-		[]string{
-			filepath.Join(appDir, "styles", "colors.tss"),
-			filepath.Join(wwwDir, "style.tss"),
-		},
+		wwwCSSFiles,
 		styleCSSPath,
 	); err != nil {
 		return fmt.Errorf("www css bundle error: %w", err)
 	}
 	if rawCSS, err := os.ReadFile(styleCSSPath); err == nil {
 		relCSS := strings.ReplaceAll(string(rawCSS), `url("/fonts/`, `url("fonts/`)
-		_ = os.WriteFile(styleCSSPath, []byte(relCSS), 0644)
+		if err := os.WriteFile(styleCSSPath, []byte(relCSS), 0644); err != nil {
+			return err
+		}
 	}
+	var wwwJSFiles []string
+	wasmExecPath := filepath.Join(rootDir, "build", "wasm", "wasm_exec.js")
+	if _, err := os.Stat(wasmExecPath); err == nil {
+		wwwJSFiles = append(wwwJSFiles, wasmExecPath)
+	}
+	wwwJSFiles = append(wwwJSFiles, JSPlayerModuleFiles(appDir)...)
+	wwwJSFiles = append(wwwJSFiles, filepath.Join(wwwDir, "app.js"))
 	if err := BundleJSFiles(
-		[]string{filepath.Join(wwwDir, "app.js")},
+		wwwJSFiles,
 		filepath.Join(outDir, "app.js"),
 	); err != nil {
 		return fmt.Errorf("www js bundle error: %w", err)
@@ -416,13 +429,17 @@ func BuildWWW(rootDir string) error {
 				continue
 			}
 			if raw, rErr := os.ReadFile(filepath.Join(appDir, "fonts", fe.Name())); rErr == nil {
-				_ = os.WriteFile(filepath.Join(outDir, "fonts", fe.Name()), raw, 0644)
+				if err := os.WriteFile(filepath.Join(outDir, "fonts", fe.Name()), raw, 0644); err != nil {
+					return err
+				}
 			}
 		}
 	}
 	for _, iconFile := range []string{"favicon.ico", "icon.png"} {
 		if raw, rErr := os.ReadFile(filepath.Join(appDir, "icons", iconFile)); rErr == nil {
-			_ = os.WriteFile(filepath.Join(outDir, iconFile), raw, 0644)
+			if err := os.WriteFile(filepath.Join(outDir, iconFile), raw, 0644); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

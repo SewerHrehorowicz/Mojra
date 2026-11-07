@@ -679,5 +679,46 @@ func BenchmarkRenderTemplateAppShell(b *testing.B) {
 	}
 }
 
+func RenderTemplate(tplName string, components map[string]*ParsedTemplate, ctx *RenderContext) string {
+	buf := AcquireBuffer()
+	defer ReleaseBuffer(buf)
+	_ = RenderTemplateTo(buf, tplName, components, ctx)
+	return buf.String()
+}
+
+func TranspileCSSString(source, name string, ctx *RenderContext) (string, error) {
+	switches := DefaultCSSSwitches()
+	return transpileCSSWithSwitches(source, name, ctx, switches, false)
+}
+
+func BuildPlayerOnlyApp(appDir, outDir string) error {
+	if outDir == "" {
+		outDir = filepath.Join(filepath.Dir(filepath.Clean(appDir)), "build", "app")
+	}
+	if err := os.MkdirAll(outDir, 0755); err != nil {
+		return err
+	}
+	templates, err := LoadTemplatesFromDir(filepath.Join(appDir, "templates"), nil)
+	if err != nil {
+		return err
+	}
+	delete(templates, "library_view")
+	delete(templates, "editor_view")
+	delete(templates, "editor_context_panel")
+	delete(templates, "editor_history_panel")
+	delete(templates, "editor_breakdown_panel")
+	delete(templates, "editor_variables_panel")
+	StripDevNodesFromTemplates(templates)
+	idxTpl := templates["index"]
+	htmlStr := TranspileStaticHTML(idxTpl, templates)
+	if err := os.WriteFile(filepath.Join(outDir, "index.html"), []byte(htmlStr), 0644); err != nil {
+		return err
+	}
+	if err := BundleCSSFiles(CSSPlayerModuleFiles(appDir), filepath.Join(outDir, "style.css")); err != nil {
+		return err
+	}
+	return BundleJSFiles(JSPlayerModuleFiles(appDir), filepath.Join(outDir, "app.js"))
+}
+
 
 

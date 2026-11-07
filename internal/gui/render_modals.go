@@ -8,35 +8,27 @@ import (
 )
 
 func buildScreenplayFormatInsertPills(standard string, b *book.Book) ([]map[string]any, []map[string]any) {
-	normStd := book.NormalizeScriptStandard(standard)
-	var insertPills []map[string]any
-	if normStd == "pl" {
-		insertPills = []map[string]any{
-			{"kind": "dialogue", "label": "+ Dialog", "hint": "Wstaw blok postaci i kwestii dialogowej"},
-			{"kind": "parenthetical", "label": "+ Didaskalia (wtrącenie)", "hint": "Wstaw wskazówkę aktorską w nawiasie, np. (cicho)"},
-			{"kind": "action", "label": "+ Opis akcji", "hint": "Wstaw nowy akapit opisu akcji (didaskalia sceniczne)"},
-			{"kind": "dialogue_off", "label": "+ Dialog (OFF)", "hint": "Wstaw kwestię postaci spoza kadru (OFF)"},
-			{"kind": "dialogue_vo", "label": "+ Narracja (V.O.)", "hint": "Wstaw głos spoza obrazu / narratora (V.O.)"},
-			{"kind": "transition_cut", "label": "+ CIĘCIE DO:", "hint": "Wstaw przejście montażowe CIĘCIE DO:"},
-			{"kind": "transition_fade", "label": "+ ŚCIEMNIENIE.", "hint": "Wstaw przejście ŚCIEMNIENIE."},
-			{"kind": "subslug", "label": "+ Podscena (WN./PL.)", "hint": "Wstaw śródtytuł podsceny w tej samej scenie"},
+	isPL := book.NormalizeScriptStandard(standard) == "pl"
+	pick := func(plVal, intlVal string) string {
+		if isPL {
+			return plVal
 		}
-	} else {
-		insertPills = []map[string]any{
-			{"kind": "dialogue", "label": "+ Dialog", "hint": "Wstaw blok postaci i kwestii dialogowej"},
-			{"kind": "parenthetical", "label": "+ Didaskalia (...)", "hint": "Wstaw wskazówkę aktorską w nawiasie"},
-			{"kind": "action", "label": "+ Opis akcji", "hint": "Wstaw nowy akapit opisu akcji"},
-			{"kind": "dialogue_off", "label": "+ Dialog (O.S.)", "hint": "Wstaw kwestię postaci spoza kadru (O.S.)"},
-			{"kind": "dialogue_vo", "label": "+ Narracja (V.O.)", "hint": "Wstaw głos narratora (V.O.)"},
-			{"kind": "transition_cut", "label": "+ CUT TO:", "hint": "Wstaw przejście montażowe CUT TO:"},
-			{"kind": "transition_fade", "label": "+ FADE OUT.", "hint": "Wstaw przejście FADE OUT."},
-			{"kind": "subslug", "label": "+ Podscena (INT./EXT.)", "hint": "Wstaw śródtytuł podsceny"},
-		}
+		return intlVal
+	}
+	insertPills := []map[string]any{
+		{"kind": "dialogue", "label": "+ Dialog", "hint": "Wstaw blok postaci i kwestii dialogowej"},
+		{"kind": "parenthetical", "label": pick("+ Didaskalia (wtrącenie)", "+ Didaskalia (...)"), "hint": pick("Wstaw wskazówkę aktorską w nawiasie, np. (cicho)", "Wstaw wskazówkę aktorską w nawiasie")},
+		{"kind": "action", "label": "+ Opis akcji", "hint": pick("Wstaw nowy akapit opisu akcji (didaskalia sceniczne)", "Wstaw nowy akapit opisu akcji")},
+		{"kind": "dialogue_off", "label": pick("+ Dialog (OFF)", "+ Dialog (O.S.)"), "hint": pick("Wstaw kwestię postaci spoza kadru (OFF)", "Wstaw kwestię postaci spoza kadru (O.S.)")},
+		{"kind": "dialogue_vo", "label": "+ Narracja (V.O.)", "hint": pick("Wstaw głos spoza obrazu / narratora (V.O.)", "Wstaw głos narratora (V.O.)")},
+		{"kind": "transition_cut", "label": pick("+ CIĘCIE DO:", "+ CUT TO:"), "hint": pick("Wstaw przejście montażowe CIĘCIE DO:", "Wstaw przejście montażowe CUT TO:")},
+		{"kind": "transition_fade", "label": pick("+ ŚCIEMNIENIE.", "+ FADE OUT."), "hint": pick("Wstaw przejście ŚCIEMNIENIE.", "Wstaw przejście FADE OUT.")},
+		{"kind": "subslug", "label": pick("+ Podscena (WN./PL.)", "+ Podscena (INT./EXT.)"), "hint": pick("Wstaw śródtytuł podsceny w tej samej scenie", "Wstaw śródtytuł podsceny")},
 	}
 
 	var charPills []map[string]any
 	if b != nil {
-		bd := book.AnalyzeScreenplay(b)
+		bd := b.ScreenplayBreakdown()
 		limit := len(bd.Characters)
 		if limit > 8 {
 			limit = 8
@@ -53,49 +45,67 @@ func buildScreenplayFormatInsertPills(standard string, b *book.Book) ([]map[stri
 	return insertPills, charPills
 }
 
-func buildExportFormatOptions(rawFormat string, isScreenplay bool) (string, string, []map[string]any) {
-	norm := strings.ToLower(strings.TrimSpace(rawFormat))
-	if norm == "stbook" {
-		norm = "playbook"
+func formatExportSelectionCountLabel(count int) string {
+	mod10 := count % 10
+	mod100 := count % 100
+	switch {
+	case count == 1:
+		return "1 WYBRANY"
+	case mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14):
+		return fmt.Sprintf("%d WYBRANE", count)
+	default:
+		return fmt.Sprintf("%d WYBRANYCH", count)
 	}
-	if isScreenplay {
-		if norm != "pdf" && norm != "fountain" && norm != "playbook" {
-			norm = "pdf"
-		}
-		defs := []struct {
-			val   string
-			label string
-		}{
-			{"pdf", "Scenariusz PDF (.pdf)"},
-			{"fountain", "Scenariusz Fountain (.fountain)"},
-			{"playbook", "Playbook (.playbook)"},
-		}
-		var opts []map[string]any
-		activeLabel := defs[0].label
-		for _, d := range defs {
-			active := d.val == norm
-			if active {
-				activeLabel = d.label
-			}
-			opts = append(opts, map[string]any{
-				"value":     d.val,
-				"label":     d.label,
-				"is_active": active,
-			})
-		}
-		return norm, activeLabel, opts
+}
+
+func buildExportModalFormatLists(selected map[string]bool) ([]map[string]any, []map[string]any, int) {
+	primaryDefs := []struct {
+		id    string
+		label string
+		ext   string
+	}{
+		{"playbook", "Playbook", ".playbook"},
+		{"wasm", "Aplikacja Web", ".wasm"},
+		{"pdf", "Scenariusz PDF", ".pdf"},
+	}
+	advancedDefs := []struct {
+		id    string
+		label string
+		ext   string
+	}{
+		{"fountain", "Scenariusz Fountain", ".fountain"},
+		{"playtxt", "Tekst Playtxt", ".playtxt"},
 	}
 
-	norm = "playbook"
-	activeLabel := "Playbook (.playbook)"
-	opts := []map[string]any{
-		{
-			"value":     "playbook",
-			"label":     activeLabel,
-			"is_active": true,
-		},
+	var primary []map[string]any
+	var advanced []map[string]any
+	totalSelected := 0
+
+	for _, d := range primaryDefs {
+		sel := selected == nil || selected[d.id]
+		if sel {
+			totalSelected++
+		}
+		primary = append(primary, map[string]any{
+			"id":          d.id,
+			"label":       d.label,
+			"ext":         d.ext,
+			"is_selected": sel,
+		})
 	}
-	return norm, activeLabel, opts
+	for _, d := range advancedDefs {
+		sel := selected != nil && selected[d.id]
+		if sel {
+			totalSelected++
+		}
+		advanced = append(advanced, map[string]any{
+			"id":          d.id,
+			"label":       d.label,
+			"ext":         d.ext,
+			"is_selected": sel,
+		})
+	}
+	return primary, advanced, totalSelected
 }
 
 func (s *Server) populateModalsContext(vars map[string]any) {
@@ -131,8 +141,6 @@ func (s *Server) populateModalsContext(vars map[string]any) {
 				"id":         b.ID,
 				"title":      b.Title,
 				"author":     b.Author,
-				"license":    b.EffectiveLicense(),
-				"is_packed":  b.IsPacked,
 				"kind_badge": kindBadge,
 				"is_current": isCurrent,
 			})
@@ -143,11 +151,21 @@ func (s *Server) populateModalsContext(vars map[string]any) {
 		vars["has_studio_projects"] = false
 	}
 
-	isScreenplayBook := s.ActiveBook != nil && s.ActiveBook.IsScreenplay()
-	exportFmt, exportFmtLabel, exportFmtOpts := buildExportFormatOptions(s.ExportModalFormat, isScreenplayBook)
-	vars["export_modal_format"] = exportFmt
-	vars["export_modal_format_label"] = exportFmtLabel
-	vars["export_modal_format_options"] = exportFmtOpts
+	primaryFmts, advancedFmts, selCount := buildExportModalFormatLists(s.ExportModalFormats)
+	vars["export_primary_formats"] = primaryFmts
+	vars["export_advanced_formats"] = advancedFmts
+	vars["export_selected_count"] = selCount
+	vars["export_selected_count_label"] = formatExportSelectionCountLabel(selCount)
+	vars["export_has_selected"] = selCount > 0
+	vars["export_advanced_open"] = s.ExportModalAdvancedOpen
+	expStd := book.NormalizeScriptStandard(s.ExportModalStandard)
+	if s.ExportModalStandard == "" && s.ActiveBook != nil {
+		expStd = s.ActiveBook.NormalizedStandard()
+	}
+	expStdLabel, expStdOpts := buildScriptStandardOptions(expStd)
+	vars["export_modal_standard"] = expStd
+	vars["export_modal_standard_label"] = expStdLabel
+	vars["export_modal_standard_options"] = expStdOpts
 	exportDir := strings.TrimSpace(s.ExportModalDir)
 	if exportDir == "" {
 		exportDir = s.defaultExportDir()
@@ -157,13 +175,12 @@ func (s *Server) populateModalsContext(vars map[string]any) {
 	draftMode := book.NormalizeBookMode(s.NewBookDraftMode)
 	draftStd := book.NormalizeScriptStandard(s.NewBookDraftStandard)
 	newModeLabel, newModeOpts := buildBookModeOptions(draftMode)
-	newStdLabel, newStdOpts := buildScriptStandardOptions(draftStd)
+	_, newStdOpts := buildScriptStandardOptions(draftStd)
 	vars["new_book_mode"] = draftMode
 	vars["new_book_is_screenplay"] = draftMode == "screenplay"
 	vars["new_book_mode_label"] = newModeLabel
 	vars["new_book_mode_options"] = newModeOpts
 	vars["new_book_standard"] = draftStd
-	vars["new_book_standard_label"] = newStdLabel
 	vars["new_book_standard_options"] = newStdOpts
 	vars["new_book_title"] = s.NewBookDraftTitle
 	vars["new_book_author"] = s.NewBookDraftAuthor
@@ -229,11 +246,7 @@ func (s *Server) populateModalsContext(vars map[string]any) {
 
 			curChName := strings.TrimSpace(modalSc.Chapter)
 			if curChName == "" {
-				if s.ActiveBook != nil && s.ActiveBook.IsScreenplay() {
-					curChName = "Akt I"
-				} else {
-					curChName = "Rozdział 1"
-				}
+				curChName = s.ActiveBook.DefaultChapterName()
 			}
 			chKey := "rozdział:"
 			if s.ActiveBook != nil && s.ActiveBook.IsScreenplay() {
@@ -267,13 +280,26 @@ func (s *Server) populateModalsContext(vars map[string]any) {
 			vars["scene_text_modal_chapter_options"] = modalChOptions
 
 			curImg, curImgLabel, imgOptions, curVoice, curVoiceLabel, voiceOptions := s.buildSceneMediaOptions(modalSc, true)
+			modalVoiceURL := modalSc.AudioURL
+			modalVoiceDur := "0:00"
+			if curVoice != "" && s.ActiveBook != nil {
+				durLbl, stamp := book.ReadAudioDurationAndStamp(s.ActiveBook, curVoice)
+				modalVoiceDur = durLbl
+				if modalVoiceURL != "" && stamp > 0 {
+					modalVoiceURL = fmt.Sprintf("%s?v=%d", modalVoiceURL, stamp)
+				}
+			}
 			vars["scene_text_modal_current_image"] = curImg
 			vars["scene_text_modal_current_image_label"] = curImgLabel
 			vars["scene_text_modal_image_options"] = imgOptions
 			vars["scene_text_modal_book_narrated"] = s.ActiveBook != nil && !s.ActiveBook.IsScreenplay() && s.ActiveBook.Narrated
 			vars["scene_text_modal_current_voice"] = curVoice
 			vars["scene_text_modal_current_voice_label"] = curVoiceLabel
+			vars["scene_text_modal_voice_url"] = modalVoiceURL
+			vars["scene_text_modal_voice_duration_label"] = modalVoiceDur
+			vars["scene_text_modal_has_voice"] = curVoice != "" && modalSc.AudioURL != ""
 			vars["scene_text_modal_voice_options"] = voiceOptions
+			vars["voice_recorder_open"] = s.VoiceRecorderOpen
 
 			settingsOpenVal := "false"
 			if s.SceneTextModalSettingsOpen {
@@ -297,30 +323,21 @@ func (s *Server) populateModalsContext(vars map[string]any) {
 			vars["scene_text_modal_has_effects"] = effModalStr != ""
 			vars["scene_text_modal_effects_invalid"] = effModalErr != ""
 			vars["scene_text_modal_effects_error_hint"] = effModalErr
-			vars["scene_text_modal_effects_disabled"] = s.isHistoryPreview() || !hasBookVars
 			vars["book_vars_spec"] = book.EncodeBookVariablesSpec(s.ActiveBook)
 			vars["book_var_suggestions"] = buildBookVarSuggestions(s.ActiveBook)
 			vars["book_enum_suggestions"] = buildBookEnumValueSuggestions(s.ActiveBook)
 			vars["book_target_suggestions"] = s.buildBookTargetSuggestions(modalSc)
 			vars["show_syntax_help_popover"] = hasBookVars && s.SyntaxHelpPopoverOpen
-			vars["syn_open"] = "{{"
-			vars["syn_close"] = "}}"
-			vars["syntax_help_title"] = "Składnia exit: / if: / set:"
 			vars["syntax_help_cond_rows"] = []map[string]any{
 				{"code": "if: odkryta_prawda && sumienie >= 2", "desc": "bool / int / enum (&&, ||, !, ==, !=, >=, <=)"},
 				{"code": "set: odkryta_prawda = true; sumienie++", "desc": "efekty rozdzielone średnikiem ; (=, +=, -=, ++, --)"},
 				{"code": "exit: ogien_w_kaplicy", "desc": "wyjście do sceny, chapter:<id> lub END"},
-			}
-			vars["syntax_help_eff_rows"] = []map[string]any{
-				{"code": "set: !klucz; klucz = false", "desc": "bool toggle (!zmienna) lub jawnie (= true / false)"},
-				{"code": "set: naboje -= 2; frakcja = rzeczni", "desc": "int (+=, -=, ++, --) lub enum (=)"},
 			}
 
 			previewMode := s.SceneTextPreviewMode
 			if !hasBookVars || (previewMode != "highlight" && previewMode != "output") {
 				previewMode = "normal"
 			}
-			vars["scene_text_preview_mode"] = previewMode
 			vars["is_scene_preview_normal"] = previewMode == "normal"
 			vars["is_scene_preview_highlight"] = previewMode == "highlight"
 			vars["is_scene_preview_output"] = previewMode == "output"
@@ -361,7 +378,7 @@ func (s *Server) populateModalsContext(vars map[string]any) {
 			vars["scene_test_vars_spec"] = book.EncodeVariablesStateSpec(testState, s.ActiveBook)
 			vars["scene_text_modal_hl_segments"] = book.BuildSceneProseHighlightSegments(modalSc.Text, testState, s.ActiveBook)
 			vars["scene_text_modal_preview_paragraphs"] = book.BuildSceneProsePreviewParagraphs(modalSc.Text, previewMode, testState, s.ActiveBook)
-			vars["scene_text_modal_output_html"] = book.RenderSceneProseHTML(modalSc, testState, s.ActiveBook)
+			vars["scene_text_modal_output_prose"] = book.EvaluateSceneProseText(modalSc, testState, s.ActiveBook)
 
 			modalHeaderMeta := ""
 			if s.ActiveBook != nil {
@@ -428,17 +445,7 @@ func (s *Server) populateModalsContext(vars map[string]any) {
 					startID = s.ActiveBook.Scenes[0].ID
 				}
 			}
-			vars["scene_text_modal_start_id"] = startID
 			isTerminal := len(modalSc.Choices) == 0 || modalSc.ExplicitEnd
-			vars["scene_text_modal_is_terminal"] = isTerminal
-			termVal, termLabel, termOpts := s.buildChoiceTargetOptions(
-				modalSc,
-				s.terminalChoiceDescriptor(),
-			)
-			vars["scene_text_modal_terminal_selected_value"] = termVal
-			vars["scene_text_modal_terminal_selected_label"] = termLabel
-			vars["scene_text_modal_terminal_port_filled"] = termVal != "" && !strings.EqualFold(termVal, "END")
-			vars["scene_text_modal_terminal_target_options"] = termOpts
 
 			choicesSource := modalSc.Choices
 			if isTerminal {
@@ -462,73 +469,24 @@ func (s *Server) populateModalsContext(vars map[string]any) {
 				if ch.IsEnding {
 					arr = "↺"
 				}
-				selectedVal, selectedLabel, targetOptions := s.buildChoiceTargetOptions(modalSc, ch)
-				isFilled := !ch.IsEnding &&
-					((ch.TargetSceneID != "" && !strings.EqualFold(ch.TargetSceneID, "END")) ||
-						(ch.IsChapterLink && ch.TargetChapterID != "")) &&
-					!strings.EqualFold(selectedVal, "END")
-				condInputVal := book.CleanConditionExpr(ch.Condition)
-				if ch.ShowWhenLocked && condInputVal != "" && !strings.HasPrefix(condInputVal, "?") {
-					condInputVal = "? " + condInputVal
-				}
-				effInputVal := book.CleanEffectsExpr(ch.Effects)
-				hasCond := condInputVal != ""
-				hasEff := effInputVal != ""
-				hasRule := hasCond || hasEff
-				ruleKey := fmt.Sprintf("%s:%d", modalSc.ID, idx)
-				isRuleOpen := hasBookVars
-				if hasBookVars && s.ChoiceRulesOpen != nil {
-					if expOpen, exists := s.ChoiceRulesOpen[ruleKey]; exists {
-						isRuleOpen = expOpen
-					}
-				}
+				selectedVal := s.buildChoiceTargetOptions(modalSc, ch)
+				choiceMap, hasCond := s.buildChoiceRuleViewMap(modalSc.ID, idx, ch, selectedVal)
 				condMet := book.EvaluateCondition(ch.Condition, testState, s.ActiveBook)
 				if previewMode == "output" && hasCond && !condMet && !ch.ShowWhenLocked {
 					continue
 				}
-				condErrHint := ""
-				if hasCond {
-					condErrHint = book.ExplainConditionExprError(ch.Condition, s.ActiveBook)
-				}
-				effErrHint := ""
-				if hasEff {
-					effErrHint = book.ExplainEffectsExprError(ch.Effects, s.ActiveBook)
-				}
-				arrowSuffix := ""
-				if isFilled && selectedVal != "" && !strings.EqualFold(selectedVal, "END") {
-					arrowSuffix = " -> " + selectedVal
-				}
-				inlineVal := lbl + arrowSuffix
 				targetScID := ch.TargetSceneID
 				if ch.IsEnding && targetScID == "" {
 					targetScID = startID
 				}
-				modalChoices = append(modalChoices, map[string]any{
-					"idx":               idx,
-					"label":             lbl,
-					"arrow_suffix":      arrowSuffix,
-					"inline_value":      inlineVal,
-					"arrow":             arr,
-					"is_branch":         !ch.IsEnding,
-					"is_editable":       true,
-					"target_scene_id":   targetScID,
-					"selected_value":    selectedVal,
-					"selected_label":    selectedLabel,
-					"is_filled":         isFilled,
-					"target_options":    targetOptions,
-					"condition":         condInputVal,
-					"effects":           effInputVal,
-					"has_condition":     hasCond,
-					"has_effects":       hasEff,
-					"has_rule":          hasRule,
-					"is_rule_open":      isRuleOpen,
-					"is_cond_invalid":   condErrHint != "",
-					"is_eff_invalid":    effErrHint != "",
-					"cond_error_hint":   condErrHint,
-					"eff_error_hint":    effErrHint,
-					"is_cond_unmet":     previewMode == "highlight" && hasCond && !condMet,
-					"is_locked_preview": previewMode == "output" && hasCond && !condMet && ch.ShowWhenLocked,
-				})
+				choiceMap["label"] = lbl
+				choiceMap["arrow"] = arr
+				choiceMap["is_branch"] = !ch.IsEnding
+				choiceMap["is_editable"] = true
+				choiceMap["target_scene_id"] = targetScID
+				choiceMap["is_cond_unmet"] = previewMode == "highlight" && hasCond && !condMet
+				choiceMap["is_locked_preview"] = previewMode == "output" && hasCond && !condMet && ch.ShowWhenLocked
+				modalChoices = append(modalChoices, choiceMap)
 			}
 			vars["scene_text_modal_choices"] = modalChoices
 		} else {

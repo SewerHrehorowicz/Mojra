@@ -28,7 +28,7 @@ package gui
 }
 @end
 
-@interface STAppDelegate : NSObject <NSApplicationDelegate, NSWindowDelegate, WKScriptMessageHandler>
+@interface STAppDelegate : NSObject <NSApplicationDelegate, NSWindowDelegate, WKScriptMessageHandler, WKUIDelegate>
 @property (nonatomic, strong) STWindow *window;
 @property (nonatomic, strong) WKWebView *webView;
 @property (nonatomic, copy) NSString *initialURL;
@@ -272,6 +272,7 @@ static NSImage *createStoryTellerAppIcon(void) {
 
     self.webView = [[WKWebView alloc] initWithFrame:[[self.window contentView] bounds]
                                       configuration:config];
+    [self.webView setUIDelegate:self];
     [self.webView setAutoresizingMask:(NSViewWidthSizable | NSViewHeightSizable)];
     [self.webView setValue:@NO forKey:@"drawsBackground"];
 
@@ -306,6 +307,19 @@ static NSImage *createStoryTellerAppIcon(void) {
 
 - (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication *)sender {
     return YES;
+}
+
+- (void)webView:(WKWebView *)webView
+    requestMediaCapturePermissionForOrigin:(WKSecurityOrigin *)origin
+                          initiatedByFrame:(WKFrameInfo *)frame
+                                      type:(WKMediaCaptureType)type
+                           decisionHandler:(void (^)(WKPermissionDecision decision))decisionHandler API_AVAILABLE(macos(12.0)) {
+    NSString *host = [[origin host] lowercaseString];
+    if ([host isEqualToString:@"127.0.0.1"] || [host isEqualToString:@"localhost"]) {
+        decisionHandler(WKPermissionDecisionGrant);
+        return;
+    }
+    decisionHandler(WKPermissionDecisionPrompt);
 }
 
 @end

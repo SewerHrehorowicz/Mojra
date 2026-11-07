@@ -5,6 +5,14 @@ import (
 	"testing"
 )
 
+func ValidateConditionExpr(expr string, b *Book) bool {
+	return ExplainConditionExprError(expr, b) == ""
+}
+
+func ValidateEffectsExpr(expr string, b *Book) bool {
+	return ExplainEffectsExprError(expr, b) == ""
+}
+
 func TestVariablesParseSerializeEvaluateAndSaveRoundTrip(t *testing.T) {
 	rawData := strings.Join([]string{
 		"title: Zatopiona Śluza",

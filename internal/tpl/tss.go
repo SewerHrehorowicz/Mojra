@@ -97,23 +97,9 @@ func TranspileCSSFilesToString(cssFiles []string, stripDev bool, ctx *RenderCont
 		if err != nil {
 			return "", fmt.Errorf("read %s: %w", path, err)
 		}
-		src := string(raw)
-		if stripDev {
-			src = StripDevOnlyBlocks(src)
-		}
-		name := strings.TrimSuffix(strings.TrimSuffix(filepath.Base(path), ".tss"), ".css")
-		rendered, err := transpileCSSWithSwitches(src, name, ctx, switches, stripDev)
-		if err != nil {
+		if err := appendTranspiledCSSChunk(&sb, raw, path, ctx, switches, stripDev); err != nil {
 			return "", err
 		}
-		rendered = strings.TrimSpace(rendered)
-		if rendered == "" {
-			continue
-		}
-		if sb.Len() > 0 {
-			sb.WriteString("\n\n")
-		}
-		sb.WriteString(rendered)
 	}
 	if sb.Len() > 0 {
 		sb.WriteString("\n")
@@ -121,10 +107,25 @@ func TranspileCSSFilesToString(cssFiles []string, stripDev bool, ctx *RenderCont
 	return sb.String(), nil
 }
 
-// TranspileCSSString transpiles a single CSS template string into standard CSS.
-func TranspileCSSString(source, name string, ctx *RenderContext) (string, error) {
-	switches := DefaultCSSSwitches()
-	return transpileCSSWithSwitches(source, name, ctx, switches, false)
+func appendTranspiledCSSChunk(sb *strings.Builder, raw []byte, path string, ctx *RenderContext, switches map[string]*CSSSwitchDef, stripDev bool) error {
+	src := string(raw)
+	if stripDev {
+		src = StripDevOnlyBlocks(src)
+	}
+	name := strings.TrimSuffix(strings.TrimSuffix(filepath.Base(path), ".tss"), ".css")
+	rendered, err := transpileCSSWithSwitches(src, name, ctx, switches, stripDev)
+	if err != nil {
+		return err
+	}
+	rendered = strings.TrimSpace(rendered)
+	if rendered == "" {
+		return nil
+	}
+	if sb.Len() > 0 {
+		sb.WriteString("\n\n")
+	}
+	sb.WriteString(rendered)
+	return nil
 }
 
 type cssPreprocessedLine struct {
@@ -1224,29 +1225,9 @@ func transpileCSSWithSwitches(source, name string, ctx *RenderContext, switches 
 				if !cssPropKeyRe.MatchString(lhs) {
 					return "", fmt.Errorf("css compile error in %s.css:%d: invalid property name %q before -> switch(%s)", name, lineNum, lhs, swName)
 				}
-				psNode := &cssNode{
-					Kind:       cssKindPropSwitch,
-					PropKey:    lhs,
-					SwitchName: swName,
-					Indent:     indent,
-					Line:       lineNum,
-					File:       name,
+				if err := appendPropSwitchNode(parent, &stack, lhs, swName, inlineExpr, name, indent, lineNum, switches); err != nil {
+					return "", err
 				}
-				if inlineExpr != "" {
-					swDef, exists := switches[swName]
-					if !exists {
-						return "", fmt.Errorf("css compile error in %s.css:%d: unknown switch %q", name, lineNum, swName)
-					}
-					cases, err := parseInlineSwitchCases(inlineExpr, swDef, name, swName, lineNum)
-					if err != nil {
-						return "", err
-					}
-					psNode.PropCases = append(psNode.PropCases, cases...)
-					parent.Children = append(parent.Children, psNode)
-					continue
-				}
-				parent.Children = append(parent.Children, psNode)
-				stack = append(stack, psNode)
 				continue
 			}
 
@@ -1269,29 +1250,9 @@ func transpileCSSWithSwitches(source, name string, ctx *RenderContext, switches 
 		// 8. Property declaration (`key: value`, `key value`, or `key switch(...)`)
 		if key, val, hasColon, ok := splitCSSPropertyHeader(content); ok {
 			if swName, inlineExpr, isSw := parseInlineSwitchTarget(val); isSw {
-				psNode := &cssNode{
-					Kind:       cssKindPropSwitch,
-					PropKey:    key,
-					SwitchName: swName,
-					Indent:     indent,
-					Line:       lineNum,
-					File:       name,
+				if err := appendPropSwitchNode(parent, &stack, key, swName, inlineExpr, name, indent, lineNum, switches); err != nil {
+					return "", err
 				}
-				if inlineExpr != "" {
-					swDef, exists := switches[swName]
-					if !exists {
-						return "", fmt.Errorf("css compile error in %s.css:%d: unknown switch %q", name, lineNum, swName)
-					}
-					cases, err := parseInlineSwitchCases(inlineExpr, swDef, name, swName, lineNum)
-					if err != nil {
-						return "", err
-					}
-					psNode.PropCases = append(psNode.PropCases, cases...)
-					parent.Children = append(parent.Children, psNode)
-					continue
-				}
-				parent.Children = append(parent.Children, psNode)
-				stack = append(stack, psNode)
 				continue
 			}
 
@@ -1584,8 +1545,57 @@ func transformCSSValue(val string, ctx *RenderContext) string {
 	return val
 }
 
+func appendPropSwitchNode(parent *cssNode, stack *[]*cssNode, propKey, swName, inlineExpr, name string, indent, lineNum int, switches map[string]*CSSSwitchDef) error {
+	psNode := &cssNode{
+		Kind:       cssKindPropSwitch,
+		PropKey:    propKey,
+		SwitchName: swName,
+		Indent:     indent,
+		Line:       lineNum,
+		File:       name,
+	}
+	if inlineExpr != "" {
+		swDef, exists := switches[swName]
+		if !exists {
+			return fmt.Errorf("css compile error in %s.css:%d: unknown switch %q", name, lineNum, swName)
+		}
+		cases, err := parseInlineSwitchCases(inlineExpr, swDef, name, swName, lineNum)
+		if err != nil {
+			return err
+		}
+		psNode.PropCases = append(psNode.PropCases, cases...)
+		parent.Children = append(parent.Children, psNode)
+		return nil
+	}
+	parent.Children = append(parent.Children, psNode)
+	*stack = append(*stack, psNode)
+	return nil
+}
+
 func isHexDigit(b byte) bool {
 	return (b >= '0' && b <= '9') || (b >= 'a' && b <= 'f') || (b >= 'A' && b <= 'F')
+}
+
+func stepCSSQuoteChar(s string, i int, inQuote *byte, b *strings.Builder) (int, bool) {
+	ch := s[i]
+	if *inQuote != 0 {
+		if ch == '\\' && i+1 < len(s) {
+			b.WriteByte(s[i])
+			b.WriteByte(s[i+1])
+			return i + 2, true
+		}
+		if ch == *inQuote {
+			*inQuote = 0
+		}
+		b.WriteByte(ch)
+		return i + 1, true
+	}
+	if ch == '"' || ch == '\'' {
+		*inQuote = ch
+		b.WriteByte(ch)
+		return i + 1, true
+	}
+	return i, false
 }
 
 func expandShortHexColors(s string) string {
@@ -1593,27 +1603,11 @@ func expandShortHexColors(s string) string {
 	inQuote := byte(0)
 	i := 0
 	for i < len(s) {
+		if nextI, handled := stepCSSQuoteChar(s, i, &inQuote, &b); handled {
+			i = nextI
+			continue
+		}
 		ch := s[i]
-		if inQuote != 0 {
-			if ch == '\\' && i+1 < len(s) {
-				b.WriteByte(s[i])
-				b.WriteByte(s[i+1])
-				i += 2
-				continue
-			}
-			if ch == inQuote {
-				inQuote = 0
-			}
-			b.WriteByte(ch)
-			i++
-			continue
-		}
-		if ch == '"' || ch == '\'' {
-			inQuote = ch
-			b.WriteByte(ch)
-			i++
-			continue
-		}
 		if ch == '#' && (i == 0 || !isCSSIdentChar(s[i-1])) {
 			j := i + 1
 			for j < len(s) && isHexDigit(s[j]) {
@@ -1644,44 +1638,24 @@ func interpolateCSSGoVars(s string, ctx *RenderContext) string {
 	i := 0
 	for i < len(s) {
 		ch := s[i]
-		if inQuote != 0 {
-			if ch == '\\' && i+1 < len(s) {
-				b.WriteByte(s[i])
-				b.WriteByte(s[i+1])
-				i += 2
-				continue
-			}
-			if ch == inQuote {
-				inQuote = 0
-				b.WriteByte(ch)
-				i++
-				continue
-			}
-			if ch == '{' {
-				end := strings.IndexByte(s[i:], '}')
-				if end > 1 {
-					key := strings.TrimSpace(s[i+1 : i+end])
-					if ctx != nil {
-						if v, ok := resolvePath(ctx, key); ok {
-							escaped := strings.ReplaceAll(valToString(v), string(inQuote), `\`+string(inQuote))
-							b.WriteString(escaped)
-						}
-					} else {
-						b.WriteString(s[i : i+end+1])
+		if inQuote != 0 && ch == '{' {
+			end := strings.IndexByte(s[i:], '}')
+			if end > 1 {
+				key := strings.TrimSpace(s[i+1 : i+end])
+				if ctx != nil {
+					if v, ok := resolvePath(ctx, key); ok {
+						escaped := strings.ReplaceAll(valToString(v), string(inQuote), `\`+string(inQuote))
+						b.WriteString(escaped)
 					}
-					i += end + 1
-					continue
+				} else {
+					b.WriteString(s[i : i+end+1])
 				}
+				i += end + 1
+				continue
 			}
-			b.WriteByte(ch)
-			i++
-			continue
 		}
-
-		if ch == '"' || ch == '\'' {
-			inQuote = ch
-			b.WriteByte(ch)
-			i++
+		if nextI, handled := stepCSSQuoteChar(s, i, &inQuote, &b); handled {
+			i = nextI
 			continue
 		}
 
@@ -1708,61 +1682,45 @@ func interpolateCSSGoVars(s string, ctx *RenderContext) string {
 	return b.String()
 }
 
+func consumeCSSVarRef(s string, start int, b *strings.Builder) int {
+	j := start
+	for j < len(s) && isCSSIdentChar(s[j]) {
+		j++
+	}
+	varName := s[start:j]
+	if j < len(s) && s[j] == '(' {
+		depth := 1
+		k := j + 1
+		for k < len(s) && depth > 0 {
+			if s[k] == '(' {
+				depth++
+			} else if s[k] == ')' {
+				depth--
+			}
+			k++
+		}
+		if depth == 0 {
+			fallback := replaceCSSDollarVars(strings.TrimSpace(s[j+1 : k-1]))
+			b.WriteString("var(--" + varName + ", " + fallback + ")")
+			return k
+		}
+	}
+	b.WriteString("var(--" + varName + ")")
+	return j
+}
+
 func replaceCSSDollarVars(s string) string {
 	var b strings.Builder
 	inQuote := byte(0)
 	i := 0
 	for i < len(s) {
+		if nextI, handled := stepCSSQuoteChar(s, i, &inQuote, &b); handled {
+			i = nextI
+			continue
+		}
 		ch := s[i]
-		if inQuote != 0 {
-			if ch == '\\' && i+1 < len(s) {
-				b.WriteByte(s[i])
-				b.WriteByte(s[i+1])
-				i += 2
-				continue
-			}
-			if ch == inQuote {
-				inQuote = 0
-			}
-			b.WriteByte(ch)
-			i++
-			continue
-		}
-		if ch == '"' || ch == '\'' {
-			inQuote = ch
-			b.WriteByte(ch)
-			i++
-			continue
-		}
 		if ch == '$' && i+1 < len(s) && isCSSIdentStart(s[i+1]) {
-			start := i + 1
-			j := start
-			for j < len(s) && isCSSIdentChar(s[j]) {
-				j++
-			}
-			varName := s[start:j]
-			if j < len(s) && s[j] == '(' {
-				// Find matching ')' for fallback value: $var(fallback) -> var(--var, fallback)
-				depth := 1
-				k := j + 1
-				for k < len(s) && depth > 0 {
-					if s[k] == '(' {
-						depth++
-					} else if s[k] == ')' {
-						depth--
-					}
-					k++
-				}
-				if depth == 0 {
-					fallback := strings.TrimSpace(s[j+1 : k-1])
-					fallback = replaceCSSDollarVars(fallback)
-					b.WriteString("var(--" + varName + ", " + fallback + ")")
-					i = k
-					continue
-				}
-			}
-			b.WriteString("var(--" + varName + ")")
-			i = j
+			i = consumeCSSVarRef(s, i+1, &b)
 			continue
 		}
 		if ch == '-' && i+2 < len(s) && s[i+1] == '-' && isCSSIdentStart(s[i+2]) && (i == 0 || !isCSSIdentChar(s[i-1])) {
@@ -1772,33 +1730,7 @@ func replaceCSSDollarVars(s string) string {
 			}
 			alreadyInVar := prev >= 3 && s[prev-3:prev+1] == "var(" && (prev-3 == 0 || !isCSSIdentChar(s[prev-4]))
 			if !alreadyInVar {
-				start := i + 2
-				j := start
-				for j < len(s) && isCSSIdentChar(s[j]) {
-					j++
-				}
-				varName := s[start:j]
-				if j < len(s) && s[j] == '(' {
-					depth := 1
-					k := j + 1
-					for k < len(s) && depth > 0 {
-						if s[k] == '(' {
-							depth++
-						} else if s[k] == ')' {
-							depth--
-						}
-						k++
-					}
-					if depth == 0 {
-						fallback := strings.TrimSpace(s[j+1 : k-1])
-						fallback = replaceCSSDollarVars(fallback)
-						b.WriteString("var(--" + varName + ", " + fallback + ")")
-						i = k
-						continue
-					}
-				}
-				b.WriteString("var(--" + varName + ")")
-				i = j
+				i = consumeCSSVarRef(s, i+2, &b)
 				continue
 			}
 		}
@@ -1816,7 +1748,7 @@ func isCSSIdentChar(b byte) bool {
 	return isCSSIdentStart(b) || (b >= '0' && b <= '9')
 }
 
-func splitTopLevelCommas(s string) []string {
+func splitTopLevelDelimiter(s string, sep byte, skipEmpty bool) []string {
 	var parts []string
 	last := 0
 	inQuote := byte(0)
@@ -1849,64 +1781,29 @@ func splitTopLevelCommas(s string) []string {
 			if bracketDepth > 0 {
 				bracketDepth--
 			}
-		case ',':
-			if parenDepth == 0 && bracketDepth == 0 {
+		default:
+			if ch == sep && parenDepth == 0 && bracketDepth == 0 {
 				trimmed := strings.TrimSpace(s[last:i])
-				if trimmed != "" {
+				if !skipEmpty || trimmed != "" {
 					parts = append(parts, trimmed)
 				}
 				last = i + 1
 			}
 		}
 	}
-	if tail := strings.TrimSpace(s[last:]); tail != "" {
+	tail := strings.TrimSpace(s[last:])
+	if !skipEmpty || tail != "" {
 		parts = append(parts, tail)
 	}
 	return parts
 }
 
+func splitTopLevelCommas(s string) []string {
+	return splitTopLevelDelimiter(s, ',', true)
+}
+
 func splitTopLevelPipes(s string) []string {
-	var parts []string
-	last := 0
-	inQuote := byte(0)
-	parenDepth := 0
-	bracketDepth := 0
-	for i := 0; i < len(s); i++ {
-		ch := s[i]
-		if inQuote != 0 {
-			if ch == '\\' {
-				i++
-				continue
-			}
-			if ch == inQuote {
-				inQuote = 0
-			}
-			continue
-		}
-		switch ch {
-		case '"', '\'':
-			inQuote = ch
-		case '(':
-			parenDepth++
-		case ')':
-			if parenDepth > 0 {
-				parenDepth--
-			}
-		case '[':
-			bracketDepth++
-		case ']':
-			if bracketDepth > 0 {
-				bracketDepth--
-			}
-		case '|':
-			if parenDepth == 0 && bracketDepth == 0 {
-				parts = append(parts, strings.TrimSpace(s[last:i]))
-				last = i + 1
-			}
-		}
-	}
-	parts = append(parts, strings.TrimSpace(s[last:]))
-	return parts
+	return splitTopLevelDelimiter(s, '|', false)
 }
 
 func combineNestedSelectors(parentSel, childSel string) string {

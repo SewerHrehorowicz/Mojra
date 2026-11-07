@@ -8,36 +8,26 @@ import (
 	"storyteller/internal/book"
 )
 
-func (s *Server) terminalChoiceDescriptor() book.Choice {
-	return book.Choice{
-		Target:        "END",
-		TargetSceneID: "END",
-		IsEnding:      true,
-	}
-}
-
-func (s *Server) buildChoiceTargetOptions(sc *book.Scene, ch book.Choice) (string, string, []map[string]any) {
+func (s *Server) buildChoiceTargetOptions(sc *book.Scene, ch book.Choice) string {
 	selectedVal := "END"
-	selectedLabel := "KONIEC (END)"
 	if s.ActiveBook == nil {
-		return selectedVal, selectedLabel, nil
+		return selectedVal
 	}
 	curCh := ""
 	if sc != nil {
 		curCh = strings.TrimSpace(sc.Chapter)
 	}
 	if curCh == "" {
-		curCh = "Rozdział 1"
+		curCh = s.ActiveBook.DefaultChapterName()
 	}
 
-	targetOptions := make([]map[string]any, 0, len(s.ActiveBook.Scenes)+len(s.ActiveBook.Chapters)+2)
 	matchedOption := false
 
 	// 1. Same-chapter scenes
 	for _, cand := range s.ActiveBook.Scenes {
 		candCh := strings.TrimSpace(cand.Chapter)
 		if candCh == "" {
-			candCh = "Rozdział 1"
+			candCh = s.ActiveBook.DefaultChapterName()
 		}
 		if !strings.EqualFold(candCh, curCh) {
 			continue
@@ -48,29 +38,12 @@ func (s *Server) buildChoiceTargetOptions(sc *book.Scene, ch book.Choice) (strin
 		isSel := !ch.IsEnding && !ch.IsChapterLink && ch.TargetSceneID == cand.ID
 		if isSel {
 			matchedOption = true
-		}
-		optVal := cand.ReferenceKey()
-		optLabel := cand.DisplayName()
-		if cand.ExplicitID != "" {
-			if strings.EqualFold(ch.Target, cand.ExplicitID) || isSel {
+			optVal := cand.ReferenceKey()
+			if cand.ExplicitID != "" && (strings.EqualFold(ch.Target, cand.ExplicitID) || isSel) {
 				optVal = cand.ExplicitID
 			}
-			if cand.Name != "" {
-				optLabel = fmt.Sprintf("%s [id: %s]", cand.Name, cand.ExplicitID)
-			} else {
-				optLabel = fmt.Sprintf("[id: %s]", cand.ExplicitID)
-			}
-		}
-		if isSel {
 			selectedVal = optVal
-			selectedLabel = cand.DisplayName()
 		}
-		targetOptions = append(targetOptions, map[string]any{
-			"value":       optVal,
-			"short_label": cand.DisplayName(),
-			"label":       optLabel,
-			"is_active":   isSel,
-		})
 	}
 
 	// 2. Forward chapters (one-way chapter transitions: chapter:<id>)
@@ -81,54 +54,21 @@ func (s *Server) buildChoiceTargetOptions(sc *book.Scene, ch book.Choice) (strin
 			(strings.EqualFold(ch.TargetChapterID, chRef) ||
 				strings.EqualFold(ch.TargetChapterID, chItem.ID) ||
 				strings.EqualFold(ch.Target, optVal))
-		canLink, _ := s.ActiveBook.CanLinkChapters(curCh, chRef)
-		if !canLink && !isCurrentSel {
-			continue
-		}
 		if isCurrentSel {
 			matchedOption = true
-		}
-		shortLbl := "↪ Rozdział: " + chItem.DisplayName()
-		optLabel := shortLbl
-		if chItem.ExplicitID != "" && !strings.EqualFold(chItem.DisplayName(), chItem.ExplicitID) {
-			optLabel = fmt.Sprintf("↪ Rozdział: %s [chapter:%s]", chItem.DisplayName(), chItem.ExplicitID)
-		}
-		if isCurrentSel {
 			selectedVal = optVal
-			selectedLabel = shortLbl
 		}
-		targetOptions = append(targetOptions, map[string]any{
-			"value":       optVal,
-			"short_label": shortLbl,
-			"label":       optLabel,
-			"is_active":   isCurrentSel,
-		})
 	}
 
 	// 3. END
-	isEndSel := ch.IsEnding || strings.EqualFold(ch.Target, "END")
-	if isEndSel {
+	if ch.IsEnding || strings.EqualFold(ch.Target, "END") {
 		matchedOption = true
 		selectedVal = "END"
-		selectedLabel = "KONIEC (END)"
 	}
-	targetOptions = append(targetOptions, map[string]any{
-		"value":       "END",
-		"short_label": "KONIEC (END)",
-		"label":       "KONIEC (END)",
-		"is_active":   isEndSel,
-	})
 	if !matchedOption && ch.Target != "" {
 		selectedVal = ch.Target
-		selectedLabel = "⚠ " + ch.Target
-		targetOptions = append(targetOptions, map[string]any{
-			"value":       ch.Target,
-			"short_label": "⚠ " + ch.Target,
-			"label":       "⚠ " + ch.Target,
-			"is_active":   true,
-		})
 	}
-	return selectedVal, selectedLabel, targetOptions
+	return selectedVal
 }
 
 func (s *Server) buildSceneMediaOptions(sc *book.Scene, buildMenus bool) (curImg, curImgLabel string, imgOptions []map[string]any, curVoice, curVoiceLabel string, voiceOptions []map[string]any) {
@@ -241,7 +181,6 @@ func (s *Server) buildEditorNodeMap(sc *book.Scene, isSelected bool) map[string]
 	}
 
 	hasChoices := len(sc.Choices) >= 2
-	ports := make([]map[string]any, 0, len(sc.Choices))
 	inspectorChoices := sc.Choices
 	if len(inspectorChoices) == 0 || sc.ExplicitEnd {
 		inspectorChoices = []book.Choice{
@@ -259,106 +198,14 @@ func (s *Server) buildEditorNodeMap(sc *book.Scene, isSelected bool) map[string]
 		if lbl == "" && !hasChoices {
 			lbl = "Dalej"
 		}
-		tgt := ch.Target
-		targetChapterRef := ""
-		if ch.IsEnding {
-			tgt = "KONIEC"
-		} else if ch.IsChapterLink && ch.TargetChapterID != "" {
-			targetChapterRef = ch.TargetChapterID
-			if s.ActiveBook != nil {
-				if tCh := s.ActiveBook.FindChapter(ch.TargetChapterID); tCh != nil {
-					tgt = "↪ " + tCh.DisplayName()
-					targetChapterRef = tCh.ReferenceKey()
-				}
-			}
-		} else if tSc := s.findScene(ch.TargetSceneID); tSc != nil {
-			tgt = tSc.DisplayName()
-		}
-
-		var targetOptions []map[string]any
 		selectedVal := "END"
-		selectedLabel := "KONIEC (END)"
 		if isSelected {
-			selectedVal, selectedLabel, targetOptions = s.buildChoiceTargetOptions(sc, ch)
-		}
-		isFilled := !ch.IsEnding &&
-			((ch.TargetSceneID != "" && !strings.EqualFold(ch.TargetSceneID, "END")) ||
-				(ch.IsChapterLink && ch.TargetChapterID != "")) &&
-			(!isSelected || !strings.EqualFold(selectedVal, "END"))
-
-		condInputVal := book.CleanConditionExpr(ch.Condition)
-		if ch.ShowWhenLocked && condInputVal != "" && !strings.HasPrefix(condInputVal, "?") {
-			condInputVal = "? " + condInputVal
-		}
-		effInputVal := book.CleanEffectsExpr(ch.Effects)
-		hasCond := condInputVal != ""
-		hasEff := effInputVal != ""
-		hasRule := hasCond || hasEff
-		hasBookVars := s.ActiveBook != nil && len(s.ActiveBook.Variables) > 0
-		ruleKey := fmt.Sprintf("%s:%d", sc.ID, chIdx)
-		isRuleOpen := hasBookVars
-		if hasBookVars && s.ChoiceRulesOpen != nil {
-			if expOpen, exists := s.ChoiceRulesOpen[ruleKey]; exists {
-				isRuleOpen = expOpen
-			}
+			selectedVal = s.buildChoiceTargetOptions(sc, ch)
 		}
 
-		condErrHint := ""
-		if hasCond {
-			condErrHint = book.ExplainConditionExprError(ch.Condition, s.ActiveBook)
-		}
-		effErrHint := ""
-		if hasEff {
-			effErrHint = book.ExplainEffectsExprError(ch.Effects, s.ActiveBook)
-		}
-
-		arrowSuffix := ""
-		if isFilled && selectedVal != "" && !strings.EqualFold(selectedVal, "END") {
-			arrowSuffix = " -> " + selectedVal
-		}
-		inlineVal := lbl + arrowSuffix
-
-		portMap := map[string]any{
-			"idx":             chIdx,
-			"raw_label":       lbl,
-			"arrow_suffix":    arrowSuffix,
-			"inline_value":    inlineVal,
-			"label":           lbl,
-			"target":          tgt,
-			"target_id":       ch.TargetSceneID,
-			"target_chapter":  targetChapterRef,
-			"selected_value":  selectedVal,
-			"selected_label":  selectedLabel,
-			"is_filled":       isFilled,
-			"target_options":  targetOptions,
-			"condition":       condInputVal,
-			"effects":         effInputVal,
-			"has_condition":   hasCond,
-			"has_effects":     hasEff,
-			"has_rule":        hasRule,
-			"is_rule_open":    isRuleOpen,
-			"is_cond_invalid": condErrHint != "",
-			"is_eff_invalid":  effErrHint != "",
-			"cond_error_hint": condErrHint,
-			"eff_error_hint":  effErrHint,
-		}
+		portMap, _ := s.buildChoiceRuleViewMap(sc.ID, chIdx, ch, selectedVal)
+		portMap["raw_label"] = lbl
 		inspectorPorts = append(inspectorPorts, portMap)
-		if hasChoices {
-			ports = append(ports, portMap)
-		}
-	}
-	implicitTargetID := ""
-	implicitTargetChapter := ""
-	if !hasChoices && len(sc.Choices) == 1 && !sc.Choices[0].IsEnding {
-		implicitTargetID = sc.Choices[0].TargetSceneID
-		if sc.Choices[0].IsChapterLink && sc.Choices[0].TargetChapterID != "" {
-			implicitTargetChapter = sc.Choices[0].TargetChapterID
-			if s.ActiveBook != nil {
-				if tCh := s.ActiveBook.FindChapter(implicitTargetChapter); tCh != nil {
-					implicitTargetChapter = tCh.ReferenceKey()
-				}
-			}
-		}
 	}
 
 	curImg, curImgLabel, imgOptions, curVoice, curVoiceLabel, voiceOptions := s.buildSceneMediaOptions(sc, isSelected)
@@ -370,14 +217,10 @@ func (s *Server) buildEditorNodeMap(sc *book.Scene, isSelected bool) map[string]
 
 	curChName := strings.TrimSpace(sc.Chapter)
 	if curChName == "" {
-		if s.ActiveBook != nil && s.ActiveBook.IsScreenplay() {
-			curChName = "Akt I"
-		} else {
-			curChName = "Rozdział 1"
-		}
+		curChName = s.ActiveBook.DefaultChapterName()
 	}
 	var chapterOptions []map[string]any
-	if isSelected {
+	if isSelected && s.ActiveBook != nil {
 		chapterOptions = make([]map[string]any, 0, len(s.ActiveBook.Chapters)+1)
 		matchedCh := false
 		for _, chItem := range s.ActiveBook.Chapters {
@@ -411,46 +254,50 @@ func (s *Server) buildEditorNodeMap(sc *book.Scene, isSelected bool) map[string]
 	if scEffectsVal != "" {
 		scEffectsErr = book.ExplainEffectsExprError(sc.Effects, s.ActiveBook)
 	}
+	voiceURL := sc.AudioURL
+	voiceDurLabel := "0:00"
+	if isSelected && curVoice != "" && s.ActiveBook != nil {
+		durLbl, stamp := book.ReadAudioDurationAndStamp(s.ActiveBook, curVoice)
+		voiceDurLabel = durLbl
+		if voiceURL != "" && stamp > 0 {
+			voiceURL = fmt.Sprintf("%s?v=%d", voiceURL, stamp)
+		}
+	}
+
+	portCount := 0
+	if hasChoices {
+		portCount = len(inspectorChoices)
+	}
 
 	return map[string]any{
-		"id":                      sc.ID,
-		"explicit_id":             sc.ExplicitID,
-		"current_image":           curImg,
-		"current_image_label":     curImgLabel,
-		"image_options":           imgOptions,
-		"current_voice":           curVoice,
-		"current_voice_label":     curVoiceLabel,
-		"voice_options":           voiceOptions,
-		"name":                    sc.Name,
-		"slugline":                sc.Slugline,
-		"has_slugline":            strings.TrimSpace(sc.Slugline) != "",
-		"synopsis":                sc.Synopsis,
-		"has_synopsis":            strings.TrimSpace(sc.Synopsis) != "",
-		"effects":                 scEffectsVal,
-		"has_effects":             scEffectsVal != "",
-		"is_effects_invalid":      scEffectsErr != "",
-		"effects_error_hint":      scEffectsErr,
-		"is_effects_disabled":     s.isHistoryPreview() || s.ActiveBook == nil || len(s.ActiveBook.Variables) == 0,
-		"script_length_label":     scriptLengthLabel,
-		"chapter":                 curChName,
-		"chapter_options":         chapterOptions,
-		"x":                       sc.X,
-		"y":                       sc.Y,
-		"first_sentence":          extractFirstSentence(sc.Text),
-		"source_file":             sc.SourceFile,
-		"is_selected":             isSelected,
-		"is_start_scene":          isStart,
-		"is_chapter_entry":        isChapterEntry,
-		"is_unreachable":          sc.Unreachable,
-		"has_node_warnings":       len(sc.Warnings) > 0,
-		"node_warnings":           nodeWarns,
-		"ports":                   ports,
-		"inspector_ports":         inspectorPorts,
-		"inspector_port_count":    len(inspectorPorts),
-		"has_choices":             hasChoices,
-		"port_count":              len(ports),
-		"implicit_target_id":      implicitTargetID,
-		"implicit_target_chapter": implicitTargetChapter,
+		"id":                   sc.ID,
+		"explicit_id":          sc.ExplicitID,
+		"current_image":        curImg,
+		"current_image_label":  curImgLabel,
+		"image_options":        imgOptions,
+		"current_voice":        curVoice,
+		"current_voice_label":  curVoiceLabel,
+		"current_voice_url":    voiceURL,
+		"voice_duration_label": voiceDurLabel,
+		"has_voice_file":       curVoice != "" && sc.AudioURL != "",
+		"voice_options":        voiceOptions,
+		"name":                 sc.Name,
+		"slugline":             sc.Slugline,
+		"synopsis":             sc.Synopsis,
+		"effects":              scEffectsVal,
+		"has_effects":          scEffectsVal != "",
+		"is_effects_invalid":   scEffectsErr != "",
+		"effects_error_hint":   scEffectsErr,
+		"script_length_label":  scriptLengthLabel,
+		"chapter":              curChName,
+		"chapter_options":      chapterOptions,
+		"source_file":          sc.SourceFile,
+		"is_start_scene":       isStart,
+		"is_chapter_entry":     isChapterEntry,
+		"has_node_warnings":    len(sc.Warnings) > 0,
+		"node_warnings":        nodeWarns,
+		"inspector_ports":      inspectorPorts,
+		"port_count":           portCount,
 	}
 }
 
@@ -460,8 +307,6 @@ func (s *Server) populateEditorBookAndChapterSettings(vars map[string]any) {
 		vars["has_selected_chapter"] = false
 		vars["is_node_inspector_hidden"] = false
 		vars["multi_scene_items"] = nil
-		vars["chapter_noun"] = "Rozdział"
-		vars["add_chapter_label"] = "+ Rozdział"
 		return
 	}
 
@@ -469,31 +314,24 @@ func (s *Server) populateEditorBookAndChapterSettings(vars map[string]any) {
 	normMode := s.ActiveBook.NormalizedMode()
 	normStd := s.ActiveBook.NormalizedStandard()
 	modeLabel, modeOpts := buildBookModeOptions(normMode)
-	stdLabel, stdOpts := buildScriptStandardOptions(normStd)
+	_, stdOpts := buildScriptStandardOptions(normStd)
 	prefixPills, timePills := buildSluglineHelperPills(normStd)
 
 	vars["is_screenplay_mode"] = isScreenplay
+	vars["voice_recorder_open"] = s.VoiceRecorderOpen
 	vars["book_mode"] = normMode
 	vars["book_mode_label"] = modeLabel
 	vars["book_mode_options"] = modeOpts
 	vars["script_standard"] = normStd
-	vars["script_standard_label"] = stdLabel
 	vars["script_standard_options"] = stdOpts
 	vars["slugline_prefix_pills"] = prefixPills
 	vars["slugline_time_pills"] = timePills
-	if isScreenplay {
-		vars["chapter_noun"] = "Akt"
-		vars["add_chapter_label"] = "+ Akt"
-	} else {
-		vars["chapter_noun"] = "Rozdział"
-		vars["add_chapter_label"] = "+ Rozdział"
-	}
 
 	multiSceneItems := make([]map[string]any, 0, len(s.ActiveBook.Scenes))
 	for _, sc := range s.ActiveBook.Scenes {
 		scCh := strings.TrimSpace(sc.Chapter)
 		if scCh == "" {
-			scCh = "Rozdział 1"
+			scCh = s.ActiveBook.DefaultChapterName()
 		}
 		multiSceneItems = append(multiSceneItems, map[string]any{
 			"id":      sc.ID,
@@ -517,7 +355,7 @@ func (s *Server) populateEditorBookAndChapterSettings(vars map[string]any) {
 		startScene = s.ActiveBook.Scenes[0]
 		startSceneID = startScene.ID
 	}
-	startChapterName := "Rozdział 1"
+	startChapterName := s.ActiveBook.DefaultChapterName()
 	if startScene != nil && strings.TrimSpace(startScene.Chapter) != "" {
 		startChapterName = strings.TrimSpace(startScene.Chapter)
 	} else if len(s.ActiveBook.Chapters) > 0 && strings.TrimSpace(s.ActiveBook.Chapters[0].Name) != "" {
@@ -545,7 +383,7 @@ func (s *Server) populateEditorBookAndChapterSettings(vars map[string]any) {
 	for _, sc := range s.ActiveBook.Scenes {
 		scCh := strings.TrimSpace(sc.Chapter)
 		if scCh == "" {
-			scCh = "Rozdział 1"
+			scCh = s.ActiveBook.DefaultChapterName()
 		}
 		if !strings.EqualFold(scCh, startChapterName) {
 			continue
@@ -580,13 +418,13 @@ func (s *Server) populateEditorBookAndChapterSettings(vars map[string]any) {
 	if selCh != nil {
 		chName := strings.TrimSpace(selCh.Name)
 		if chName == "" {
-			chName = "Rozdział 1"
+			chName = s.ActiveBook.DefaultChapterName()
 		}
 		var chScenes []*book.Scene
 		for _, sc := range s.ActiveBook.Scenes {
 			scCh := strings.TrimSpace(sc.Chapter)
 			if scCh == "" {
-				scCh = "Rozdział 1"
+				scCh = s.ActiveBook.DefaultChapterName()
 			}
 			if strings.EqualFold(scCh, chName) {
 				chScenes = append(chScenes, sc)
@@ -641,10 +479,6 @@ func (s *Server) populateEditorBookAndChapterSettings(vars map[string]any) {
 		if s.ActiveBook.IsScreenplay() {
 			lengthStat = book.FormatEighths(totalEighths)
 		}
-		deleteLabel := "Usuń rozdział"
-		if s.ActiveBook.IsScreenplay() {
-			deleteLabel = "Usuń akt"
-		}
 		vars["selected_chapter"] = map[string]any{
 			"name":                chName,
 			"start_scene_id":      chStartID,
@@ -654,8 +488,6 @@ func (s *Server) populateEditorBookAndChapterSettings(vars map[string]any) {
 			"length_stat":         lengthStat,
 			"branch_count":        branchCount,
 			"exit_count":          exitCount,
-			"can_delete":          len(s.ActiveBook.Chapters) > 1,
-			"delete_label":        deleteLabel,
 		}
 	}
 	vars["has_selected_chapter"] = hasSelectedChapter
@@ -664,8 +496,48 @@ func (s *Server) populateEditorBookAndChapterSettings(vars map[string]any) {
 	vars["is_context_panel_hidden"] = isContextPanelHidden
 	vars["show_editor_help_panel"] = s.EditorHelpModalOpen
 	vars["show_syntax_help_popover"] = s.SyntaxHelpPopoverOpen
-	vars["any_editor_panel_open"] = !isContextPanelHidden || s.EditorVariablesPanelOpen || s.EditorBreakdownPanelOpen || s.EditorHistoryPanelOpen || s.EditorHelpModalOpen
 	s.populateEditorVariablesContext(vars)
+}
+
+func (s *Server) buildChoiceRuleViewMap(sceneID string, idx int, ch book.Choice, selectedVal string) (map[string]any, bool) {
+	condInputVal := book.CleanConditionExpr(ch.Condition)
+	if ch.ShowWhenLocked && condInputVal != "" && !strings.HasPrefix(condInputVal, "?") {
+		condInputVal = "? " + condInputVal
+	}
+	effInputVal := book.CleanEffectsExpr(ch.Effects)
+	hasCond := condInputVal != ""
+	hasEff := effInputVal != ""
+	hasRule := hasCond || hasEff
+	hasBookVars := s.ActiveBook != nil && len(s.ActiveBook.Variables) > 0
+	ruleKey := fmt.Sprintf("%s:%d", sceneID, idx)
+	isRuleOpen := hasBookVars
+	if hasBookVars && s.ChoiceRulesOpen != nil {
+		if expOpen, exists := s.ChoiceRulesOpen[ruleKey]; exists {
+			isRuleOpen = expOpen
+		}
+	}
+	condErrHint := ""
+	if hasCond {
+		condErrHint = book.ExplainConditionExprError(ch.Condition, s.ActiveBook)
+	}
+	effErrHint := ""
+	if hasEff {
+		effErrHint = book.ExplainEffectsExprError(ch.Effects, s.ActiveBook)
+	}
+	return map[string]any{
+		"idx":             idx,
+		"selected_value":  selectedVal,
+		"condition":       condInputVal,
+		"effects":         effInputVal,
+		"has_condition":   hasCond,
+		"has_effects":     hasEff,
+		"has_rule":        hasRule,
+		"is_rule_open":    isRuleOpen,
+		"is_cond_invalid": condErrHint != "",
+		"is_eff_invalid":  effErrHint != "",
+		"cond_error_hint": condErrHint,
+		"eff_error_hint":  effErrHint,
+	}, hasCond
 }
 
 func (s *Server) populateEditorSelectedNodeOnly(vars map[string]any) {
@@ -682,13 +554,8 @@ func (s *Server) populateEditorSelectedNodeOnly(vars map[string]any) {
 }
 
 func (s *Server) populateEditorContext(vars map[string]any) {
-	s.populateEditorBookAndChapterSettings(vars)
+	s.populateEditorSelectedNodeOnly(vars)
 	selected := s.findScene(s.SelectedSceneID)
-	if selected == nil {
-		selected = s.ActiveBook.Scenes[0]
-		s.SelectedSceneID = selected.ID
-	}
-	vars["selected_scene_id"] = selected.ID
 
 	orderedScenes := make([]*book.Scene, len(s.ActiveBook.Scenes))
 	copy(orderedScenes, s.ActiveBook.Scenes)
@@ -700,149 +567,11 @@ func (s *Server) populateEditorContext(vars map[string]any) {
 		return orderedScenes[i].Col < orderedScenes[j].Col
 	})
 
-	allNodes := make([]map[string]any, 0, len(orderedScenes))
-	var selectedNodeMap map[string]any
-	for _, sc := range orderedScenes {
-		isSel := sc.ID == selected.ID
-		nodeMap := s.buildEditorNodeMap(sc, isSel)
-		if isSel {
-			selectedNodeMap = nodeMap
-		}
-		allNodes = append(allNodes, nodeMap)
-	}
-	vars["all_nodes"] = allNodes
-	if selectedNodeMap == nil && len(allNodes) > 0 {
-		selectedNodeMap = allNodes[0]
-	}
-	vars["selected_node"] = selectedNodeMap
-	vars["has_selected_node"] = selectedNodeMap != nil
-
-	chapterGroups := make([]map[string]any, 0, len(s.ActiveBook.Chapters))
-	for chIdx, chItem := range s.ActiveBook.Chapters {
-		chName := strings.TrimSpace(chItem.Name)
-		if chName == "" {
-			continue
-		}
-		var chScenes []*book.Scene
-		for _, sc := range s.ActiveBook.Scenes {
-			scCh := strings.TrimSpace(sc.Chapter)
-			if scCh == "" {
-				scCh = "Rozdział 1"
-			}
-			if strings.EqualFold(scCh, chName) {
-				chScenes = append(chScenes, sc)
-			}
-		}
-		if len(chScenes) == 0 {
-			continue
-		}
-		minX, maxX := chScenes[0].X, chScenes[0].X+192
-		minY, maxY := chScenes[0].Y, chScenes[0].Y+120
-		for _, sc := range chScenes[1:] {
-			if sc.X < minX {
-				minX = sc.X
-			}
-			if sc.X+192 > maxX {
-				maxX = sc.X + 192
-			}
-			if sc.Y < minY {
-				minY = sc.Y
-			}
-			if sc.Y+120 > maxY {
-				maxY = sc.Y + 120
-			}
-		}
-		count := len(chScenes)
-		sceneWord := "scen"
-		if count == 1 {
-			sceneWord = "scena"
-		} else if count%10 >= 2 && count%10 <= 4 && (count%100 < 12 || count%100 > 14) {
-			sceneWord = "sceny"
-		}
-		chBadge := "ROZDZIAŁ"
-		if s.ActiveBook.IsScreenplay() {
-			chBadge = "AKT"
-		}
-		if chItem.ExplicitID != "" {
-			chBadge += " • " + chItem.ExplicitID
-		} else if chItem.ID != "" {
-			chBadge += " • " + chItem.ID
-		}
-		chRef := chItem.ReferenceKey()
-		isRootChapter := chIdx == 0
-		if s.ActiveBook.StartSceneID != "" {
-			isRootChapter = false
-			for _, sc := range chScenes {
-				if strings.EqualFold(sc.ID, s.ActiveBook.StartSceneID) {
-					isRootChapter = true
-					break
-				}
-			}
-		}
-		var outputPorts []map[string]any
-		seenTargets := make(map[string]bool)
-		for _, sc := range chScenes {
-			for _, ch := range sc.Choices {
-				if ch.IsEnding || !ch.IsChapterLink || ch.TargetChapterID == "" {
-					continue
-				}
-				tCh := s.ActiveBook.FindChapter(ch.TargetChapterID)
-				if tCh == nil {
-					continue
-				}
-				tRef := tCh.ReferenceKey()
-				tKey := strings.ToLower(tRef)
-				if seenTargets[tKey] {
-					continue
-				}
-				seenTargets[tKey] = true
-				outputPorts = append(outputPorts, map[string]any{
-					"idx":         len(outputPorts),
-					"target_ref":  tRef,
-					"target_name": tCh.DisplayName(),
-					"port_class":  "port-filled",
-					"title":       fmt.Sprintf("Wyjście rozdziału do: %s (przeciągnij, aby zmienić lub rozłączyć)", tCh.DisplayName()),
-				})
-			}
-		}
-		if len(outputPorts) == 0 {
-			outputPorts = append(outputPorts, map[string]any{
-				"idx":         0,
-				"target_ref":  "",
-				"target_name": "",
-				"port_class":  "",
-				"title":       fmt.Sprintf("Port wyjściowy rozdziału „%s” — przeciągnij przewód ze sceny tutaj lub stąd do kolejnego rozdziału", chName),
-			})
-		}
-		startSceneID := chItem.StartSceneID
-		if startSceneID == "" && len(chScenes) > 0 {
-			startSceneID = chScenes[0].ID
-		}
-		chapterGroups = append(chapterGroups, map[string]any{
-			"idx":            chIdx + 1,
-			"id":             chItem.ID,
-			"ref":            chRef,
-			"badge":          chBadge,
-			"name":           chName,
-			"is_root":        isRootChapter,
-			"start_scene_id": startSceneID,
-			"output_ports":   outputPorts,
-			"scene_count":    count,
-			"scene_word":     sceneWord,
-			"x":              minX - 36,
-			"y":              minY - 52,
-			"w":              (maxX - minX) + 72,
-			"h":              (maxY - minY) + 96,
-			"next_x":         book.SnapToGrid(minX),
-			"next_y":         book.SnapToGrid(maxY + 120),
-		})
-	}
-	vars["chapter_groups"] = chapterGroups
 	edZoom := s.ActiveBook.EditorZoom
 	if edZoom < 0.2 || edZoom > 3.0 {
 		edZoom = 1.0
 	}
-	vars["studio_graph_payload"] = buildStudioGraphPayload(s.ActiveBook, edZoom, chapterGroups, allNodes)
+	vars["studio_graph_payload"] = buildStudioGraphPayload(s.ActiveBook, edZoom, selected.ID, orderedScenes)
 
 	s.populateEditorBreakdownContext(vars)
 	s.populateEditorHistoryContext(vars)
@@ -862,36 +591,90 @@ func boolToPayloadBit(b bool) int {
 	return 0
 }
 
-func buildStudioGraphPayload(b *book.Book, edZoom float64, chapterGroups, allNodes []map[string]any) string {
+func buildStudioGraphPayload(b *book.Book, edZoom float64, selectedSceneID string, orderedScenes []*book.Scene) string {
 	if b == nil {
 		return ""
 	}
 	var sb strings.Builder
-	sb.Grow(len(allNodes)*160 + len(chapterGroups)*120 + 64)
+	sb.Grow(len(orderedScenes)*160 + len(b.Chapters)*120 + 64)
 	fmt.Fprintf(&sb, "viewport | pan_x:%d | pan_y:%d | zoom:%.2f | has_view:%d\n",
 		b.EditorPanX, b.EditorPanY, edZoom, boolToPayloadBit(b.HasEditorView))
 
-	for _, chg := range chapterGroups {
-		chID, _ := chg["id"].(string)
-		chRef, _ := chg["ref"].(string)
-		chName, _ := chg["name"].(string)
-		isRoot, _ := chg["is_root"].(bool)
-		startSceneID, _ := chg["start_scene_id"].(string)
-		x, _ := chg["x"].(int)
-		y, _ := chg["y"].(int)
-		w, _ := chg["w"].(int)
-		h, _ := chg["h"].(int)
-
-		var outRefs []string
-		if outPorts, ok := chg["output_ports"].([]map[string]any); ok {
-			for _, op := range outPorts {
-				if tRef, _ := op["target_ref"].(string); tRef != "" {
-					outRefs = append(outRefs, sanitizeGraphPayloadField(tRef))
+	for chIdx, chItem := range b.Chapters {
+		chName := strings.TrimSpace(chItem.Name)
+		if chName == "" {
+			continue
+		}
+		var chScenes []*book.Scene
+		for _, sc := range b.Scenes {
+			scCh := strings.TrimSpace(sc.Chapter)
+			if scCh == "" {
+				scCh = b.DefaultChapterName()
+			}
+			if strings.EqualFold(scCh, chName) {
+				chScenes = append(chScenes, sc)
+			}
+		}
+		if len(chScenes) == 0 {
+			continue
+		}
+		minX, maxX := chScenes[0].X, chScenes[0].X+book.NodeCardWidth
+		minY, maxY := chScenes[0].Y, chScenes[0].Y+book.NodeMinLogicalHeight
+		for _, sc := range chScenes[1:] {
+			if sc.X < minX {
+				minX = sc.X
+			}
+			if sc.X+book.NodeCardWidth > maxX {
+				maxX = sc.X + book.NodeCardWidth
+			}
+			if sc.Y < minY {
+				minY = sc.Y
+			}
+			if sc.Y+book.NodeMinLogicalHeight > maxY {
+				maxY = sc.Y + book.NodeMinLogicalHeight
+			}
+		}
+		chRef := chItem.ReferenceKey()
+		isRoot := chIdx == 0
+		if b.StartSceneID != "" {
+			isRoot = false
+			for _, sc := range chScenes {
+				if strings.EqualFold(sc.ID, b.StartSceneID) {
+					isRoot = true
+					break
 				}
 			}
 		}
+		var outRefs []string
+		seenTargets := make(map[string]bool)
+		for _, sc := range chScenes {
+			for _, ch := range sc.Choices {
+				if ch.IsEnding || !ch.IsChapterLink || ch.TargetChapterID == "" {
+					continue
+				}
+				tCh := b.FindChapter(ch.TargetChapterID)
+				if tCh == nil {
+					continue
+				}
+				tRef := tCh.ReferenceKey()
+				tKey := strings.ToLower(tRef)
+				if seenTargets[tKey] {
+					continue
+				}
+				seenTargets[tKey] = true
+				outRefs = append(outRefs, sanitizeGraphPayloadField(tRef))
+			}
+		}
+		startSceneID := chItem.StartSceneID
+		if startSceneID == "" && len(chScenes) > 0 {
+			startSceneID = chScenes[0].ID
+		}
+		x := minX - book.ChapterFramePadX
+		y := minY - book.ChapterFramePadTop
+		w := (maxX - minX) + book.ChapterFramePadX2
+		h := (maxY - minY) + book.ChapterFramePadYTotal
 		fmt.Fprintf(&sb, "chapter | id:%s | ref:%s | name:%s | root:%d | start:%s | x:%d | y:%d | w:%d | h:%d | outs:%s\n",
-			sanitizeGraphPayloadField(chID),
+			sanitizeGraphPayloadField(chItem.ID),
 			sanitizeGraphPayloadField(chRef),
 			sanitizeGraphPayloadField(chName),
 			boolToPayloadBit(isRoot),
@@ -902,22 +685,41 @@ func buildStudioGraphPayload(b *book.Book, edZoom float64, chapterGroups, allNod
 
 	branchRoles, branchParents := book.ComputeBranchRoles(b)
 
-	for _, nd := range allNodes {
-		id, _ := nd["id"].(string)
-		name, _ := nd["name"].(string)
+	for _, sc := range orderedScenes {
+		id := sc.ID
+		name := sc.Name
 		if name == "" {
 			name = id
 		}
-		chapter, _ := nd["chapter"].(string)
-		x, _ := nd["x"].(int)
-		y, _ := nd["y"].(int)
-		isSelected, _ := nd["is_selected"].(bool)
-		isStart, _ := nd["is_start_scene"].(bool)
-		isEntry, _ := nd["is_chapter_entry"].(bool)
-		isUnreachable, _ := nd["is_unreachable"].(bool)
-		hasChoices, _ := nd["has_choices"].(bool)
-		impTarget, _ := nd["implicit_target_id"].(string)
-		impChapter, _ := nd["implicit_target_chapter"].(string)
+		chapter := strings.TrimSpace(sc.Chapter)
+		if chapter == "" {
+			chapter = b.DefaultChapterName()
+		}
+		isSelected := sc.ID == selectedSceneID
+		isStart := false
+		if b.StartSceneID != "" {
+			isStart = strings.EqualFold(sc.ID, b.StartSceneID)
+		} else if len(b.Scenes) > 0 {
+			isStart = sc.ID == b.Scenes[0].ID
+		}
+		isEntry := isStart
+		if !isEntry {
+			if chMeta := b.FindChapter(sc.Chapter); chMeta != nil && chMeta.StartSceneID != "" {
+				isEntry = strings.EqualFold(sc.ID, chMeta.StartSceneID)
+			}
+		}
+		hasChoices := len(sc.Choices) >= 2
+		impTarget := ""
+		impChapter := ""
+		if !hasChoices && len(sc.Choices) == 1 && !sc.Choices[0].IsEnding {
+			impTarget = sc.Choices[0].TargetSceneID
+			if sc.Choices[0].IsChapterLink && sc.Choices[0].TargetChapterID != "" {
+				impChapter = sc.Choices[0].TargetChapterID
+				if tCh := b.FindChapter(impChapter); tCh != nil {
+					impChapter = tCh.ReferenceKey()
+				}
+			}
+		}
 		branchRole := branchRoles[id]
 		branchParent := branchParents[id]
 
@@ -925,30 +727,45 @@ func buildStudioGraphPayload(b *book.Book, edZoom float64, chapterGroups, allNod
 			sanitizeGraphPayloadField(id),
 			sanitizeGraphPayloadField(name),
 			sanitizeGraphPayloadField(chapter),
-			x, y,
+			sc.X, sc.Y,
 			boolToPayloadBit(isSelected),
 			boolToPayloadBit(isStart),
 			boolToPayloadBit(isEntry),
-			boolToPayloadBit(isUnreachable),
+			boolToPayloadBit(sc.Unreachable),
 			boolToPayloadBit(hasChoices),
 			sanitizeGraphPayloadField(impTarget),
 			sanitizeGraphPayloadField(impChapter),
 			sanitizeGraphPayloadField(branchRole),
 			sanitizeGraphPayloadField(branchParent))
 
-		if ports, ok := nd["ports"].([]map[string]any); ok {
-			for _, pt := range ports {
-				idx, _ := pt["idx"].(int)
-				lbl, _ := pt["label"].(string)
-				targetID, _ := pt["target_id"].(string)
-				targetChapter, _ := pt["target_chapter"].(string)
-				hasCond, _ := pt["has_condition"].(bool)
+		if hasChoices {
+			inspectorChoices := sc.Choices
+			if len(inspectorChoices) == 0 || sc.ExplicitEnd {
+				inspectorChoices = []book.Choice{
+					{
+						Label:      "Dalej",
+						Target:     "END",
+						IsEnding:   true,
+						IsImplicit: true,
+					},
+				}
+			}
+			for chIdx, ch := range inspectorChoices {
+				lbl := ch.Label
+				targetChapterRef := ""
+				if !ch.IsEnding && ch.IsChapterLink && ch.TargetChapterID != "" {
+					targetChapterRef = ch.TargetChapterID
+					if tCh := b.FindChapter(ch.TargetChapterID); tCh != nil {
+						targetChapterRef = tCh.ReferenceKey()
+					}
+				}
+				hasCond := book.CleanConditionExpr(ch.Condition) != ""
 				fmt.Fprintf(&sb, "port | scene:%s | idx:%d | label:%s | target_id:%s | target_chapter:%s | cond:%d\n",
 					sanitizeGraphPayloadField(id),
-					idx,
+					chIdx,
 					sanitizeGraphPayloadField(lbl),
-					sanitizeGraphPayloadField(targetID),
-					sanitizeGraphPayloadField(targetChapter),
+					sanitizeGraphPayloadField(ch.TargetSceneID),
+					sanitizeGraphPayloadField(targetChapterRef),
 					boolToPayloadBit(hasCond))
 			}
 		}

@@ -865,6 +865,154 @@
   width 15px
   height 15px
 
+.node-media-add-btn.voice-rec-toggle-btn
+  position relative
+  border none !important
+  background transparent !important
+  width 24px
+  height 24px
+  color --text-secondary
+
+.node-media-add-btn.voice-rec-toggle-btn:hover,
+.node-media-add-btn.voice-rec-toggle-btn.active
+  color --text-primary
+  background transparent !important
+
+.voice-rec-strip
+  display flex
+  align-items center
+  gap 8px
+  width 100%
+  min-height 28px
+  padding 6px 0 2px 0
+  user-select none
+
+.voice-rec-strip.modal-voice-rec-strip
+  padding 12px 0 6px 0
+  gap 10px
+
+.voice-rec-transport-btn,
+.voice-rec-action-btn
+  width 20px
+  height 20px
+  display inline-flex
+  align-items center
+  justify-content center
+  padding 0
+  border none
+  background transparent
+  color --text-secondary
+  cursor pointer
+  flex-shrink 0
+
+.voice-rec-transport-btn
+  color --text-primary
+
+.voice-rec-transport-btn:hover,
+.voice-rec-action-btn:hover
+  color --text-primary
+
+.voice-rec-icon,
+.voice-rec-btn-icon
+  width 15px
+  height 15px
+  display block
+  pointer-events none
+
+.voice-rec-waveform-wrap
+  position relative
+  flex 1
+  min-width 0
+  height 28px
+  display flex
+  align-items center
+  cursor pointer
+  touch-action none
+
+.modal-voice-rec-strip .voice-rec-waveform-wrap
+  height 30px
+
+.voice-rec-waveform-canvas
+  width 100%
+  height 100%
+  display block
+  pointer-events none
+
+.voice-rec-playhead
+  position absolute
+  top 0
+  bottom 0
+  left 0%
+  width 1px
+  background --text-primary
+  pointer-events none
+  z-index 1
+
+.voice-rec-trim-handle
+  position absolute
+  top 0
+  bottom 0
+  width 10px
+  cursor ew-resize
+  z-index 2
+  touch-action none
+
+.voice-rec-trim-handle::before,
+.voice-rec-trim-handle::after
+  content ""
+  position absolute
+  width 6px
+  height 6px
+  pointer-events none
+
+.voice-rec-trim-handle.trim-start
+  left 0%
+
+.voice-rec-trim-handle.trim-start::before
+  top 0
+  left 0
+  border-top 1px solid --text-primary
+  border-left 1px solid --text-primary
+
+.voice-rec-trim-handle.trim-start::after
+  bottom 0
+  left 0
+  border-bottom 1px solid --text-primary
+  border-left 1px solid --text-primary
+
+.voice-rec-trim-handle.trim-end
+  left 100%
+  transform translateX(-100%)
+
+.voice-rec-trim-handle.trim-end::before
+  top 0
+  right 0
+  border-top 1px solid --text-primary
+  border-right 1px solid --text-primary
+
+.voice-rec-trim-handle.trim-end::after
+  bottom 0
+  right 0
+  border-bottom 1px solid --text-primary
+  border-right 1px solid --text-primary
+
+.voice-rec-strip.is-recording .voice-rec-trim-handle
+  display none
+
+.voice-rec-timer
+  font-family --font-sans
+  font-size 10px
+  font-weight 400
+  color --text-secondary
+  min-width 26px
+  text-align right
+  flex-shrink 0
+  font-variant-numeric tabular-nums
+
+.voice-rec-strip.is-recording .voice-rec-timer
+  color --text-primary
+  font-weight 700
+
 body[data-ui-scale="large"]
   .history-panel-header
     height 42px

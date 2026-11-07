@@ -220,18 +220,14 @@ function cancelPendingInspectorTimers() {
   });
 }
 
-function consumeDirtyInspectorFormIntoParams(params) {
+function flushPendingDirtyFormsInternal(intoParamsObj) {
   if (isEditorHistoryPreview()) {
     cancelPendingInspectorTimers();
     return;
   }
-  if (dirtyBookTitleInput) {
-    commitBookTitleInput(dirtyBookTitleInput);
-  }
+  if (dirtyBookTitleInput) commitBookTitleInput(dirtyBookTitleInput);
   if (dirtyChapterInputs.size > 0) {
-    Array.from(dirtyChapterInputs).forEach((inp) => {
-      commitChapterTitleInput(inp);
-    });
+    Array.from(dirtyChapterInputs).forEach(commitChapterTitleInput);
   }
   ["#form-scene-text", "#editor-context-form"].forEach((sel) => {
     const form = qs(sel);
@@ -242,51 +238,22 @@ function consumeDirtyInspectorFormIntoParams(params) {
       liveSaveTimers.delete(form);
     }
     dirtyInspectorForms.delete(form);
-    if (params && typeof params === "object") {
-      const fd = new FormData(form);
-      fd.forEach((val, key) => {
-        if (params[key] === undefined) {
-          params[key] = val;
-        }
+    if (intoParamsObj && typeof intoParamsObj === "object") {
+      new FormData(form).forEach((val, key) => {
+        if (intoParamsObj[key] === undefined) intoParamsObj[key] = val;
       });
+    } else {
+      postServerActionSilent("AutoSaveScene", new FormData(form));
     }
   });
+}
+
+function consumeDirtyInspectorFormIntoParams(params) {
+  flushPendingDirtyFormsInternal(params || {});
 }
 
 function flushInspectorFormIfDirty() {
-  if (isEditorHistoryPreview()) {
-    cancelPendingInspectorTimers();
-    return;
-  }
-  if (dirtyBookTitleInput) {
-    commitBookTitleInput(dirtyBookTitleInput);
-  }
-  if (dirtyChapterInputs.size > 0) {
-    Array.from(dirtyChapterInputs).forEach((inp) => {
-      commitChapterTitleInput(inp);
-    });
-  }
-  ["#form-scene-text", "#editor-context-form"].forEach((sel) => {
-    const form = qs(sel);
-    if (!form || !dirtyInspectorForms.has(form)) return;
-    const existingTimer = liveSaveTimers.get(form);
-    if (existingTimer) {
-      clearTimeout(existingTimer);
-      liveSaveTimers.delete(form);
-    }
-    dirtyInspectorForms.delete(form);
-    postServerActionSilent("AutoSaveScene", new FormData(form));
-  });
-}
-
-function isAndroidStudioClient() {
-  if (typeof navigator !== "undefined" && /Android/i.test(navigator.userAgent || "")) {
-    return true;
-  }
-  if (typeof document !== "undefined" && document.body && document.body.getAttribute("data-android") === "true") {
-    return true;
-  }
-  return false;
+  flushPendingDirtyFormsInternal(null);
 }
 
 function isAnyEditorPanelOpen() {
@@ -452,8 +419,6 @@ function selectChapterForContextPanel(chapterName) {
   qsa('.canvas-history-controls .top-action-btn').forEach((btn) => {
     btn.classList.remove("active");
   });
-  syncNodeSelectionDOM();
-  renderStudioCanvas();
   const panel = qs("#editor-context-panel");
   const form = qs("#editor-context-form");
   const chapterForm = qs("#editor-chapter-form");
@@ -468,6 +433,11 @@ function selectChapterForContextPanel(chapterName) {
   if (multiPanel) {
     multiPanel.classList.add("hidden");
   }
+  if (chapterForm) {
+    chapterForm.classList.remove("hidden");
+  }
+  syncNodeSelectionDOM();
+  renderStudioCanvas();
   const currentChapter = chapterForm ? (chapterForm.getAttribute("data-context-chapter") || "").trim() : "";
   if (
     panel &&
@@ -477,9 +447,6 @@ function selectChapterForContextPanel(chapterName) {
   ) {
     updateEditorContextPanelVisibility();
     return;
-  }
-  if (chapterForm && currentChapter.toLowerCase() === cleanName.toLowerCase()) {
-    chapterForm.classList.remove("hidden");
   }
   updateEditorContextPanelVisibility();
   sendServerAction("SelectStudioChapter", { chapter: cleanName });
@@ -590,25 +557,7 @@ function syncNodeSelectionDOM() {
     if (form) form.classList.add("hidden");
     if (chapterForm) chapterForm.classList.add("hidden");
     if (bookForm) bookForm.classList.add("hidden");
-    const bookSettingsBtn = qs("#btn-book-settings");
-    if (bookSettingsBtn) bookSettingsBtn.classList.remove("active");
-    const breakdownBtn = qs("#btn-editor-breakdown");
-    if (breakdownBtn) breakdownBtn.classList.remove("active");
-    const breakdownPanel = qs("#editor-breakdown-panel");
-    if (breakdownPanel) breakdownPanel.classList.add("hidden");
-    const variablesBtn = qs("#btn-editor-variables");
-    if (variablesBtn) variablesBtn.classList.remove("active");
-    const variablesPanel = qs("#editor-variables-panel");
-    if (variablesPanel) variablesPanel.classList.add("hidden");
-    const historyPanel = qs("#editor-history-panel");
-    if (historyPanel) historyPanel.classList.add("hidden");
-    const helpPanel = qs("#editor-help-panel");
-    if (helpPanel) helpPanel.classList.add("hidden");
-    const helpBtn = qs("#btn-editor-help");
-    if (helpBtn) helpBtn.classList.remove("active");
-    qsa('.canvas-history-controls .top-action-btn').forEach((btn) => {
-      btn.classList.remove("active");
-    });
+    closeAuxiliaryStudioPanelsAndButtons();
     if (multiPanel) {
       multiPanel.classList.remove("hidden");
       const countLabel = qs("#multi-select-count-label", multiPanel);

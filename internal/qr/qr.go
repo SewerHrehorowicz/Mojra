@@ -2,11 +2,9 @@ package qr
 
 import (
 	"bytes"
-	"fmt"
 	"image"
 	"image/color"
 	"image/png"
-	"strings"
 )
 
 // Pure-Go ISO/IEC 18004 QR Code generator (Byte mode, Error Correction Level L, Versions 1..4).
@@ -120,30 +118,6 @@ func EncodePNG(text string, modulePx int) ([]byte, error) {
 		return nil, err
 	}
 	return buf.Bytes(), nil
-}
-
-// EncodeSVG renders a QR code as an SVG string.
-func EncodeSVG(text string) (string, error) {
-	mat, err := EncodeMatrix(text)
-	if err != nil {
-		return "", err
-	}
-	n := len(mat)
-	quiet := 4
-	total := n + quiet*2
-
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 %d %d" shape-rendering="crispEdges">`, total, total))
-	sb.WriteString(fmt.Sprintf(`<rect width="%d" height="%d" fill="#ffffff"/>`, total, total))
-	for r := 0; r < n; r++ {
-		for c := 0; c < n; c++ {
-			if mat[r][c] {
-				sb.WriteString(fmt.Sprintf(`<rect x="%d" y="%d" width="1" height="1" fill="#000000"/>`, c+quiet, r+quiet))
-			}
-		}
-	}
-	sb.WriteString(`</svg>`)
-	return sb.String(), nil
 }
 
 func buildDataCodewords(payload []byte, capacityBytes int) []byte {

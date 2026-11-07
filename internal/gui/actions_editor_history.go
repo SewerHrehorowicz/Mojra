@@ -138,7 +138,9 @@ func (s *Server) ensureHistoryBaselineBeforeMutation() {
 		return
 	}
 	if s.ActiveBook != nil && !s.ActiveBook.IsPacked && !s.StandaloneMode {
-		_ = book.EnsureBookHistoryBaseline(s.ActiveBook, s.SelectedSceneID)
+		if err := book.EnsureBookHistoryBaseline(s.ActiveBook, s.SelectedSceneID); err != nil {
+			return
+		}
 		s.invalidateHistoryCache()
 	}
 }
@@ -148,7 +150,9 @@ func (s *Server) recordHistoryAfterMutation(label, kind, coalesceKey string) {
 		return
 	}
 	if s.ActiveBook != nil && !s.ActiveBook.IsPacked && !s.StandaloneMode {
-		_ = book.RecordBookHistoryStep(s.ActiveBook, label, kind, coalesceKey, s.SelectedSceneID)
+		if err := book.RecordBookHistoryStep(s.ActiveBook, label, kind, coalesceKey, s.SelectedSceneID); err != nil {
+			return
+		}
 		s.invalidateHistoryCache()
 	}
 }
@@ -178,8 +182,8 @@ func (s *Server) withBookMutation(r *http.Request, flushFormScene bool, fn func(
 	if s.isHistoryPreview() {
 		return historyPreviewLockedToast
 	}
-	if flushFormScene && r != nil && r.FormValue("scene_id") != "" {
-		_ = s.saveSceneFromForm(r)
+	if flushFormScene {
+		s.flushFormSceneIfPresent(r)
 	}
 	if s.ActiveBook == nil || s.ActiveBook.IsPacked {
 		return ""
@@ -259,12 +263,9 @@ func (s *Server) writeEditorHistoryHeaders(w http.ResponseWriter) {
 	}
 }
 
-func (s *Server) undoEditor(r *http.Request) string {
+func (s *Server) undoEditor(_ *http.Request) string {
 	if s.isHistoryPreview() {
 		return historyPreviewLockedToast
-	}
-	if r.FormValue("scene_id") != "" {
-		_ = s.saveSceneFromForm(r)
 	}
 	if s.ActiveBook != nil && !s.ActiveBook.IsPacked {
 		if selID, lbl, err := book.UndoBookHistory(s.ActiveBook); err == nil {
@@ -293,37 +294,19 @@ func (s *Server) redoEditor(_ *http.Request) string {
 }
 
 func (s *Server) toggleEditorHistoryPanel(r *http.Request) string {
-	if !s.isHistoryPreview() && r.FormValue("scene_id") != "" {
-		_ = s.saveSceneFromForm(r)
-	}
 	if r.FormValue("book_settings_open") == "false" {
 		s.BookSettingsOpen = false
 	}
 	s.EditorHistoryPanelOpen = !s.EditorHistoryPanelOpen
 	if s.EditorHistoryPanelOpen {
-		s.BookSettingsOpen = false
-		s.SelectedChapter = ""
-		s.EditorBreakdownPanelOpen = false
-		s.EditorVariablesPanelOpen = false
-		s.EditorHelpModalOpen = false
-		if s.SceneTextModalWidthMode == "full" {
-			s.SceneTextModalWidthMode = "half"
-		}
+		s.activateStudioRightPanel("history")
 		s.ensureHistoryBaselineBeforeMutation()
 	}
 	return ""
 }
 
-func (s *Server) openEditorHistoryPanel(r *http.Request) string {
-	if !s.isHistoryPreview() && r.FormValue("scene_id") != "" {
-		_ = s.saveSceneFromForm(r)
-	}
-	s.EditorHistoryPanelOpen = true
-	s.BookSettingsOpen = false
-	s.SelectedChapter = ""
-	s.EditorBreakdownPanelOpen = false
-	s.EditorVariablesPanelOpen = false
-	s.EditorHelpModalOpen = false
+func (s *Server) openEditorHistoryPanel(_ *http.Request) string {
+	s.activateStudioRightPanel("history")
 	s.ensureHistoryBaselineBeforeMutation()
 	return ""
 }
@@ -336,9 +319,6 @@ func (s *Server) closeEditorHistoryPanel(_ *http.Request) string {
 func (s *Server) saveHistoryVersion(r *http.Request) string {
 	if s.isHistoryPreview() {
 		return historyPreviewLockedToast
-	}
-	if r.FormValue("scene_id") != "" {
-		_ = s.saveSceneFromForm(r)
 	}
 	if s.ActiveBook != nil && !s.ActiveBook.IsPacked {
 		verName := strings.TrimSpace(r.FormValue("version_name"))
@@ -357,9 +337,7 @@ func (s *Server) saveHistoryVersion(r *http.Request) string {
 }
 
 func (s *Server) previewHistoryRevision(r *http.Request) string {
-	if !s.isHistoryPreview() && r != nil && r.FormValue("scene_id") != "" {
-		_ = s.saveSceneFromForm(r)
-	}
+	s.flushFormSceneIfPresent(r)
 	if s.ActiveBook == nil || s.ActiveBook.IsPacked || s.StandaloneMode {
 		return ""
 	}
@@ -491,7 +469,7 @@ func (s *Server) playHistoryRevision(r *http.Request) string {
 		}
 		s.Settings.ActiveView = "player"
 		s.closeAllModals()
-		_ = book.SaveAppSettings(s.SavesDir, s.Settings)
+		s.persistSettings()
 		if s.isHistoryPreview() && s.PreviewRevisionLabel != "" {
 			return "Podgląd w odtwarzaczu: " + s.PreviewRevisionLabel
 		}
@@ -525,9 +503,7 @@ func (s *Server) restoreHistoryRevision(r *http.Request) string {
 }
 
 func (s *Server) copyHistoryRevisionToBranchAction(r *http.Request) string {
-	if !s.isHistoryPreview() && r != nil && r.FormValue("scene_id") != "" {
-		_ = s.saveSceneFromForm(r)
-	}
+	s.flushFormSceneIfPresent(r)
 	if s.ActiveBook != nil && !s.ActiveBook.IsPacked {
 		revID := ""
 		targetBranch := ""
@@ -559,9 +535,6 @@ func (s *Server) copyHistoryRevisionToBranchAction(r *http.Request) string {
 }
 
 func (s *Server) promptCreateHistoryBranchAction(r *http.Request) string {
-	if !s.isHistoryPreview() && r != nil && r.FormValue("scene_id") != "" {
-		_ = s.saveSceneFromForm(r)
-	}
 	if s.ActiveBook == nil || s.ActiveBook.IsPacked {
 		return ""
 	}
@@ -636,9 +609,6 @@ func (s *Server) createHistoryBranchByName(branchName, fromRev string) string {
 }
 
 func (s *Server) createHistoryBranchAction(r *http.Request) string {
-	if !s.isHistoryPreview() && r.FormValue("scene_id") != "" {
-		_ = s.saveSceneFromForm(r)
-	}
 	branchName := strings.TrimSpace(r.FormValue("branch_name"))
 	if branchName == "" {
 		branchName = strings.TrimSpace(r.FormValue("branch"))
@@ -648,9 +618,6 @@ func (s *Server) createHistoryBranchAction(r *http.Request) string {
 }
 
 func (s *Server) switchHistoryBranchAction(r *http.Request) string {
-	if !s.isHistoryPreview() && r.FormValue("scene_id") != "" {
-		_ = s.saveSceneFromForm(r)
-	}
 	if s.isHistoryPreview() {
 		s.exitHistoryPreview()
 	}
@@ -662,22 +629,6 @@ func (s *Server) switchHistoryBranchAction(r *http.Request) string {
 		if selID, err := book.SwitchBookBranch(s.ActiveBook, branchName); err == nil {
 			s.reloadActiveBookAfterHistoryRestore(selID)
 			return "Przełączono na gałąź: " + book.SanitizeBookID(branchName)
-		} else {
-			return err.Error()
-		}
-	}
-	return ""
-}
-
-func (s *Server) deleteHistoryBranchAction(r *http.Request) string {
-	if s.ActiveBook != nil && !s.ActiveBook.IsPacked {
-		branchName := strings.TrimSpace(r.FormValue("branch"))
-		if branchName == "" {
-			branchName = strings.TrimSpace(r.FormValue("branch_name"))
-		}
-		if err := book.DeleteBookBranch(s.ActiveBook, branchName); err == nil {
-			s.invalidateHistoryCache()
-			return "Usunięto gałąź: " + book.SanitizeBookID(branchName)
 		} else {
 			return err.Error()
 		}

@@ -14,9 +14,7 @@ func (s *Server) saveAudioTime(r *http.Request) string {
 	if s.PlayerBook != nil && s.Save != nil {
 		if t, err := strconv.ParseFloat(r.FormValue("time"), 64); err == nil && t >= 0 {
 			s.Save.AudioTime = t
-			if !s.isHistoryPreview() {
-				_ = book.UpdateSaveAudioTimeInPlace(s.SavesDir, s.PlayerBook.ID, t, s.PlayerBook.StartSceneID)
-			}
+			s.persistAudioTimeInPlace(t)
 		}
 	}
 	return ""
@@ -72,23 +70,6 @@ func (s *Server) focusPresent(_ *http.Request) string {
 	return ""
 }
 
-func (s *Server) rewindStepNow(r *http.Request) string {
-	if stepIdx, err := strconv.Atoi(r.FormValue("step")); err == nil && s.Save != nil && stepIdx >= 0 && stepIdx < len(s.Save.History) {
-		targetSceneID := s.Save.History[stepIdx].SceneID
-		if len(s.Save.History[stepIdx].Variables) > 0 {
-			s.Save.Variables = book.CloneVariablesMap(s.Save.History[stepIdx].Variables)
-		}
-		s.Save.History = s.Save.History[:stepIdx]
-		s.Save.CurrentSceneID = targetSceneID
-		s.Save.AudioTime = 0
-		s.HistoryRevealed = false
-		s.FocusedHistoryIdx = -1
-		_ = book.WriteSaveState(s.SavesDir, s.Save)
-		return "Cofnięto opowieść do wybranej sceny."
-	}
-	return ""
-}
-
 func (s *Server) promptRewindStep(r *http.Request) string {
 	if stepIdx, err := strconv.Atoi(r.FormValue("step")); err == nil && s.Save != nil && stepIdx >= 0 && stepIdx < len(s.Save.History) {
 		entry := s.Save.History[stepIdx]
@@ -133,48 +114,25 @@ func (s *Server) cycleAudioSpeed(_ *http.Request) string {
 		}
 	}
 	s.Settings.PlaybackSpeed = next
-	_ = book.SaveAppSettings(s.SavesDir, s.Settings)
+	s.persistSettings()
 	if s.Save != nil {
 		s.Save.PlaybackSpeed = next
-		if !s.isHistoryPreview() {
-			_ = book.WriteSaveState(s.SavesDir, s.Save)
-		}
+		s.persistSaveState()
 	}
 	return ""
 }
 
 func (s *Server) toggleAutoChoice(_ *http.Request) string {
 	s.Settings.AutoChoice = !s.Settings.AutoChoice
-	_ = book.SaveAppSettings(s.SavesDir, s.Settings)
+	s.persistSettings()
 	if s.Save != nil {
 		s.Save.AutoChoice = s.Settings.AutoChoice
-		if !s.isHistoryPreview() {
-			_ = book.WriteSaveState(s.SavesDir, s.Save)
-		}
-	}
-	return ""
-}
-
-func (s *Server) toggleAutoStrategy(_ *http.Request) string {
-	if s.Settings.AutoChoiceStrategy == "random" {
-		s.Settings.AutoChoiceStrategy = "first"
-	} else {
-		s.Settings.AutoChoiceStrategy = "random"
-	}
-	_ = book.SaveAppSettings(s.SavesDir, s.Settings)
-	if s.Save != nil {
-		s.Save.AutoChoiceStrategy = s.Settings.AutoChoiceStrategy
-		if !s.isHistoryPreview() {
-			_ = book.WriteSaveState(s.SavesDir, s.Save)
-		}
+		s.persistSaveState()
 	}
 	return ""
 }
 
 func (s *Server) playFromScene(r *http.Request) string {
-	if !s.isHistoryPreview() && r.FormValue("scene_id") != "" {
-		_ = s.saveSceneFromForm(r)
-	}
 	if scID := strings.TrimSpace(r.FormValue("scene")); scID != "" {
 		s.SelectedSceneID = scID
 	}
@@ -185,6 +143,19 @@ func (s *Server) playFromScene(r *http.Request) string {
 			s.PlayerBook = s.ActiveBook
 		}
 		if s.Save != nil {
+			if !strings.EqualFold(s.Save.CurrentSceneID, s.SelectedSceneID) {
+				truncated := false
+				for i, h := range s.Save.History {
+					if strings.EqualFold(h.SceneID, s.SelectedSceneID) {
+						s.Save.History = s.Save.History[:i]
+						truncated = true
+						break
+					}
+				}
+				if !truncated {
+					s.Save.History = nil
+				}
+			}
 			s.Save.CurrentSceneID = s.SelectedSceneID
 			s.Save.AudioTime = 0
 			if len(s.SceneTextTestVars) > 0 {
@@ -192,13 +163,11 @@ func (s *Server) playFromScene(r *http.Request) string {
 			} else {
 				s.Save.Variables = book.EnsureSaveVariables(s.PlayerBook, s.Save.Variables)
 			}
-			if !s.isHistoryPreview() {
-				_ = book.WriteSaveState(s.SavesDir, s.Save)
-			}
+			s.persistSaveState()
 		}
 		s.Settings.ActiveView = "player"
 		s.SceneTextModalID = ""
-		_ = book.SaveAppSettings(s.SavesDir, s.Settings)
+		s.persistSettings()
 	}
 	return ""
 }
@@ -244,8 +213,6 @@ func (s *Server) executeChoiceTransition(fromScene *book.Scene, choice book.Choi
 	s.Save.AudioTime = 0
 	s.HistoryRevealed = false
 	s.FocusedHistoryIdx = -1
-	if !s.isHistoryPreview() {
-		_ = book.WriteSaveState(s.SavesDir, s.Save)
-	}
+	s.persistSaveState()
 	return ""
 }

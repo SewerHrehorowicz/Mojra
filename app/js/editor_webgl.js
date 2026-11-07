@@ -10,7 +10,62 @@ const PORT_RADIUS = 6.5;
 const CHAPTER_PORT_RADIUS = 3.5;
 const CHAPTER_OUT_PORT_PITCH = 37;
 
-// Texture 0: Dedicated 256x128 UI Sprite Atlas (solid white, SDF circle/diamond ports, 90° wire corners, 2x3 grip)
+const CARD = {
+  w: 192,
+  halfW: 96,
+  headerH: 34,
+  choiceH: 26,
+  footerH: 40,
+  baseH: 74,
+  minChapterH: 120,
+  btnSize: 24,
+  pad: 8
+};
+
+const PAD = {
+  x: 36,
+  top: 52,
+  bottom: 44,
+  w: 72,
+  h: 96
+};
+
+const GAP = {
+  grid: 24,
+  chapter: 24,
+  node: 48
+};
+
+const SPATIAL = {
+  shift: 8,
+  minObstacles: 12
+};
+
+const UV = {
+  grid: -100000.0,
+  gridTest: -80000.0,
+  gridOffset: 200000.0,
+  screen: -50000.0,
+  screenTest: -30000.0,
+  solid: 30.0,
+  fontLg: 20.0,
+  fontSm: 10.0,
+  dashDuty: 0.54
+};
+
+function inRect(px, py, x, y, w, h) {
+  return px >= x && px <= x + w && py >= y && py <= y + h;
+}
+
+function choiceRowY(idx) {
+  return CARD.headerH + idx * CARD.choiceH;
+}
+
+function toSpatialCell(coord) {
+  return coord >> SPATIAL.shift;
+}
+
+// Texture 0: Dedicated 256x128 UI Sprite Atlas (/studio-ui.png)
 const UI_ATLAS_W = 256;
 const UI_ATLAS_H = 128;
 
@@ -56,7 +111,6 @@ const studioGraphState = {
   nodeById: new Map(),
   wires: [],
   wirePins: new Map(),
-  bundleOverlays: [],
   collectorBars: [],
   hoveredItem: null,
   editingChapter: null,
@@ -106,16 +160,27 @@ function growInstanceBuffer() {
   instanceArrayBuffer = nextBuf;
   instanceFloatView = nextFloat;
   instanceUint32View = nextUint;
-  studioGL.vboCapacityBytes = 0;
+  if (studioGL.instVboCapacities) {
+    studioGL.instVboCapacities.fill(0);
+  }
+}
+
+function uiAtlasBox(x0, y0, x1, y1, extra) {
+  return Object.assign(
+    {
+      u0: x0 / UI_ATLAS_W,
+      v0: y0 / UI_ATLAS_H,
+      u1: x1 / UI_ATLAS_W,
+      v1: y1 / UI_ATLAS_H
+    },
+    extra
+  );
 }
 
 const studioGL = {
   canvas: null,
   gl: null,
   instExt: null,
-  prog: null,
-  quadVbo: null,
-  instVbo: null,
   uiTex: null,
   fontTex: null,
   uViewSize: null,
@@ -129,6 +194,9 @@ const studioGL = {
   instCursor: 0,
   staticInstCount: 0,
   totalInstCount: 0,
+  uiAtlasImg: null,
+  uiAtlasImgLoaded: false,
+  uiAtlasUploaded: false,
   atlasImg: null,
   atlasImgLoaded: false,
   atlasUploaded: false,
@@ -137,242 +205,29 @@ const studioGL = {
   uv: {
     whiteU: 4 / UI_ATLAS_W,
     whiteV: 4 / UI_ATLAS_H,
-    portFill: { u0: 16 / UI_ATLAS_W, v0: 2 / UI_ATLAS_H, u1: 48 / UI_ATLAS_W, v1: 34 / UI_ATLAS_H, size: 24 },
-    portRing: { u0: 52 / UI_ATLAS_W, v0: 2 / UI_ATLAS_H, u1: 84 / UI_ATLAS_W, v1: 34 / UI_ATLAS_H, size: 24 },
-    portHover: { u0: 88 / UI_ATLAS_W, v0: 2 / UI_ATLAS_H, u1: 120 / UI_ATLAS_W, v1: 34 / UI_ATLAS_H, size: 24 },
-    diamondPortFill: { u0: 16 / UI_ATLAS_W, v0: 66 / UI_ATLAS_H, u1: 48 / UI_ATLAS_W, v1: 98 / UI_ATLAS_H, size: 24 },
-    diamondPortRing: { u0: 52 / UI_ATLAS_W, v0: 66 / UI_ATLAS_H, u1: 84 / UI_ATLAS_W, v1: 98 / UI_ATLAS_H, size: 24 },
-    diamondPortHover: { u0: 88 / UI_ATLAS_W, v0: 66 / UI_ATLAS_H, u1: 120 / UI_ATLAS_W, v1: 98 / UI_ATLAS_H, size: 24 },
-    smallPortFill: { u0: 16 / UI_ATLAS_W, v0: 36 / UI_ATLAS_H, u1: 40 / UI_ATLAS_W, v1: 60 / UI_ATLAS_H, size: 16 },
-    smallPortRing: { u0: 52 / UI_ATLAS_W, v0: 36 / UI_ATLAS_H, u1: 76 / UI_ATLAS_W, v1: 60 / UI_ATLAS_H, size: 16 },
-    smallPortHover: { u0: 88 / UI_ATLAS_W, v0: 36 / UI_ATLAS_H, u1: 112 / UI_ATLAS_W, v1: 60 / UI_ATLAS_H, size: 16 },
-    chevronH: { u0: 188 / UI_ATLAS_W, v0: 2 / UI_ATLAS_H, u1: 204 / UI_ATLAS_W, v1: 18 / UI_ATLAS_H, size: 10 },
-    chevronV: { u0: 204 / UI_ATLAS_W, v0: 2 / UI_ATLAS_H, u1: 220 / UI_ATLAS_W, v1: 18 / UI_ATLAS_H, size: 10 },
-    grip: { u0: 124 / UI_ATLAS_W, v0: 2 / UI_ATLAS_H, u1: 144 / UI_ATLAS_W, v1: 24 / UI_ATLAS_H, w: 20, h: 22 },
-    branchPlus: { u0: 120 / UI_ATLAS_W, v0: 34 / UI_ATLAS_H, u1: 148 / UI_ATLAS_W, v1: 62 / UI_ATLAS_H, size: 15 },
-    editPen: { u0: 152 / UI_ATLAS_W, v0: 34 / UI_ATLAS_H, u1: 180 / UI_ATLAS_W, v1: 62 / UI_ATLAS_H, size: 15 },
-    trashIcon: { u0: 184 / UI_ATLAS_W, v0: 34 / UI_ATLAS_H, u1: 212 / UI_ATLAS_W, v1: 62 / UI_ATLAS_H, size: 15 },
-    cornerTL: { u0: 152 / UI_ATLAS_W, v0: 2 / UI_ATLAS_H, u1: 168 / UI_ATLAS_W, v1: 18 / UI_ATLAS_H },
-    cornerTR: { u0: 168 / UI_ATLAS_W, v0: 2 / UI_ATLAS_H, u1: 184 / UI_ATLAS_W, v1: 18 / UI_ATLAS_H },
-    cornerBL: { u0: 152 / UI_ATLAS_W, v0: 18 / UI_ATLAS_H, u1: 168 / UI_ATLAS_W, v1: 34 / UI_ATLAS_H },
-    cornerBR: { u0: 168 / UI_ATLAS_W, v0: 18 / UI_ATLAS_H, u1: 184 / UI_ATLAS_W, v1: 34 / UI_ATLAS_H },
-    pinArrowH: { u0: 224 / UI_ATLAS_W, v0: 2 / UI_ATLAS_H, u1: 252 / UI_ATLAS_W, v1: 30 / UI_ATLAS_H, size: 16 },
-    pinArrowV: { u0: 224 / UI_ATLAS_W, v0: 34 / UI_ATLAS_H, u1: 252 / UI_ATLAS_W, v1: 62 / UI_ATLAS_H, size: 16 }
+    portFill: uiAtlasBox(16, 2, 48, 34, { size: 24 }),
+    portRing: uiAtlasBox(52, 2, 84, 34, { size: 24 }),
+    portHover: uiAtlasBox(88, 2, 120, 34, { size: 24 }),
+    diamondPortFill: uiAtlasBox(16, 66, 48, 98, { size: 24 }),
+    diamondPortRing: uiAtlasBox(52, 66, 84, 98, { size: 24 }),
+    diamondPortHover: uiAtlasBox(88, 66, 120, 98, { size: 24 }),
+    smallPortFill: uiAtlasBox(16, 36, 40, 60, { size: 16 }),
+    smallPortRing: uiAtlasBox(52, 36, 76, 60, { size: 16 }),
+    smallPortHover: uiAtlasBox(88, 36, 112, 60, { size: 16 }),
+    chevronH: uiAtlasBox(188, 2, 204, 18, { size: 10 }),
+    chevronV: uiAtlasBox(204, 2, 220, 18, { size: 10 }),
+    grip: uiAtlasBox(124, 2, 144, 24, { w: 20, h: 22 }),
+    branchPlus: uiAtlasBox(120, 34, 148, 62, { size: 15 }),
+    editPen: uiAtlasBox(152, 34, 180, 62, { size: 15 }),
+    trashIcon: uiAtlasBox(184, 34, 212, 62, { size: 15 }),
+    cornerTL: uiAtlasBox(152, 2, 168, 18),
+    cornerTR: uiAtlasBox(168, 2, 184, 18),
+    cornerBL: uiAtlasBox(152, 18, 168, 34),
+    cornerBR: uiAtlasBox(168, 18, 184, 34),
+    pinArrowH: uiAtlasBox(224, 2, 252, 30, { size: 16 }),
+    pinArrowV: uiAtlasBox(224, 34, 252, 62, { size: 16 })
   }
 };
-
-function buildUISpriteTextureBytes() {
-  const data = new Uint8Array(UI_ATLAS_W * UI_ATLAS_H * 4);
-  const setPixel = (x, y, r, g, b, a) => {
-    const idx = (y * UI_ATLAS_W + x) << 2;
-    data[idx] = r;
-    data[idx + 1] = g;
-    data[idx + 2] = b;
-    data[idx + 3] = a;
-  };
-  const distToByte = (sd) => {
-    const norm = Math.max(0.0, Math.min(1.0, 0.5 + sd / (2.0 * MSDF_PIXEL_RANGE)));
-    return Math.round(norm * 255);
-  };
-
-  // 1. Solid white block at (2..8, 2..8)
-  for (let y = 2; y < 8; y++) {
-    for (let x = 2; x < 8; x++) {
-      setPixel(x, y, 255, 255, 255, 255);
-    }
-  }
-
-  // 2. Analytic SDF Ports & 90° Wire Corners
-  const spScale = 32.0 / 24.0;
-  for (let y = 0; y < 32; y++) {
-    for (let x = 0; x < 32; x++) {
-      const wx = (x + 0.5 - 16.0) / spScale;
-      const wy = (y + 0.5 - 16.0) / spScale;
-      const r = Math.hypot(wx, wy);
-
-      const bFill = distToByte(PORT_RADIUS - r);
-      setPixel(16 + x, 2 + y, bFill, bFill, bFill, bFill);
-
-      const bRing = distToByte(1.0 - Math.abs(r - PORT_RADIUS));
-      setPixel(52 + x, 2 + y, bRing, bRing, bRing, bRing);
-
-      const bHov = distToByte(PORT_RADIUS + 1.0 - r);
-      setPixel(88 + x, 2 + y, bHov, bHov, bHov, bHov);
-
-      const dr = (Math.abs(wx) + Math.abs(wy)) * 0.78;
-      const bDFill = distToByte(PORT_RADIUS - dr);
-      setPixel(16 + x, 66 + y, bDFill, bDFill, bDFill, bDFill);
-
-      const bDRing = distToByte(1.0 - Math.abs(dr - PORT_RADIUS));
-      setPixel(52 + x, 66 + y, bDRing, bDRing, bDRing, bDRing);
-
-      const bDHov = distToByte(PORT_RADIUS + 1.0 - dr);
-      setPixel(88 + x, 66 + y, bDHov, bDHov, bDHov, bDHov);
-
-      const cwx = (x + 0.5 - 16.0) * (18.0 / 32.0);
-      const cwy = (y + 0.5 - 16.0) * (18.0 / 32.0);
-      const cr = Math.hypot(cwx, cwy);
-      const bCorner = distToByte(1.0 - Math.abs(cr - 8.0));
-      setPixel(152 + x, 2 + y, bCorner, bCorner, bCorner, bCorner);
-    }
-  }
-
-  // 2b. Analytic 2x Smaller SDF Ports (r = 3.5px) for Chapter Ports & Wire Control Pins
-  const smScale = 24.0 / 16.0;
-  for (let y = 0; y < 24; y++) {
-    for (let x = 0; x < 24; x++) {
-      const wx = (x + 0.5 - 12.0) / smScale;
-      const wy = (y + 0.5 - 12.0) / smScale;
-      const r = Math.hypot(wx, wy);
-
-      const bFill = distToByte(CHAPTER_PORT_RADIUS - r);
-      setPixel(16 + x, 36 + y, bFill, bFill, bFill, bFill);
-
-      const bRing = distToByte(1.0 - Math.abs(r - CHAPTER_PORT_RADIUS));
-      setPixel(52 + x, 36 + y, bRing, bRing, bRing, bRing);
-
-      const bHov = distToByte(CHAPTER_PORT_RADIUS + 0.8 - r);
-      setPixel(88 + x, 36 + y, bHov, bHov, bHov, bHov);
-    }
-  }
-
-  // 3. Grip 2x3 dots at (124, 2, 20, 22)
-  for (let row = 0; row < 3; row++) {
-    const cy = 2 + 5 + row * 5;
-    for (let dy = 0; dy < 2; dy++) {
-      for (let dx = 0; dx < 2; dx++) {
-        setPixel(124 + 6 + dx, cy + dy, 255, 255, 255, 255);
-        setPixel(124 + 11 + dx, cy + dy, 255, 255, 255, 255);
-      }
-    }
-  }
-
-  // 4. Analytic SDF Vector Icons (branchPlus at 120,34; editPen at 152,34; trashIcon at 184,34) & Chevrons
-  const ptSegDist = (px, py, x1, y1, x2, y2) => {
-    const dx = x2 - x1;
-    const dy = y2 - y1;
-    const l2 = dx * dx + dy * dy;
-    if (l2 < 0.0001) return Math.hypot(px - x1, py - y1);
-    let t = ((px - x1) * dx + (py - y1) * dy) / l2;
-    if (t < 0) t = 0;
-    else if (t > 1) t = 1;
-    return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
-  };
-  // Open 4px directional chevrons: chevronH at (188,2,16x16), chevronV at (204,2,16x16)
-  const chScale = 16.0 / 10.0;
-  for (let y = 0; y < 16; y++) {
-    for (let x = 0; x < 16; x++) {
-      const wx = (x + 0.5 - 8.0) / chScale;
-      const wy = (y + 0.5 - 8.0) / chScale;
-      const dH = Math.min(
-        ptSegDist(wx, wy, -2.0, -3.0, 1.5, 0.0),
-        ptSegDist(wx, wy, -2.0, 3.0, 1.5, 0.0)
-      );
-      const bH = distToByte(0.85 - dH);
-      setPixel(188 + x, 2 + y, bH, bH, bH, bH);
-      const dV = Math.min(
-        ptSegDist(wx, wy, -3.0, -2.0, 0.0, 1.5),
-        ptSegDist(wx, wy, 3.0, -2.0, 0.0, 1.5)
-      );
-      const bV = distToByte(0.85 - dV);
-      setPixel(204 + x, 2 + y, bV, bV, bV, bV);
-    }
-  }
-  const rasterizeSDFIcon = (ox, oy, segs, halfStroke) => {
-    const sc = 28.0 / 24.0;
-    for (let y = 0; y < 28; y++) {
-      for (let x = 0; x < 28; x++) {
-        const ix = (x + 0.5) / sc;
-        const iy = (y + 0.5) / sc;
-        let minD = 999.0;
-        for (let s = 0; s < segs.length; s++) {
-          const sg = segs[s];
-          const d = ptSegDist(ix, iy, sg[0], sg[1], sg[2], sg[3]);
-          if (d < minD) minD = d;
-        }
-        const b = distToByte(halfStroke - minD);
-        setPixel(ox + x, oy + y, b, b, b, b);
-      }
-    }
-  };
-  rasterizeSDFIcon(
-    120,
-    34,
-    [
-      [3, 12, 8, 12],
-      [8, 12, 12, 7],
-      [12, 7, 15, 7],
-      [8, 12, 12, 17],
-      [12, 17, 18, 17],
-      [19, 4, 19, 10],
-      [16, 7, 22, 7]
-    ],
-    0.95
-  );
-  rasterizeSDFIcon(
-    152,
-    34,
-    [
-      [12, 20, 21, 20],
-      [16.5, 3.5, 20.5, 7.5],
-      [20.5, 7.5, 7, 21],
-      [7, 21, 3, 21],
-      [3, 21, 3, 17],
-      [3, 17, 16.5, 3.5]
-    ],
-    0.95
-  );
-  rasterizeSDFIcon(
-    184,
-    34,
-    [
-      [3, 6, 21, 6],
-      [5, 6, 6, 19],
-      [6, 19, 7.5, 20.5],
-      [7.5, 20.5, 16.5, 20.5],
-      [16.5, 20.5, 18, 19],
-      [18, 19, 19, 6],
-      [10, 11, 10, 17],
-      [14, 11, 14, 17]
-    ],
-    0.95
-  );
-
-  // 5. Analytic SDF Directional Arrowheads for User Wire Control Pins (pinArrowH at 224,2; pinArrowV at 224,34)
-  const pinScale = 28.0 / 16.0;
-  const xBase = -3.85;
-  const xTip = 4.65;
-  const yHalf = 4.25;
-  const dxEdge = xTip - xBase;
-  const edgeLen = Math.hypot(dxEdge, yHalf);
-  const nx = yHalf / edgeLen;
-  const ny = dxEdge / edgeLen;
-  const sdPinArrow = (along, perp) => {
-    const ay = Math.abs(perp);
-    const dBase = along - xBase;
-    const dSlant = -((along - xTip) * nx + ay * ny);
-    const dCore =
-      dBase >= 0.0 && dSlant >= 0.0
-        ? Math.min(dBase, dSlant)
-        : -Math.min(
-            ptSegDist(along, ay, xBase, 0.0, xBase, yHalf),
-            ptSegDist(along, ay, xBase, yHalf, xTip, 0.0)
-          );
-    return dCore + 0.35;
-  };
-  for (let y = 0; y < 28; y++) {
-    for (let x = 0; x < 28; x++) {
-      const wx = (x + 0.5 - 14.0) / pinScale;
-      const wy = (y + 0.5 - 14.0) / pinScale;
-      const bH = distToByte(sdPinArrow(wx, wy));
-      setPixel(224 + x, 2 + y, bH, bH, bH, bH);
-      const bV = distToByte(sdPinArrow(wy, wx));
-      setPixel(224 + x, 34 + y, bV, bV, bV, bV);
-    }
-  }
-
-  return data;
-}
 
 function ensureBuildTimeMSDFMetricsParsed() {
   if (studioGL.metricsParsed) return;
@@ -389,6 +244,7 @@ function ensureBuildTimeMSDFMetricsParsed() {
     const ch = p[1];
     const map = studioGL.glyphMaps[fontId];
     if (!map) continue;
+    const adv = parseFloat(p[10]);
     map.set(ch, {
       u0: parseFloat(p[2]),
       v0: parseFloat(p[3]),
@@ -398,23 +254,38 @@ function ensureBuildTimeMSDFMetricsParsed() {
       h: parseFloat(p[7]),
       ox: parseFloat(p[8]),
       oy: parseFloat(p[9]),
-      adv: parseFloat(p[10])
+      adv: adv,
+      advanceWidth: adv
     });
   }
 }
 
 function startPreloadingMSDFAtlasImage() {
-  if (studioGL.atlasImg || typeof Image === "undefined") return;
-  const img = new Image();
-  studioGL.atlasImg = img;
-  img.onload = () => {
-    studioGL.atlasImgLoaded = true;
-    studioGL.atlasUploaded = false;
-    if (qs("#studio-canvas")) {
-      renderStudioCanvas();
-    }
-  };
-  img.src = "/studio-atlas.png";
+  if (typeof Image === "undefined") return;
+  if (!studioGL.uiAtlasImg) {
+    const uiImg = new Image();
+    studioGL.uiAtlasImg = uiImg;
+    uiImg.onload = () => {
+      studioGL.uiAtlasImgLoaded = true;
+      studioGL.uiAtlasUploaded = false;
+      if (qs("#studio-canvas")) {
+        renderStudioCanvas();
+      }
+    };
+    uiImg.src = "/studio-ui.png";
+  }
+  if (!studioGL.atlasImg) {
+    const img = new Image();
+    studioGL.atlasImg = img;
+    img.onload = () => {
+      studioGL.atlasImgLoaded = true;
+      studioGL.atlasUploaded = false;
+      if (qs("#studio-canvas")) {
+        renderStudioCanvas();
+      }
+    };
+    img.src = "/studio-atlas.png";
+  }
 }
 
 if (typeof window !== "undefined") {
@@ -538,28 +409,31 @@ function shapeTextGlyphs(styleId, text, maxWidth) {
   for (let i = 0; i < chars.length; i++) {
     const g = lookupMSDFGlyph(style.ttfId, chars[i]);
     fullGlyphs[i] = g;
-    totalW += (g ? g.adv : MSDF_BASE_EM_PX * 0.3) * scale + extraTrack;
+    totalW += (g ? g.advanceWidth : MSDF_BASE_EM_PX * 0.3) * scale + extraTrack;
   }
 
   const glyphs = [];
+  const pushPlacedGlyph = (g, curX) => {
+    glyphs.push({
+      dx: curX + g.ox * scale,
+      dy: baselineOffsetY + g.oy * scale,
+      w: g.w * scale,
+      h: g.h * scale,
+      u0: g.u0,
+      v0: g.v0,
+      u1: g.u1,
+      v1: g.v1
+    });
+  };
 
   if (totalW <= maxWidth) {
     let curX = 0;
     for (let i = 0; i < fullGlyphs.length; i++) {
       const g = fullGlyphs[i];
       if (g && g.w > 0 && chars[i] !== " ") {
-        glyphs.push({
-          dx: curX + g.ox * scale,
-          dy: baselineOffsetY + g.oy * scale,
-          w: g.w * scale,
-          h: g.h * scale,
-          u0: g.u0,
-          v0: g.v0,
-          u1: g.u1,
-          v1: g.v1
-        });
+        pushPlacedGlyph(g, curX);
       }
-      curX += (g ? g.adv : MSDF_BASE_EM_PX * 0.3) * scale + extraTrack;
+      curX += (g ? g.advanceWidth : MSDF_BASE_EM_PX * 0.3) * scale + extraTrack;
     }
     const res = { glyphs: glyphs, totalW: totalW, pxRange: pxRange };
     if (studioGraphState.shapedTextCache.size > 4000) {
@@ -569,41 +443,23 @@ function shapeTextGlyphs(styleId, text, maxWidth) {
     return res;
   }
 
-  const ellG = lookupMSDFGlyph(style.ttfId, "…");
-  const ellW = (ellG ? ellG.adv : MSDF_BASE_EM_PX * 0.6) * scale;
-  const limitW = Math.max(0, maxWidth - ellW);
+  const ellipsisGlyph = lookupMSDFGlyph(style.ttfId, "…");
+  const ellipsisWidth = (ellipsisGlyph ? ellipsisGlyph.advanceWidth : MSDF_BASE_EM_PX * 0.6) * scale;
+  const limitW = Math.max(0, maxWidth - ellipsisWidth);
   let curX = 0;
   for (let i = 0; i < fullGlyphs.length; i++) {
     const g = fullGlyphs[i];
-    const advW = (g ? g.adv : MSDF_BASE_EM_PX * 0.3) * scale + extraTrack;
+    const advW = (g ? g.advanceWidth : MSDF_BASE_EM_PX * 0.3) * scale + extraTrack;
     if (curX + advW > limitW && i > 0) break;
     if (g && g.w > 0 && chars[i] !== " ") {
-      glyphs.push({
-        dx: curX + g.ox * scale,
-        dy: baselineOffsetY + g.oy * scale,
-        w: g.w * scale,
-        h: g.h * scale,
-        u0: g.u0,
-        v0: g.v0,
-        u1: g.u1,
-        v1: g.v1
-      });
+      pushPlacedGlyph(g, curX);
     }
     curX += advW;
   }
-  if (ellG && ellG.w > 0) {
-    glyphs.push({
-      dx: curX + ellG.ox * scale,
-      dy: baselineOffsetY + ellG.oy * scale,
-      w: ellG.w * scale,
-      h: ellG.h * scale,
-      u0: ellG.u0,
-      v0: ellG.v0,
-      u1: ellG.u1,
-      v1: ellG.v1
-    });
+  if (ellipsisGlyph && ellipsisGlyph.w > 0) {
+    pushPlacedGlyph(ellipsisGlyph, curX);
   }
-  curX += ellW;
+  curX += ellipsisWidth;
 
   const res = { glyphs: glyphs, totalW: curX, pxRange: pxRange };
   studioGraphState.shapedTextCache.set(key, res);
@@ -649,22 +505,22 @@ function initStudioWebGLContext(canvas) {
       }
       vUV = uvs;
       vec2 screenPos;
-      if (aUV.x < -80000.0) {
+      if (aUV.x < ${UV.gridTest.toFixed(1)}) {
         screenPos = aUnit * uViewSize;
         vec2 worldPos = (screenPos - uPanZoom.xy) / uPanZoom.z;
-        vUV = -worldPos - vec2(200000.0);
-      } else if (aUV.x < -30000.0) {
+        vUV = -worldPos - vec2(${UV.gridOffset.toFixed(1)});
+      } else if (aUV.x < ${UV.screenTest.toFixed(1)}) {
         screenPos = aRect.xy + aUnit * aRect.zw;
       } else {
         if (aUV.x >= 25.0) {
-          vUV.x = uvs.x - 30.0;
+          vUV.x = uvs.x - ${UV.solid.toFixed(1)};
           vMode = -1.0;
         } else if (aUV.x >= 15.0) {
-          vUV.x = uvs.x - 20.0;
+          vUV.x = uvs.x - ${UV.fontLg.toFixed(1)};
           vMode = 1.0;
           vPxRange = 3.39;
         } else if (aUV.x >= 5.0) {
-          vUV.x = uvs.x - 10.0;
+          vUV.x = uvs.x - ${UV.fontSm.toFixed(1)};
           vMode = 1.0;
           vPxRange = 2.80;
         }
@@ -695,8 +551,8 @@ function initStudioWebGLContext(canvas) {
     }
 
     void main() {
-      if (vUV.x < -80000.0) {
-        vec2 worldPos = -vUV - vec2(200000.0);
+      if (vUV.x < ${UV.gridTest.toFixed(1)}) {
+        vec2 worldPos = -vUV - vec2(${UV.gridOffset.toFixed(1)});
         vec2 cell = fract((worldPos + vec2(0.8)) / uGridStep) * uGridStep;
         float dotMask = step(cell.x, 1.7) * step(cell.y, 1.7);
         gl_FragColor = vec4(mix(uBgColor, uDotColor, dotMask), 1.0);
@@ -705,7 +561,7 @@ function initStudioWebGLContext(canvas) {
       if (vUV.y < -0.5) {
         float dist = vUV.x;
         float period = -vUV.y;
-        if (fract(dist / period) > 0.54) discard;
+        if (fract(dist / period) > ${UV.dashDuty}) discard;
         gl_FragColor = vColor;
         return;
       }
@@ -780,43 +636,21 @@ function initStudioWebGLContext(canvas) {
     instExt.vertexAttribDivisorANGLE(aColor, 1);
   }
 
-  const uiTex = gl.createTexture();
-  gl.activeTexture(gl.TEXTURE0);
-  gl.bindTexture(gl.TEXTURE_2D, uiTex);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-  gl.texImage2D(
-    gl.TEXTURE_2D,
-    0,
-    gl.RGBA,
-    UI_ATLAS_W,
-    UI_ATLAS_H,
-    0,
-    gl.RGBA,
-    gl.UNSIGNED_BYTE,
-    buildUISpriteTextureBytes()
-  );
+  const createPlaceholderTexture = (unit, pixelBytes) => {
+    const tex = gl.createTexture();
+    gl.activeTexture(unit);
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, pixelBytes);
+    return tex;
+  };
 
-  const fontTex = gl.createTexture();
-  gl.activeTexture(gl.TEXTURE1);
-  gl.bindTexture(gl.TEXTURE_2D, fontTex);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-  gl.texImage2D(
-    gl.TEXTURE_2D,
-    0,
-    gl.RGBA,
-    1,
-    1,
-    0,
-    gl.RGBA,
-    gl.UNSIGNED_BYTE,
-    new Uint8Array([0, 0, 0, 0])
-  );
+  const uiTex = createPlaceholderTexture(gl.TEXTURE0, new Uint8Array([255, 255, 255, 255]));
+  const fontTex = createPlaceholderTexture(gl.TEXTURE1, new Uint8Array([0, 0, 0, 0]));
+  studioGL.uiAtlasUploaded = false;
   studioGL.atlasUploaded = false;
   startPreloadingMSDFAtlasImage();
 
@@ -825,12 +659,9 @@ function initStudioWebGLContext(canvas) {
 
   studioGL.canvas = canvas;
   studioGL.gl = gl;
-  studioGL.prog = prog;
-  studioGL.quadVbo = quadVbo;
   studioGL.instVbos = instVbos;
   studioGL.instVboCapacities = instVboCapacities;
   studioGL.vboRingIdx = 0;
-  studioGL.instVbo = instVbos[0];
   studioGL.bindInstVboAttribs = bindInstVboAttribs;
   studioGL.hasCullBounds = false;
   studioGL.lastVpW = 0;
@@ -880,7 +711,7 @@ function pushQuadInstance(x, y, w, h, u0, v0, u1, v1, packedColor) {
 }
 
 function pushSolidQuad(x, y, w, h, packedColor) {
-  const u = studioGL.uv.whiteU + 30.0;
+  const u = studioGL.uv.whiteU + UV.solid;
   const v = studioGL.uv.whiteV;
   pushQuadInstance(x, y, w, h, u, v, u, v, packedColor);
 }
@@ -905,8 +736,8 @@ function pushSolidBorderQuads(x, y, w, h, thickness, packedColor) {
 }
 
 function computeAlignedDashSpan(len, period) {
-  const n = Math.max(1, Math.round(len / period - 0.54));
-  return (n + 0.54) * period;
+  const n = Math.max(1, Math.round(len / period - UV.dashDuty));
+  return (n + UV.dashDuty) * period;
 }
 
 function pushDashedSegmentQuad(x1, y1, x2, y2, thickness, period, packedColor) {
@@ -927,14 +758,14 @@ function pushDashedSegmentQuad(x1, y1, x2, y2, thickness, period, packedColor) {
 }
 
 function pushDashedHeaderDividerQuad(x, y, w, thickness, period, packedColor) {
-  const nW = Math.max(1, Math.round(w / period - 0.54));
+  const nW = Math.max(1, Math.round(w / period - UV.dashDuty));
   if (nW <= 2) {
     return;
   }
-  const worldPeriodW = w / (nW + 0.54);
+  const worldPeriodW = w / (nW + UV.dashDuty);
   const startX = x + worldPeriodW;
   const innerW = w - worldPeriodW * 2.0;
-  const span = (nW - 2 + 0.54) * period;
+  const span = (nW - 2 + UV.dashDuty) * period;
   pushQuadInstance(startX, y, innerW, thickness, 0, -period, span, -period, packedColor);
 }
 
@@ -1021,7 +852,7 @@ function pushWirePolylineQuads(pts, thickness, isDashed, packedColor, bridgesByS
         segBridges
       );
       const lenX = Math.abs(dx);
-      if (lenX >= 72) {
+      if (lenX >= PAD.w) {
         const mx = (p0.x + p1.x) * 0.5;
         let nearGap = false;
         if (segBridges) {
@@ -1043,7 +874,7 @@ function pushWirePolylineQuads(pts, thickness, isDashed, packedColor, bridgesByS
       if (lenY >= 0.5) {
         pushSolidQuad(p0.x - halfT, minY, thickness, lenY, packedColor);
       }
-      if ((i === lastSeg && lenY >= 18) || lenY >= 72) {
+      if ((i === lastSeg && lenY >= 18) || lenY >= PAD.w) {
         pushWireChevronQuad(p0.x, (p0.y + p1.y) * 0.5, dy >= 0 ? "down" : "up", packedColor);
       }
     }
@@ -1052,7 +883,7 @@ function pushWirePolylineQuads(pts, thickness, isDashed, packedColor, bridgesByS
 
 function pushShapedTextQuads(shaped, originX, centerY, packedColor) {
   const glyphs = shaped.glyphs;
-  const uBias = shaped.pxRange >= 3.2 ? 20.0 : 10.0;
+  const uBias = shaped.pxRange >= 3.2 ? UV.fontLg : UV.fontSm;
   for (let i = 0; i < glyphs.length; i++) {
     const g = glyphs[i];
     pushQuadInstance(
@@ -1069,20 +900,23 @@ function pushShapedTextQuads(shaped, originX, centerY, packedColor) {
   }
 }
 
-function pushDiamondPortQuads(x, y, isConnected, isHoveredOrActive, theme, isUnreachable) {
-  const fillSp = studioGL.uv.diamondPortFill;
+function resolvePortQuadColor(isHoveredOrActive, theme, isUnreachable, fallbackColor) {
+  if (typeof isHoveredOrActive === "number") return isHoveredOrActive;
+  if (isHoveredOrActive) return theme.textPrimary;
+  if (isUnreachable) return theme.unreachWire;
+  return fallbackColor;
+}
+
+function pushTwoLayerSpritePort(x, y, fillSp, ringSp, bgColor, portColor) {
   const hs = fillSp.size * 0.5;
-  const portColor =
-    typeof isHoveredOrActive === "number"
-      ? isHoveredOrActive
-      : isHoveredOrActive
-        ? theme.textPrimary
-        : isUnreachable
-          ? theme.unreachWire
-          : theme.wireDefault;
-  pushQuadInstance(x - hs, y - hs, fillSp.size, fillSp.size, fillSp.u0, fillSp.v0, fillSp.u1, fillSp.v1, theme.bgObsidian);
-  const sp = isConnected ? studioGL.uv.diamondPortHover : studioGL.uv.diamondPortRing;
-  pushQuadInstance(x - hs, y - hs, sp.size, sp.size, sp.u0, sp.v0, sp.u1, sp.v1, portColor);
+  pushQuadInstance(x - hs, y - hs, fillSp.size, fillSp.size, fillSp.u0, fillSp.v0, fillSp.u1, fillSp.v1, bgColor);
+  pushQuadInstance(x - hs, y - hs, ringSp.size, ringSp.size, ringSp.u0, ringSp.v0, ringSp.u1, ringSp.v1, portColor);
+}
+
+function pushDiamondPortQuads(x, y, isConnected, isHoveredOrActive, theme, isUnreachable) {
+  const portColor = resolvePortQuadColor(isHoveredOrActive, theme, isUnreachable, theme.wireDefault);
+  const ringSp = isConnected ? studioGL.uv.diamondPortHover : studioGL.uv.diamondPortRing;
+  pushTwoLayerSpritePort(x, y, studioGL.uv.diamondPortFill, ringSp, theme.bgObsidian, portColor);
 }
 
 function pushPortQuads(x, y, isConnected, isHoveredOrActive, theme, isUnreachable) {
@@ -1090,74 +924,28 @@ function pushPortQuads(x, y, isConnected, isHoveredOrActive, theme, isUnreachabl
     pushDiamondPortQuads(x, y, isConnected, isHoveredOrActive, theme, isUnreachable);
     return;
   }
-  const fillSp = studioGL.uv.portFill;
-  const hs = fillSp.size * 0.5;
-  const portColor =
-    typeof isHoveredOrActive === "number"
-      ? isHoveredOrActive
-      : isHoveredOrActive
-        ? theme.textPrimary
-        : isUnreachable
-          ? theme.unreachWire
-          : theme.wireDefault;
-  pushQuadInstance(x - hs, y - hs, fillSp.size, fillSp.size, fillSp.u0, fillSp.v0, fillSp.u1, fillSp.v1, theme.bgObsidian);
+  const portColor = resolvePortQuadColor(isHoveredOrActive, theme, isUnreachable, theme.wireDefault);
   const sp = isConnected ? studioGL.uv.portHover : studioGL.uv.portRing;
-  pushQuadInstance(x - hs, y - hs, sp.size, sp.size, sp.u0, sp.v0, sp.u1, sp.v1, portColor);
+  pushTwoLayerSpritePort(x, y, studioGL.uv.portFill, sp, theme.bgObsidian, portColor);
 }
 
 function pushInputSocketQuads(x, y, isHoveredOrActive, theme, isUnreachable, colorIdx) {
-  const fillSp = studioGL.uv.portFill;
-  const hs = fillSp.size * 0.5;
-  const portColor =
-    typeof isHoveredOrActive === "number"
-      ? isHoveredOrActive
-      : isHoveredOrActive
-        ? theme.textPrimary
-        : isUnreachable
-          ? theme.unreachWire
-          : resolveWireColor(colorIdx, theme);
-  pushQuadInstance(x - hs, y - hs, fillSp.size, fillSp.size, fillSp.u0, fillSp.v0, fillSp.u1, fillSp.v1, theme.bgObsidian);
-  const ringSp = studioGL.uv.portRing;
-  pushQuadInstance(x - hs, y - hs, ringSp.size, ringSp.size, ringSp.u0, ringSp.v0, ringSp.u1, ringSp.v1, portColor);
+  const portColor = resolvePortQuadColor(isHoveredOrActive, theme, isUnreachable, resolveWireColor(colorIdx, theme));
+  pushTwoLayerSpritePort(x, y, studioGL.uv.portFill, studioGL.uv.portRing, theme.bgObsidian, portColor);
 }
 
 function pushSmallPortQuads(x, y, isConnected, isHoveredOrActive, theme, isUnreachable) {
-  const fillSp = studioGL.uv.smallPortFill;
-  const hs = fillSp.size * 0.5;
-  const portColor =
-    typeof isHoveredOrActive === "number"
-      ? isHoveredOrActive
-      : isHoveredOrActive
-        ? theme.textPrimary
-        : isUnreachable
-          ? theme.unreachWire
-          : theme.wireDefault;
-  pushQuadInstance(x - hs, y - hs, fillSp.size, fillSp.size, fillSp.u0, fillSp.v0, fillSp.u1, fillSp.v1, theme.bgObsidian);
-  const sp = isConnected ? studioGL.uv.smallPortHover : studioGL.uv.smallPortRing;
-  pushQuadInstance(x - hs, y - hs, sp.size, sp.size, sp.u0, sp.v0, sp.u1, sp.v1, portColor);
+  const portColor = resolvePortQuadColor(isHoveredOrActive, theme, isUnreachable, theme.wireDefault);
+  const ringSp = isConnected ? studioGL.uv.smallPortHover : studioGL.uv.smallPortRing;
+  pushTwoLayerSpritePort(x, y, studioGL.uv.smallPortFill, ringSp, theme.bgObsidian, portColor);
 }
 
 function pushSmallInputSocketQuads(x, y, isHoveredOrActive, theme, isUnreachable, colorIdx) {
-  const fillSp = studioGL.uv.smallPortFill;
-  const hs = fillSp.size * 0.5;
-  const portColor =
-    typeof isHoveredOrActive === "number"
-      ? isHoveredOrActive
-      : isHoveredOrActive
-        ? theme.textPrimary
-        : isUnreachable
-          ? theme.unreachWire
-          : resolveWireColor(colorIdx, theme);
-  pushQuadInstance(x - hs, y - hs, fillSp.size, fillSp.size, fillSp.u0, fillSp.v0, fillSp.u1, fillSp.v1, theme.bgObsidian);
-  const ringSp = studioGL.uv.smallPortRing;
-  pushQuadInstance(x - hs, y - hs, ringSp.size, ringSp.size, ringSp.u0, ringSp.v0, ringSp.u1, ringSp.v1, portColor);
+  const portColor = resolvePortQuadColor(isHoveredOrActive, theme, isUnreachable, resolveWireColor(colorIdx, theme));
+  pushTwoLayerSpritePort(x, y, studioGL.uv.smallPortFill, studioGL.uv.smallPortRing, theme.bgObsidian, portColor);
 }
 
-function resolveWirePinDirection(wire, pin) {
-  const pts = wire && (wire.pts && wire.pts.length >= 2 ? wire.pts : wire.basePts);
-  if (!pts || pts.length < 2 || !pin) return "down";
-  const px = pin.x;
-  const py = pin.y;
+function findClosestPolylineSegment(pts, px, py) {
   let bestSeg = 0;
   let bestDistSq = Infinity;
   let bestLenSq = 0;
@@ -1168,9 +956,7 @@ function resolveWirePinDirection(wire, pin) {
     const dy = p1.y - p0.y;
     const lenSq = dx * dx + dy * dy;
     if (lenSq < 1.0) continue;
-    let t = ((px - p0.x) * dx + (py - p0.y) * dy) / lenSq;
-    if (t < 0.0) t = 0.0;
-    else if (t > 1.0) t = 1.0;
+    const t = Math.max(0.0, Math.min(1.0, ((px - p0.x) * dx + (py - p0.y) * dy) / lenSq));
     const ex = px - (p0.x + t * dx);
     const ey = py - (p0.y + t * dy);
     const dSq = ex * ex + ey * ey;
@@ -1183,50 +969,16 @@ function resolveWirePinDirection(wire, pin) {
       bestLenSq = lenSq;
     }
   }
-  const a = pts[bestSeg];
-  const b = pts[bestSeg + 1];
-  const sdx = b.x - a.x;
-  const sdy = b.y - a.y;
-  if (Math.abs(sdx) >= Math.abs(sdy)) {
-    return sdx >= 0 ? "right" : "left";
-  }
-  return sdy >= 0 ? "down" : "up";
+  return bestSeg;
 }
 
 function computeWirePinSegmentBar(wire, pin) {
   const pts = wire && (wire.pts && wire.pts.length >= 2 ? wire.pts : wire.basePts);
   if (!pts || pts.length < 2 || !pin) return null;
-  let bestSeg = -1;
-  if (typeof pin.segIdx === "number" && pin.segIdx >= 0 && pin.segIdx < pts.length - 1) {
-    bestSeg = pin.segIdx;
-  } else {
-    const px = pin.x;
-    const py = pin.y;
-    let bestDistSq = Infinity;
-    let bestLenSq = 0;
-    for (let s = 0; s < pts.length - 1; s++) {
-      const p0 = pts[s];
-      const p1 = pts[s + 1];
-      const dx = p1.x - p0.x;
-      const dy = p1.y - p0.y;
-      const lenSq = dx * dx + dy * dy;
-      if (lenSq < 1.0) continue;
-      let t = ((px - p0.x) * dx + (py - p0.y) * dy) / lenSq;
-      if (t < 0.0) t = 0.0;
-      else if (t > 1.0) t = 1.0;
-      const ex = px - (p0.x + t * dx);
-      const ey = py - (p0.y + t * dy);
-      const dSq = ex * ex + ey * ey;
-      if (
-        dSq < bestDistSq - 0.5 ||
-        (dSq <= bestDistSq + 0.5 && (lenSq >= 64.0 || lenSq > bestLenSq))
-      ) {
-        bestDistSq = dSq;
-        bestSeg = s;
-        bestLenSq = lenSq;
-      }
-    }
-  }
+  const bestSeg =
+    typeof pin.segIdx === "number" && pin.segIdx >= 0 && pin.segIdx < pts.length - 1
+      ? pin.segIdx
+      : findClosestPolylineSegment(pts, pin.x, pin.y);
   if (bestSeg < 0 || bestSeg >= pts.length - 1) return null;
   const a = pts[bestSeg];
   const b = pts[bestSeg + 1];
@@ -1235,8 +987,7 @@ function computeWirePinSegmentBar(wire, pin) {
   const isHoriz = Math.abs(dx) >= Math.abs(dy);
   const segLen = isHoriz ? Math.abs(dx) : Math.abs(dy);
   if (segLen < 4) return null;
-  // Max length = 3 grid segments (3 * 24px = 72px), leaving 8px corner clearance on each end when possible
-  const maxBarLen = 72;
+  const maxBarLen = PAD.w;
   const availLen = segLen > 20 ? segLen - 16 : Math.max(6, segLen - 4);
   const barLen = Math.min(maxBarLen, availLen);
   const cx = (a.x + b.x) * 0.5;
@@ -1279,14 +1030,7 @@ function pushWirePinArrowQuads(wire, pinIdx, isHoveredOrActive, theme, isUnreach
   const isHighlighted = isHoveredOrActive === true;
   const thick = isHighlighted ? 6 : 5;
   const halfT = thick * 0.5;
-  const pinColor =
-    typeof isHoveredOrActive === "number"
-      ? isHoveredOrActive
-      : isHighlighted
-        ? theme.textPrimary
-        : isUnreachable
-          ? theme.unreachWire
-          : resolveWireColor(wire.colorIdx, theme);
+  const pinColor = resolvePortQuadColor(isHoveredOrActive, theme, isUnreachable, resolveWireColor(wire.colorIdx, theme));
   if (bar.isHoriz) {
     pushSolidQuad(bar.x, bar.y - halfT, bar.w, thick, pinColor);
   } else {

@@ -15,7 +15,7 @@ func (s *Server) buildBookTargetSuggestions(sc *book.Scene) []map[string]any {
 		curCh = strings.TrimSpace(sc.Chapter)
 	}
 	if curCh == "" {
-		curCh = "Rozdział 1"
+		curCh = s.ActiveBook.DefaultChapterName()
 	}
 	out := make([]map[string]any, 0, len(s.ActiveBook.Scenes)+len(s.ActiveBook.Chapters)+1)
 	for _, cand := range s.ActiveBook.Scenes {
@@ -24,7 +24,7 @@ func (s *Server) buildBookTargetSuggestions(sc *book.Scene) []map[string]any {
 		}
 		candCh := strings.TrimSpace(cand.Chapter)
 		if candCh == "" {
-			candCh = "Rozdział 1"
+			candCh = s.ActiveBook.DefaultChapterName()
 		}
 		if !strings.EqualFold(candCh, curCh) {
 			continue
@@ -71,31 +71,13 @@ func buildBookVarSuggestions(b *book.Book) []map[string]any {
 			kind = book.VarKindBool
 		}
 		meta := kind
-		sampleCond := v.Name
-		sampleEff := v.Name + " = true"
-		switch kind {
-		case book.VarKindInt:
-			sampleCond = v.Name + " >= 1"
-			sampleEff = v.Name + " += 1"
-		case book.VarKindEnum:
-			firstOpt := v.EnumVal
-			if firstOpt == "" && len(v.Options) > 0 {
-				firstOpt = v.Options[0]
-			}
-			if len(v.Options) > 0 {
-				meta = "enum: " + strings.Join(v.Options, ", ")
-			}
-			if firstOpt != "" {
-				sampleCond = v.Name + " == " + firstOpt
-				sampleEff = v.Name + " = " + firstOpt
-			}
+		if kind == book.VarKindEnum && len(v.Options) > 0 {
+			meta = "enum: " + strings.Join(v.Options, ", ")
 		}
 		out = append(out, map[string]any{
-			"name":        v.Name,
-			"kind":        kind,
-			"meta":        meta,
-			"sample_cond": sampleCond,
-			"sample_eff":  sampleEff,
+			"name": v.Name,
+			"kind": kind,
+			"meta": meta,
 		})
 	}
 	return out
@@ -134,17 +116,10 @@ func (s *Server) populateEditorVariablesContext(vars map[string]any) {
 	vars["book_var_suggestions"] = buildBookVarSuggestions(s.ActiveBook)
 	vars["book_enum_suggestions"] = buildBookEnumValueSuggestions(s.ActiveBook)
 	vars["book_target_suggestions"] = s.buildBookTargetSuggestions(s.findScene(s.SelectedSceneID))
-	vars["syn_open"] = "{{"
-	vars["syn_close"] = "}}"
-	vars["syntax_help_title"] = "Składnia exit: / if: / set:"
 	vars["syntax_help_cond_rows"] = []map[string]any{
 		{"code": "if: odkryta_prawda && sumienie >= 2", "desc": "bool / int / enum (&&, ||, !, ==, !=, >=, <=)"},
 		{"code": "set: odkryta_prawda = true; sumienie++", "desc": "efekty rozdzielone średnikiem ; (=, +=, -=, ++, --)"},
 		{"code": "exit: ogien_w_kaplicy", "desc": "wyjście do sceny, chapter:<id> lub END"},
-	}
-	vars["syntax_help_eff_rows"] = []map[string]any{
-		{"code": "set: !klucz; klucz = false", "desc": "bool toggle (!zmienna) lub jawnie (= true / false)"},
-		{"code": "set: naboje -= 2; frakcja = rzeczni", "desc": "int (+=, -=, ++, --) lub enum (=)"},
 	}
 	if s.ActiveBook == nil {
 		vars["var_flags"] = nil
@@ -166,14 +141,23 @@ func (s *Server) populateEditorVariablesContext(vars map[string]any) {
 				"int_val": v.IntVal,
 			})
 		case book.VarKindEnum:
-			optsCSV := strings.Join(v.Options, ", ")
-			if optsCSV == "" {
-				optsCSV = v.EnumVal
+			rawOpts := v.Options
+			if len(rawOpts) == 0 && v.EnumVal != "" {
+				rawOpts = []string{v.EnumVal}
+			}
+			optItems := make([]map[string]any, 0, len(rawOpts))
+			for optIdx, optVal := range rawOpts {
+				optItems = append(optItems, map[string]any{
+					"opt_idx": optIdx,
+					"value":   optVal,
+				})
 			}
 			states = append(states, map[string]any{
-				"idx":         idx,
-				"name":        v.Name,
-				"options_csv": optsCSV,
+				"idx":            idx,
+				"name":           v.Name,
+				"options":        optItems,
+				"opt_count":      len(optItems),
+				"can_remove_opt": len(optItems) > 1,
 			})
 		default:
 			lbl := "false"

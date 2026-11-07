@@ -227,35 +227,6 @@ function decodeHeaderUTF8(raw) {
 
 function syncEditorHistoryHeaders(resp) {
   if (!resp || !resp.headers) return;
-  const canUndoHeader = resp.headers.get("X-Can-Undo");
-  const canRedoHeader = resp.headers.get("X-Can-Redo");
-  const undoTitleHeader = decodeHeaderUTF8(resp.headers.get("X-Undo-Title"));
-  const redoTitleHeader = decodeHeaderUTF8(resp.headers.get("X-Redo-Title"));
-
-  if (canUndoHeader !== null) {
-    const canUndo = canUndoHeader === "true";
-    const undoBtn = qs("#btn-editor-undo");
-    if (undoBtn) {
-      undoBtn.disabled = !canUndo;
-      undoBtn.classList.toggle("is-disabled", !canUndo);
-      if (undoTitleHeader) {
-        setElementHint(undoBtn, undoTitleHeader);
-      }
-    }
-  }
-
-  if (canRedoHeader !== null) {
-    const canRedo = canRedoHeader === "true";
-    const redoBtn = qs("#btn-editor-redo");
-    if (redoBtn) {
-      redoBtn.disabled = !canRedo;
-      redoBtn.classList.toggle("is-disabled", !canRedo);
-      if (redoTitleHeader) {
-        setElementHint(redoBtn, redoTitleHeader);
-      }
-    }
-  }
-
   const histPreviewHeader = resp.headers.get("X-History-Preview");
   if (histPreviewHeader === "true" || histPreviewHeader === "false") {
     document.body.setAttribute("data-history-preview", histPreviewHeader);
@@ -277,6 +248,9 @@ function applyServerResponseHeaders(resp, actionName) {
     }
     if (typeof renderStudioCanvas === "function") {
       renderStudioCanvas();
+    }
+    if (typeof syncAllVoiceStrips === "function") {
+      syncAllVoiceStrips();
     }
   }
 
@@ -406,6 +380,10 @@ function applyServerResponseHeaders(resp, actionName) {
   if (toast) {
     showToast(toast);
   }
+  const voicePeak = resp.headers.get("X-Voice-Peak");
+  if (voicePeak && typeof handleNativeVoicePeakHeader === "function") {
+    handleNativeVoicePeakHeader(voicePeak);
+  }
   return false;
 }
 
@@ -483,101 +461,272 @@ function decodeWFP(rawText) {
   return out;
 }
 
+function parseWasmActionResponse(rawWfp) {
+  const parsed = decodeWFP(rawWfp);
+  const saveHex = parsed["X-Save-Hex"] || "";
+  if (saveHex && window.__mojraWasmBookId && typeof localStorage !== "undefined") {
+    try {
+      localStorage.setItem("mojra_save_" + window.__mojraWasmBookId, saveHex);
+    } catch (_) {}
+  }
+  const status = parseInt(parsed.status || "200", 10) || 200;
+  const htmlBody = parsed.html || "";
+  return {
+    status: status,
+    headers: {
+      get: function (name) {
+        if (!name) return null;
+        if (parsed[name] !== undefined) return parsed[name];
+        const lower = name.toLowerCase();
+        const keys = Object.keys(parsed);
+        for (let i = 0; i < keys.length; i++) {
+          if (keys[i].toLowerCase() === lower) {
+            return parsed[keys[i]];
+          }
+        }
+        return null;
+      }
+    },
+    text: async function () {
+      return htmlBody;
+    }
+  };
+}
+
+async function bootMojraWasmPlayer(playBtn) {
+  if (!playBtn || playBtn.classList.contains("is-loading")) return;
+  playBtn.classList.add("is-loading");
+
+  if (typeof Audio !== "undefined") {
+    try {
+      const unlockAudio = new Audio();
+      unlockAudio.muted = true;
+      const p = unlockAudio.play();
+      if (p && typeof p.catch === "function") p.catch(() => {});
+    } catch (_) {}
+  }
+
+  try {
+    const mountEl =
+      playBtn.closest("#wasm-mount") ||
+      playBtn.closest("#app") ||
+      qs("#wasm-mount") ||
+      qs("#app");
+    const wasmSrc =
+      (playBtn.getAttribute("data-wasm-src") ||
+        (mountEl && mountEl.getAttribute("data-wasm-src")) ||
+        "mojra.wasm").trim();
+
+    if (typeof Go !== "function" || typeof WebAssembly === "undefined") {
+      playBtn.classList.remove("is-loading");
+      return;
+    }
+
+    const resp = await fetch(wasmSrc);
+    if (!resp || !resp.ok) {
+      playBtn.classList.remove("is-loading");
+      return;
+    }
+    const wasmBuf = await resp.arrayBuffer();
+    const wasmBytes = new Uint8Array(wasmBuf);
+
+    const go = new Go();
+    const instantiated = await WebAssembly.instantiate(wasmBuf, go.importObject);
+    go.run(instantiated.instance);
+
+    if (typeof window.__mojraWasmBoot !== "function") {
+      playBtn.classList.remove("is-loading");
+      return;
+    }
+
+    const bookHint =
+      (playBtn.getAttribute("data-book-id") ||
+        (mountEl && mountEl.getAttribute("data-book-id")) ||
+        "").trim();
+    let savedHex = "";
+    if (bookHint && typeof localStorage !== "undefined") {
+      try {
+        savedHex = localStorage.getItem("mojra_save_" + bookHint) || "";
+      } catch (_) {}
+    }
+
+    const rawBootWfp = window.__mojraWasmBoot(wasmBytes, savedHex);
+    const bootParsed = decodeWFP(rawBootWfp);
+    const bookId = bootParsed["X-Book-ID"] || bookHint || "book";
+    window.__mojraWasmBookId = bookId;
+
+    if (!savedHex && typeof localStorage !== "undefined") {
+      try {
+        const existingSave = localStorage.getItem("mojra_save_" + bookId) || "";
+        if (existingSave) {
+          const reloaded = decodeWFP(window.__mojraWasmBoot(wasmBytes, existingSave));
+          if (reloaded.html) {
+            Object.assign(bootParsed, reloaded);
+          }
+        }
+      } catch (_) {}
+    }
+
+    if (bootParsed["X-Save-Hex"] && typeof localStorage !== "undefined") {
+      try {
+        localStorage.setItem("mojra_save_" + bookId, bootParsed["X-Save-Hex"]);
+      } catch (_) {}
+    }
+
+    const imageless = bootParsed["X-Imageless"] === "true";
+    document.body.setAttribute("data-imageless", imageless ? "true" : "false");
+    document.body.setAttribute("data-imageless-locked", imageless ? "true" : "false");
+
+    if (mountEl && bootParsed.html) {
+      mountEl.classList.add("wasm-player-root");
+      mountEl.innerHTML = bootParsed.html;
+      if (typeof initPlayerScrollAndAudio === "function") {
+        initPlayerScrollAndAudio(null, true, null, null);
+      }
+    }
+  } catch (_) {
+    playBtn.classList.remove("is-loading");
+  }
+}
+
+const ACTIONS_FLUSH_INSPECTOR = new Set([
+  "UndoEditor",
+  "ToggleEditorHistoryPanel",
+  "OpenEditorHistoryPanel",
+  "PreviewHistoryRevision",
+  "PlayHistoryRevision",
+  "SaveHistoryVersion",
+  "PromptCreateHistoryBranch",
+  "CreateHistoryBranch",
+  "SwitchHistoryBranch",
+  "CopyHistoryRevisionToBranch",
+  "CloseSceneTextModal",
+  "NavigateSceneTextModal",
+  "AddBookVariable",
+  "SetSceneTextPreviewMode",
+  "ToggleSceneTestVarsPopover",
+  "UpdateSceneTextTestVar",
+  "ToggleChoiceRule",
+  "ToggleSyntaxHelp",
+  "ToggleEditorVariablesPanel",
+  "ToggleBookSettings",
+  "ToggleEditorBreakdownPanel",
+  "OpenEditorHelpModal",
+  "CloseBookSettings",
+  "CloseEditorVariablesPanel",
+  "CloseEditorBreakdownPanel",
+  "CloseEditorHistoryPanel",
+  "CloseEditorHelpModal",
+  "ToggleBookVariableBool",
+  "UpdateBookVariable",
+  "RemoveBookVariable",
+  "AddBookEnumOption",
+  "RemoveBookEnumOption",
+  "ToggleSceneVoiceRecorder",
+  "StartSceneVoiceCapture",
+  "StopSceneVoiceCapture",
+  "SaveSceneVoiceRecording",
+  "TrimSceneVoice",
+  "DeleteSceneVoice",
+  "OpenSceneTextModal",
+  "SwitchView",
+  "OpenBook"
+]);
+
+const ACTIONS_CLEAR_SELECTION = new Set([
+  "PreviewHistoryRevision",
+  "ExitHistoryPreview",
+  "PlayHistoryRevision",
+  "RestoreHistoryRevision",
+  "CopyHistoryRevisionToBranch",
+  "SwitchHistoryBranch",
+  "UndoEditor",
+  "RedoEditor"
+]);
+
+const ACTIONS_KEEP_MODAL_SCROLL = new Set([
+  "SaveSceneTextModal",
+  "ToggleSceneTextSettings",
+  "SetStartScene",
+  "BrowseAddBookMedia",
+  "AddBookMediaFromDisk",
+  "AddChoice",
+  "PromptRemoveChoice",
+  "RemoveChoice",
+  "ConfirmModalClose",
+  "ConfirmModalAccept",
+  "BranchChoiceScene",
+  "ConnectChoice",
+  "AddBookVariable",
+  "SetSceneTextPreviewMode",
+  "ToggleSceneTestVarsPopover",
+  "UpdateSceneTextTestVar",
+  "ToggleChoiceRule",
+  "ToggleSyntaxHelp",
+  "ToggleSceneVoiceRecorder",
+  "StopSceneVoiceCapture",
+  "SaveSceneVoiceRecording",
+  "TrimSceneVoice",
+  "DeleteSceneVoice"
+]);
+
+function restoreSynDropdownFocus(rootEl) {
+  if (typeof lastSynRuleInputName !== "string" || !lastSynRuleInputName) return;
+  const restoredInput = qs('input[name="' + lastSynRuleInputName + '"]', rootEl);
+  if (restoredInput && typeof updateSynAutocompleteOnInput === "function") {
+    restoredInput.focus();
+    updateSynAutocompleteOnInput(restoredInput, true);
+  }
+}
+
+function setSceneTextModalWidthMode(sceneModal, toFull) {
+  const expandFullBtn = qs("#btn-expand-scene-text-full");
+  sceneModal.classList.remove("is-entering");
+  sceneModal.classList.toggle("mode-full", toFull);
+  sceneModal.classList.toggle("mode-half", !toFull);
+  if (expandFullBtn) expandFullBtn.classList.toggle("hidden", toFull);
+  if (typeof syncEditorViewportVisibility === "function") syncEditorViewportVisibility();
+  const modalTa = qs("#modal-scene-textarea", sceneModal);
+  if (modalTa && typeof autoResizeSceneTextarea === "function") {
+    autoResizeSceneTextarea(modalTa);
+    setTimeout(() => autoResizeSceneTextarea(modalTa), 240);
+  }
+  postServerActionSilent("SetSceneTextWidthMode", { mode: toFull ? "full" : "half" });
+}
+
 async function sendServerAction(actionName, params) {
   hideUITooltip();
   params = params || {};
-  if (
-    actionName === "UndoEditor" ||
-    actionName === "ToggleEditorHistoryPanel" ||
-    actionName === "OpenEditorHistoryPanel" ||
-    actionName === "PreviewHistoryRevision" ||
-    actionName === "PlayHistoryRevision" ||
-    actionName === "SaveHistoryVersion" ||
-    actionName === "PromptCreateHistoryBranch" ||
-    actionName === "CreateHistoryBranch" ||
-    actionName === "SwitchHistoryBranch" ||
-    actionName === "CopyHistoryRevisionToBranch" ||
-    actionName === "CloseSceneTextModal" ||
-    actionName === "NavigateSceneTextModal" ||
-    actionName === "AddBookVariable" ||
-    actionName === "SetSceneTextPreviewMode" ||
-    actionName === "ToggleSceneTestVarsPopover" ||
-    actionName === "UpdateSceneTextTestVar" ||
-    actionName === "ToggleChoiceRule" ||
-    actionName === "ToggleSyntaxHelp" ||
-    actionName === "ToggleEditorVariablesPanel" ||
-    actionName === "ToggleBookSettings" ||
-    actionName === "ToggleEditorBreakdownPanel" ||
-    actionName === "OpenEditorHelpModal" ||
-    actionName === "CloseBookSettings" ||
-    actionName === "CloseEditorVariablesPanel" ||
-    actionName === "CloseEditorBreakdownPanel" ||
-    actionName === "CloseEditorHistoryPanel" ||
-    actionName === "CloseEditorHelpModal" ||
-    actionName === "AddBookVariable" ||
-    actionName === "ToggleBookVariableBool" ||
-    actionName === "UpdateBookVariable" ||
-    actionName === "RemoveBookVariable" ||
-    actionName === "OpenSceneTextModal" ||
-    actionName === "SwitchView" ||
-    actionName === "OpenBook"
-  ) {
+  if (ACTIONS_FLUSH_INSPECTOR.has(actionName)) {
     if (typeof consumeDirtyInspectorFormIntoParams === "function") {
       consumeDirtyInspectorFormIntoParams(params);
     }
-  } else if (
-    actionName === "RedoEditor" ||
-    actionName === "RestoreHistoryRevision" ||
-    actionName === "ExitHistoryPreview"
-  ) {
+  } else if (actionName === "RedoEditor" || actionName === "RestoreHistoryRevision" || actionName === "ExitHistoryPreview") {
     if (typeof cancelPendingInspectorTimers === "function") {
       cancelPendingInspectorTimers();
     }
   }
   if (actionName === "ToggleBookSettings" && params.open === undefined) {
     const bsBtn = qs("#btn-book-settings");
-    if (bsBtn) {
-      params.open = bsBtn.classList.contains("active") ? "false" : "true";
-    }
+    if (bsBtn) params.open = bsBtn.classList.contains("active") ? "false" : "true";
   } else if (
     (actionName === "ToggleEditorHistoryPanel" || actionName === "ToggleEditorBreakdownPanel") &&
     params.book_settings_open === undefined
   ) {
     const bsBtn = qs("#btn-book-settings");
-    if (bsBtn) {
-      params.book_settings_open = bsBtn.classList.contains("active") ? "true" : "false";
-    }
+    if (bsBtn) params.book_settings_open = bsBtn.classList.contains("active") ? "true" : "false";
   }
   if ((actionName === "SelectStudioScene" || actionName === "OpenSceneTextModal") && params.scene) {
-    if (typeof editorSelectionCleared !== "undefined") {
-      editorSelectionCleared = false;
-    }
+    if (typeof editorSelectionCleared !== "undefined") editorSelectionCleared = false;
     if (typeof selectedNodeIds !== "undefined") {
       selectedNodeIds.clear();
       selectedNodeIds.add(String(params.scene));
     }
-    if (typeof syncNodeSelectionDOM === "function") {
-      syncNodeSelectionDOM();
-    }
-    if (typeof renderStudioCanvas === "function") {
-      renderStudioCanvas();
-    }
-  } else if (
-    actionName === "PreviewHistoryRevision" ||
-    actionName === "ExitHistoryPreview" ||
-    actionName === "PlayHistoryRevision" ||
-    actionName === "RestoreHistoryRevision" ||
-    actionName === "CopyHistoryRevisionToBranch" ||
-    actionName === "SwitchHistoryBranch" ||
-    actionName === "UndoEditor" ||
-    actionName === "RedoEditor"
-  ) {
-    if (typeof editorSelectionCleared !== "undefined") {
-      editorSelectionCleared = false;
-    }
-    if (typeof selectedNodeIds !== "undefined") {
-      selectedNodeIds.clear();
-    }
+    if (typeof syncNodeSelectionDOM === "function") syncNodeSelectionDOM();
+    if (typeof renderStudioCanvas === "function") renderStudioCanvas();
+  } else if (ACTIONS_CLEAR_SELECTION.has(actionName)) {
+    if (typeof editorSelectionCleared !== "undefined") editorSelectionCleared = false;
+    if (typeof selectedNodeIds !== "undefined") selectedNodeIds.clear();
   }
 
   if (actionName !== "SaveAudioTime" && typeof cancelMediaPrefetchQueue === "function") {
@@ -601,14 +750,19 @@ async function sendServerAction(actionName, params) {
     });
   }
 
-  const resp = await fetch("/api/action", {
-    method: "POST",
-    headers: {
-      "Content-Type": "text/x-wfp;charset=UTF-8",
-      "X-Requested-With": "StoryTeller"
-    },
-    body: encodeWFP(wfpPayload)
-  });
+  let resp;
+  if (typeof window.__mojraWasmAction === "function") {
+    resp = parseWasmActionResponse(window.__mojraWasmAction(encodeWFP(wfpPayload)));
+  } else {
+    resp = await fetch("/api/action", {
+      method: "POST",
+      headers: {
+        "Content-Type": "text/x-wfp;charset=UTF-8",
+        "X-Requested-With": "StoryTeller"
+      },
+      body: encodeWFP(wfpPayload)
+    });
+  }
 
   if (applyServerResponseHeaders(resp, actionName)) {
     return;
@@ -676,13 +830,6 @@ async function sendServerAction(actionName, params) {
       if (typeof syncNodeSelectionDOM === "function") {
         syncNodeSelectionDOM();
       }
-      if (
-        nextModalSceneId &&
-        (actionName === "NavigateSceneTextModal" || actionName === "OpenSceneTextModal" || actionName === "BranchChoiceScene") &&
-        typeof ensureNodeVisibleInCanvasViewport === "function"
-      ) {
-        ensureNodeVisibleInCanvasViewport(nextModalSceneId);
-      }
       if (typeof renderStudioCanvas === "function") {
         renderStudioCanvas();
       }
@@ -747,40 +894,13 @@ async function sendServerAction(actionName, params) {
       }
     }
     if (actionName === "OpenSceneTextModal" || actionName === "NavigateSceneTextModal") {
-      if (typeof initSceneTextModalFeed === "function") {
-        initSceneTextModalFeed(true);
-      }
+      if (typeof initSceneTextModalFeed === "function") initSceneTextModalFeed(true);
       const modalTa = qs("#modal-scene-textarea");
-      if (modalTa && actionName === "OpenSceneTextModal") {
-        modalTa.focus({ preventScroll: true });
-      }
-    } else if (
-      actionName === "SaveSceneTextModal" ||
-      actionName === "ToggleSceneTextSettings" ||
-      actionName === "SetStartScene" ||
-      actionName === "BrowseAddBookMedia" ||
-      actionName === "AddBookMediaFromDisk" ||
-      actionName === "AddChoice" ||
-      actionName === "PromptRemoveChoice" ||
-      actionName === "RemoveChoice" ||
-      actionName === "ConfirmModalClose" ||
-      actionName === "ConfirmModalAccept" ||
-      actionName === "BranchChoiceScene" ||
-      actionName === "ConnectChoice" ||
-      actionName === "AddBookVariable" ||
-      actionName === "SetSceneTextPreviewMode" ||
-      actionName === "ToggleSceneTestVarsPopover" ||
-      actionName === "UpdateSceneTextTestVar" ||
-      actionName === "ToggleChoiceRule" ||
-      actionName === "ToggleSyntaxHelp"
-    ) {
+      if (modalTa && actionName === "OpenSceneTextModal") modalTa.focus({ preventScroll: true });
+    } else if (ACTIONS_KEEP_MODAL_SCROLL.has(actionName)) {
       const feed = qs(".scene-text-editor-feed", modalsRoot);
-      if (feed && prevModalScrollTop !== null) {
-        feed.scrollTop = prevModalScrollTop;
-      }
-      if (typeof initSceneTextModalFeed === "function") {
-        initSceneTextModalFeed(false);
-      }
+      if (feed && prevModalScrollTop !== null) feed.scrollTop = prevModalScrollTop;
+      if (typeof initSceneTextModalFeed === "function") initSceneTextModalFeed(false);
       if (actionName === "ToggleChoiceRule" && typeof studioGraphState !== "undefined" && studioGraphState.nodeById) {
         const scInp = qs('input[name="scene_id"]', modalsRoot);
         const scId = scInp ? scInp.value : "";
@@ -796,21 +916,12 @@ async function sendServerAction(actionName, params) {
           if (typeof renderStudioCanvas === "function") renderStudioCanvas();
         }
       }
-      if (actionName === "AddBookVariable" && typeof lastSynRuleInputName === "string" && lastSynRuleInputName) {
-        const restoredInput = qs('input[name="' + lastSynRuleInputName + '"]', modalsRoot);
-        if (restoredInput && typeof positionAndShowSynDropdown === "function") {
-          restoredInput.focus();
-          positionAndShowSynDropdown(restoredInput);
-        }
-      }
+      if (actionName === "AddBookVariable") restoreSynDropdownFocus(modalsRoot);
     } else if (actionName === "OpenNewBookModal") {
       const newBookInp = qs("#new-book-title", modalsRoot);
-      if (newBookInp) {
-        setTimeout(() => {
-          newBookInp.focus();
-        }, 0);
-      }
+      if (newBookInp) setTimeout(() => newBookInp.focus(), 0);
     }
+    if (typeof initVoiceRecorderStrips === "function") initVoiceRecorderStrips();
     return;
   }
 
@@ -878,6 +989,9 @@ async function sendServerAction(actionName, params) {
       if (typeof autoResizeAllInspectorTextareas === "function") {
         autoResizeAllInspectorTextareas(qs("#editor-context-panel") || document);
       }
+    }
+    if (typeof initVoiceRecorderStrips === "function") {
+      initVoiceRecorderStrips();
     }
     return;
   }
@@ -950,11 +1064,11 @@ async function sendServerAction(actionName, params) {
     syncTopbarToggleIcons();
     syncEditorHistoryHeaders(resp);
     syncBreakdownActBar(targetEl);
-    if (typeof syncEditorViewportVisibility === "function") {
-      syncEditorViewportVisibility();
-    }
     if (typeof autoResizeAllInspectorTextareas === "function") {
       autoResizeAllInspectorTextareas(targetEl);
+    }
+    if (typeof initVoiceRecorderStrips === "function") {
+      initVoiceRecorderStrips();
     }
     const nextModalFeed = qs(".scene-text-editor-feed");
     if (nextModalFeed && prevModalScrollTop !== null && actionName !== "OpenSceneTextModal" && actionName !== "NavigateSceneTextModal") {
@@ -962,9 +1076,9 @@ async function sendServerAction(actionName, params) {
     }
     if (actionName === "AddBookVariable" && typeof lastSynRuleInputName === "string" && lastSynRuleInputName) {
       const restoredInput = qs('input[name="' + lastSynRuleInputName + '"]', targetEl);
-      if (restoredInput && typeof positionAndShowSynDropdown === "function") {
+      if (restoredInput && typeof updateSynAutocompleteOnInput === "function") {
         restoredInput.focus();
-        positionAndShowSynDropdown(restoredInput);
+        updateSynAutocompleteOnInput(restoredInput, true);
       }
     }
     const nextEditorViewport = qs("#timeline-scroll-viewport");
@@ -1045,6 +1159,10 @@ function postServerActionSilent(actionName, paramsOrFormData) {
       });
     }
   }
+  if (typeof window.__mojraWasmAction === "function") {
+    parseWasmActionResponse(window.__mojraWasmAction(encodeWFP(wfpPayload)));
+    return;
+  }
   fetch("/api/action", {
     method: "POST",
     headers: {
@@ -1056,6 +1174,10 @@ function postServerActionSilent(actionName, paramsOrFormData) {
     .then((resp) => {
       if (resp) {
         syncEditorHistoryHeaders(resp);
+        const voicePeak = resp.headers.get("X-Voice-Peak");
+        if (voicePeak && typeof handleNativeVoicePeakHeader === "function") {
+          handleNativeVoicePeakHeader(voicePeak);
+        }
       }
     })
     .catch(() => {});
@@ -1274,6 +1396,14 @@ function bindDeclarativeActionBridge() {
       }
     }
 
+    const wasmPlayBtn = e.target && e.target.closest ? e.target.closest("[data-wasm-play]") : null;
+    if (wasmPlayBtn) {
+      e.preventDefault();
+      e.stopPropagation();
+      bootMojraWasmPlayer(wasmPlayBtn);
+      return;
+    }
+
     const warningsToggle = e.target.closest("[data-warnings-toggle]");
     if (warningsToggle) {
       e.preventDefault();
@@ -1304,8 +1434,8 @@ function bindDeclarativeActionBridge() {
         if (openInput) {
           openInput.value = willOpen ? "true" : "false";
         }
-        if (typeof updateScrollMoreCue === "function") {
-          updateScrollMoreCue(qs(".scene-text-editor-feed"), qs("#modal-scroll-more-cue"));
+        if (typeof updateFeedScrollCue === "function") {
+          updateFeedScrollCue(qs(".scene-text-editor-feed"));
         }
       }
       return;
@@ -1357,46 +1487,15 @@ function bindDeclarativeActionBridge() {
 
     if (actionName === "SetSceneTextWidthMode") {
       const sceneModal = qs("#modal-scene-text");
-      const expandFullBtn = qs("#btn-expand-scene-text-full");
-      const reqMode = (target.getAttribute("data-mode") || "full").toLowerCase();
       if (sceneModal) {
-        sceneModal.classList.remove("is-entering");
-        const toFull = reqMode === "full";
-        sceneModal.classList.toggle("mode-full", toFull);
-        sceneModal.classList.toggle("mode-half", !toFull);
-        if (expandFullBtn) {
-          expandFullBtn.classList.toggle("hidden", toFull);
-        }
-        if (typeof syncEditorViewportVisibility === "function") {
-          syncEditorViewportVisibility();
-        }
-        const modalTa = qs("#modal-scene-textarea", sceneModal);
-        if (modalTa && typeof autoResizeSceneTextarea === "function") {
-          autoResizeSceneTextarea(modalTa);
-          setTimeout(() => autoResizeSceneTextarea(modalTa), 240);
-        }
-        postServerActionSilent("SetSceneTextWidthMode", { mode: toFull ? "full" : "half" });
+        setSceneTextModalWidthMode(sceneModal, (target.getAttribute("data-mode") || "full").toLowerCase() === "full");
         return;
       }
     }
     if (actionName === "CloseSceneTextModal" && target.id === "btn-collapse-scene-text") {
       const sceneModal = qs("#modal-scene-text");
       if (sceneModal && sceneModal.classList.contains("mode-full")) {
-        sceneModal.classList.remove("is-entering", "mode-full");
-        sceneModal.classList.add("mode-half");
-        const expandFullBtn = qs("#btn-expand-scene-text-full");
-        if (expandFullBtn) {
-          expandFullBtn.classList.remove("hidden");
-        }
-        if (typeof syncEditorViewportVisibility === "function") {
-          syncEditorViewportVisibility();
-        }
-        const modalTa = qs("#modal-scene-textarea", sceneModal);
-        if (modalTa && typeof autoResizeSceneTextarea === "function") {
-          autoResizeSceneTextarea(modalTa);
-          setTimeout(() => autoResizeSceneTextarea(modalTa), 240);
-        }
-        postServerActionSilent("SetSceneTextWidthMode", { mode: "half" });
+        setSceneTextModalWidthMode(sceneModal, false);
         return;
       }
       if (sceneModal) {
@@ -1425,7 +1524,9 @@ function bindDeclarativeActionBridge() {
         selectedNodeIds.clear();
       }
     }
-    const parentCardForm = target.closest("form.editor-context-form, form.timeline-node-card, form#form-scene-text, form#form-new-book");
+    const parentCardForm = target.closest(
+      "form.editor-context-form, form.timeline-node-card, form#form-scene-text, form#form-new-book, form#form-export-project, form.var-panel-inline-form"
+    );
     if (parentCardForm && (!isModalOnlyAction || (typeof dirtyInspectorForms !== "undefined" && dirtyInspectorForms.has(parentCardForm)))) {
       if (typeof dirtyInspectorForms !== "undefined") {
         dirtyInspectorForms.delete(parentCardForm);
@@ -1505,6 +1606,9 @@ function bindDeclarativeActionBridge() {
   }
   if (typeof initPlayerScrollAndAudio === "function") {
     initPlayerScrollAndAudio(null);
+  }
+  if (typeof initVoiceRecorderStrips === "function") {
+    initVoiceRecorderStrips();
   }
 }
 

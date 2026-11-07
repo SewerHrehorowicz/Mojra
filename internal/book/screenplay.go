@@ -202,18 +202,7 @@ func FormatEighths(eighths int) string {
 
 // FormatEighthsCompact formats eighths concisely for compact badges (e.g. "6/8", "1 2/8", "2").
 func FormatEighthsCompact(eighths int) string {
-	if eighths <= 0 {
-		eighths = 1
-	}
-	whole := eighths / 8
-	rem := eighths % 8
-	if whole == 0 {
-		return fmt.Sprintf("%d/8", rem)
-	}
-	if rem == 0 {
-		return fmt.Sprintf("%d", whole)
-	}
-	return fmt.Sprintf("%d %d/8", whole, rem)
+	return strings.TrimSuffix(FormatEighths(eighths), " str.")
 }
 
 // IsSluglineLine checks if a trimmed line matches a Polish/European/US or forced Fountain slugline.
@@ -923,6 +912,60 @@ func ValidateScreenplayGuards(b *Book) {
 	}
 }
 
+func hashStringFNV(h uint64, s string) uint64 {
+	for i := 0; i < len(s); i++ {
+		h ^= uint64(s[i])
+		h *= 1099511628211
+	}
+	h ^= 0xff
+	h *= 1099511628211
+	return h
+}
+
+func computeScreenplayStamp(b *Book) uint64 {
+	if b == nil {
+		return 0
+	}
+	h := uint64(14695981039346656037)
+	h = hashStringFNV(h, b.Mode)
+	h = hashStringFNV(h, b.ScriptStandard)
+	h = hashStringFNV(h, b.StartSceneID)
+	for _, ch := range b.Chapters {
+		h = hashStringFNV(h, ch.ID)
+		h = hashStringFNV(h, ch.Name)
+		h = hashStringFNV(h, ch.StartSceneID)
+	}
+	for _, sc := range b.Scenes {
+		if sc == nil {
+			continue
+		}
+		h = hashStringFNV(h, sc.ID)
+		h = hashStringFNV(h, sc.Name)
+		h = hashStringFNV(h, sc.Slugline)
+		h = hashStringFNV(h, sc.Chapter)
+		h = hashStringFNV(h, sc.ExplicitNext)
+		h = hashStringFNV(h, sc.Text)
+		if sc.ExplicitEnd {
+			h ^= 1
+		}
+		for _, ch := range sc.Choices {
+			h = hashStringFNV(h, ch.Label)
+			h = hashStringFNV(h, ch.Target)
+			h = hashStringFNV(h, ch.TargetSceneID)
+			h = hashStringFNV(h, ch.TargetChapterID)
+		}
+	}
+	if h == 0 {
+		return 1
+	}
+	return h
+}
+
+// ScreenplayBreakdown returns the cached screenplay breakdown for this book, recomputing it only when scenes or chapters change.
+func (b *Book) ScreenplayBreakdown() *ScreenplayBreakdown {
+	return AnalyzeScreenplay(b)
+}
+
 // AnalyzeScreenplay computes the deterministic Cast, Location, Shoot-Day, Call-Day, and Act pacing breakdown.
 func AnalyzeScreenplay(b *Book) *ScreenplayBreakdown {
 	normStd := "pl"
@@ -939,6 +982,10 @@ func AnalyzeScreenplay(b *Book) *ScreenplayBreakdown {
 		bd.EstimatedRuntimeLabel = "~1 min"
 		bd.ToolbarSummary = "1/8 str. • ~1 min"
 		return bd
+	}
+	stamp := computeScreenplayStamp(b)
+	if b.cachedBreakdown != nil && b.cachedBreakdownStamp == stamp {
+		return b.cachedBreakdown
 	}
 
 	activeScenes := LinearizeScreenplayScenes(b)
@@ -1235,6 +1282,8 @@ func AnalyzeScreenplay(b *Book) *ScreenplayBreakdown {
 		bd.ToolbarSummary = fmt.Sprintf("%s • %s", bd.TotalPagesFormatted, bd.EstimatedRuntimeLabel)
 	}
 
+	b.cachedBreakdown = bd
+	b.cachedBreakdownStamp = stamp
 	return bd
 }
 

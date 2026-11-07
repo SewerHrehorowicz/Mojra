@@ -15,7 +15,9 @@ func (s *Server) autoSaveSceneAction(r *http.Request) string {
 	if s.isHistoryPreview() {
 		return ""
 	}
-	_ = s.saveSceneFromFormWithMode(r, true)
+	if msg := s.saveSceneFromFormWithMode(r, true); msg != "" && !strings.HasPrefix(msg, "Zapisano zmiany w pliku ") && msg != "Nie znaleziono sceny" {
+		return msg
+	}
 	return ""
 }
 
@@ -23,21 +25,24 @@ func (s *Server) saveSceneAction(r *http.Request) string {
 	if s.isHistoryPreview() {
 		return historyPreviewLockedToast
 	}
-	_ = s.saveSceneFromForm(r)
+	if msg := s.saveSceneFromForm(r); msg != "" && !strings.HasPrefix(msg, "Zapisano zmiany w pliku ") && msg != "Nie znaleziono sceny" {
+		return msg
+	}
 	return ""
 }
 
-func (s *Server) openBookSettings(r *http.Request) string {
-	if !s.isHistoryPreview() && r.FormValue("scene_id") != "" {
-		_ = s.saveSceneFromForm(r)
+func (s *Server) activateStudioRightPanel(panel string) {
+	s.BookSettingsOpen = panel == "book_settings"
+	if panel != "chapter" {
+		s.SelectedChapter = ""
 	}
-	s.BookSettingsOpen = true
-	s.SelectedChapter = ""
-	s.EditorBreakdownPanelOpen = false
-	s.EditorVariablesPanelOpen = false
-	s.EditorHistoryPanelOpen = false
-	s.EditorHelpModalOpen = false
-	return ""
+	s.EditorBreakdownPanelOpen = panel == "breakdown"
+	s.EditorVariablesPanelOpen = panel == "variables"
+	s.EditorHistoryPanelOpen = panel == "history"
+	s.EditorHelpModalOpen = panel == "help"
+	if s.SceneTextModalWidthMode == "full" {
+		s.SceneTextModalWidthMode = "half"
+	}
 }
 
 func (s *Server) closeBookSettings(_ *http.Request) string {
@@ -47,9 +52,6 @@ func (s *Server) closeBookSettings(_ *http.Request) string {
 }
 
 func (s *Server) toggleBookSettings(r *http.Request) string {
-	if !s.isHistoryPreview() && r.FormValue("scene_id") != "" {
-		_ = s.saveSceneFromForm(r)
-	}
 	switch r.FormValue("open") {
 	case "true":
 		s.BookSettingsOpen = true
@@ -59,14 +61,7 @@ func (s *Server) toggleBookSettings(r *http.Request) string {
 		s.BookSettingsOpen = !s.BookSettingsOpen
 	}
 	if s.BookSettingsOpen {
-		s.SelectedChapter = ""
-		s.EditorBreakdownPanelOpen = false
-		s.EditorVariablesPanelOpen = false
-		s.EditorHistoryPanelOpen = false
-		s.EditorHelpModalOpen = false
-		if s.SceneTextModalWidthMode == "full" {
-			s.SceneTextModalWidthMode = "half"
-		}
+		s.activateStudioRightPanel("book_settings")
 	}
 	return ""
 }
@@ -119,7 +114,7 @@ func (s *Server) saveBookSettings(r *http.Request) string {
 				s.ActiveBook.RawStart = target.ReferenceKey()
 				if s.PlayerBook != nil && s.PlayerBook.ID == s.ActiveBook.ID && s.Save != nil && len(s.Save.History) == 0 && s.Save.AudioTime == 0 {
 					s.Save.CurrentSceneID = target.ID
-					_ = book.WriteSaveState(s.SavesDir, s.Save)
+					s.persistSaveState()
 				}
 				changed = true
 			}
@@ -219,7 +214,7 @@ func (s *Server) setStartScene(r *http.Request) string {
 		}
 		if s.PlayerBook != nil && s.PlayerBook.ID == b.ID && s.Save != nil && len(s.Save.History) == 0 && s.Save.AudioTime == 0 {
 			s.Save.CurrentSceneID = target.ID
-			_ = book.WriteSaveState(s.SavesDir, s.Save)
+			s.persistSaveState()
 		}
 		return "Ustawiono scenę początkową: " + target.DisplayName(), "meta", "", true
 	})
@@ -249,7 +244,7 @@ func (s *Server) setBookStartChapter(r *http.Request) string {
 			for _, sc := range b.Scenes {
 				scCh := strings.TrimSpace(sc.Chapter)
 				if scCh == "" {
-					scCh = "Rozdział 1"
+					scCh = b.DefaultChapterName()
 				}
 				if strings.EqualFold(scCh, strings.TrimSpace(targetCh.Name)) {
 					targetScene = sc
@@ -264,7 +259,7 @@ func (s *Server) setBookStartChapter(r *http.Request) string {
 		b.RawStart = targetScene.ReferenceKey()
 		if s.PlayerBook != nil && s.PlayerBook.ID == b.ID && s.Save != nil && len(s.Save.History) == 0 && s.Save.AudioTime == 0 {
 			s.Save.CurrentSceneID = targetScene.ID
-			_ = book.WriteSaveState(s.SavesDir, s.Save)
+			s.persistSaveState()
 		}
 		return fmt.Sprintf("Ustawiono rozdział początkowy: %s (%s)", targetCh.DisplayName(), targetScene.DisplayName()), "meta", "setstartchapter", true
 	})
@@ -357,9 +352,6 @@ func (s *Server) deleteScenesFromForm(r *http.Request) string {
 }
 
 func (s *Server) selectStudioScene(r *http.Request) string {
-	if !s.isHistoryPreview() && r.FormValue("scene_id") != "" {
-		_ = s.saveSceneFromForm(r)
-	}
 	scID := strings.TrimSpace(r.FormValue("scene"))
 	if found := s.findScene(scID); found != nil {
 		s.SelectedSceneID = found.ID
@@ -371,100 +363,80 @@ func (s *Server) selectStudioScene(r *http.Request) string {
 }
 
 func (s *Server) selectStudioChapter(r *http.Request) string {
-	if !s.isHistoryPreview() && r.FormValue("scene_id") != "" {
-		_ = s.saveSceneFromForm(r)
-	}
 	chKey := strings.TrimSpace(r.FormValue("chapter"))
 	if s.ActiveBook != nil && chKey != "" {
 		if foundCh := s.ActiveBook.FindChapter(chKey); foundCh != nil {
 			s.SelectedChapter = foundCh.Name
-			s.BookSettingsOpen = false
-			s.EditorBreakdownPanelOpen = false
-			s.EditorVariablesPanelOpen = false
-			s.EditorHistoryPanelOpen = false
-			s.EditorHelpModalOpen = false
+			s.activateStudioRightPanel("chapter")
 		}
 	}
 	return ""
+}
+
+func (s *Server) finishInsertedScene(inserted *book.Scene, err error) string {
+	if err != nil {
+		return err.Error()
+	}
+	if inserted == nil {
+		return ""
+	}
+	s.reloadActiveBook()
+	if found := s.findScene(inserted.Name); found != nil {
+		s.SelectedSceneID = found.ID
+	} else {
+		s.SelectedSceneID = inserted.ID
+	}
+	toast := "Wstawiono nową scenę: " + inserted.Name
+	s.recordHistoryAfterMutation(toast, "graph", "")
+	return toast
 }
 
 func (s *Server) insertScene(r *http.Request) string {
 	if s.isHistoryPreview() {
 		return historyPreviewLockedToast
 	}
-	if r.FormValue("scene_id") != "" {
-		_ = s.saveSceneFromForm(r)
+	if s.ActiveBook == nil {
+		return ""
 	}
-	toast := ""
-	if s.ActiveBook != nil {
-		s.ensureHistoryBaselineBeforeMutation()
-		parentID := strings.TrimSpace(r.FormValue("parent"))
-		childID := strings.TrimSpace(r.FormValue("child"))
-		if parentID == "" && len(s.ActiveBook.Scenes) > 0 {
-			parentID = s.ActiveBook.Scenes[len(s.ActiveBook.Scenes)-1].ID
-		}
-		newName := book.NextUniqueSceneName(s.ActiveBook)
-		if inserted, err := book.InsertSceneBetween(s.ActiveBook, parentID, childID, newName); err == nil && inserted != nil {
-			s.reloadActiveBook()
-			if found := s.findScene(inserted.Name); found != nil {
-				s.SelectedSceneID = found.ID
-			} else {
-				s.SelectedSceneID = inserted.ID
-			}
-			toast = "Wstawiono nową scenę: " + inserted.Name
-			s.recordHistoryAfterMutation(toast, "graph", "")
-		} else if err != nil {
-			toast = err.Error()
-		}
+	s.ensureHistoryBaselineBeforeMutation()
+	parentID := strings.TrimSpace(r.FormValue("parent"))
+	childID := strings.TrimSpace(r.FormValue("child"))
+	if parentID == "" && len(s.ActiveBook.Scenes) > 0 {
+		parentID = s.ActiveBook.Scenes[len(s.ActiveBook.Scenes)-1].ID
 	}
-	return toast
+	newName := book.NextUniqueSceneName(s.ActiveBook)
+	inserted, err := book.InsertSceneBetween(s.ActiveBook, parentID, childID, newName)
+	return s.finishInsertedScene(inserted, err)
 }
 
 func (s *Server) insertSceneBefore(r *http.Request) string {
 	if s.isHistoryPreview() {
 		return historyPreviewLockedToast
 	}
-	if r.FormValue("scene_id") != "" {
-		_ = s.saveSceneFromForm(r)
+	if s.ActiveBook == nil {
+		return ""
 	}
-	toast := ""
-	if s.ActiveBook != nil {
-		s.ensureHistoryBaselineBeforeMutation()
-		targetID := strings.TrimSpace(r.FormValue("target"))
-		if targetID == "" {
-			targetID = strings.TrimSpace(r.FormValue("before"))
-		}
-		if targetID == "" {
-			targetID = strings.TrimSpace(r.FormValue("scene"))
-		}
-		newName := book.NextUniqueSceneName(s.ActiveBook)
-		if inserted, err := book.InsertSceneBefore(s.ActiveBook, targetID, newName); err == nil && inserted != nil {
-			s.reloadActiveBook()
-			if found := s.findScene(inserted.Name); found != nil {
-				s.SelectedSceneID = found.ID
-			} else {
-				s.SelectedSceneID = inserted.ID
-			}
-			toast = "Wstawiono nową scenę: " + inserted.Name
-			s.recordHistoryAfterMutation(toast, "graph", "")
-		} else if err != nil {
-			toast = err.Error()
-		}
+	s.ensureHistoryBaselineBeforeMutation()
+	targetID := strings.TrimSpace(r.FormValue("target"))
+	if targetID == "" {
+		targetID = strings.TrimSpace(r.FormValue("before"))
 	}
-	return toast
+	if targetID == "" {
+		targetID = strings.TrimSpace(r.FormValue("scene"))
+	}
+	newName := book.NextUniqueSceneName(s.ActiveBook)
+	inserted, err := book.InsertSceneBefore(s.ActiveBook, targetID, newName)
+	return s.finishInsertedScene(inserted, err)
 }
 
 func (s *Server) createSceneAt(r *http.Request) string {
 	if s.isHistoryPreview() {
 		return historyPreviewLockedToast
 	}
-	if r.FormValue("scene_id") != "" {
-		_ = s.saveSceneFromForm(r)
-	}
 	if s.ActiveBook == nil && !s.StandaloneMode {
 		if createdBook, err := book.CreateNewBook(s.BooksDir, "Nowa Opowieść", "Autor", false); err == nil && createdBook != nil {
 			s.setActiveBook(createdBook)
-			_ = book.SaveAppSettings(s.SavesDir, s.Settings)
+			s.persistSettings()
 		}
 	}
 	toast := ""
@@ -491,12 +463,9 @@ func (s *Server) createSceneAt(r *http.Request) string {
 	return toast
 }
 
-func (s *Server) autoLayoutNodes(r *http.Request) string {
+func (s *Server) autoLayoutNodes(_ *http.Request) string {
 	if s.isHistoryPreview() {
 		return historyPreviewLockedToast
-	}
-	if r.FormValue("scene_id") != "" {
-		_ = s.saveSceneFromForm(r)
 	}
 	toast := ""
 	if s.ActiveBook != nil && !s.ActiveBook.IsPacked {
@@ -504,7 +473,9 @@ func (s *Server) autoLayoutNodes(r *http.Request) string {
 		book.AutoLayoutBook(s.ActiveBook)
 		s.ActiveBook.HasEditorView = false
 		s.ActiveBook.EditorZoom = 1.0
-		_ = book.SaveBookEditorStateToDisk(s.ActiveBook)
+		if err := book.SaveBookEditorStateToDisk(s.ActiveBook); err != nil {
+			return err.Error()
+		}
 		s.reloadActiveBook()
 		toast = "Automatycznie rozmieszczono węzły na siatce"
 		s.recordHistoryAfterMutation(toast, "layout", "")
@@ -513,9 +484,6 @@ func (s *Server) autoLayoutNodes(r *http.Request) string {
 }
 
 func (s *Server) openSceneTextModal(r *http.Request) string {
-	if !s.isHistoryPreview() && r.FormValue("scene_id") != "" {
-		_ = s.saveSceneFromForm(r)
-	}
 	scID := strings.TrimSpace(r.FormValue("scene"))
 	if scID == "" {
 		scID = strings.TrimSpace(r.FormValue("scene_id"))
@@ -553,6 +521,7 @@ func (s *Server) setSceneTextWidthModeAction(r *http.Request) string {
 }
 
 func (s *Server) closeSceneTextModal(r *http.Request) string {
+	toast := ""
 	if s.SceneTextModalID != "" && !s.isHistoryPreview() {
 		if curSc := s.findScene(s.SceneTextModalID); curSc != nil && s.ActiveBook != nil && !s.ActiveBook.IsPacked {
 			if s.hasSceneTextModalChanges(curSc, r) {
@@ -560,14 +529,18 @@ func (s *Server) closeSceneTextModal(r *http.Request) string {
 				s.applySceneFormFields(curSc, r)
 				curScLabel := curSc.DisplayName()
 				curScID := curSc.ID
-				_ = s.commitScenesMutation("Edycja treści sceny: "+curScLabel, "text", "textmodal:"+curScID)
+				if mutMsg := s.commitScenesMutation("Edycja treści sceny: "+curScLabel, "text", "textmodal:"+curScID); strings.HasPrefix(mutMsg, "Edycja treści sceny: ") {
+					toast = ""
+				} else {
+					toast = mutMsg
+				}
 				s.SelectedSceneID = curScID
 			}
 		}
 	}
 	s.SceneTextModalID = ""
 	s.SceneTestVarsPopoverOpen = false
-	return ""
+	return toast
 }
 
 func (s *Server) toggleSceneTextSettings(_ *http.Request) string {
@@ -606,29 +579,33 @@ func (s *Server) saveSceneTextModal(r *http.Request) string {
 	return toast
 }
 
+func (s *Server) applyEditorViewportParams(r *http.Request) {
+	if panXStr := strings.TrimSpace(r.FormValue("pan_x")); panXStr != "" {
+		if px, err := strconv.Atoi(panXStr); err == nil {
+			s.ActiveBook.EditorPanX = px
+			s.ActiveBook.HasEditorView = true
+		}
+	}
+	if panYStr := strings.TrimSpace(r.FormValue("pan_y")); panYStr != "" {
+		if py, err := strconv.Atoi(panYStr); err == nil {
+			s.ActiveBook.EditorPanY = py
+			s.ActiveBook.HasEditorView = true
+		}
+	}
+	if zoomStr := strings.TrimSpace(r.FormValue("zoom")); zoomStr != "" {
+		if z, err := strconv.ParseFloat(zoomStr, 64); err == nil && z >= 0.2 && z <= 3.0 {
+			s.ActiveBook.EditorZoom = z
+			s.ActiveBook.HasEditorView = true
+		}
+	}
+}
+
 func (s *Server) saveEditorViewportAndNodePositions(r *http.Request) string {
 	if s.ActiveBook == nil || s.ActiveBook.IsPacked {
 		return ""
 	}
 	if s.isHistoryPreview() {
-		if panXStr := strings.TrimSpace(r.FormValue("pan_x")); panXStr != "" {
-			if px, err := strconv.Atoi(panXStr); err == nil {
-				s.ActiveBook.EditorPanX = px
-				s.ActiveBook.HasEditorView = true
-			}
-		}
-		if panYStr := strings.TrimSpace(r.FormValue("pan_y")); panYStr != "" {
-			if py, err := strconv.Atoi(panYStr); err == nil {
-				s.ActiveBook.EditorPanY = py
-				s.ActiveBook.HasEditorView = true
-			}
-		}
-		if zoomStr := strings.TrimSpace(r.FormValue("zoom")); zoomStr != "" {
-			if z, err := strconv.ParseFloat(zoomStr, 64); err == nil && z >= 0.2 && z <= 3.0 {
-				s.ActiveBook.EditorZoom = z
-				s.ActiveBook.HasEditorView = true
-			}
-		}
+		s.applyEditorViewportParams(r)
 		return ""
 	}
 	scID := strings.TrimSpace(r.FormValue("scene_id"))
@@ -689,24 +666,7 @@ func (s *Server) saveEditorViewportAndNodePositions(r *http.Request) string {
 			}
 		}
 	}
-	if panXStr := strings.TrimSpace(r.FormValue("pan_x")); panXStr != "" {
-		if px, err := strconv.Atoi(panXStr); err == nil {
-			s.ActiveBook.EditorPanX = px
-			s.ActiveBook.HasEditorView = true
-		}
-	}
-	if panYStr := strings.TrimSpace(r.FormValue("pan_y")); panYStr != "" {
-		if py, err := strconv.Atoi(panYStr); err == nil {
-			s.ActiveBook.EditorPanY = py
-			s.ActiveBook.HasEditorView = true
-		}
-	}
-	if zoomStr := strings.TrimSpace(r.FormValue("zoom")); zoomStr != "" {
-		if z, err := strconv.ParseFloat(zoomStr, 64); err == nil && z >= 0.2 && z <= 3.0 {
-			s.ActiveBook.EditorZoom = z
-			s.ActiveBook.HasEditorView = true
-		}
-	}
+	s.applyEditorViewportParams(r)
 	if hasWirePinUpdate {
 		pins := book.ParseWirePinList(wirePinsRaw)
 		if len(pins) > 0 {
@@ -715,7 +675,9 @@ func (s *Server) saveEditorViewportAndNodePositions(r *http.Request) string {
 			delete(s.ActiveBook.WirePins, wireKeyRaw)
 		}
 	}
-	_ = book.SaveBookEditorStateToDisk(s.ActiveBook)
+	if err := book.SaveBookEditorStateToDisk(s.ActiveBook); err != nil {
+		return err.Error()
+	}
 	if hasNodeMove && movedCount > 0 {
 		moveLbl := fmt.Sprintf("Przesunięto węzły (%d)", movedCount)
 		coalesceKey := "nodedrag:batch"
@@ -843,36 +805,13 @@ func (s *Server) navigateSceneTextModal(r *http.Request) string {
 }
 
 func (s *Server) toggleEditorBreakdownPanel(r *http.Request) string {
-	if !s.isHistoryPreview() && r.FormValue("scene_id") != "" {
-		_ = s.saveSceneFromForm(r)
-	}
 	if r.FormValue("book_settings_open") == "false" {
 		s.BookSettingsOpen = false
 	}
 	s.EditorBreakdownPanelOpen = !s.EditorBreakdownPanelOpen
 	if s.EditorBreakdownPanelOpen {
-		s.BookSettingsOpen = false
-		s.SelectedChapter = ""
-		s.EditorVariablesPanelOpen = false
-		s.EditorHistoryPanelOpen = false
-		s.EditorHelpModalOpen = false
-		if s.SceneTextModalWidthMode == "full" {
-			s.SceneTextModalWidthMode = "half"
-		}
+		s.activateStudioRightPanel("breakdown")
 	}
-	return ""
-}
-
-func (s *Server) openEditorBreakdownPanel(r *http.Request) string {
-	if !s.isHistoryPreview() && r.FormValue("scene_id") != "" {
-		_ = s.saveSceneFromForm(r)
-	}
-	s.EditorBreakdownPanelOpen = true
-	s.BookSettingsOpen = false
-	s.SelectedChapter = ""
-	s.EditorVariablesPanelOpen = false
-	s.EditorHistoryPanelOpen = false
-	s.EditorHelpModalOpen = false
 	return ""
 }
 
@@ -881,102 +820,50 @@ func (s *Server) closeEditorBreakdownPanel(_ *http.Request) string {
 	return ""
 }
 
-func (s *Server) renameCharacterAction(r *http.Request) string {
+func (s *Server) renameScreenplayEntityAction(oldVal, newVal, emptyMsg, okFmt string, fn func(*book.Book, string, string) (int, error)) string {
 	if s.isHistoryPreview() {
 		return historyPreviewLockedToast
 	}
 	if s.ActiveBook == nil || s.ActiveBook.IsPacked {
 		return ""
 	}
+	s.ensureHistoryBaselineBeforeMutation()
+	count, err := fn(s.ActiveBook, oldVal, newVal)
+	if err != nil {
+		return err.Error()
+	}
+	s.invalidateHistoryCache()
+	s.reloadActiveBook()
+	if count == 0 {
+		return emptyMsg
+	}
+	return fmt.Sprintf(okFmt, strings.ToUpper(oldVal), strings.ToUpper(newVal), count)
+}
+
+func (s *Server) renameCharacterAction(r *http.Request) string {
 	oldName := strings.TrimSpace(r.FormValue("old_name"))
 	if oldName == "" {
 		oldName = strings.TrimSpace(r.FormValue("character"))
 	}
 	newName := strings.TrimSpace(r.FormValue("new_name"))
-	s.ensureHistoryBaselineBeforeMutation()
-	count, err := book.RenameScreenplayCharacter(s.ActiveBook, oldName, newName)
-	if err != nil {
-		return err.Error()
-	}
-	s.invalidateHistoryCache()
-	s.reloadActiveBook()
-	if count == 0 {
-		return "Brak kwestii do zmiany"
-	}
-	return fmt.Sprintf("Zmieniono postać %s → %s (%d kwestii)", strings.ToUpper(oldName), strings.ToUpper(newName), count)
+	return s.renameScreenplayEntityAction(oldName, newName, "Brak kwestii do zmiany", "Zmieniono postać %s → %s (%d kwestii)", book.RenameScreenplayCharacter)
 }
 
 func (s *Server) renameLocationAction(r *http.Request) string {
-	if s.isHistoryPreview() {
-		return historyPreviewLockedToast
-	}
-	if s.ActiveBook == nil || s.ActiveBook.IsPacked {
-		return ""
-	}
 	oldLoc := strings.TrimSpace(r.FormValue("old_location"))
 	if oldLoc == "" {
 		oldLoc = strings.TrimSpace(r.FormValue("location"))
 	}
 	newLoc := strings.TrimSpace(r.FormValue("new_location"))
-	s.ensureHistoryBaselineBeforeMutation()
-	count, err := book.RenameScreenplayLocation(s.ActiveBook, oldLoc, newLoc)
-	if err != nil {
-		return err.Error()
-	}
-	s.invalidateHistoryCache()
-	s.reloadActiveBook()
-	if count == 0 {
-		return "Brak lokacji do zmiany"
-	}
-	return fmt.Sprintf("Zmieniono lokację %s → %s (%d scen)", strings.ToUpper(oldLoc), strings.ToUpper(newLoc), count)
-}
-
-func (s *Server) exportScreenplayPDFAction(r *http.Request) string {
-	if s.ActiveBook == nil {
-		return "Brak aktywnego scenariusza"
-	}
-	exportDir, errMsg, ok := s.resolveOrPickBookExportDir(r)
-	if !ok {
-		return errMsg
-	}
-	pdfBytes, err := book.ExportScreenplayPDF(s.ActiveBook)
-	if err != nil {
-		return err.Error()
-	}
-	if err := os.MkdirAll(exportDir, 0755); err != nil {
-		return err.Error()
-	}
-	outPath := filepath.Join(exportDir, s.ActiveBook.ID+".pdf")
-	if err := os.WriteFile(outPath, pdfBytes, 0644); err != nil {
-		return err.Error()
-	}
-	s.revealExportedFileInOS(outPath)
-	return "Wyeksportowano scenariusz PDF: " + outPath
-}
-
-func (s *Server) exportScreenplayFountainAction(r *http.Request) string {
-	if s.ActiveBook == nil {
-		return "Brak aktywnego scenariusza"
-	}
-	exportDir, errMsg, ok := s.resolveOrPickBookExportDir(r)
-	if !ok {
-		return errMsg
-	}
-	fountainText := book.ExportScreenplayFountain(s.ActiveBook)
-	if err := os.MkdirAll(exportDir, 0755); err != nil {
-		return err.Error()
-	}
-	outPath := filepath.Join(exportDir, s.ActiveBook.ID+".fountain")
-	if err := os.WriteFile(outPath, []byte(fountainText), 0644); err != nil {
-		return err.Error()
-	}
-	s.revealExportedFileInOS(outPath)
-	return "Wyeksportowano plik Fountain: " + outPath
+	return s.renameScreenplayEntityAction(oldLoc, newLoc, "Brak lokacji do zmiany", "Zmieniono lokację %s → %s (%d scen)", book.RenameScreenplayLocation)
 }
 
 func (s *Server) browseExportModalFolder(r *http.Request) string {
 	if fmtVal := strings.ToLower(strings.TrimSpace(r.FormValue("format"))); fmtVal != "" {
 		s.ExportModalFormat = fmtVal
+	}
+	if stdVal := strings.TrimSpace(r.FormValue("standard")); stdVal != "" {
+		s.ExportModalStandard = book.NormalizeScriptStandard(stdVal)
 	}
 	if curDir := strings.TrimSpace(r.FormValue("export_dir")); curDir != "" {
 		if expanded, err := book.ExpandLocalPath(curDir); err == nil && expanded != "" {
@@ -985,9 +872,7 @@ func (s *Server) browseExportModalFolder(r *http.Request) string {
 	}
 	picked := strings.TrimSpace(r.FormValue("picked_dir"))
 	if picked == "" {
-		s.mu.Unlock()
-		picked = PickNativeBookPath(true)
-		s.mu.Lock()
+		picked = s.pickNativeBookPathUnlocked(true)
 	}
 	if picked != "" {
 		if expanded, err := book.ExpandLocalPath(picked); err == nil && expanded != "" {
@@ -1003,17 +888,6 @@ func (s *Server) exportProjectAction(r *http.Request) string {
 	if s.ActiveBook == nil {
 		return "Brak aktywnego projektu"
 	}
-	format := strings.ToLower(strings.TrimSpace(r.FormValue("format")))
-	if format == "" {
-		format = strings.ToLower(strings.TrimSpace(s.ExportModalFormat))
-	}
-	if format == "" {
-		if s.ActiveBook.IsScreenplay() {
-			format = "pdf"
-		} else {
-			format = "playbook"
-		}
-	}
 	rawDir := strings.TrimSpace(r.FormValue("export_dir"))
 	if rawDir == "" {
 		rawDir = strings.TrimSpace(s.ExportModalDir)
@@ -1021,43 +895,147 @@ func (s *Server) exportProjectAction(r *http.Request) string {
 	if rawDir != "" && r != nil && r.Form != nil {
 		r.Form.Set("export_dir", rawDir)
 	}
-	var toast string
-	switch format {
-	case "pdf":
-		toast = s.exportScreenplayPDFAction(r)
-	case "fountain":
-		toast = s.exportScreenplayFountainAction(r)
-	default:
-		toast = s.packActiveBook(r)
+	exportDir, errMsg, ok := s.resolveOrPickBookExportDir(r)
+	if !ok {
+		return errMsg
 	}
-	if strings.HasPrefix(toast, "Wyeksportowano ") || strings.HasPrefix(toast, "Spakowano ") {
-		s.ExportModalOpen = false
-		s.ExportModalFormat = ""
-		s.ExportModalDir = ""
+	if err := os.MkdirAll(exportDir, 0755); err != nil {
+		return err.Error()
 	}
-	return toast
+
+	var selectedOrder []string
+	explicitFormat := strings.ToLower(strings.TrimSpace(r.FormValue("format")))
+	if explicitFormat != "" {
+		if explicitFormat == "stbook" {
+			explicitFormat = "playbook"
+		}
+		selectedOrder = []string{explicitFormat}
+	} else if len(s.ExportModalFormats) > 0 {
+		for _, id := range []string{"playbook", "wasm", "pdf", "fountain", "playtxt"} {
+			if s.ExportModalFormats[id] {
+				selectedOrder = append(selectedOrder, id)
+			}
+		}
+	} else {
+		fallback := strings.ToLower(strings.TrimSpace(s.ExportModalFormat))
+		if fallback == "" {
+			if s.ActiveBook.IsScreenplay() {
+				fallback = "pdf"
+			} else {
+				fallback = "playbook"
+			}
+		}
+		selectedOrder = []string{fallback}
+	}
+
+	if len(selectedOrder) == 0 {
+		return "Wybierz przynajmniej jeden format eksportu"
+	}
+
+	expStd := strings.TrimSpace(r.FormValue("standard"))
+	if expStd == "" {
+		expStd = s.ExportModalStandard
+	}
+	if expStd == "" {
+		expStd = s.ActiveBook.NormalizedStandard()
+	} else {
+		expStd = book.NormalizeScriptStandard(expStd)
+	}
+
+	var exportedPaths []string
+	for _, fmtID := range selectedOrder {
+		switch fmtID {
+		case "playbook":
+			if !s.ActiveBook.IsPacked {
+				outZip := filepath.Join(exportDir, s.ActiveBook.ID+".playbook")
+				if err := book.PackBookToZip(s.ActiveBook.RootPath, outZip); err != nil {
+					return err.Error()
+				}
+				exportedPaths = append(exportedPaths, outZip)
+			} else if s.ActiveBook.RootPath != "" {
+				outZip := filepath.Join(exportDir, s.ActiveBook.ID+".playbook")
+				if raw, err := os.ReadFile(s.ActiveBook.RootPath); err == nil {
+					if err := os.WriteFile(outZip, raw, 0644); err != nil {
+						return err.Error()
+					}
+					exportedPaths = append(exportedPaths, outZip)
+				}
+			}
+		case "wasm":
+			outWebDir, err := book.ExportWebWASMApp(s.ActiveBook, exportDir, s.RootDir, s.EmbeddedFS)
+			if err != nil {
+				return err.Error()
+			}
+			exportedPaths = append(exportedPaths, outWebDir)
+		case "pdf":
+			bookClone := *s.ActiveBook
+			bookClone.ScriptStandard = expStd
+			pdfBytes, err := book.ExportScreenplayPDF(&bookClone)
+			if err != nil {
+				return err.Error()
+			}
+			outPDF := filepath.Join(exportDir, s.ActiveBook.ID+".pdf")
+			if err := os.WriteFile(outPDF, pdfBytes, 0644); err != nil {
+				return err.Error()
+			}
+			exportedPaths = append(exportedPaths, outPDF)
+		case "fountain":
+			bookClone := *s.ActiveBook
+			bookClone.ScriptStandard = expStd
+			fountainText := book.ExportScreenplayFountain(&bookClone)
+			outFountain := filepath.Join(exportDir, s.ActiveBook.ID+".fountain")
+			if err := os.WriteFile(outFountain, []byte(fountainText), 0644); err != nil {
+				return err.Error()
+			}
+			exportedPaths = append(exportedPaths, outFountain)
+		case "playtxt":
+			outPlaytxtDir, err := book.ExportPlaytxtProject(s.ActiveBook, exportDir)
+			if err != nil {
+				return err.Error()
+			}
+			exportedPaths = append(exportedPaths, outPlaytxtDir)
+		}
+	}
+
+	if len(exportedPaths) == 0 {
+		return "Nie wyeksportowano żadnego pliku"
+	}
+
+	s.revealExportedFileInOS(exportedPaths[0])
+	s.resetExportModalState()
+
+	if len(exportedPaths) == 1 {
+		return "Wyeksportowano: " + exportedPaths[0]
+	}
+	return fmt.Sprintf("Wyeksportowano %d formaty do: %s", len(exportedPaths), exportDir)
 }
 
-func (s *Server) browseBookExportFolder(r *http.Request) string {
+func (s *Server) pickExpandedBookDirectory(r *http.Request, formKey string) (string, string, bool) {
 	if s.isHistoryPreview() {
-		return historyPreviewLockedToast
+		return "", historyPreviewLockedToast, false
 	}
 	if s.ActiveBook == nil || s.ActiveBook.IsPacked {
-		return ""
+		return "", "", false
 	}
-	picked := strings.TrimSpace(r.FormValue("export_dir"))
+	picked := strings.TrimSpace(r.FormValue(formKey))
 	if picked == "" {
-		s.mu.Unlock()
-		picked = PickNativeBookPath(true)
-		s.mu.Lock()
+		picked = s.pickNativeBookPathUnlocked(true)
 	}
 	if picked == "" {
 		r.Form.Set("silent", "true")
-		return ""
+		return "", "", false
 	}
 	expanded, err := book.ExpandLocalPath(picked)
 	if err != nil {
-		return err.Error()
+		return "", err.Error(), false
+	}
+	return expanded, "", true
+}
+
+func (s *Server) browseBookExportFolder(r *http.Request) string {
+	expanded, errToast, ok := s.pickExpandedBookDirectory(r, "export_dir")
+	if !ok {
+		return errToast
 	}
 	s.ensureHistoryBaselineBeforeMutation()
 	s.persistActiveBookExportDir(expanded)
@@ -1068,25 +1046,9 @@ func (s *Server) browseBookExportFolder(r *http.Request) string {
 }
 
 func (s *Server) browseBookSaveFolder(r *http.Request) string {
-	if s.isHistoryPreview() {
-		return historyPreviewLockedToast
-	}
-	if s.ActiveBook == nil || s.ActiveBook.IsPacked {
-		return ""
-	}
-	picked := strings.TrimSpace(r.FormValue("save_path"))
-	if picked == "" {
-		s.mu.Unlock()
-		picked = PickNativeBookPath(true)
-		s.mu.Lock()
-	}
-	if picked == "" {
-		r.Form.Set("silent", "true")
-		return ""
-	}
-	expanded, err := book.ExpandLocalPath(picked)
-	if err != nil {
-		return err.Error()
+	expanded, errToast, ok := s.pickExpandedBookDirectory(r, "save_path")
+	if !ok {
+		return errToast
 	}
 	oldRoot := s.ActiveBook.RootPath
 	reloaded, err := book.MoveBookToDirectory(s.ActiveBook, expanded)
@@ -1100,35 +1062,33 @@ func (s *Server) browseBookSaveFolder(r *http.Request) string {
 			reloaded.IsExternal = true
 		}
 		s.Settings.NewBookDir = filepath.Dir(reloaded.RootPath)
-		_ = s.saveAppSettings()
+		s.persistSettings()
 	}
 	s.setActiveBook(reloaded)
 	return "Przeniesiono projekt do: " + reloaded.RootPath
+}
+
+func (s *Server) prepareScreenplaySceneEdit(r *http.Request) *book.Scene {
+	if s.ActiveBook == nil || s.ActiveBook.IsPacked {
+		return nil
+	}
+	_, target := s.resolveEditorSceneFromRequest(r, true)
+	if target == nil {
+		return nil
+	}
+	s.ensureHistoryBaselineBeforeMutation()
+	s.applySceneFormFields(target, r)
+	return target
 }
 
 func (s *Server) applySluglineTokenAction(r *http.Request) string {
 	if s.isHistoryPreview() {
 		return historyPreviewLockedToast
 	}
-	if s.ActiveBook == nil || s.ActiveBook.IsPacked {
-		return ""
-	}
-	scID := strings.TrimSpace(r.FormValue("scene"))
-	if scID == "" {
-		scID = strings.TrimSpace(r.FormValue("scene_id"))
-	}
-	if scID == "" && s.SceneTextModalID != "" {
-		scID = s.SceneTextModalID
-	}
-	if scID == "" {
-		scID = s.SelectedSceneID
-	}
-	target := s.findScene(scID)
+	target := s.prepareScreenplaySceneEdit(r)
 	if target == nil {
 		return ""
 	}
-	s.ensureHistoryBaselineBeforeMutation()
-	s.applySceneFormFields(target, r)
 
 	info := book.ParseSlugline(target.Slugline)
 	prefix := info.IntExt
@@ -1167,25 +1127,10 @@ func (s *Server) applySluglineTokenAction(r *http.Request) string {
 }
 
 func (s *Server) insertScreenplayBlockAction(r *http.Request) string {
-	if s.ActiveBook == nil || s.ActiveBook.IsPacked {
-		return ""
-	}
-	scID := strings.TrimSpace(r.FormValue("scene"))
-	if scID == "" {
-		scID = strings.TrimSpace(r.FormValue("scene_id"))
-	}
-	if scID == "" && s.SceneTextModalID != "" {
-		scID = s.SceneTextModalID
-	}
-	if scID == "" {
-		scID = s.SelectedSceneID
-	}
-	target := s.findScene(scID)
+	target := s.prepareScreenplaySceneEdit(r)
 	if target == nil {
 		return ""
 	}
-	s.ensureHistoryBaselineBeforeMutation()
-	s.applySceneFormFields(target, r)
 
 	isPL := s.ActiveBook.NormalizedStandard() == "pl"
 	kind := strings.ToLower(strings.TrimSpace(r.FormValue("kind")))

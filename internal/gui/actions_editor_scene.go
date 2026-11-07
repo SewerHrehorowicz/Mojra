@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"encoding/base64"
 	"fmt"
 	"net/http"
 	"path/filepath"
@@ -201,7 +202,7 @@ func (s *Server) applySceneFormFields(target *book.Scene, r *http.Request) {
 			if chMeta.SourceFile != "" {
 				target.SourceFile = chMeta.SourceFile
 			}
-		} else if s.ActiveBook.IsMultiFileBook() {
+		} else {
 			target.ChapterID = book.SanitizeSceneID(target.Chapter)
 			target.SourceFile = s.ActiveBook.ChapterFileNameFor(target.Chapter, target.ChapterID)
 		}
@@ -388,7 +389,9 @@ func (s *Server) applySceneFormFields(target *book.Scene, r *http.Request) {
 				s.ActiveBook.Layout[book.NormalizeLookupKey(target.Name)] = pos
 			}
 			if s.ActiveBook.HasEditorView {
-				_ = book.SaveBookEditorStateToDisk(s.ActiveBook)
+				if err := book.SaveBookEditorStateToDisk(s.ActiveBook); err != nil {
+					s.ActiveBook.Warnings = append(s.ActiveBook.Warnings, err.Error())
+				}
 			}
 		}
 		if strings.EqualFold(s.ActiveBook.StartSceneID, target.ID) ||
@@ -486,6 +489,37 @@ func (s *Server) selectPrimaryBranchScene(r *http.Request) string {
 	return s.commitScenesMutation("Ustawiono główną ścieżkę (primary): "+target.DisplayName(), "graph", "")
 }
 
+func (s *Server) resolveEditorSceneFromRequest(r *http.Request, fallbackActive bool) (string, *book.Scene) {
+	scID := strings.TrimSpace(r.FormValue("scene"))
+	if scID == "" {
+		scID = strings.TrimSpace(r.FormValue("scene_id"))
+	}
+	if fallbackActive {
+		if scID == "" && s.SceneTextModalID != "" {
+			scID = s.SceneTextModalID
+		}
+		if scID == "" {
+			scID = s.SelectedSceneID
+		}
+	}
+	return scID, s.findScene(scID)
+}
+
+func (s *Server) commitTargetSceneChoicesMutation(target *book.Scene, msgPrefix string) string {
+	book.FinalizeBook(s.ActiveBook)
+	if err := book.SaveBookScenesToDisk(s.ActiveBook); err != nil {
+		return err.Error()
+	}
+	s.reloadActiveBook()
+	s.SelectedSceneID = target.ID
+	if s.SceneTextModalID != "" {
+		s.SceneTextModalID = target.ID
+	}
+	msg := msgPrefix + target.DisplayName()
+	s.recordHistoryAfterMutation(msg, "graph", "")
+	return msg
+}
+
 func (s *Server) addChoiceToScene(r *http.Request) string {
 	if s.isHistoryPreview() {
 		return historyPreviewLockedToast
@@ -496,11 +530,7 @@ func (s *Server) addChoiceToScene(r *http.Request) string {
 	if s.ActiveBook == nil {
 		return ""
 	}
-	scID := strings.TrimSpace(r.FormValue("scene"))
-	if scID == "" {
-		scID = strings.TrimSpace(r.FormValue("scene_id"))
-	}
-	target := s.findScene(scID)
+	_, target := s.resolveEditorSceneFromRequest(r, false)
 	if target == nil {
 		return "Nie znaleziono sceny"
 	}
@@ -535,18 +565,7 @@ func (s *Server) addChoiceToScene(r *http.Request) string {
 	target.ExplicitNext = ""
 	target.ExplicitEnd = false
 
-	book.FinalizeBook(s.ActiveBook)
-	if err := book.SaveBookScenesToDisk(s.ActiveBook); err != nil {
-		return err.Error()
-	}
-	s.reloadActiveBook()
-	s.SelectedSceneID = target.ID
-	if s.SceneTextModalID != "" {
-		s.SceneTextModalID = target.ID
-	}
-	msg := "Dodano nowy wybór do sceny: " + target.DisplayName()
-	s.recordHistoryAfterMutation(msg, "graph", "")
-	return msg
+	return s.commitTargetSceneChoicesMutation(target, "Dodano nowy wybór do sceny: ")
 }
 
 func (s *Server) promptRemoveChoiceFromScene(r *http.Request) string {
@@ -559,17 +578,7 @@ func (s *Server) promptRemoveChoiceFromScene(r *http.Request) string {
 	if s.ActiveBook == nil {
 		return ""
 	}
-	scID := strings.TrimSpace(r.FormValue("scene"))
-	if scID == "" {
-		scID = strings.TrimSpace(r.FormValue("scene_id"))
-	}
-	if scID == "" {
-		scID = s.SceneTextModalID
-	}
-	if scID == "" {
-		scID = s.SelectedSceneID
-	}
-	target := s.findScene(scID)
+	scID, target := s.resolveEditorSceneFromRequest(r, true)
 	if target == nil {
 		return ""
 	}
@@ -593,8 +602,8 @@ func (s *Server) promptRemoveChoiceFromScene(r *http.Request) string {
 				target = s.findScene(targetID)
 			}
 		}
-	} else if r.FormValue("scene_id") != "" && !s.ActiveBook.IsPacked {
-		_ = s.saveSceneFromForm(r)
+	} else if !s.ActiveBook.IsPacked {
+		s.flushFormSceneIfPresent(r)
 		target = s.findScene(scID)
 		if target == nil {
 			target = s.findScene(s.SelectedSceneID)
@@ -621,11 +630,7 @@ func (s *Server) removeChoiceFromScene(r *http.Request) string {
 	if s.ActiveBook == nil {
 		return ""
 	}
-	scID := strings.TrimSpace(r.FormValue("scene"))
-	if scID == "" {
-		scID = strings.TrimSpace(r.FormValue("scene_id"))
-	}
-	target := s.findScene(scID)
+	_, target := s.resolveEditorSceneFromRequest(r, false)
 	if target == nil {
 		return "Nie znaleziono sceny"
 	}
@@ -681,18 +686,7 @@ func (s *Server) removeChoiceOnTarget(target *book.Scene, choiceIdx int) string 
 		target.ExplicitEnd = false
 	}
 
-	book.FinalizeBook(s.ActiveBook)
-	if err := book.SaveBookScenesToDisk(s.ActiveBook); err != nil {
-		return err.Error()
-	}
-	s.reloadActiveBook()
-	s.SelectedSceneID = target.ID
-	if s.SceneTextModalID != "" {
-		s.SceneTextModalID = target.ID
-	}
-	msg := "Usunięto wybór ze sceny: " + target.DisplayName()
-	s.recordHistoryAfterMutation(msg, "graph", "")
-	return msg
+	return s.commitTargetSceneChoicesMutation(target, "Usunięto wybór ze sceny: ")
 }
 
 func (s *Server) reorderChoiceOnScene(r *http.Request) string {
@@ -705,17 +699,7 @@ func (s *Server) reorderChoiceOnScene(r *http.Request) string {
 	if s.ActiveBook == nil || s.ActiveBook.IsPacked {
 		return ""
 	}
-	scID := strings.TrimSpace(r.FormValue("scene"))
-	if scID == "" {
-		scID = strings.TrimSpace(r.FormValue("scene_id"))
-	}
-	if scID == "" {
-		scID = s.SceneTextModalID
-	}
-	if scID == "" {
-		scID = s.SelectedSceneID
-	}
-	target := s.findScene(scID)
+	_, target := s.resolveEditorSceneFromRequest(r, true)
 	if target == nil {
 		return "Nie znaleziono sceny"
 	}
@@ -745,18 +729,7 @@ func (s *Server) reorderChoiceOnScene(r *http.Request) string {
 	target.ExplicitNext = ""
 	target.ExplicitEnd = false
 
-	book.FinalizeBook(s.ActiveBook)
-	if err := book.SaveBookScenesToDisk(s.ActiveBook); err != nil {
-		return err.Error()
-	}
-	s.reloadActiveBook()
-	s.SelectedSceneID = target.ID
-	if s.SceneTextModalID != "" {
-		s.SceneTextModalID = target.ID
-	}
-	msg := "Zmieniono kolejność wyborów: " + target.DisplayName()
-	s.recordHistoryAfterMutation(msg, "graph", "")
-	return msg
+	return s.commitTargetSceneChoicesMutation(target, "Zmieniono kolejność wyborów: ")
 }
 
 func (s *Server) branchSceneFromChoice(r *http.Request) string {
@@ -766,11 +739,7 @@ func (s *Server) branchSceneFromChoice(r *http.Request) string {
 	if s.ActiveBook == nil {
 		return ""
 	}
-	scID := strings.TrimSpace(r.FormValue("scene"))
-	if scID == "" {
-		scID = strings.TrimSpace(r.FormValue("scene_id"))
-	}
-	target := s.findScene(scID)
+	_, target := s.resolveEditorSceneFromRequest(r, false)
 	if target == nil {
 		return "Nie znaleziono sceny"
 	}
@@ -941,7 +910,9 @@ func (s *Server) deleteSceneByID(sceneID string) string {
 	}
 
 	book.FinalizeBook(s.ActiveBook)
-	_ = book.SaveBookScenesToDisk(s.ActiveBook)
+	if err := book.SaveBookScenesToDisk(s.ActiveBook); err != nil {
+		return err.Error()
+	}
 	s.reloadActiveBook()
 	if len(s.ActiveBook.Scenes) > 0 {
 		s.SelectedSceneID = s.ActiveBook.Scenes[0].ID
@@ -1059,7 +1030,9 @@ func (s *Server) deleteScenesByIDs(rawIDs string) string {
 	}
 
 	book.FinalizeBook(s.ActiveBook)
-	_ = book.SaveBookScenesToDisk(s.ActiveBook)
+	if err := book.SaveBookScenesToDisk(s.ActiveBook); err != nil {
+		return err.Error()
+	}
 	s.reloadActiveBook()
 	if len(s.ActiveBook.Scenes) > 0 {
 		s.SelectedSceneID = s.ActiveBook.Scenes[0].ID
@@ -1068,3 +1041,202 @@ func (s *Server) deleteScenesByIDs(rawIDs string) string {
 	s.recordHistoryAfterMutation(msg, "graph", "")
 	return msg
 }
+
+func (s *Server) resolveVoiceActionTargetScene(r *http.Request) *book.Scene {
+	_, target := s.resolveEditorSceneFromRequest(r, true)
+	return target
+}
+
+func (s *Server) toggleSceneVoiceRecorderAction(r *http.Request) string {
+	if s.ActiveBook == nil {
+		return ""
+	}
+	if target := s.resolveVoiceActionTargetScene(r); target != nil && !s.isHistoryPreview() && !s.ActiveBook.IsPacked {
+		if s.hasSceneTextModalChanges(target, r) {
+			s.ensureHistoryBaselineBeforeMutation()
+			s.applySceneFormFields(target, r)
+			book.FinalizeBook(s.ActiveBook)
+			if err := book.SaveBookScenesToDisk(s.ActiveBook); err != nil {
+				return err.Error()
+			}
+			s.reloadActiveBook()
+			s.recordHistoryAfterMutation("Zapisano zmiany w scenie", "scene", target.ID)
+		}
+	}
+	if openParam := strings.TrimSpace(r.FormValue("open")); openParam == "true" {
+		s.VoiceRecorderOpen = true
+	} else if openParam == "false" {
+		s.VoiceRecorderOpen = false
+	} else {
+		s.VoiceRecorderOpen = !s.VoiceRecorderOpen
+	}
+	return ""
+}
+
+func (s *Server) startSceneVoiceCaptureAction(r *http.Request) string {
+	if s.isHistoryPreview() {
+		return historyPreviewLockedToast
+	}
+	if s.ActiveBook == nil || s.ActiveBook.IsPacked || !s.ActiveBook.Narrated {
+		return "Brak aktywnej książki z włączoną narracją"
+	}
+	if err := StartNativeAudioCapture(); err != nil {
+		return err.Error()
+	}
+	return ""
+}
+
+func (s *Server) pollSceneVoiceCaptureAction(r *http.Request) string {
+	return ""
+}
+
+func (s *Server) commitSceneVoiceFile(target *book.Scene, relPath string, err error, historyPrefix string) string {
+	if err != nil {
+		return err.Error()
+	}
+	target.ExplicitVoice = relPath
+	s.VoiceRecorderOpen = true
+
+	book.FinalizeBook(s.ActiveBook)
+	if err := book.SaveBookScenesToDisk(s.ActiveBook); err != nil {
+		return err.Error()
+	}
+	s.reloadActiveBook()
+	s.recordHistoryAfterMutation(historyPrefix+relPath, "scene", target.ID)
+	return ""
+}
+
+func (s *Server) stopSceneVoiceCaptureAction(r *http.Request) string {
+	if s.isHistoryPreview() {
+		_, _, _ = StopNativeAudioCapture()
+		return historyPreviewLockedToast
+	}
+	pcmLE, sampleRate, err := StopNativeAudioCapture()
+	if err != nil {
+		return err.Error()
+	}
+	if s.ActiveBook == nil || s.ActiveBook.IsPacked || !s.ActiveBook.Narrated {
+		return "Brak aktywnej książki z włączoną narracją"
+	}
+	target := s.resolveVoiceActionTargetScene(r)
+	if target == nil {
+		return "Nie znaleziono sceny"
+	}
+	s.ensureHistoryBaselineBeforeMutation()
+	if s.hasSceneTextModalChanges(target, r) {
+		s.applySceneFormFields(target, r)
+	}
+	relPath, err := book.SaveSceneVoicePCM(s.ActiveBook, target.ReferenceKey(), pcmLE, sampleRate, 0, 1)
+	return s.commitSceneVoiceFile(target, relPath, err, "Zapisano nagranie audio: ")
+}
+
+func (s *Server) saveSceneVoiceRecordingAction(r *http.Request) string {
+	if s.isHistoryPreview() {
+		return historyPreviewLockedToast
+	}
+	if s.ActiveBook == nil {
+		return "Brak aktywnej książki"
+	}
+	if s.ActiveBook.IsPacked {
+		return "Nie można edytować spakowanego archiwum .stbook bezpośrednio"
+	}
+	if !s.ActiveBook.Narrated {
+		return "Książka nie posiada włączonej narracji (narrated: false)"
+	}
+	target := s.resolveVoiceActionTargetScene(r)
+	if target == nil {
+		return "Nie znaleziono sceny"
+	}
+
+	rawB64 := strings.TrimSpace(r.FormValue("pcm_b64"))
+	if rawB64 == "" {
+		return "Brak danych nagrania audio"
+	}
+	pcmLE, err := base64.StdEncoding.DecodeString(rawB64)
+	if err != nil || len(pcmLE) < 2 {
+		return "Nieprawidłowy strumień nagrania audio"
+	}
+	sampleRate, _ := strconv.Atoi(strings.TrimSpace(r.FormValue("sample_rate")))
+	if sampleRate < 8000 || sampleRate > 65535 {
+		sampleRate = 24000
+	}
+	startRatio, _ := strconv.ParseFloat(strings.TrimSpace(r.FormValue("start_ratio")), 64)
+	endRatio, _ := strconv.ParseFloat(strings.TrimSpace(r.FormValue("end_ratio")), 64)
+
+	s.ensureHistoryBaselineBeforeMutation()
+	if s.hasSceneTextModalChanges(target, r) {
+		s.applySceneFormFields(target, r)
+	}
+
+	relPath, err := book.SaveSceneVoicePCM(s.ActiveBook, target.ReferenceKey(), pcmLE, sampleRate, startRatio, endRatio)
+	return s.commitSceneVoiceFile(target, relPath, err, "Zapisano nagranie audio: ")
+}
+
+func (s *Server) trimSceneVoiceAction(r *http.Request) string {
+	if s.isHistoryPreview() {
+		return historyPreviewLockedToast
+	}
+	if s.ActiveBook == nil || s.ActiveBook.IsPacked || !s.ActiveBook.Narrated {
+		return ""
+	}
+	target := s.resolveVoiceActionTargetScene(r)
+	if target == nil {
+		return ""
+	}
+	startRatio, _ := strconv.ParseFloat(strings.TrimSpace(r.FormValue("start_ratio")), 64)
+	endRatio, _ := strconv.ParseFloat(strings.TrimSpace(r.FormValue("end_ratio")), 64)
+
+	s.ensureHistoryBaselineBeforeMutation()
+	if s.hasSceneTextModalChanges(target, r) {
+		s.applySceneFormFields(target, r)
+	}
+
+	var relPath string
+	var err error
+	if rawB64 := strings.TrimSpace(r.FormValue("pcm_b64")); rawB64 != "" {
+		pcmLE, decErr := base64.StdEncoding.DecodeString(rawB64)
+		if decErr != nil {
+			return "Nieprawidłowe dane audio do przycięcia"
+		}
+		sampleRate, _ := strconv.Atoi(strings.TrimSpace(r.FormValue("sample_rate")))
+		if sampleRate < 8000 || sampleRate > 65535 {
+			sampleRate = 24000
+		}
+		relPath, err = book.SaveSceneVoicePCM(s.ActiveBook, target.ReferenceKey(), pcmLE, sampleRate, startRatio, endRatio)
+	} else {
+		curVoice := target.ExplicitVoice
+		if curVoice == "" {
+			curVoice = target.AudioFile
+		}
+		relPath, err = book.TrimSceneVoiceFile(s.ActiveBook, target.ReferenceKey(), curVoice, startRatio, endRatio)
+	}
+	return s.commitSceneVoiceFile(target, relPath, err, "Przycięto nagranie audio: ")
+}
+
+func (s *Server) deleteSceneVoiceAction(r *http.Request) string {
+	if s.isHistoryPreview() {
+		return historyPreviewLockedToast
+	}
+	if s.ActiveBook == nil || s.ActiveBook.IsPacked {
+		return ""
+	}
+	target := s.resolveVoiceActionTargetScene(r)
+	if target == nil {
+		return ""
+	}
+	s.ensureHistoryBaselineBeforeMutation()
+	if s.hasSceneTextModalChanges(target, r) {
+		s.applySceneFormFields(target, r)
+	}
+	if err := book.DeleteSceneVoiceFile(s.ActiveBook, target); err != nil {
+		return err.Error()
+	}
+	book.FinalizeBook(s.ActiveBook)
+	if err := book.SaveBookScenesToDisk(s.ActiveBook); err != nil {
+		return err.Error()
+	}
+	s.reloadActiveBook()
+	s.recordHistoryAfterMutation("Usunięto nagranie audio sceny", "scene", target.ID)
+	return ""
+}
+

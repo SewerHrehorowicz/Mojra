@@ -148,6 +148,124 @@
   gap 10px
   width 100%
 
+// Export Project Modal (Multi-Select Formats & Collapsible Advanced Section)
+#modal-export-project
+  overflow visible
+
+.export-selection-count
+  font-family --font-sans
+  font-size 10px
+  font-weight 600
+  letter-spacing 1.2px
+  text-transform uppercase
+  color --text-muted
+
+.node-meta-row.export-formats-row
+  align-items flex-start
+
+.node-meta-row.export-formats-row .node-meta-key
+  padding-top 6px
+
+.export-format-list
+  display flex
+  flex-direction column
+  flex 1
+  min-width 0
+  gap 2px
+
+.export-format-item
+  appearance none
+  width 100%
+  display flex
+  align-items center
+  justify-content space-between
+  gap 10px
+  padding 6px 0
+  background transparent
+  border none
+  color --text-secondary
+  font-family --font-sans
+  font-size 13px
+  text-align left
+  cursor pointer
+  transition color 0.15s ease
+
+.export-format-item:hover
+  color --text-primary
+
+.export-format-item.active
+  color --text-primary
+
+.export-format-name
+  flex 1
+  min-width 0
+  overflow hidden
+  text-overflow ellipsis
+  white-space nowrap
+
+.export-format-right
+  display inline-flex
+  align-items center
+  gap 10px
+  flex-shrink 0
+
+.export-format-ext
+  font-family --font-sans
+  font-size 11px
+  color --text-muted
+
+.export-format-check
+  width 8px
+  height 8px
+  background --border-subtle
+  flex-shrink 0
+  transition background 0.15s ease
+
+.export-format-item:hover .export-format-check
+  background --border-strong
+
+.export-format-item.active .export-format-check
+  background --text-primary
+
+.export-advanced-toggle
+  appearance none
+  width 100%
+  display flex
+  align-items center
+  justify-content space-between
+  padding 10px 0 4px
+  margin-top 2px
+  background transparent
+  border none
+  border-top 1px solid --border-subtle
+  color --text-muted
+  font-family --font-sans
+  font-size 10px
+  font-weight 600
+  letter-spacing 1.4px
+  text-transform uppercase
+  cursor pointer
+  transition color 0.15s ease
+
+.export-advanced-toggle:hover, .export-advanced-toggle.open
+  color --text-secondary
+
+.export-advanced-caret
+  width 12px
+  height 12px
+  display block
+  transition transform 0.15s ease
+
+.export-advanced-toggle.open .export-advanced-caret
+  transform rotate(180deg)
+
+.export-advanced-body
+  display flex
+  flex-direction column
+  gap 10px
+  width 100%
+
+
 .add-book-section
   display flex
   flex-direction column

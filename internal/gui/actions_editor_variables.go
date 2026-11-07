@@ -10,36 +10,13 @@ import (
 )
 
 func (s *Server) toggleEditorVariablesPanel(r *http.Request) string {
-	if !s.isHistoryPreview() && r.FormValue("scene_id") != "" {
-		_ = s.saveSceneFromForm(r)
-	}
 	if r.FormValue("book_settings_open") == "false" {
 		s.BookSettingsOpen = false
 	}
 	s.EditorVariablesPanelOpen = !s.EditorVariablesPanelOpen
 	if s.EditorVariablesPanelOpen {
-		s.BookSettingsOpen = false
-		s.SelectedChapter = ""
-		s.EditorBreakdownPanelOpen = false
-		s.EditorHistoryPanelOpen = false
-		s.EditorHelpModalOpen = false
-		if s.SceneTextModalWidthMode == "full" {
-			s.SceneTextModalWidthMode = "half"
-		}
+		s.activateStudioRightPanel("variables")
 	}
-	return ""
-}
-
-func (s *Server) openEditorVariablesPanel(r *http.Request) string {
-	if !s.isHistoryPreview() && r.FormValue("scene_id") != "" {
-		_ = s.saveSceneFromForm(r)
-	}
-	s.EditorVariablesPanelOpen = true
-	s.BookSettingsOpen = false
-	s.SelectedChapter = ""
-	s.EditorBreakdownPanelOpen = false
-	s.EditorHistoryPanelOpen = false
-	s.EditorHelpModalOpen = false
 	return ""
 }
 
@@ -67,9 +44,6 @@ func (s *Server) addBookVariableAction(r *http.Request) string {
 	}
 	if s.ActiveBook == nil || s.ActiveBook.IsPacked {
 		return ""
-	}
-	if r.FormValue("scene_id") != "" {
-		_ = s.saveSceneFromForm(r)
 	}
 	if s.SceneTextModalID == "" && r.FormValue("from_dropdown") != "true" {
 		s.EditorVariablesPanelOpen = true
@@ -120,44 +94,117 @@ func (s *Server) addBookVariableAction(r *http.Request) string {
 	}
 	s.ActiveBook.Variables = append(s.ActiveBook.Variables, newVar)
 	book.ResolveBookVariableTypes(s.ActiveBook)
-	_ = book.SaveBookMetadataToDisk(s.ActiveBook)
-	s.recordHistoryAfterMutation(label, "meta", "addvariable")
+	return s.commitBookVariableMutation(label, "addvariable")
+}
+
+func (s *Server) commitBookVariableMutation(label, coalesceKey string) string {
+	if err := book.SaveBookMetadataToDisk(s.ActiveBook); err != nil {
+		return err.Error()
+	}
+	s.recordHistoryAfterMutation(label, "meta", coalesceKey)
 	return ""
+}
+
+func (s *Server) mutateVariableAtFormIndex(r *http.Request, fn func(idx int, v *book.VariableDef) string) string {
+	if s.isHistoryPreview() {
+		return historyPreviewLockedToast
+	}
+	if s.ActiveBook == nil || s.ActiveBook.IsPacked {
+		return ""
+	}
+	idx, err := strconv.Atoi(strings.TrimSpace(r.FormValue("var_idx")))
+	if err != nil || idx < 0 || idx >= len(s.ActiveBook.Variables) {
+		return ""
+	}
+	return fn(idx, &s.ActiveBook.Variables[idx])
 }
 
 func (s *Server) toggleBookVariableBoolAction(r *http.Request) string {
-	if s.isHistoryPreview() {
-		return historyPreviewLockedToast
-	}
-	if s.ActiveBook == nil || s.ActiveBook.IsPacked {
-		return ""
-	}
-	idx, err := strconv.Atoi(strings.TrimSpace(r.FormValue("var_idx")))
-	if err != nil || idx < 0 || idx >= len(s.ActiveBook.Variables) {
-		return ""
-	}
-	s.ensureHistoryBaselineBeforeMutation()
-	v := &s.ActiveBook.Variables[idx]
-	v.BoolVal = !v.BoolVal
-	_ = book.SaveBookMetadataToDisk(s.ActiveBook)
-	s.recordHistoryAfterMutation(fmt.Sprintf("Zmieniono wartość startową zmiennej „%s”", v.Name), "meta", "togglevariable")
-	return ""
+	return s.mutateVariableAtFormIndex(r, func(_ int, v *book.VariableDef) string {
+		s.ensureHistoryBaselineBeforeMutation()
+		v.BoolVal = !v.BoolVal
+		return s.commitBookVariableMutation(fmt.Sprintf("Zmieniono wartość startową zmiennej „%s”", v.Name), "togglevariable")
+	})
 }
 
-func (s *Server) updateBookVariableAction(r *http.Request) string {
-	if s.isHistoryPreview() {
-		return historyPreviewLockedToast
+func parseEnumOptionsSlice(rawItems []string) []string {
+	var opts []string
+	seen := make(map[string]bool)
+	for _, raw := range rawItems {
+		norm := strings.NewReplacer("\r\n", ",", "\n", ",", ";", ",").Replace(raw)
+		for _, p := range strings.Split(norm, ",") {
+			opt := book.SanitizeEnumOption(p)
+			if opt != "" && !seen[opt] {
+				seen[opt] = true
+				opts = append(opts, opt)
+			}
+		}
 	}
-	if s.ActiveBook == nil || s.ActiveBook.IsPacked {
-		return ""
-	}
-	idx, err := strconv.Atoi(strings.TrimSpace(r.FormValue("var_idx")))
-	if err != nil || idx < 0 || idx >= len(s.ActiveBook.Variables) {
-		return ""
-	}
-	v := &s.ActiveBook.Variables[idx]
-	changed := false
+	return opts
+}
 
+func extractEnumOptionsFromForm(r *http.Request) ([]string, bool) {
+	if rawVal, hasVal := r.Form["var_value"]; hasVal && len(rawVal) > 0 {
+		return parseEnumOptionsSlice(rawVal), true
+	}
+	maxIdx := -1
+	if cntStr := strings.TrimSpace(r.FormValue("opt_count")); cntStr != "" {
+		if cnt, err := strconv.Atoi(cntStr); err == nil && cnt > 0 && cnt <= 500 {
+			maxIdx = cnt - 1
+		}
+	}
+	for k := range r.Form {
+		if strings.HasPrefix(k, "enum_opt_") {
+			if idx, err := strconv.Atoi(strings.TrimPrefix(k, "enum_opt_")); err == nil && idx >= 0 && idx <= 500 {
+				if idx > maxIdx {
+					maxIdx = idx
+				}
+			}
+		}
+	}
+	if maxIdx < 0 {
+		return nil, false
+	}
+	rawItems := make([]string, 0, maxIdx+1)
+	for i := 0; i <= maxIdx; i++ {
+		key := fmt.Sprintf("enum_opt_%d", i)
+		if vals, ok := r.Form[key]; ok && len(vals) > 0 {
+			rawItems = append(rawItems, vals[0])
+		}
+	}
+	return parseEnumOptionsSlice(rawItems), true
+}
+
+func syncEnumVariableOptions(b *book.Book, v *book.VariableDef, opts []string) {
+	v.Options = opts
+	if len(opts) > 0 {
+		v.EnumVal = opts[0]
+	}
+	if v.EnumName != "" && b != nil {
+		for i := range b.Enums {
+			if strings.EqualFold(b.Enums[i].Name, v.EnumName) {
+				b.Enums[i].Values = append([]string(nil), opts...)
+			}
+		}
+	}
+}
+
+func nextUniqueEnumOptionName(opts []string) string {
+	seen := make(map[string]bool, len(opts))
+	for _, o := range opts {
+		seen[strings.ToLower(strings.TrimSpace(o))] = true
+	}
+	for i := 1; i <= 999; i++ {
+		cand := fmt.Sprintf("wariant_%d", i)
+		if !seen[cand] {
+			return cand
+		}
+	}
+	return "wariant"
+}
+
+func (s *Server) applyVariableFormEdits(idx int, v *book.VariableDef, r *http.Request) bool {
+	changed := false
 	if rawName, hasName := r.Form["var_name"]; hasName && len(rawName) > 0 {
 		cleanName := book.SanitizeVarName(rawName[0])
 		if cleanName != "" && cleanName != v.Name {
@@ -176,11 +223,10 @@ func (s *Server) updateBookVariableAction(r *http.Request) string {
 		}
 	}
 
-	if rawVal, hasVal := r.Form["var_value"]; hasVal && len(rawVal) > 0 {
-		valStr := strings.TrimSpace(rawVal[0])
-		switch v.Kind {
-		case book.VarKindBool:
-			lower := strings.ToLower(valStr)
+	switch v.Kind {
+	case book.VarKindBool:
+		if rawVal, hasVal := r.Form["var_value"]; hasVal && len(rawVal) > 0 {
+			lower := strings.ToLower(strings.TrimSpace(rawVal[0]))
 			nextBool := lower == "true" || lower == "tak" || lower == "1" || lower == "yes"
 			if nextBool != v.BoolVal {
 				if !changed {
@@ -189,53 +235,101 @@ func (s *Server) updateBookVariableAction(r *http.Request) string {
 				v.BoolVal = nextBool
 				changed = true
 			}
-		case book.VarKindInt:
-			if iv, err := strconv.Atoi(valStr); err == nil && iv != v.IntVal {
+		}
+	case book.VarKindInt:
+		if rawVal, hasVal := r.Form["var_value"]; hasVal && len(rawVal) > 0 {
+			if iv, err := strconv.Atoi(strings.TrimSpace(rawVal[0])); err == nil && iv != v.IntVal {
 				if !changed {
 					s.ensureHistoryBaselineBeforeMutation()
 				}
 				v.IntVal = iv
 				changed = true
 			}
-		case book.VarKindEnum:
-			parts := strings.Split(valStr, ",")
-			var opts []string
-			seen := make(map[string]bool)
-			for _, p := range parts {
-				opt := book.SanitizeEnumOption(p)
-				if opt != "" && !seen[opt] {
-					seen[opt] = true
-					opts = append(opts, opt)
+		}
+	case book.VarKindEnum:
+		if opts, hasOpts := extractEnumOptionsFromForm(r); hasOpts && len(opts) > 0 {
+			oldJoined := strings.Join(v.Options, ",")
+			newJoined := strings.Join(opts, ",")
+			if oldJoined != newJoined || v.EnumVal != opts[0] {
+				if !changed {
+					s.ensureHistoryBaselineBeforeMutation()
 				}
-			}
-			if len(opts) > 0 {
-				oldJoined := strings.Join(v.Options, ",")
-				newJoined := strings.Join(opts, ",")
-				if oldJoined != newJoined || v.EnumVal != opts[0] {
-					if !changed {
-						s.ensureHistoryBaselineBeforeMutation()
-					}
-					v.Options = opts
-					v.EnumVal = opts[0]
-					if v.EnumName != "" {
-						for i := range s.ActiveBook.Enums {
-							if strings.EqualFold(s.ActiveBook.Enums[i].Name, v.EnumName) {
-								s.ActiveBook.Enums[i].Values = append([]string(nil), opts...)
-							}
-						}
-					}
-					changed = true
-				}
+				syncEnumVariableOptions(s.ActiveBook, v, opts)
+				changed = true
 			}
 		}
 	}
+	return changed
+}
 
-	if changed {
-		book.ResolveBookVariableTypes(s.ActiveBook)
-		_ = book.SaveBookMetadataToDisk(s.ActiveBook)
-		s.recordHistoryAfterMutation(fmt.Sprintf("Zaktualizowano zmienną „%s”", v.Name), "meta", "updatevariable")
+func (s *Server) updateBookVariableAction(r *http.Request) string {
+	return s.mutateVariableAtFormIndex(r, func(idx int, v *book.VariableDef) string {
+		if s.applyVariableFormEdits(idx, v, r) {
+			book.ResolveBookVariableTypes(s.ActiveBook)
+			return s.commitBookVariableMutation(fmt.Sprintf("Zaktualizowano zmienną „%s”", v.Name), "updatevariable")
+		}
+		return ""
+	})
+}
+
+func (s *Server) addBookEnumOptionAction(r *http.Request) string {
+	if s.isHistoryPreview() {
+		return historyPreviewLockedToast
 	}
-	return ""
+	if s.ActiveBook == nil || s.ActiveBook.IsPacked {
+		return ""
+	}
+	idx, err := strconv.Atoi(strings.TrimSpace(r.FormValue("var_idx")))
+	if err != nil || idx < 0 || idx >= len(s.ActiveBook.Variables) {
+		return ""
+	}
+	v := &s.ActiveBook.Variables[idx]
+	if v.Kind != book.VarKindEnum {
+		return ""
+	}
+	s.ensureHistoryBaselineBeforeMutation()
+	_ = s.applyVariableFormEdits(idx, v, r)
+	opts := append([]string(nil), v.Options...)
+	if len(opts) == 0 && v.EnumVal != "" {
+		opts = []string{v.EnumVal}
+	}
+	nextOpt := nextUniqueEnumOptionName(opts)
+	opts = append(opts, nextOpt)
+	syncEnumVariableOptions(s.ActiveBook, v, opts)
+	book.ResolveBookVariableTypes(s.ActiveBook)
+	return s.commitBookVariableMutation(fmt.Sprintf("Dodano wariant „%s” do zmiennej „%s”", nextOpt, v.Name), "addenumopt")
+}
+
+func (s *Server) removeBookEnumOptionAction(r *http.Request) string {
+	if s.isHistoryPreview() {
+		return historyPreviewLockedToast
+	}
+	if s.ActiveBook == nil || s.ActiveBook.IsPacked {
+		return ""
+	}
+	idx, err := strconv.Atoi(strings.TrimSpace(r.FormValue("var_idx")))
+	if err != nil || idx < 0 || idx >= len(s.ActiveBook.Variables) {
+		return ""
+	}
+	optIdx, err := strconv.Atoi(strings.TrimSpace(r.FormValue("opt_idx")))
+	if err != nil || optIdx < 0 {
+		return ""
+	}
+	v := &s.ActiveBook.Variables[idx]
+	if v.Kind != book.VarKindEnum {
+		return ""
+	}
+	s.ensureHistoryBaselineBeforeMutation()
+	_ = s.applyVariableFormEdits(idx, v, r)
+	if len(v.Options) <= 1 || optIdx >= len(v.Options) {
+		return ""
+	}
+	removedOpt := v.Options[optIdx]
+	opts := append([]string(nil), v.Options[:optIdx]...)
+	opts = append(opts, v.Options[optIdx+1:]...)
+	syncEnumVariableOptions(s.ActiveBook, v, opts)
+	book.ResolveBookVariableTypes(s.ActiveBook)
+	return s.commitBookVariableMutation(fmt.Sprintf("Usunięto wariant „%s” ze zmiennej „%s”", removedOpt, v.Name), "removeenumopt")
 }
 
 func (s *Server) removeBookVariableAction(r *http.Request) string {
@@ -258,15 +352,10 @@ func (s *Server) removeBookVariableAction(r *http.Request) string {
 		s.SyntaxHelpPopoverOpen = false
 		s.ChoiceRulesOpen = nil
 	}
-	_ = book.SaveBookMetadataToDisk(s.ActiveBook)
-	s.recordHistoryAfterMutation(fmt.Sprintf("Usunięto zmienną „%s”", removedName), "meta", "removevariable")
-	return ""
+	return s.commitBookVariableMutation(fmt.Sprintf("Usunięto zmienną „%s”", removedName), "removevariable")
 }
 
 func (s *Server) toggleChoiceRuleAction(r *http.Request) string {
-	if !s.isHistoryPreview() && r.FormValue("scene_id") != "" {
-		_ = s.saveSceneFromForm(r)
-	}
 	if s.ActiveBook == nil || len(s.ActiveBook.Variables) == 0 {
 		s.ChoiceRulesOpen = nil
 		s.SyntaxHelpPopoverOpen = false
@@ -304,10 +393,7 @@ func (s *Server) toggleChoiceRuleAction(r *http.Request) string {
 	return ""
 }
 
-func (s *Server) toggleSyntaxHelpAction(r *http.Request) string {
-	if !s.isHistoryPreview() && r.FormValue("scene_id") != "" {
-		_ = s.saveSceneFromForm(r)
-	}
+func (s *Server) toggleSyntaxHelpAction(_ *http.Request) string {
 	if s.ActiveBook == nil || len(s.ActiveBook.Variables) == 0 {
 		s.SyntaxHelpPopoverOpen = false
 		return ""
@@ -317,9 +403,6 @@ func (s *Server) toggleSyntaxHelpAction(r *http.Request) string {
 }
 
 func (s *Server) setSceneTextPreviewModeAction(r *http.Request) string {
-	if !s.isHistoryPreview() && r.FormValue("scene_id") != "" {
-		_ = s.saveSceneFromForm(r)
-	}
 	if s.ActiveBook == nil || len(s.ActiveBook.Variables) == 0 {
 		s.SceneTextPreviewMode = "normal"
 		return ""
@@ -342,10 +425,7 @@ func (s *Server) setSceneTextPreviewModeAction(r *http.Request) string {
 	return ""
 }
 
-func (s *Server) toggleSceneTestVarsPopoverAction(r *http.Request) string {
-	if !s.isHistoryPreview() && r.FormValue("scene_id") != "" {
-		_ = s.saveSceneFromForm(r)
-	}
+func (s *Server) toggleSceneTestVarsPopoverAction(_ *http.Request) string {
 	if s.ActiveBook == nil || len(s.ActiveBook.Variables) == 0 {
 		s.SceneTestVarsPopoverOpen = false
 		return ""
@@ -358,9 +438,6 @@ func (s *Server) toggleSceneTestVarsPopoverAction(r *http.Request) string {
 }
 
 func (s *Server) updateSceneTextTestVarAction(r *http.Request) string {
-	if !s.isHistoryPreview() && r.FormValue("scene_id") != "" {
-		_ = s.saveSceneFromForm(r)
-	}
 	varName := book.SanitizeVarName(r.FormValue("var_name"))
 	if varName == "" || s.ActiveBook == nil {
 		return ""

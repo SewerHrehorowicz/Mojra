@@ -193,7 +193,8 @@ function initAudioController(shouldAutoPlay, preservedTime) {
 
   if (playBtn) {
     playBtn.addEventListener("click", () => {
-      if (!url) {
+      const currentUrl = audio.getAttribute("data-audio-url") || "";
+      if (!currentUrl) {
         showToast("Ta scena nie posiada przypisanego pliku audio.");
         return;
       }
@@ -201,20 +202,17 @@ function initAudioController(shouldAutoPlay, preservedTime) {
         if (audio.getAttribute("data-auto-choice") === "true") {
           autoPlayChainActive = true;
         }
-        if (audio.readyState >= 4) {
-          setBufferingState(false);
-          audio.play().catch(() => {});
-        } else {
-          setBufferingState(true);
-          audio.addEventListener(
-            "canplaythrough",
-            () => {
-              setBufferingState(false);
-              audio.play().catch(() => {});
-            },
-            { once: true }
-          );
+        const curSpeed = parseFloat(audio.getAttribute("data-speed") || "1") || 1.0;
+        audio.playbackRate = curSpeed;
+        if (audio.getAttribute("src") !== currentUrl) {
+          audio.src = currentUrl;
           audio.load();
+        }
+        const playPromise = audio.play();
+        if (playPromise && typeof playPromise.catch === "function") {
+          playPromise.catch(() => {
+            setBufferingState(false);
+          });
         }
       } else {
         autoPlayChainActive = false;

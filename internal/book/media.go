@@ -3,6 +3,7 @@ package book
 import (
 	"archive/zip"
 	"bytes"
+	"encoding/binary"
 	"fmt"
 	"image"
 	"image/color"
@@ -201,10 +202,8 @@ func validateMediaHeader(relPath string, header []byte) bool {
 		probe = probe[:512]
 	}
 	lowerProbe := strings.ToLower(string(probe))
-	for _, sig := range []string{"<!doctype", "<html", "<script", "<svg", "<?xml", "#!/", "\x7felf"} {
-		if strings.Contains(lowerProbe, sig) {
-			return false
-		}
+	if hasDisallowedMediaSignature(lowerProbe) {
+		return false
 	}
 
 	switch strings.ToLower(filepath.Ext(relPath)) {
@@ -282,6 +281,25 @@ func ServeBookMedia(w http.ResponseWriter, r *http.Request, b *Book, rawRelPath 
 			http.Error(w, "invalid or disguised media header", http.StatusForbidden)
 			return
 		}
+		if n >= 42 && string(hdr[:4]) == "fLaC" && (hdr[4]&0x7F) == 0 &&
+			binary.BigEndian.Uint16(hdr[8:10]) != binary.BigEndian.Uint16(hdr[10:12]) &&
+			info.Size() <= maxMediaEntryBytes {
+			if _, err := f.Seek(0, io.SeekStart); err == nil {
+				if raw, readErr := io.ReadAll(io.LimitReader(f, maxMediaEntryBytes+1)); readErr == nil {
+					fixed, changed := NormalizeFLACForPlayback(raw)
+					if changed {
+						tmpPath := fullPath + ".tmp"
+						if writeErr := os.WriteFile(tmpPath, fixed, 0644); writeErr == nil {
+							if err := os.Rename(tmpPath, fullPath); err != nil {
+								_ = os.Remove(tmpPath)
+							}
+						}
+					}
+					http.ServeContent(w, r, filepath.Base(cleanRel), info.ModTime(), bytes.NewReader(fixed))
+					return
+				}
+			}
+		}
 		if _, err := f.Seek(0, io.SeekStart); err != nil {
 			http.NotFound(w, r)
 			return
@@ -324,43 +342,32 @@ func ServeBookMedia(w http.ResponseWriter, r *http.Request, b *Book, rawRelPath 
 	}
 	defer zr.Close()
 
-	commonPrefix := detectZipCommonPrefix(zr.File)
-	for _, f := range zr.File {
-		if f.FileInfo().IsDir() {
-			continue
-		}
-		entryRel := filepath.ToSlash(f.Name)
-		if commonPrefix != "" && strings.HasPrefix(entryRel, commonPrefix) {
-			entryRel = strings.TrimPrefix(entryRel, commonPrefix)
-		}
-		entryRel = SanitizeRelativeMediaPath(entryRel)
-		if strings.EqualFold(entryRel, cleanRel) {
-			if f.UncompressedSize64 > maxMediaEntryBytes {
-				http.Error(w, "media entry exceeds size limit", http.StatusRequestEntityTooLarge)
-				return
-			}
-			rc, err := f.Open()
-			if err != nil {
-				http.NotFound(w, r)
-				return
-			}
-			defer rc.Close()
-			raw, err := io.ReadAll(io.LimitReader(rc, maxMediaEntryBytes+1))
-			if err != nil {
-				http.NotFound(w, r)
-				return
-			}
-			if len(raw) > maxMediaEntryBytes {
-				http.Error(w, "media entry exceeds size limit", http.StatusRequestEntityTooLarge)
-				return
-			}
-			if !validateMediaHeader(cleanRel, raw) {
-				http.Error(w, "invalid or disguised media header", http.StatusForbidden)
-				return
-			}
-			http.ServeContent(w, r, filepath.Base(cleanRel), f.Modified, bytes.NewReader(raw))
+	if f := findZipEntryByRelPath(zr.File, cleanRel); f != nil {
+		if f.UncompressedSize64 > maxMediaEntryBytes {
+			http.Error(w, "media entry exceeds size limit", http.StatusRequestEntityTooLarge)
 			return
 		}
+		rc, err := f.Open()
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		defer rc.Close()
+		raw, err := io.ReadAll(io.LimitReader(rc, maxMediaEntryBytes+1))
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		if len(raw) > maxMediaEntryBytes {
+			http.Error(w, "media entry exceeds size limit", http.StatusRequestEntityTooLarge)
+			return
+		}
+		if !validateMediaHeader(cleanRel, raw) {
+			http.Error(w, "invalid or disguised media header", http.StatusForbidden)
+			return
+		}
+		http.ServeContent(w, r, filepath.Base(cleanRel), f.Modified, bytes.NewReader(raw))
+		return
 	}
 	http.NotFound(w, r)
 }

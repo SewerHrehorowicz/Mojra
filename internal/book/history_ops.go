@@ -653,8 +653,7 @@ func SaveNamedBookVersion(b *Book, versionName, selectedSceneID string) (*Histor
 	return &newVer, nil
 }
 
-// UndoBookHistory steps backward by one unnamed edit on the active branch (stopping at the latest Named Version floor) and restores files to disk.
-func UndoBookHistory(b *Book) (selectedSceneID string, label string, err error) {
+func stepBookHistory(b *Book, delta int, emptyErr string) (selectedSceneID string, label string, err error) {
 	if b == nil || b.IsPacked || strings.TrimSpace(b.RootPath) == "" {
 		return "", "", fmt.Errorf("brak aktywnej książki")
 	}
@@ -662,52 +661,22 @@ func UndoBookHistory(b *Book) (selectedSceneID string, label string, err error) 
 	if err != nil {
 		return "", "", err
 	}
-	if !h.CanUndo() {
-		return "", "", fmt.Errorf("brak zmian do cofnięcia od ostatniej zapisanej wersji")
-	}
-	branchIdxs := h.ActiveBranchRevisions()
-	curPos := len(branchIdxs) - 1
-	for j, idx := range branchIdxs {
-		if h.Revisions[idx].ID == h.Cursor {
-			curPos = j
-			break
-		}
-	}
-	undoneRev := h.Revisions[branchIdxs[curPos]]
-	targetRev := h.Revisions[branchIdxs[curPos-1]]
-
-	if err := restoreBookTextFiles(b, targetRev); err != nil {
-		return "", "", err
-	}
-	h.Cursor = targetRev.ID
-	h.syncBranchesMetadata()
-	if err := SaveBookHistory(b, h); err != nil {
-		return "", "", err
-	}
-	return targetRev.SelectedSceneID, undoneRev.Label, nil
-}
-
-// RedoBookHistory steps forward by one unnamed edit on the active branch and restores files to disk.
-func RedoBookHistory(b *Book) (selectedSceneID string, label string, err error) {
-	if b == nil || b.IsPacked || strings.TrimSpace(b.RootPath) == "" {
-		return "", "", fmt.Errorf("brak aktywnej książki")
-	}
-	h, err := LoadBookHistory(b)
-	if err != nil {
-		return "", "", err
-	}
-	if !h.CanRedo() {
-		return "", "", fmt.Errorf("brak zmian do ponowienia")
+	if (delta < 0 && !h.CanUndo()) || (delta > 0 && !h.CanRedo()) {
+		return "", "", fmt.Errorf("%s", emptyErr)
 	}
 	branchIdxs := h.ActiveBranchRevisions()
 	curPos := 0
+	if delta < 0 {
+		curPos = len(branchIdxs) - 1
+	}
 	for j, idx := range branchIdxs {
 		if h.Revisions[idx].ID == h.Cursor {
 			curPos = j
 			break
 		}
 	}
-	targetRev := h.Revisions[branchIdxs[curPos+1]]
+	curRev := h.Revisions[branchIdxs[curPos]]
+	targetRev := h.Revisions[branchIdxs[curPos+delta]]
 
 	if err := restoreBookTextFiles(b, targetRev); err != nil {
 		return "", "", err
@@ -716,24 +685,34 @@ func RedoBookHistory(b *Book) (selectedSceneID string, label string, err error) 
 	h.syncBranchesMetadata()
 	if err := SaveBookHistory(b, h); err != nil {
 		return "", "", err
+	}
+	if delta < 0 {
+		return targetRev.SelectedSceneID, curRev.Label, nil
 	}
 	return targetRev.SelectedSceneID, targetRev.Label, nil
 }
 
-// RestoreBookHistoryRevision restores any unnamed step or Named Version.
-// Restoring an older Named Version (prior to the latest Named Version) is non-destructive:
-// it copies that version's files onto the top of the current unnamed edit stack so later Named Versions are preserved.
-func RestoreBookHistoryRevision(b *Book, revID string) (selectedSceneID string, label string, err error) {
+// UndoBookHistory steps backward by one unnamed edit on the active branch (stopping at the latest Named Version floor) and restores files to disk.
+func UndoBookHistory(b *Book) (selectedSceneID string, label string, err error) {
+	return stepBookHistory(b, -1, "brak zmian do cofnięcia od ostatniej zapisanej wersji")
+}
+
+// RedoBookHistory steps forward by one unnamed edit on the active branch and restores files to disk.
+func RedoBookHistory(b *Book) (selectedSceneID string, label string, err error) {
+	return stepBookHistory(b, 1, "brak zmian do ponowienia")
+}
+
+func loadHistoryAndFindRevision(b *Book, revID string) (*BookHistory, string, int, error) {
 	if b == nil || b.IsPacked || strings.TrimSpace(b.RootPath) == "" {
-		return "", "", fmt.Errorf("brak aktywnej książki")
+		return nil, "", -1, fmt.Errorf("brak aktywnej książki")
 	}
 	cleanID := SanitizeSceneID(revID)
 	if cleanID == "" {
-		return "", "", fmt.Errorf("nieprawidłowy identyfikator rewizji")
+		return nil, "", -1, fmt.Errorf("nieprawidłowy identyfikator rewizji")
 	}
 	h, err := LoadBookHistory(b)
 	if err != nil {
-		return "", "", err
+		return nil, "", -1, err
 	}
 	targetIdx := -1
 	for i := range h.Revisions {
@@ -743,7 +722,18 @@ func RestoreBookHistoryRevision(b *Book, revID string) (selectedSceneID string, 
 		}
 	}
 	if targetIdx < 0 {
-		return "", "", fmt.Errorf("nie znaleziono rewizji %s", cleanID)
+		return nil, "", -1, fmt.Errorf("nie znaleziono rewizji %s", cleanID)
+	}
+	return h, cleanID, targetIdx, nil
+}
+
+// RestoreBookHistoryRevision restores any unnamed step or Named Version.
+// Restoring an older Named Version (prior to the latest Named Version) is non-destructive:
+// it copies that version's files onto the top of the current unnamed edit stack so later Named Versions are preserved.
+func RestoreBookHistoryRevision(b *Book, revID string) (selectedSceneID string, label string, err error) {
+	h, _, targetIdx, err := loadHistoryAndFindRevision(b, revID)
+	if err != nil {
+		return "", "", err
 	}
 
 	targetRev := h.Revisions[targetIdx]

@@ -5,11 +5,6 @@ import (
 	"storyteller/internal/tpl"
 )
 
-// BuildRenderContext constructs the data map consumed by the .tpl engine (`->` mappings, loops, and conditionals).
-func (s *Server) BuildRenderContext(books []*book.Book) *tpl.RenderContext {
-	return s.BuildTargetedRenderContext("app_shell", books)
-}
-
 // BuildTargetedRenderContext constructs only the data needed for the given template/chunk target.
 func (s *Server) BuildTargetedRenderContext(targetTpl string, books []*book.Book) *tpl.RenderContext {
 	vars := make(map[string]any)
@@ -123,14 +118,12 @@ func (s *Server) BuildTargetedRenderContext(targetTpl string, books []*book.Book
 		vars["editor_author_placeholder"] = "Autor scenariusza..."
 		vars["editor_description_placeholder"] = "Krótki opis scenariusza / logline..."
 		vars["editor_chapter_title_placeholder"] = "Tytuł aktu..."
-		vars["editor_pack_hint"] = "Eksportuj pakiet scenariusza (.playbook)"
 		vars["editor_settings_hint"] = "Ustawienia scenariusza"
 	} else {
 		vars["editor_title_placeholder"] = "Tytuł książki..."
 		vars["editor_author_placeholder"] = "Autor książki..."
 		vars["editor_description_placeholder"] = "Krótki opis książki..."
 		vars["editor_chapter_title_placeholder"] = "Tytuł rozdziału..."
-		vars["editor_pack_hint"] = "Eksportuj książkę (.playbook)"
 		vars["editor_settings_hint"] = "Ustawienia książki"
 	}
 
@@ -212,7 +205,6 @@ func (s *Server) BuildTargetedRenderContext(targetTpl string, books []*book.Book
 		vars["book_settings_open"] = false
 		vars["has_selected_chapter"] = false
 		vars["is_node_inspector_hidden"] = false
-		vars["any_editor_panel_open"] = s.EditorVariablesPanelOpen || s.EditorBreakdownPanelOpen || s.EditorHistoryPanelOpen || s.EditorHelpModalOpen
 		s.populateEditorHistoryContext(vars)
 	}
 
@@ -250,21 +242,13 @@ func (s *Server) populateLibraryContext(vars map[string]any, books []*book.Book)
 				progressPct = 100
 			}
 		}
-		warnItems := make([]map[string]any, 0, len(b.Warnings))
-		for _, w := range b.Warnings {
-			warnItems = append(warnItems, map[string]any{"text": w})
-		}
 		bookItems = append(bookItems, map[string]any{
-			"id":            b.ID,
-			"title":         b.Title,
-			"author":        b.Author,
-			"description":   b.Description,
-			"is_screenplay": b.IsScreenplay(),
-			"cover_url":     b.CoverURL,
-			"progress_pct":  progressPct,
-			"has_warnings":  len(b.Warnings) > 0,
-			"warning_count": len(b.Warnings),
-			"warnings":      warnItems,
+			"id":           b.ID,
+			"title":        b.Title,
+			"author":       b.Author,
+			"description":  b.Description,
+			"cover_url":    b.CoverURL,
+			"progress_pct": progressPct,
 		})
 	}
 	vars["books"] = bookItems

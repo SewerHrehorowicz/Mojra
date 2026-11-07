@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -985,11 +986,21 @@ func FuzzRenderSafeProseHTMLAndSanitizePaths(f *testing.F) {
 	})
 }
 
+func LoadBookFromZipBytes(rawZip []byte, fallbackID string) (*Book, map[string][]byte, error) {
+	zr, err := zip.NewReader(bytes.NewReader(rawZip), int64(len(rawZip)))
+	if err != nil {
+		return nil, nil, err
+	}
+	stem := strings.TrimSpace(fallbackID)
+	if stem == "" {
+		stem = "book"
+	}
+	return loadBookFromZipFiles(zr.File, stem, "", true)
+}
+
 func FuzzDecodeLayoutAndSaveState(f *testing.F) {
 	f.Add([]byte("STSV\x01\x00\x00\x00\x00\x00\x00\xf8\x7f\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xf8\x7f\x03\x02\x00s1\x01\x00\x00\x00"))
-	f.Add([]byte("STLY\x01\x01\x00\x00\x00\x02\x00s1\x01\x00\x00\x00\x02\x00\x00\x00"))
 	f.Fuzz(func(t *testing.T, data []byte) {
-		_ = DecodeLayoutBinary(data)
 		dir := t.TempDir()
 		_ = os.WriteFile(filepath.Join(dir, "fuzz.sav"), data, 0644)
 		st := LoadSaveState(dir, "fuzz", "s1")
@@ -998,6 +1009,196 @@ func FuzzDecodeLayoutAndSaveState(f *testing.F) {
 		}
 	})
 }
+
+func TestEncodeDecodeFLACAndTrimSceneVoice(t *testing.T) {
+	sr := 24000
+	orig := make([]int16, sr*2) // 2.0s of audio
+	for i := range orig {
+		if i < sr/2 {
+			orig[i] = 0 // 0.5s silence
+		} else {
+			orig[i] = int16((i % 200) * 120)
+		}
+	}
+
+	flacBytes, err := EncodeFLACMono16(orig, sr)
+	if err != nil {
+		t.Fatalf("EncodeFLACMono16 failed: %v", err)
+	}
+	if !validateMediaHeader("test.flac", flacBytes) {
+		t.Fatalf("validateMediaHeader rejected encoded FLAC")
+	}
+
+	decoded, gotSR, err := DecodeFLACMono16(flacBytes)
+	if err != nil {
+		t.Fatalf("DecodeFLACMono16 failed: %v", err)
+	}
+	if gotSR != sr {
+		t.Fatalf("expected sampleRate %d, got %d", sr, gotSR)
+	}
+	if len(decoded) < len(orig) {
+		t.Fatalf("expected at least %d samples, got %d", len(orig), len(decoded))
+	}
+	for i := range orig {
+		if decoded[i] != orig[i] {
+			t.Fatalf("sample mismatch at %d: expected %d, got %d", i, orig[i], decoded[i])
+		}
+	}
+
+	tmpDir := t.TempDir()
+	b, err := CreateNewBook(tmpDir, "Test Audio", "Autor", true, false)
+	if err != nil {
+		t.Fatalf("CreateNewBook failed: %v", err)
+	}
+	sc := b.Scenes[0]
+	pcmLE := make([]byte, len(orig)*2)
+	for i, s := range orig {
+		pcmLE[i*2] = byte(s)
+		pcmLE[i*2+1] = byte(uint16(s) >> 8)
+	}
+	relPath, err := SaveSceneVoicePCM(b, sc.ReferenceKey(), pcmLE, sr, 0, 1)
+	if err != nil {
+		t.Fatalf("SaveSceneVoicePCM failed: %v", err)
+	}
+	if afinfoPath, lookErr := exec.LookPath("afinfo"); lookErr == nil && afinfoPath != "" {
+		out, afErr := exec.Command(afinfoPath, filepath.Join(b.RootPath, filepath.FromSlash(relPath))).CombinedOutput()
+		t.Logf("afinfo output:\n%s", string(out))
+		if afErr != nil || strings.Contains(string(out), "Fail") {
+			t.Fatalf("macOS CoreAudio afinfo rejected encoded FLAC: %v\n%s", afErr, string(out))
+		}
+	}
+	if afconvPath, lookErr := exec.LookPath("afconvert"); lookErr == nil && afconvPath != "" {
+		wavOut := filepath.Join(t.TempDir(), "decoded.wav")
+		out, convErr := exec.Command(afconvPath, "-f", "WAVE", "-d", "LEI16", filepath.Join(b.RootPath, filepath.FromSlash(relPath)), wavOut).CombinedOutput()
+		if convErr != nil {
+			t.Fatalf("macOS CoreAudio afconvert failed to decode encoded FLAC: %v\n%s", convErr, string(out))
+		}
+	}
+	// Simulate legacy FLAC where min_block_size != max_block_size and verify NormalizeFLACForPlayback repairs it
+	flacAbs := filepath.Join(b.RootPath, filepath.FromSlash(relPath))
+	if rawFlac, err := os.ReadFile(flacAbs); err == nil && len(rawFlac) >= 42 {
+		legacy := make([]byte, len(rawFlac))
+		copy(legacy, rawFlac)
+		legacy[8] = 0x04
+		legacy[9] = 0x15
+		fixed, changed := NormalizeFLACForPlayback(legacy)
+		if !changed || fixed[8] != fixed[10] || fixed[9] != fixed[11] {
+			t.Fatalf("expected NormalizeFLACForPlayback to repair mismatched min/max block size")
+		}
+	}
+	sc.ExplicitVoice = relPath
+	FinalizeBook(b)
+
+	durLbl, stamp := ReadAudioDurationAndStamp(b, relPath)
+	if durLbl != "0:02" || stamp == 0 {
+		t.Fatalf("expected duration label 0:02 and non-zero stamp, got %q (%d)", durLbl, stamp)
+	}
+
+	trimmedRel, err := TrimSceneVoiceFile(b, sc.ReferenceKey(), relPath, 0.25, 0.75)
+	if err != nil {
+		t.Fatalf("TrimSceneVoiceFile failed: %v", err)
+	}
+	durAfter, _ := ReadAudioDurationAndStamp(b, trimmedRel)
+	if durAfter != "0:01" {
+		t.Fatalf("expected trimmed duration label 0:01, got %q", durAfter)
+	}
+
+	if err := DeleteSceneVoiceFile(b, sc); err != nil {
+		t.Fatalf("DeleteSceneVoiceFile failed: %v", err)
+	}
+	if sc.ExplicitVoice != "" {
+		t.Fatalf("expected ExplicitVoice to be cleared after DeleteSceneVoiceFile")
+	}
+}
+
+func TestLoadBookFromZipBytesAndEncryptedRandomizedSTBCInWasm(t *testing.T) {
+	tmpDir := t.TempDir()
+	b, err := CreateNewBook(tmpDir, "Tajemnica Szyfru", "Tytus Czyżewski", false, false)
+	if err != nil {
+		t.Fatalf("CreateNewBook failed: %v", err)
+	}
+
+	zipPath := filepath.Join(tmpDir, b.ID+".playbook")
+	if err := PackBookToZip(b.RootPath, zipPath); err != nil {
+		t.Fatalf("PackBookToZip failed: %v", err)
+	}
+	rawZip, err := os.ReadFile(zipPath)
+	if err != nil {
+		t.Fatalf("ReadFile zip failed: %v", err)
+	}
+
+	loadedFromBytes, _, err := LoadBookFromZipBytes(rawZip, b.ID)
+	if err != nil {
+		t.Fatalf("LoadBookFromZipBytes failed: %v", err)
+	}
+	if loadedFromBytes.Title != "Tajemnica Szyfru" || len(loadedFromBytes.Scenes) != len(b.Scenes) {
+		t.Fatalf("unexpected book from LoadBookFromZipBytes: %+v", loadedFromBytes)
+	}
+
+	// Verify SaveState encode/decode round-trip in memory
+	saveOrig := &SaveState{
+		BookID:             b.ID,
+		CurrentSceneID:     b.Scenes[0].ID,
+		AudioTime:          12.5,
+		PlaybackSpeed:      1.25,
+		AutoChoice:         true,
+		AutoChoiceStrategy: "random",
+		Variables:          map[string]string{"klucz": "true"},
+		History: []HistoryEntry{
+			{
+				Step:          1,
+				SceneID:       b.Scenes[0].ID,
+				SceneName:     b.Scenes[0].Name,
+				Chapter:       b.Scenes[0].Chapter,
+				ChoiceLabel:   "Dalej",
+				TargetSceneID: b.Scenes[1].ID,
+				Variables:     map[string]string{"klucz": "false"},
+			},
+		},
+	}
+	rawSave := EncodeSaveStateBytes(saveOrig)
+	saveDec := DecodeSaveStateBytes(b.ID, rawSave, "fallback")
+	if saveDec.CurrentSceneID != saveOrig.CurrentSceneID || saveDec.AudioTime != 12.5 || saveDec.PlaybackSpeed != 1.25 || !saveDec.AutoChoice || saveDec.Variables["klucz"] != "true" || len(saveDec.History) != 1 {
+		t.Fatalf("DecodeSaveStateBytes mismatch: %+v", saveDec)
+	}
+
+	// Verify polymorphic STBC bytecode embedding into .wasm:
+	// 1. Plaintext title/scene text must NEVER appear in the embedded .wasm binary.
+	// 2. Two consecutive builds of the exact same book produce completely different randomized ciphertexts and opcode tables.
+	// 3. ExtractSTBCFromWasm verifies the Ed25519 signature, decrypts AES-256-GCM, and reconstructs the book.
+	dummyBaseWasm := []byte("\x00asm\x01\x00\x00\x00")
+	wasm1, err := EmbedSTBCIntoWasm(dummyBaseWasm, b, nil)
+	if err != nil {
+		t.Fatalf("EmbedSTBCIntoWasm #1 failed: %v", err)
+	}
+	wasm2, err := EmbedSTBCIntoWasm(dummyBaseWasm, b, nil)
+	if err != nil {
+		t.Fatalf("EmbedSTBCIntoWasm #2 failed: %v", err)
+	}
+	if bytes.Equal(wasm1, wasm2) {
+		t.Fatalf("expected two STBC builds of the same book to be randomized and distinct")
+	}
+	if bytes.Contains(wasm1, []byte("Tajemnica Szyfru")) || bytes.Contains(wasm1, []byte(b.Scenes[0].Text)) {
+		t.Fatalf("expected plaintext book title and prose to be encrypted inside .wasm")
+	}
+
+	extractedBook, _, err := ExtractSTBCFromWasm(wasm1)
+	if err != nil {
+		t.Fatalf("ExtractSTBCFromWasm failed: %v", err)
+	}
+	if extractedBook.Title != b.Title || extractedBook.Author != b.Author || len(extractedBook.Scenes) != len(b.Scenes) {
+		t.Fatalf("extracted book mismatch: got %+v", extractedBook)
+	}
+
+	// Tampering with a single byte of the encrypted payload must fail Ed25519 / AES-GCM verification
+	tampered := append([]byte(nil), wasm1...)
+	tampered[len(tampered)-stbcTrailerSize-5] ^= 0xff
+	if _, _, err := ExtractSTBCFromWasm(tampered); err == nil {
+		t.Fatalf("expected tampered .wasm STBC payload to be rejected by signature/GCM verification")
+	}
+}
+
+
 
 
 

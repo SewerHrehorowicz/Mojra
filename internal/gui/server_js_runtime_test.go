@@ -550,6 +550,9 @@ class DOMElement {
     return this._text + this.children.map((c) => c.outerHTML).join("");
   }
   set innerHTML(html) {
+    for (let i = 0; i < this.children.length; i++) {
+      this.children[i].parentElement = null;
+    }
     this.children = [];
     this.childNodes = [];
     this._text = "";
@@ -939,7 +942,12 @@ function makeEvent(type, props) {
 
   const win = {
     document: doc,
-    navigator: { userAgent: "Mozilla/5.0 StoryTellerTest/1.0" },
+    navigator: {
+      userAgent: "Mozilla/5.0 StoryTellerTest/1.0",
+      mediaDevices: {
+        getUserMedia: async () => ({ getTracks: () => [{ stop() {} }] })
+      }
+    },
     innerWidth: 1280,
     innerHeight: 800,
     devicePixelRatio: 2,
@@ -950,8 +958,10 @@ function makeEvent(type, props) {
     AbortController: AbortController,
     TextDecoder: TextDecoder,
     Uint8Array: Uint8Array,
+    Int16Array: Int16Array,
     Float32Array: Float32Array,
     Uint32Array: Uint32Array,
+    DataView: DataView,
     ArrayBuffer: ArrayBuffer,
     Map: Map,
     Set: Set,
@@ -978,6 +988,34 @@ function makeEvent(type, props) {
     cancelAnimationFrame: () => {},
     setTimeout: setTimeout,
     clearTimeout: clearTimeout,
+    btoa: (str) => Buffer.from(str, "binary").toString("base64"),
+    atob: (b64) => Buffer.from(b64, "base64").toString("binary"),
+    Audio: class {
+      constructor() { this.src = ""; this.paused = true; this.currentTime = 0; this.duration = 2.0; }
+      play() { this.paused = false; return Promise.resolve(); }
+      pause() { this.paused = true; }
+      getAttribute(k) { return this["_" + k] || ""; }
+      setAttribute(k, v) { this["_" + k] = String(v); }
+    },
+    AudioContext: class {
+      constructor() { this.sampleRate = 24000; this.destination = {}; }
+      createMediaStreamSource() { return { connect() {}, disconnect() {} }; }
+      createScriptProcessor() {
+        const node = {
+          onaudioprocess: null,
+          connect() {
+            if (typeof this.onaudioprocess === "function") {
+              const fakeBuf = new Float32Array(24000);
+              for (let i = 0; i < fakeBuf.length; i++) fakeBuf[i] = Math.sin(i * 0.1) * 0.4;
+              this.onaudioprocess({ inputBuffer: { getChannelData: () => fakeBuf } });
+            }
+          },
+          disconnect() {}
+        };
+        return node;
+      }
+      close() { return Promise.resolve(); }
+    },
     ResizeObserver: class { observe() {} disconnect() {} },
     Image: class { set src(v) { this._src = v; if (this.onload) this.onload(); } },
     addEventListener(type, fn) { doc.addEventListener("win:" + type, fn); },
@@ -1225,10 +1263,10 @@ function makeEvent(type, props) {
   if (pinCountAfterDrag !== 1) {
     throw new Error("Expected dragging wire segment to create 1 control pin, got " + pinCountAfterDrag);
   }
-  const pinDirsOk = vm.runInContext("(() => { const mockWire = { pts: [{ x: 200, y: 200 }, { x: 200, y: 300 }, { x: 50, y: 300 }, { x: 50, y: 80 }, { x: 320, y: 80 }, { x: 320, y: 160 }] }; return resolveWirePinDirection(mockWire, { x: 200, y: 250 }) === 'down' && resolveWirePinDirection(mockWire, { x: 120, y: 300 }) === 'left' && resolveWirePinDirection(mockWire, { x: 50, y: 180 }) === 'up' && resolveWirePinDirection(mockWire, { x: 180, y: 80 }) === 'right'; })()", win);
-  if (!pinDirsOk) {
-    throw new Error("Expected resolveWirePinDirection to resolve down, left, up, and right along wire segments");
-  }
+	const pinBarsOk = vm.runInContext("(() => { const mockWire = { pts: [{ x: 200, y: 200 }, { x: 200, y: 300 }, { x: 50, y: 300 }, { x: 50, y: 80 }, { x: 320, y: 80 }, { x: 320, y: 160 }] }; const b0 = computeWirePinSegmentBar(mockWire, { x: 200, y: 250 }); const b1 = computeWirePinSegmentBar(mockWire, { x: 120, y: 300 }); const b2 = computeWirePinSegmentBar(mockWire, { x: 50, y: 180 }); const b3 = computeWirePinSegmentBar(mockWire, { x: 180, y: 80 }); return Boolean(b0 && !b0.isHoriz && b1 && b1.isHoriz && b2 && !b2.isHoriz && b3 && b3.isHoriz); })()", win);
+	if (!pinBarsOk) {
+		throw new Error("Expected computeWirePinSegmentBar to resolve vertical and horizontal bars along wire segments");
+	}
   const pinScreenPt = vm.runInContext("(() => { const p = studioGraphState.wires[0].pins[0]; const z = editorCanvasState.zoom; return { x: Math.round(p.x * z + editorCanvasState.panX), y: Math.round(p.y * z + editorCanvasState.panY) }; })()", win);
   canvas.dispatchEvent(makeEvent("dblclick", { button: 0, clientX: pinScreenPt.x, clientY: pinScreenPt.y, target: canvas }));
   await waitForActions();
@@ -1251,9 +1289,14 @@ function makeEvent(type, props) {
   await waitForActions();
 
   const canvasForDbl = doc.querySelector("#studio-canvas");
+  const beforeModalPan = vm.runInContext("({ panX: editorCanvasState.panX, panY: editorCanvasState.panY })", win);
   const afterMovePt = vm.runInContext("(() => { const n = studioGraphState.nodes[0]; const z = editorCanvasState.zoom; return { x: Math.round((n.x + 60) * z + editorCanvasState.panX), y: Math.round((n.y + 20) * z + editorCanvasState.panY) }; })()", win);
   canvasForDbl.dispatchEvent(makeEvent("dblclick", { button: 0, clientX: afterMovePt.x, clientY: afterMovePt.y, target: canvasForDbl }));
   await waitForActions();
+  const afterModalPan = vm.runInContext("({ panX: editorCanvasState.panX, panY: editorCanvasState.panY })", win);
+  if (afterModalPan.panX !== beforeModalPan.panX || afterModalPan.panY !== beforeModalPan.panY) {
+    throw new Error("Expected opening #modal-scene-text to keep canvas panX/panY unchanged, got before=" + beforeModalPan.panX + "," + beforeModalPan.panY + " after=" + afterModalPan.panX + "," + afterModalPan.panY);
+  }
   const modalTa = doc.querySelector("#modal-scene-textarea");
   if (!modalTa) {
     throw new Error("Expected double-clicking node card on canvas to open #modal-scene-text");
@@ -1331,7 +1374,43 @@ function makeEvent(type, props) {
     throw new Error("Expected CloseSceneTextModal to close #modal-scene-text");
   }
 
-  // 10. Topbar toggles (Theme, UI Scale, Hamburger Menu)
+  // 10. Built-in Voice Recorder & Trimmer (ToggleBookNarrated -> ToggleSceneVoiceRecorder -> Record -> Playhead -> Trim)
+  await clickEl("#btn-book-settings");
+  const narratedBtn = doc.querySelector('#editor-book-form button[action="ToggleBookNarrated"]');
+  if (narratedBtn && !narratedBtn.classList.contains("active")) {
+    await clickEl(narratedBtn);
+  }
+  await clickEl("#btn-book-settings");
+  const selectNodePt = vm.runInContext("(() => { const n = studioGraphState.nodes[0]; const z = editorCanvasState.zoom; return { x: Math.round((n.x + 60) * z + editorCanvasState.panX), y: Math.round((n.y + 20) * z + editorCanvasState.panY) }; })()", win);
+  const edCanvasForVoice = doc.querySelector("#studio-canvas");
+  edCanvasForVoice.dispatchEvent(makeEvent("mousedown", { button: 0, clientX: selectNodePt.x, clientY: selectNodePt.y, target: edCanvasForVoice }));
+  edCanvasForVoice.dispatchEvent(makeEvent("mouseup", { button: 0, clientX: selectNodePt.x, clientY: selectNodePt.y, target: edCanvasForVoice }));
+  await waitForActions();
+
+  await clickEl("#btn-inspector-voice-recorder");
+  const voiceStrip = doc.querySelector("#inspector-voice-rec-strip");
+  if (!voiceStrip || voiceStrip.classList.contains("hidden")) {
+    throw new Error("Expected #btn-inspector-voice-recorder to reveal #inspector-voice-rec-strip");
+  }
+  if (!doc.querySelector("#inspector-voice-rec-strip").classList.contains("is-recording")) {
+    throw new Error("Expected clicking #btn-inspector-voice-recorder on scene without audio to auto-start recording");
+  }
+  // Click Stop ([data-voice-transport=true]) to finish recording & auto-save voice/<scene_id>.flac
+  await clickEl('#inspector-voice-rec-strip [data-voice-transport="true"]');
+  const savedVoiceAttr = doc.querySelector("#inspector-voice-rec-strip").getAttribute("data-voice-file") || "";
+  if (!savedVoiceAttr.endsWith(".flac")) {
+    throw new Error("Expected stopping recording to auto-save .flac file and set data-voice-file, got: " + savedVoiceAttr);
+  }
+  // Drag right 4-corner trim handle (.trim-end) and release to auto-save trimmed .flac
+  const trimEndEl = doc.querySelector('#inspector-voice-rec-strip .voice-rec-trim-handle.trim-end');
+  const waveWrapEl = doc.querySelector('#inspector-voice-rec-strip [data-voice-waveform-wrap="true"]');
+  waveWrapEl.getBoundingClientRect = () => ({ left: 0, top: 0, width: 200, height: 28, right: 200, bottom: 28 });
+  trimEndEl.dispatchEvent(makeEvent("pointerdown", { button: 0, clientX: 200, clientY: 14, target: trimEndEl }));
+  doc.dispatchEvent(makeEvent("pointermove", { button: 0, clientX: 150, clientY: 14, target: doc }));
+  doc.dispatchEvent(makeEvent("pointerup", { button: 0, clientX: 150, clientY: 14, target: doc }));
+  await waitForActions();
+
+  // 10b. Topbar toggles (Theme, UI Scale, Hamburger Menu)
   await clickEl("#btn-topbar-menu");
   if (!doc.querySelector("#topbar-actions-menu").classList.contains("open")) {
     throw new Error("Expected #btn-topbar-menu to open #topbar-actions-menu");
@@ -1436,6 +1515,35 @@ function makeEvent(type, props) {
   newLocInp.value = "PORT RZECZNY";
   newLocInp.dispatchEvent(makeEvent("blur", { target: newLocInp }));
   await waitForActions();
+
+  // Verify Export Project Modal multi-select, collapsible ZAAWANSOWANE, and norma dropdown in live DOM
+  await clickEl('button[action="OpenExportModal"]');
+  if (!doc.querySelector("#modal-export-project")) {
+    throw new Error("Expected #modal-export-project to open on OpenExportModal");
+  }
+  if (!doc.querySelector(".export-selection-count").textContent.includes("3 WYBRANE")) {
+    throw new Error("Expected initial export modal counter '3 WYBRANE'");
+  }
+  await clickEl('button.export-format-item[data-format="wasm"]');
+  if (!doc.querySelector(".export-selection-count").textContent.includes("2 WYBRANE")) {
+    throw new Error("Expected export modal counter '2 WYBRANE' after deselecting wasm");
+  }
+  await clickEl('button.export-advanced-toggle[action="ToggleExportModalAdvanced"]');
+  const advBody = doc.querySelector(".export-advanced-body");
+  if (!advBody || advBody.classList.contains("hidden")) {
+    throw new Error("Expected .export-advanced-body to expand after clicking ToggleExportModalAdvanced");
+  }
+  await clickEl('button.export-format-item[data-format="fountain"]');
+  if (!doc.querySelector(".export-selection-count").textContent.includes("3 WYBRANE")) {
+    throw new Error("Expected export modal counter '3 WYBRANE' after selecting fountain");
+  }
+  await clickEl(".export-standard-select [data-select-toggle]");
+  await clickEl('.export-standard-select .custom-select-option[data-select-value="us"]');
+  await waitForActions();
+  await clickEl('button[action="CloseExportModal"]');
+  if (doc.querySelector("#modal-export-project")) {
+    throw new Error("Expected #modal-export-project to close on CloseExportModal");
+  }
 
   const f12Evt = makeEvent("keydown", { key: "F12", code: "F12", target: doc.body });
   doc.dispatchEvent(f12Evt);

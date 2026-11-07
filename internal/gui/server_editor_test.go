@@ -706,36 +706,28 @@ func TestScreenplayModeEndToEndFlow(t *testing.T) {
 		"action": {"SwitchHistoryBranch"},
 		"branch": {"main"},
 	})
-	_, _ = http.PostForm(ts.URL+"/api/action", url.Values{
-		"action": {"DeleteHistoryBranch"},
-		"branch": {"wersja-rezysera"},
-	})
 
-	// 5b. PromptCreateHistoryBranch opens confirmation modal and ConfirmModalAccept creates auto-named "wariant-2"
+	// 5b. PromptCreateHistoryBranch opens confirmation modal and ConfirmModalAccept creates auto-named "wariant-3"
 	promptBrResp, _ := http.PostForm(ts.URL+"/api/action", url.Values{
 		"action":      {"PromptCreateHistoryBranch"},
 		"branch_name": {""},
 	})
 	promptBrBytes, _ := io.ReadAll(promptBrResp.Body)
 	_ = promptBrResp.Body.Close()
-	if !strings.Contains(string(promptBrBytes), "Utwórz nowy wariant") || !strings.Contains(string(promptBrBytes), "wariant-2") {
-		t.Fatalf("expected confirmation modal for wariant-2, got: %s", string(promptBrBytes))
+	if !strings.Contains(string(promptBrBytes), "Utwórz nowy wariant") || !strings.Contains(string(promptBrBytes), "wariant-3") {
+		t.Fatalf("expected confirmation modal for wariant-3, got: %s", string(promptBrBytes))
 	}
 	autoBrResp, _ := http.PostForm(ts.URL+"/api/action", url.Values{
 		"action": {"ConfirmModalAccept"},
 	})
 	autoBrBytes, _ := io.ReadAll(autoBrResp.Body)
 	_ = autoBrResp.Body.Close()
-	if !strings.Contains(string(autoBrBytes), "wariant-2") || !strings.Contains(string(autoBrBytes), `class="history-active-branch-name"`) {
-		t.Fatalf("expected auto-named branch wariant-2 and active branch bar in history graph HTML")
+	if !strings.Contains(string(autoBrBytes), "wariant-3") || !strings.Contains(string(autoBrBytes), `class="history-active-branch-name"`) {
+		t.Fatalf("expected auto-named branch wariant-3 and active branch bar in history graph HTML")
 	}
 	_, _ = http.PostForm(ts.URL+"/api/action", url.Values{
 		"action": {"SwitchHistoryBranch"},
 		"branch": {"main"},
-	})
-	_, _ = http.PostForm(ts.URL+"/api/action", url.Values{
-		"action": {"DeleteHistoryBranch"},
-		"branch": {"wariant-2"},
 	})
 
 	// 6. Verify HTTP download endpoints for PDF and Fountain
@@ -769,8 +761,8 @@ func TestScreenplayModeEndToEndFlow(t *testing.T) {
 	openExpBytes, _ := io.ReadAll(openExpModalResp.Body)
 	_ = openExpModalResp.Body.Close()
 	openExpHTML := string(openExpBytes)
-	if !srv.ExportModalOpen || !strings.Contains(openExpHTML, `id="modal-export-project"`) || !strings.Contains(openExpHTML, `data-select-value="pdf"`) || !strings.Contains(openExpHTML, `data-select-value="fountain"`) || !strings.Contains(openExpHTML, `data-select-value="playbook"`) {
-		t.Fatalf("expected Export Modal with pdf/fountain/playbook dropdown options, got:\n%s", openExpHTML)
+	if !srv.ExportModalOpen || !strings.Contains(openExpHTML, `id="modal-export-project"`) || !strings.Contains(openExpHTML, `data-format="playbook"`) || !strings.Contains(openExpHTML, `data-format="wasm"`) || !strings.Contains(openExpHTML, `data-format="pdf"`) || !strings.Contains(openExpHTML, `3 WYBRANE`) {
+		t.Fatalf("expected Export Modal with multi-select playbook/wasm/pdf options and 3 WYBRANE counter, got:\n%s", openExpHTML)
 	}
 
 	customExportDir := filepath.Join(rootDir, "custom-exports")
@@ -817,6 +809,62 @@ func TestScreenplayModeEndToEndFlow(t *testing.T) {
 	_ = browseExpResp.Body.Close()
 	if srv.ActiveBook.ExportDir != updatedExportDir {
 		t.Fatalf("expected ActiveBook.ExportDir updated to %q, got %q", updatedExportDir, srv.ActiveBook.ExportDir)
+	}
+
+	// 8. Verify multi-select batch export (playbook + wasm + pdf + fountain + playtxt)
+	_, _ = http.PostForm(ts.URL+"/api/action", url.Values{"action": {"OpenExportModal"}})
+	_, _ = http.PostForm(ts.URL+"/api/action", url.Values{"action": {"ToggleExportModalAdvanced"}})
+	_, _ = http.PostForm(ts.URL+"/api/action", url.Values{"action": {"ToggleExportFormat"}, "format": {"fountain"}})
+	togResp, _ := http.PostForm(ts.URL+"/api/action", url.Values{"action": {"ToggleExportFormat"}, "format": {"playtxt"}})
+	togBytes, _ := io.ReadAll(togResp.Body)
+	_ = togResp.Body.Close()
+	if !strings.Contains(string(togBytes), "5 WYBRANYCH") || !strings.Contains(string(togBytes), "Eksportuj (5)") {
+		t.Fatalf("expected 5 WYBRANYCH and Eksportuj (5) after selecting all 5 formats, got:\n%s", string(togBytes))
+	}
+
+	batchExportDir := filepath.Join(rootDir, "batch-exports")
+	batchResp, err := http.PostForm(ts.URL+"/api/action", url.Values{
+		"action":     {"ExportProject"},
+		"export_dir": {batchExportDir},
+		"standard":   {"eu"},
+	})
+	if err != nil || batchResp.StatusCode != http.StatusOK {
+		t.Fatalf("batch ExportProject failed: status=%v err=%v", batchResp.StatusCode, err)
+	}
+	_ = batchResp.Body.Close()
+
+	bookID := srv.ActiveBook.ID
+	for _, relCheck := range []string{
+		bookID + ".playbook",
+		bookID + ".pdf",
+		bookID + ".fountain",
+		filepath.Join(bookID+"-playtxt", "book.playtxt"),
+		filepath.Join(bookID+"-web", "index.html"),
+		filepath.Join(bookID+"-web", "mojra.wasm"),
+		filepath.Join(bookID+"-web", "app.js"),
+		filepath.Join(bookID+"-web", "style.css"),
+	} {
+		if _, err := os.Stat(filepath.Join(batchExportDir, relCheck)); err != nil {
+			t.Fatalf("expected batch export artifact %s: %v", relCheck, err)
+		}
+	}
+
+	// Verify exported Web index.html has Splash Screen with play.svg and NO #topbar, and no separate book.playbook file
+	webIndexBytes, _ := os.ReadFile(filepath.Join(batchExportDir, bookID+"-web", "index.html"))
+	webIndexHTML := string(webIndexBytes)
+	if strings.Contains(webIndexHTML, `id="topbar"`) || !strings.Contains(webIndexHTML, `id="wasm-splash"`) || !strings.Contains(webIndexHTML, `data-wasm-play="true"`) {
+		t.Fatalf("expected exported Web index.html to render Splash Screen with Play button and no #topbar, got:\n%s", webIndexHTML)
+	}
+	if _, err := os.Stat(filepath.Join(batchExportDir, bookID+"-web", "book.playbook")); err == nil {
+		t.Fatalf("expected NO separate book.playbook file in exported -web directory (must be embedded in mojra.wasm)")
+	}
+	exportedWasmBytes, err := os.ReadFile(filepath.Join(batchExportDir, bookID+"-web", "mojra.wasm"))
+	if err != nil {
+		t.Fatalf("read exported mojra.wasm failed: %v", err)
+	}
+	extractedFromExport, _, err := book.ExtractSTBCFromWasm(exportedWasmBytes)
+	if err != nil || extractedFromExport.ID != bookID {
+		t.Fatalf("expected exported mojra.wasm to contain valid encrypted STBC book %q, got err=%v", bookID, err)
 	}
 }
 
@@ -1141,6 +1189,36 @@ func TestVariablesPanelChoiceTripleStackAndThreeStateScenePreview(t *testing.T) 
 		"var_name":  {"frakcja"},
 		"var_value": {"neutralny, rzeczni"},
 	})
+	// Test adding and removing individual enum options via AddBookEnumOption / RemoveBookEnumOption and per-row enum_opt_* fields
+	resp, _ = http.PostForm(ts.URL+"/api/action", url.Values{
+		"action":  {"AddBookEnumOption"},
+		"var_idx": {"2"},
+	})
+	body, _ = io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if !strings.Contains(string(body), "var-enum-options-list") || !strings.Contains(string(body), `name="enum_opt_2"`) {
+		t.Fatalf("expected AddBookEnumOption to render 3rd vertical enum option row (enum_opt_2)")
+	}
+	_, _ = http.PostForm(ts.URL+"/api/action", url.Values{
+		"action":     {"UpdateBookVariable"},
+		"var_idx":    {"2"},
+		"var_name":   {"frakcja"},
+		"opt_count":  {"3"},
+		"enum_opt_0": {"neutralny"},
+		"enum_opt_1": {"rzeczni"},
+		"enum_opt_2": {"przemytnicy"},
+	})
+	if len(srv.ActiveBook.Variables[2].Options) != 3 || srv.ActiveBook.Variables[2].Options[2] != "przemytnicy" {
+		t.Fatalf("expected 3 enum options ending with przemytnicy, got %+v", srv.ActiveBook.Variables[2].Options)
+	}
+	_, _ = http.PostForm(ts.URL+"/api/action", url.Values{
+		"action":  {"RemoveBookEnumOption"},
+		"var_idx": {"2"},
+		"opt_idx": {"2"},
+	})
+	if len(srv.ActiveBook.Variables[2].Options) != 2 {
+		t.Fatalf("expected 2 enum options after RemoveBookEnumOption, got %+v", srv.ActiveBook.Variables[2].Options)
+	}
 
 	// 3. Add a second choice to the start scene and verify automatic 4-row exit:/label:/if:/set: choice stack + syntax help
 	startID := srv.ActiveBook.StartSceneID

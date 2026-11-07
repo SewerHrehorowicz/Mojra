@@ -167,4 +167,9 @@ if ! go mod download >/dev/null 2>&1; then
     exit 1
 fi
 
+if [ "${1:-}" = "audit" ] || [ "${1:-}" = "--audit" ]; then
+    shift
+    exec go run ./cmd/storyteller audit "$@"
+fi
+
 exec go run ./cmd/storyteller build "$@"

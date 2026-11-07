@@ -2,7 +2,6 @@ package gui
 
 import (
 	"fmt"
-	"strings"
 
 	"storyteller/internal/book"
 )
@@ -63,13 +62,11 @@ func buildSluglineHelperPills(standard string) ([]map[string]any, []map[string]a
 func (s *Server) populateEditorBreakdownContext(vars map[string]any) {
 	vars["show_editor_breakdown_panel"] = s.EditorBreakdownPanelOpen
 	if s.ActiveBook == nil {
-		vars["screenplay_toolbar_summary"] = ""
 		vars["has_breakdown_characters"] = false
 		vars["has_breakdown_locations"] = false
 		return
 	}
-	bd := book.AnalyzeScreenplay(s.ActiveBook)
-	vars["screenplay_toolbar_summary"] = bd.ToolbarSummary
+	bd := s.ActiveBook.ScreenplayBreakdown()
 	vars["breakdown_total_scenes"] = bd.TotalScenes
 	vars["breakdown_total_pages"] = bd.TotalPagesFormatted
 	vars["breakdown_runtime"] = bd.EstimatedRuntimeLabel
@@ -113,7 +110,6 @@ func (s *Server) populateEditorBreakdownContext(vars map[string]any) {
 			"speaking_scenes":     len(ch.SpeakingSceneIDs),
 			"silent_scenes":       len(ch.SilentSceneIDs),
 			"estimated_call_days": ch.EstimatedCallDays,
-			"locations_label":     strings.Join(ch.LocationsVisited, ", "),
 			"first_scene_id":      firstSceneID,
 		})
 	}

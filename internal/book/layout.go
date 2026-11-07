@@ -61,7 +61,7 @@ func orderChaptersAndScenesByGraph(b *Book, prevChapterMeta map[string]Chapter) 
 
 	// When scenes come from multiple .txt files, order b.Scenes by the discovered chapter graph order
 	// while preserving the exact relative order of scenes within each chapter/file.
-	if b.IsMultiFileBook() && len(chapterKeys) > 1 {
+	if len(chapterKeys) > 1 {
 		reordered := make([]*Scene, 0, len(b.Scenes))
 		for _, chKey := range chapterKeys {
 			for _, sc := range b.Scenes {
@@ -84,59 +84,13 @@ func orderChaptersAndScenesByGraph(b *Book, prevChapterMeta map[string]Chapter) 
 	for _, chKey := range chapterKeys {
 		for _, sc := range b.Scenes {
 			if strings.ToLower(strings.TrimSpace(sc.Chapter)) == chKey {
-				expID := sc.ChapterID
-				sf := sc.SourceFile
-				if meta, ok := prevChapterMeta[chKey]; ok {
-					if expID == "" {
-						expID = meta.ExplicitID
-					}
-					if sf == "" {
-						sf = meta.SourceFile
-					}
-				}
-				b.addSceneToChapterWithMeta(sc.Chapter, expID, sf, sc.ID)
+				b.appendSceneToChaptersFromMeta(sc, prevChapterMeta)
 			}
 		}
 	}
-	for i := range b.Chapters {
-		ch := &b.Chapters[i]
-		if ch.ID == "" {
-			ch.ID = ch.ReferenceKey()
-		}
-		if ch.ExplicitStart == "" {
-			if meta, ok := prevChapterMeta[strings.ToLower(strings.TrimSpace(ch.Name))]; ok && meta.ExplicitStart != "" {
-				ch.ExplicitStart = meta.ExplicitStart
-			} else if meta, ok := prevChapterMeta[strings.ToLower(strings.TrimSpace(ch.ExplicitID))]; ok && meta.ExplicitStart != "" {
-				ch.ExplicitStart = meta.ExplicitStart
-			} else if meta, ok := prevChapterMeta[strings.ToLower(strings.TrimSpace(ch.ID))]; ok && meta.ExplicitStart != "" {
-				ch.ExplicitStart = meta.ExplicitStart
-			}
-		}
-		if len(ch.SceneIDs) > 0 {
-			ch.StartSceneID = ch.SceneIDs[0]
-			for _, sid := range ch.SceneIDs {
-				if strings.EqualFold(sid, b.StartSceneID) {
-					ch.StartSceneID = b.StartSceneID
-					break
-				}
-			}
-			if expStart := strings.TrimSpace(ch.ExplicitStart); expStart != "" {
-				normStart := NormalizeLookupKey(expStart)
-				for _, sid := range ch.SceneIDs {
-					sc := sceneMap[sid]
-					if sc == nil {
-						continue
-					}
-					if strings.EqualFold(sc.ID, expStart) ||
-						(sc.ExplicitID != "" && strings.EqualFold(sc.ExplicitID, expStart)) ||
-						(normStart != "" && NormalizeLookupKey(sc.Name) == normStart) {
-						ch.StartSceneID = sc.ID
-						break
-					}
-				}
-			}
-		}
-	}
+	b.resolveChapterEntryPoints(prevChapterMeta, func(sid string) *Scene {
+		return sceneMap[sid]
+	}, false)
 }
 
 func canonicalizeAutoSceneIDsAfterReorder(b *Book, sceneMap map[string]*Scene) {
@@ -196,8 +150,21 @@ func canonicalizeAutoSceneIDsAfterReorder(b *Book, sceneMap map[string]*Scene) {
 }
 
 const (
-	EditorGridSize = 24
-	maxCanvasCoord = 1_000_000
+	EditorGridSize           = 24
+	maxCanvasCoord           = 1_000_000
+	NodeCardWidth            = 192
+	NodeCardHalfWidth        = 96
+	NodeCardBaseHeight       = 74
+	NodeChoiceRowHeight      = 26
+	NodeMinLogicalHeight     = 120
+	NodeColSpacing           = 264
+	ChapterFramePadX         = 36
+	ChapterFramePadX2        = 72
+	ChapterFramePadTop       = 52
+	ChapterFramePadBottom    = 44
+	ChapterFramePadYTotal    = 96
+	NewChapterDefaultOffsetX = 768
+	NewChapterDefaultOffsetY = 552
 )
 
 func clampCanvasCoord(v int) int {
@@ -408,7 +375,7 @@ func ComputeTimelineLayout(b *Book) {
 	for _, sc := range b.Scenes {
 		chName := strings.TrimSpace(sc.Chapter)
 		if chName == "" {
-			chName = "Rozdział 1"
+			chName = b.DefaultChapterName()
 		}
 		key := strings.ToLower(chName)
 		if !chapterSeen[key] {
@@ -418,18 +385,18 @@ func ComputeTimelineLayout(b *Book) {
 	}
 
 	type chLayoutPlan struct {
-		key        string
-		idx        int
-		scenes     []*Scene
-		relX       map[string]int
-		relY       map[string]int
-		minRelX    int
-		maxRelX    int
-		localEndY  int
-		frameW     int
-		tier       int
-		centerX    int
-		startY     int
+		key       string
+		idx       int
+		scenes    []*Scene
+		relX      map[string]int
+		relY      map[string]int
+		minRelX   int
+		maxRelX   int
+		localEndY int
+		frameW    int
+		tier      int
+		centerX   int
+		startY    int
 	}
 
 	plans := make([]*chLayoutPlan, 0, len(chapterOrder))
@@ -440,7 +407,7 @@ func ComputeTimelineLayout(b *Book) {
 		for _, sc := range b.Scenes {
 			name := strings.TrimSpace(sc.Chapter)
 			if name == "" {
-				name = "Rozdział 1"
+				name = b.DefaultChapterName()
 			}
 			if strings.ToLower(name) == chKey {
 				chScenes = append(chScenes, sc)
@@ -508,9 +475,9 @@ func ComputeTimelineLayout(b *Book) {
 			if maxWarnings > 0 {
 				rowStep += 24
 			}
-			maxSceneH := 74
+			maxSceneH := NodeCardBaseHeight
 			if maxChoices >= 2 {
-				maxSceneH = 74 + maxChoices*26
+				maxSceneH = NodeCardBaseHeight + maxChoices*NodeChoiceRowHeight
 			}
 			if minStep := ((maxSceneH + 48 + 23) / 24) * 24; rowStep < minStep {
 				rowStep = minStep
@@ -527,7 +494,7 @@ func ComputeTimelineLayout(b *Book) {
 			minRelX:   minRelX,
 			maxRelX:   maxRelX,
 			localEndY: localY,
-			frameW:    (maxRelX - minRelX) + 72,
+			frameW:    (maxRelX - minRelX) + ChapterFramePadX2,
 			tier:      -1,
 			centerX:   centerX,
 			startY:    startY,
@@ -567,7 +534,7 @@ func ComputeTimelineLayout(b *Book) {
 						if tSc := sceneMap[ch.TargetSceneID]; tSc != nil {
 							tName := strings.TrimSpace(tSc.Chapter)
 							if tName == "" {
-								tName = "Rozdział 1"
+								tName = b.DefaultChapterName()
 							}
 							vKey = strings.ToLower(tName)
 						}
@@ -735,8 +702,8 @@ func ComputeTimelineLayout(b *Book) {
 				}
 				curFrameLeftX := centerX - totalTierW/2
 				for _, p := range tierPlans {
-					leftOff := p.minRelX - 36
-					rightOff := p.maxRelX + 36
+					leftOff := p.minRelX - ChapterFramePadX
+					rightOff := p.maxRelX + ChapterFramePadX
 					p.centerX = SnapToGrid(curFrameLeftX - leftOff)
 					curFrameLeftX = (p.centerX + rightOff) + chapterColGap
 				}
@@ -782,12 +749,39 @@ func ComputeTimelineLayout(b *Book) {
 
 func sceneCanvasHeight(sc *Scene) int {
 	if sc == nil {
-		return 74
+		return NodeCardBaseHeight
 	}
 	if len(sc.Choices) >= 2 {
-		return 74 + len(sc.Choices)*26
+		return NodeCardBaseHeight + len(sc.Choices)*NodeChoiceRowHeight
 	}
-	return 74
+	return NodeCardBaseHeight
+}
+
+// ComputeChapterFrameBounds computes the bounding box of a chapter frame around its scenes.
+func ComputeChapterFrameBounds(scenes []*Scene) (left, top, right, bottom int) {
+	if len(scenes) == 0 {
+		return 0, 0, 0, 0
+	}
+	minX, minY := scenes[0].X, scenes[0].Y
+	maxX := scenes[0].X + NodeCardWidth
+	h0 := max(sceneCanvasHeight(scenes[0]), NodeMinLogicalHeight)
+	maxY := scenes[0].Y + h0
+	for _, sc := range scenes[1:] {
+		if sc.X < minX {
+			minX = sc.X
+		}
+		if sc.Y < minY {
+			minY = sc.Y
+		}
+		if sc.X+NodeCardWidth > maxX {
+			maxX = sc.X + NodeCardWidth
+		}
+		sh := max(sceneCanvasHeight(sc), NodeMinLogicalHeight)
+		if sc.Y+sh > maxY {
+			maxY = sc.Y + sh
+		}
+	}
+	return minX - ChapterFramePadX, minY - ChapterFramePadTop, maxX + ChapterFramePadX, maxY + ChapterFramePadBottom
 }
 
 func nodesOverlapWithMargin(ax, ay, ah, bx, by, bh, margin int) bool {
@@ -854,35 +848,7 @@ func resolveNodeAndChapterOverlaps(b *Book, chapterOrder []string, sceneMap map[
 		if len(g.scenes) == 0 {
 			return
 		}
-		minX, minY := g.scenes[0].X, g.scenes[0].Y
-		maxX := g.scenes[0].X + nodeW
-		h0 := sceneCanvasHeight(g.scenes[0])
-		if h0 < 120 {
-			h0 = 120
-		}
-		maxY := g.scenes[0].Y + h0
-		for _, sc := range g.scenes[1:] {
-			if sc.X < minX {
-				minX = sc.X
-			}
-			if sc.Y < minY {
-				minY = sc.Y
-			}
-			if sc.X+nodeW > maxX {
-				maxX = sc.X + nodeW
-			}
-			sh := sceneCanvasHeight(sc)
-			if sh < 120 {
-				sh = 120
-			}
-			if sc.Y+sh > maxY {
-				maxY = sc.Y + sh
-			}
-		}
-		g.left = minX - 36
-		g.top = minY - 52
-		g.right = maxX + 36
-		g.bottom = maxY + 44
+		g.left, g.top, g.right, g.bottom = ComputeChapterFrameBounds(g.scenes)
 	}
 
 	var groups []*chGroup
@@ -892,7 +858,7 @@ func resolveNodeAndChapterOverlaps(b *Book, chapterOrder []string, sceneMap map[
 		for _, sc := range b.Scenes {
 			name := strings.TrimSpace(sc.Chapter)
 			if name == "" {
-				name = "Rozdział 1"
+				name = b.DefaultChapterName()
 			}
 			if strings.ToLower(name) == chKey {
 				chScenes = append(chScenes, sc)
@@ -938,10 +904,7 @@ func resolveNodeAndChapterOverlaps(b *Book, chapterOrder []string, sceneMap map[
 			if checkOtherChapters && len(groups) > 1 {
 				minX, minY := cx, cy
 				maxX := cx + nodeW
-				nh := sh
-				if nh < 120 {
-					nh = 120
-				}
+				nh := max(sh, NodeMinLogicalHeight)
 				maxY := cy + nh
 				for _, pl := range placed {
 					if pl.X < minX {
@@ -953,18 +916,15 @@ func resolveNodeAndChapterOverlaps(b *Book, chapterOrder []string, sceneMap map[
 					if pl.X+nodeW > maxX {
 						maxX = pl.X + nodeW
 					}
-					ph := sceneCanvasHeight(pl)
-					if ph < 120 {
-						ph = 120
-					}
+					ph := max(sceneCanvasHeight(pl), NodeMinLogicalHeight)
 					if pl.Y+ph > maxY {
 						maxY = pl.Y + ph
 					}
 				}
-				cLeft := minX - 36
-				cTop := minY - 52
-				cRight := maxX + 36
-				cBottom := maxY + 44
+				cLeft := minX - ChapterFramePadX
+				cTop := minY - ChapterFramePadTop
+				cRight := maxX + ChapterFramePadX
+				cBottom := maxY + ChapterFramePadBottom
 				for _, otherG := range groups {
 					if otherG == g {
 						continue
@@ -986,14 +946,14 @@ func resolveNodeAndChapterOverlaps(b *Book, chapterOrder []string, sceneMap map[
 				if anyManualInCh {
 					if p := parentInChapter[sc.ID]; p != nil {
 						sc.X = SnapToGrid(p.X)
-						sc.Y = SnapToGrid(p.Y + sceneCanvasHeight(p) + 72)
+						sc.Y = SnapToGrid(p.Y + sceneCanvasHeight(p) + ChapterFramePadX2)
 					} else if c := childInChapter[sc.ID]; c != nil {
 						sc.X = SnapToGrid(c.X)
-						sc.Y = SnapToGrid(c.Y - sh - 72)
+						sc.Y = SnapToGrid(c.Y - sh - ChapterFramePadX2)
 					} else if len(placed) > 0 {
 						last := placed[len(placed)-1]
 						sc.X = SnapToGrid(last.X)
-						sc.Y = SnapToGrid(last.Y + sceneCanvasHeight(last) + 72)
+						sc.Y = SnapToGrid(last.Y + sceneCanvasHeight(last) + ChapterFramePadX2)
 					}
 				}
 				if collides(sc.X, sc.Y, sh, true) {
