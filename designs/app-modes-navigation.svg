@@ -1,0 +1,513 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900">
+  <defs>
+    <style>
+      .bg { fill: #050505; }
+      .panel { fill: #000000; stroke: #242424; stroke-width: 1; }
+      .panel-subtle { fill: #0a0a0a; stroke: #242424; stroke-width: 1; }
+      .cover-box { fill: #0e0e0e; }
+      .div { stroke: #1a1a1a; stroke-width: 1; }
+      .line-strong { stroke: #525252; stroke-width: 1; }
+      .line-subtle { stroke: #242424; stroke-width: 1; }
+      .line-active { stroke: #ffffff; stroke-width: 1; }
+
+      /* App Typography: Lato and Aleo */
+      .sec-num { fill: #666666; font-family: "Lato", sans-serif; font-size: 10px; font-weight: 700; letter-spacing: 1.4px; }
+      .sec-tag { fill: #949494; font-family: "Lato", sans-serif; font-size: 10px; font-weight: 400; letter-spacing: 1.2px; text-anchor: end; }
+
+      .brand-title { fill: #ffffff; font-family: "Aleo", serif; font-size: 14px; font-weight: 700; }
+      .top-context { fill: #949494; font-family: "Lato", sans-serif; font-size: 11px; font-weight: 400; }
+      .top-context-active { fill: #ffffff; font-family: "Lato", sans-serif; font-size: 11px; font-weight: 700; }
+
+      .book-title { fill: #ffffff; font-family: "Aleo", serif; font-size: 17px; font-weight: 400; }
+      .book-author { fill: #949494; font-family: "Lato", sans-serif; font-size: 9px; font-weight: 400; letter-spacing: 1px; }
+      .book-desc { fill: #949494; font-family: "Aleo", serif; font-size: 11px; font-weight: 400; }
+
+      .scene-h { fill: #ffffff; font-family: "Aleo", serif; font-size: 20px; font-weight: 700; }
+      .scene-dim-h { fill: #7a7a7a; font-family: "Aleo", serif; font-size: 16px; font-weight: 700; }
+      .prose { fill: #c8c8c8; font-family: "Aleo", serif; font-size: 13px; font-weight: 400; }
+      .prose-dim { fill: #666666; font-family: "Aleo", serif; font-size: 12px; font-weight: 400; }
+
+      .meta-key { fill: #949494; font-family: "Lato", sans-serif; font-size: 10px; font-weight: 400; }
+      .meta-val { fill: #ffffff; font-family: "Lato", sans-serif; font-size: 11px; font-weight: 400; }
+      .meta-idle { fill: #7a7a7a; font-family: "Lato", sans-serif; font-size: 11px; font-weight: 400; }
+      .btn-lbl { fill: #c8c8c8; font-family: "Lato", sans-serif; font-size: 10px; font-weight: 400; letter-spacing: 0.6px; }
+      .footer-switch { fill: #7a7a7a; font-family: "Lato", sans-serif; font-size: 10px; font-weight: 400; letter-spacing: 0.8px; }
+
+      .icon { fill: none; stroke: #c8c8c8; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+      .icon-active { fill: none; stroke: #ffffff; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+      .icon-muted { fill: none; stroke: #7a7a7a; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+    </style>
+
+    <!-- Studio 12px Dot Grid Pattern for Studio Cover Thumbnails -->
+    <pattern id="studio-cover-grid" width="12" height="12" patternUnits="userSpaceOnUse">
+      <rect x="5" y="5" width="1.2" height="1.2" fill="#292929" />
+    </pattern>
+
+    <!-- Mojra Symbol (app/icons/mojra.svg) 16x16 — NEVER IN A FRAME -->
+    <g id="sym-mojra">
+      <line x1="2" y1="2.5" x2="2" y2="14" stroke-width="1.5" />
+      <line x1="14" y1="3.5" x2="14" y2="14" stroke-width="1.5" />
+      <line x1="2" y1="2.5" x2="6.8" y2="7.5" stroke-width="1.4" />
+      <line x1="13.2" y1="3.3" x2="9.2" y2="7.5" stroke-width="1.4" />
+      <line x1="8" y1="10.2" x2="8" y2="14" stroke-width="1.3" />
+      <circle cx="2" cy="2.5" r="1.3" fill="currentColor" stroke="none" />
+      <circle cx="14" cy="2.5" r="1.2" fill="none" stroke-width="1.2" />
+      <circle cx="2" cy="14" r="1.3" fill="currentColor" stroke="none" />
+      <circle cx="14" cy="14" r="1.3" fill="currentColor" stroke="none" />
+      <circle cx="8" cy="8.6" r="1.8" fill="none" stroke-width="1.3" />
+    </g>
+
+    <!-- Studio Symbol (app/icons/studio.svg: Pencil + Graph Thread) 16x16 — NEVER IN A FRAME -->
+    <g id="sym-studio">
+      <path d="M12 1.8l2.2 2.2-6 6H6V7.8l6-6z" />
+      <line x1="6" y1="10" x2="2.5" y2="8.8" />
+      <line x1="6" y1="10" x2="7.2" y2="13.5" />
+      <circle cx="1.8" cy="8.4" r="1.3" fill="currentColor" stroke="none" />
+      <circle cx="7.6" cy="14.2" r="1.3" fill="none" />
+    </g>
+
+    <!-- Playbook Overlay Icon (app/icons/playbook.svg: Open Book + Play Triangle) 24x24 -->
+    <g id="ico-playbook-24" fill="none" stroke="currentColor" stroke-width="1.15" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M1.5 5.25C4.5 3.94 8.63 4.31 12 6.19c3.37-1.88 7.5-2.25 10.5-.94V18c-3-1.31-7.13-.94-10.5.94-3.37-1.88-7.5-2.25-10.5-.94V5.25z" />
+      <path d="M2.25 20.25C5.25 19.13 9 19.5 12 21.19c3-1.69 6.75-2.06 9.75-.94" stroke-width="0.95" />
+      <path d="M9.75 8.44l6.19 3.75-6.19 3.75V8.44z" fill="currentColor" stroke="none" />
+    </g>
+
+    <!-- Studio Overlay Icon (app/icons/studio.svg scaled 24x24) -->
+    <g id="ico-studio-24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M18 2.5l3.5 3.5L12.5 15H9v-3.5L18 2.5z" />
+      <line x1="15.2" y1="5.3" x2="18.7" y2="8.8" />
+      <line x1="9" y1="15" x2="3.8" y2="13.2" />
+      <line x1="9" y1="15" x2="10.8" y2="20.2" />
+      <circle cx="2.5" cy="12.6" r="2.1" fill="currentColor" stroke="none" />
+      <circle cx="11.4" cy="21.2" r="2" fill="none" />
+    </g>
+
+    <!-- Actual App Icons from app/icons/*.svg (14x14) -->
+    <g id="ico-zen">
+      <circle cx="7" cy="7" r="2.2" />
+      <path d="M2 7c1.4-2.8 3.2-4 5-4s3.6 1.2 5 4c-1.4 2.8-3.2 4-5 4S3.4 9.8 2 7z" />
+    </g>
+
+    <!-- app/icons/theme.svg (Crescent Moon) -->
+    <g id="ico-theme-moon">
+      <path d="M12.2 7.8A5.2 5.2 0 1 1 6.5 2.1a4 4 0 0 0 5.7 5.7z" />
+    </g>
+
+    <!-- app/icons/image.svg (Landscape Frame) -->
+    <g id="ico-image">
+      <rect x="2" y="2" width="10" height="10" />
+      <circle cx="5.2" cy="5.2" r="0.9" />
+      <polyline points="12 9 9.2 6.2 3.2 12" />
+    </g>
+
+    <g id="ico-settings">
+      <circle cx="7" cy="7" r="2.2" />
+      <path d="M7 1.6v1.5M7 10.9v1.5M1.6 7h1.5M10.9 7h1.5M3.2 3.2l1.1 1.1M9.7 9.7l1.1 1.1M10.8 3.2L9.7 4.3M4.3 9.7L3.2 10.8" />
+    </g>
+
+    <g id="ico-fullscreen">
+      <polyline points="2 5.2 2 2 5.2 2" />
+      <polyline points="8.8 2 12 2 12 5.2" />
+      <polyline points="12 8.8 12 12 8.8 12" />
+      <polyline points="5.2 12 2 12 2 8.8" />
+    </g>
+
+    <g id="ico-rewind">
+      <path d="M3 5.5h5.5a3 3 0 1 1 0 6H5" />
+      <polyline points="5.2 3.2 2.8 5.5 5.2 7.8" />
+    </g>
+
+    <g id="ico-close">
+      <line x1="3" y1="3" x2="11" y2="11" />
+      <line x1="11" y1="3" x2="3" y2="11" />
+    </g>
+
+    <!-- Minimalist Toggle Track (22x10px track + 6x6px active square thumb from designs/forms.png) -->
+    <g id="toggle-on">
+      <rect x="0" y="0" width="22" height="10" fill="#1b1b1b" />
+      <rect x="14" y="2" width="6" height="6" fill="#ffffff" />
+    </g>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1440" height="900" />
+  <line class="div" x1="720" y1="36" x2="720" y2="864" />
+
+  <!-- ======================================================================= -->
+  <!-- LEFT COLUMN: TRYB READER (MOJRA) — BIBLIOTEKA, CZYTANIE, MODAL OPCJI    -->
+  <!-- ======================================================================= -->
+
+  <!-- 01 / READER HOME (BIBLIOTEKA) -->
+  <g transform="translate(48, 36)">
+    <text class="sec-num" x="0" y="12">01 / READER HOME (BIBLIOTEKA)</text>
+    <text class="sec-tag" x="636" y="12">KAFELKI Z OKŁADKĄ PLAYBOOK.SVG + PRZEŁĄCZNIK TRYBU NA DOLE</text>
+
+    <g transform="translate(0, 26)">
+      <rect class="panel" x="0" y="0" width="636" height="278" />
+
+      <!-- #topbar in Reader Home (NO mode switch in topbar, NO frame on M icon) -->
+      <line class="line-subtle" x1="0" y1="36" x2="636" y2="36" />
+      <g class="icon-active" style="color:#ffffff" transform="translate(18, 10)">
+        <use href="#sym-mojra" />
+      </g>
+      <text class="brand-title" x="42" y="23">Mojra</text>
+
+      <!-- Top-Right in Reader Home: ONLY Settings | Fullscreen | Quit -->
+      <g transform="translate(546, 11)">
+        <g class="icon-muted" transform="translate(0, 0)">
+          <use href="#ico-settings" />
+        </g>
+        <g class="icon-muted" transform="translate(28, 0)">
+          <use href="#ico-fullscreen" />
+        </g>
+        <g class="icon-muted" transform="translate(56, 0)">
+          <use href="#ico-close" />
+        </g>
+      </g>
+
+      <!-- Top Action Bar inside Library -->
+      <rect x="20" y="48" width="96" height="22" fill="none" stroke="#242424" stroke-width="1" />
+      <text class="btn-lbl" x="30" y="62.5">+ Dodaj książkę</text>
+
+      <!-- Reader Book Row 1 (.book-card: 72x72 Cover with playbook.svg + Progress Bar) -->
+      <g transform="translate(20, 82)">
+        <rect class="cover-box" x="0" y="0" width="68" height="68" />
+        <g style="color:#ffffff" opacity="0.88" transform="translate(22, 22)">
+          <use href="#ico-playbook-24" />
+        </g>
+
+        <text class="book-author" x="84" y="14">SEWER HREHOROWICZ</text>
+        <!-- Reader Progress Bar (72x3px) -->
+        <rect x="208" y="9" width="64" height="3" fill="#242424" />
+        <rect x="208" y="9" width="30" height="3" fill="#ffffff" />
+
+        <text class="book-title" x="84" y="38">Nie bój się policji rzecznej</text>
+        <text class="book-desc" x="84" y="56">Mroczna opowieść o patrolu rzecznym w zatopionej dzielnicy kwarantanny.</text>
+        <line class="line-subtle" x1="0" y1="80" x2="596" y2="80" />
+      </g>
+
+      <!-- Reader Book Row 2 (.book-card) -->
+      <g transform="translate(20, 174)">
+        <rect class="cover-box" x="0" y="0" width="68" height="68" />
+        <g style="color:#ffffff" opacity="0.88" transform="translate(22, 22)">
+          <use href="#ico-playbook-24" />
+        </g>
+
+        <text class="book-author" x="84" y="14">MAREK HŁASKO</text>
+        <rect x="174" y="9" width="64" height="3" fill="#242424" />
+        <rect x="174" y="9" width="52" height="3" fill="#ffffff" />
+
+        <text class="book-title" x="84" y="38">Baza Sokołowska</text>
+        <text class="book-desc" x="84" y="56">Zimowy transport drewna na urwiskach bieszczadzkiego odcinka.</text>
+        <line class="line-subtle" x1="0" y1="74" x2="596" y2="74" />
+      </g>
+
+      <!-- Bottom Footer Mode Switch (Subtle, Below Tiles, NEVER in Topbar) -->
+      <g transform="translate(20, 255)">
+        <g class="icon-muted" style="color:#7a7a7a" transform="translate(0, 0) scale(0.85)">
+          <use href="#sym-studio" />
+        </g>
+        <text class="footer-switch" x="20" y="11">Przełącz na środowisko autorskie Playbook Studio →</text>
+      </g>
+    </g>
+  </g>
+
+  <!-- 02 / CZYTANIE KSIĄŻKI (#VIEW-PLAYER: DESKTOP ORAZ ANDROID) -->
+  <g transform="translate(48, 356)">
+    <text class="sec-num" x="0" y="12">02 / CZYTANIE KSIĄŻKI (#VIEW-PLAYER)</text>
+    <text class="sec-tag" x="636" y="12">M (BEZ RAMKI) WRACA DO HOME • ZEN, FULLSCREEN, ✕</text>
+
+    <g transform="translate(0, 26)">
+      <rect class="panel" x="0" y="0" width="636" height="270" />
+
+      <!-- #topbar during Book Reading (Desktop): Clean M icon (NO frame!) -->
+      <line class="line-subtle" x1="0" y1="36" x2="636" y2="36" />
+      <g class="icon-active" style="color:#ffffff" transform="translate(18, 10)">
+        <use href="#sym-mojra" />
+      </g>
+      <line class="line-subtle" x1="46" y1="10" x2="46" y2="26" />
+      <text class="top-context-active" x="60" y="22">Nie bój się policji rzecznej</text>
+
+      <!-- Top-Right during Reading: ONLY Zen, Fullscreen (Desktop), Quit -->
+      <g transform="translate(546, 11)">
+        <g class="icon-muted" transform="translate(0, 0)">
+          <use href="#ico-zen" />
+        </g>
+        <g class="icon-active" transform="translate(28, 0)">
+          <use href="#ico-fullscreen" />
+        </g>
+        <g class="icon-muted" transform="translate(56, 0)">
+          <use href="#ico-close" />
+        </g>
+      </g>
+
+      <!-- Scene Stack inside Player -->
+      <g transform="translate(68, 52)">
+        <text class="scene-dim-h" x="0" y="16">Kanał kwarantanny</text>
+        <g class="icon-muted" transform="translate(486, 4)">
+          <use href="#ico-rewind" />
+        </g>
+        <text class="prose-dim" x="0" y="36">Nocna szpica pod komendą sierżanta Niedźwiedzia odbiła od głównego koryta...</text>
+
+        <line class="line-subtle" x1="0" y1="52" x2="500" y2="52" />
+
+        <text class="book-author" x="0" y="74">ZATOPIONA ŚLUZA</text>
+        <text class="scene-h" x="0" y="98">Komora topielców</text>
+        <text class="prose" x="0" y="124">Pośrodku ceglanej grobli znajdowała się żeliwna krata zakrywająca dawną</text>
+        <text class="prose" x="0" y="144">komorę filtracyjną, w której trzymano przykutych za kostki zbiegów.</text>
+
+        <!-- Android Topbar Strip (No Fullscreen, No Quit, No Frame around M) -->
+        <g transform="translate(-48, 166)">
+          <rect class="panel-subtle" x="0" y="0" width="596" height="36" />
+          <g class="icon-active" style="color:#ffffff" transform="translate(14, 10)">
+            <use href="#sym-mojra" />
+          </g>
+          <text class="meta-key" x="40" y="22" fill="#c8c8c8">ANDROID (#TOPBAR BEZ FULLSCREEN I BEZ ZAMKNIJ)</text>
+          <g class="icon-muted" transform="translate(566, 11)">
+            <use href="#ico-zen" />
+          </g>
+        </g>
+      </g>
+    </g>
+  </g>
+
+  <!-- 03 / MODAL OPCJI (DOKŁADNE IKONY I KONTROLKI Z MODALS.TPL) -->
+  <g transform="translate(48, 668)">
+    <text class="sec-num" x="0" y="12">03 / MODAL OPCJI (SETTINGS.SVG)</text>
+    <text class="sec-tag" x="636" y="12">IKONY THEME.SVG / IMAGE.SVG + RADIO Z MODALS.TPL</text>
+
+    <g transform="translate(0, 26)">
+      <rect class="panel" x="0" y="0" width="636" height="170" />
+
+      <!-- Row 1: język (radio) + motyw (toggle with theme.svg) -->
+      <g transform="translate(24, 20)">
+        <text class="meta-key" x="0" y="14">język:</text>
+        <text class="meta-val" x="96" y="14">PL</text>
+        <rect x="114" y="6" width="8" height="8" fill="#ffffff" />
+        <text class="meta-idle" x="142" y="14">EN</text>
+        <rect x="162" y="6" width="8" height="8" fill="#242424" />
+        <line class="line-subtle" x1="0" y1="26" x2="274" y2="26" />
+
+        <text class="meta-key" x="314" y="14">motyw:</text>
+        <text class="meta-val" x="404" y="14">Ciemny</text>
+        <g class="icon-active" transform="translate(544, 3)">
+          <use href="#ico-theme-moon" />
+        </g>
+        <g transform="translate(566, 5)">
+          <use href="#toggle-on" />
+        </g>
+        <line class="line-subtle" x1="314" y1="26" x2="588" y2="26" />
+      </g>
+
+      <!-- Row 2: wielkość ui (radio) + obrazy (toggle with image.svg) -->
+      <g transform="translate(24, 62)">
+        <text class="meta-key" x="0" y="14">wielkość ui:</text>
+        <text class="meta-val" x="96" y="14">Domyślny</text>
+        <rect x="150" y="6" width="8" height="8" fill="#ffffff" />
+        <text class="meta-idle" x="178" y="14">Duży</text>
+        <rect x="208" y="6" width="8" height="8" fill="#242424" />
+        <line class="line-subtle" x1="0" y1="26" x2="274" y2="26" />
+
+        <text class="meta-key" x="314" y="14">obrazy:</text>
+        <text class="meta-val" x="404" y="14">Z obrazami</text>
+        <g class="icon-active" transform="translate(544, 3)">
+          <use href="#ico-image" />
+        </g>
+        <g transform="translate(566, 5)">
+          <use href="#toggle-on" />
+        </g>
+        <line class="line-subtle" x1="314" y1="26" x2="588" y2="26" />
+      </g>
+
+      <!-- Row 3: przewijanie + auto-wybór -->
+      <g transform="translate(24, 104)">
+        <text class="meta-key" x="0" y="14">przewijanie:</text>
+        <text class="meta-idle" x="96" y="14">Wysoka</text>
+        <rect x="138" y="6" width="8" height="8" fill="#242424" />
+        <text class="meta-val" x="160" y="14">Średnia</text>
+        <rect x="202" y="6" width="8" height="8" fill="#ffffff" />
+        <text class="meta-idle" x="224" y="14">Niska</text>
+        <rect x="256" y="6" width="8" height="8" fill="#242424" />
+        <line class="line-subtle" x1="0" y1="26" x2="274" y2="26" />
+
+        <text class="meta-key" x="314" y="14">auto-wybór:</text>
+        <text class="meta-idle" x="404" y="14">1s</text>
+        <rect x="420" y="6" width="8" height="8" fill="#242424" />
+        <text class="meta-val" x="442" y="14">2s</text>
+        <rect x="458" y="6" width="8" height="8" fill="#ffffff" />
+        <text class="meta-idle" x="480" y="14">3s</text>
+        <rect x="496" y="6" width="8" height="8" fill="#242424" />
+        <text class="meta-idle" x="518" y="14">5s</text>
+        <rect x="534" y="6" width="8" height="8" fill="#242424" />
+        <line class="line-subtle" x1="314" y1="26" x2="588" y2="26" />
+      </g>
+    </g>
+  </g>
+
+  <!-- ======================================================================= -->
+  <!-- RIGHT COLUMN: PLAYBOOK STUDIO HOME (TE SAME KAFELKI BAZOWE) & EDYTOR    -->
+  <!-- ======================================================================= -->
+
+  <!-- 04 / STUDIO HOME (TEN SAM STYL BAZOWY KAFELKÓW CO W BIBLIOTECE, ALE Z CECHAMI STUDIO) -->
+  <g transform="translate(756, 36)">
+    <text class="sec-num" x="0" y="12">04 / STUDIO HOME (PROJEKTY)</text>
+    <text class="sec-tag" x="636" y="12">STYL .BOOK-CARD + SIATKA 24PX + METRYKI SCEN</text>
+
+    <g transform="translate(0, 26)">
+      <rect class="panel" x="0" y="0" width="636" height="398" />
+
+      <!-- #topbar in Studio Home: Studio Symbol (NO frame!) + Playbook Studio -->
+      <line class="line-subtle" x1="0" y1="36" x2="636" y2="36" />
+      <g class="icon-active" style="color:#ffffff" transform="translate(18, 10)">
+        <use href="#sym-studio" />
+      </g>
+      <text class="brand-title" x="42" y="23">Playbook Studio</text>
+
+      <!-- Top-Right in Studio Home: ONLY Settings | Fullscreen | Quit (NO mode switch in topbar!) -->
+      <g transform="translate(546, 11)">
+        <g class="icon-muted" transform="translate(0, 0)">
+          <use href="#ico-settings" />
+        </g>
+        <g class="icon-muted" transform="translate(28, 0)">
+          <use href="#ico-fullscreen" />
+        </g>
+        <g class="icon-muted" transform="translate(56, 0)">
+          <use href="#ico-close" />
+        </g>
+      </g>
+
+      <!-- Studio Home Top Actions -->
+      <g transform="translate(20, 48)">
+        <rect x="0" y="0" width="104" height="22" fill="none" stroke="#242424" stroke-width="1" />
+        <text class="btn-lbl" x="12" y="14.5">+ Nowa książka</text>
+
+        <rect x="114" y="0" width="118" height="22" fill="none" stroke="#242424" stroke-width="1" />
+        <text class="btn-lbl" x="126" y="14.5">+ Nowy scenariusz</text>
+
+        <rect x="242" y="0" width="128" height="22" fill="none" stroke="#242424" stroke-width="1" />
+        <text class="btn-lbl" x="254" y="14.5">Otwórz projekt z dysku</text>
+      </g>
+
+      <!-- Studio Project Row 1 (Same .book-card base layout, differentiated by 24px Grid + studio.svg + Production Stats) -->
+      <g transform="translate(20, 86)">
+        <rect class="cover-box" x="0" y="0" width="68" height="68" />
+        <rect x="0" y="0" width="68" height="68" fill="url(#studio-cover-grid)" />
+        <rect x="0.5" y="0.5" width="67" height="67" fill="none" stroke="#242424" stroke-width="1" />
+        <g style="color:#ffffff" opacity="0.9" transform="translate(22, 22)">
+          <use href="#ico-studio-24" />
+        </g>
+
+        <!-- Studio Meta Row: Mode Badge + Scene/Chapter/Audio Counts + Path instead of Reader Progress Bar -->
+        <text class="book-author" fill="#ffffff" x="84" y="14">KSIĄŻKA INTERAKTYWNA</text>
+        <text class="book-author" x="218" y="14">•   42 SCENY   •   4 ROZDZIAŁY   •   NARRACJA FLAC</text>
+
+        <text class="book-title" x="84" y="38">Nie bój się policji rzecznej</text>
+        <text class="meta-key" x="84" y="56">books/nie-boj-sie-policji-rzecznej/book.playtxt</text>
+        <line class="line-subtle" x1="0" y1="84" x2="596" y2="84" />
+      </g>
+
+      <!-- Studio Project Row 2 (.book-card for Screenplay) -->
+      <g transform="translate(20, 184)">
+        <rect class="cover-box" x="0" y="0" width="68" height="68" />
+        <rect x="0" y="0" width="68" height="68" fill="url(#studio-cover-grid)" />
+        <rect x="0.5" y="0.5" width="67" height="67" fill="none" stroke="#242424" stroke-width="1" />
+        <g style="color:#ffffff" opacity="0.9" transform="translate(22, 22)">
+          <use href="#ico-studio-24" />
+        </g>
+
+        <text class="book-author" fill="#ffffff" x="84" y="14">SCENARIUSZ FILMOWY (PISF)</text>
+        <text class="book-author" x="242" y="14">•   68 SCEN   •   3 AKTY   •   94 STRONY (1/8)</text>
+
+        <text class="book-title" x="84" y="38">Zimny Brzeg</text>
+        <text class="meta-key" x="84" y="56">projects/zimny-brzeg/book.playtxt</text>
+        <line class="line-subtle" x1="0" y1="84" x2="596" y2="84" />
+      </g>
+
+      <!-- Studio Project Row 3 (.book-card) -->
+      <g transform="translate(20, 282)">
+        <rect class="cover-box" x="0" y="0" width="68" height="68" />
+        <rect x="0" y="0" width="68" height="68" fill="url(#studio-cover-grid)" />
+        <rect x="0.5" y="0.5" width="67" height="67" fill="none" stroke="#242424" stroke-width="1" />
+        <g style="color:#ffffff" opacity="0.9" transform="translate(22, 22)">
+          <use href="#ico-studio-24" />
+        </g>
+
+        <text class="book-author" fill="#ffffff" x="84" y="14">KSIĄŻKA INTERAKTYWNA</text>
+        <text class="book-author" x="218" y="14">•   19 SCEN   •   2 ROZDZIAŁY   •   BEZ OBRAZÓW</text>
+
+        <text class="book-title" x="84" y="38">Baza Sokołowska</text>
+        <text class="meta-key" x="84" y="56">projects/baza-sokolowska/book.playtxt</text>
+        <line class="line-subtle" x1="0" y1="80" x2="596" y2="80" />
+      </g>
+
+      <!-- Bottom Footer Mode Switch (Subtle, Below Tiles, NEVER in Topbar) -->
+      <g transform="translate(20, 374)">
+        <g class="icon-muted" style="color:#7a7a7a" transform="translate(0, 0) scale(0.85)">
+          <use href="#sym-mojra" />
+        </g>
+        <text class="footer-switch" x="20" y="11">Przełącz na czytnik i bibliotekę Mojra →</text>
+      </g>
+    </g>
+  </g>
+
+  <!-- 05 / WEWNĄTRZ PROJEKTU STUDIO (#VIEW-EDITOR) -->
+  <g transform="translate(756, 480)">
+    <text class="sec-num" x="0" y="12">05 / EDYTOR WĘZŁÓW (#VIEW-EDITOR)</text>
+    <text class="sec-tag" x="636" y="12">SYGNET OŁÓWKA (BEZ RAMKI) WRACA DO STUDIO HOME</text>
+
+    <g transform="translate(0, 26)">
+      <rect class="panel" x="0" y="0" width="636" height="358" />
+
+      <!-- #topbar inside active Studio Project: Clean Studio icon (NO frame!) -->
+      <line class="line-subtle" x1="0" y1="36" x2="636" y2="36" />
+      <g class="icon-active" style="color:#ffffff" transform="translate(18, 10)">
+        <use href="#sym-studio" />
+      </g>
+      <line class="line-subtle" x1="46" y1="10" x2="46" y2="26" />
+      <text class="top-context-active" x="60" y="22">Nie bój się policji rzecznej</text>
+
+      <!-- Top-Right inside Editor: Settings | Fullscreen | Quit -->
+      <g transform="translate(546, 11)">
+        <g class="icon-muted" transform="translate(0, 0)">
+          <use href="#ico-settings" />
+        </g>
+        <g class="icon-muted" transform="translate(28, 0)">
+          <use href="#ico-fullscreen" />
+        </g>
+        <g class="icon-muted" transform="translate(56, 0)">
+          <use href="#ico-close" />
+        </g>
+      </g>
+
+      <!-- Row 2: Studio Canvas Toolbar -->
+      <rect x="1" y="37" width="634" height="32" fill="#050505" />
+      <line class="line-subtle" x1="0" y1="69" x2="636" y2="69" />
+      <text class="sec-num" fill="#949494" x="18" y="57">EKSPORT   •   100%   •   SZUKAJ (CMD+F)   •   ZMIENNE { }   •   OBSADA   •   HISTORIA</text>
+
+      <!-- Node Canvas + 320px Inspector Preview -->
+      <rect x="1" y="70" width="462" height="287" fill="url(#studio-cover-grid)" />
+      <g transform="translate(24, 112)">
+        <rect class="panel-subtle" x="0" y="0" width="170" height="76" />
+        <text class="book-title" font-size="13" x="14" y="26">Kanał kwarantanny</text>
+        <text class="meta-key" x="14" y="50">Barka kwarantanny →</text>
+        <circle cx="170" cy="46" r="3.5" fill="#ffffff" />
+
+        <path d="M 174 46 C 204 46, 204 46, 234 46" fill="none" stroke="#7a7a7a" stroke-width="1.2" />
+
+        <rect class="panel" stroke="#ffffff" x="238" y="0" width="170" height="76" />
+        <circle cx="238" cy="46" r="3.5" fill="#ffffff" />
+        <text class="book-title" font-size="13" x="252" y="26">Komora topielców</text>
+        <text class="meta-key" x="252" y="50">Chleb przez kratę →</text>
+      </g>
+
+      <!-- 320px Right Inspector Column -->
+      <line class="line-subtle" x1="464" y1="69" x2="464" y2="358" />
+      <text class="sec-num" x="480" y="96">INSPEKTOR (320PX)</text>
+      <text class="book-title" font-size="15" x="480" y="124">Komora topielców</text>
+      <text class="meta-key" x="480" y="154">id: komora_topielcow</text>
+      <line class="line-strong" x1="480" y1="162" x2="616" y2="162" />
+      <text class="meta-key" x="480" y="192">voice: 4 sekcje (.flac)</text>
+      <line class="line-strong" x1="480" y1="200" x2="616" y2="200" />
+    </g>
+  </g>
+</svg>

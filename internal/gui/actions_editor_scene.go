@@ -23,12 +23,44 @@ func splitInlineChoiceLabelAndTarget(raw string) (label string, target string, h
 	return strings.TrimSpace(cleaned), "", false
 }
 
+func (s *Server) activeVoiceSectionKeyForRequest(sc *book.Scene, r *http.Request) string {
+	var cand string
+	if r != nil {
+		cand = strings.TrimSpace(r.FormValue("voice_section"))
+		if cand == "" {
+			cand = strings.TrimSpace(r.FormValue("isolated_voice_section"))
+		}
+	}
+	if cand == "" {
+		cand = strings.TrimSpace(s.SelectedVoiceSectionKey)
+	}
+	if sc != nil {
+		secs := book.ExtractSceneVoiceSections(sc, s.ActiveBook)
+		for _, sec := range secs {
+			if strings.EqualFold(sec.Key, cand) {
+				return sec.Key
+			}
+		}
+		if len(secs) > 0 {
+			return secs[0].Key
+		}
+	}
+	if cand == "" {
+		return "01"
+	}
+	return cand
+}
+
 func (s *Server) hasSceneTextModalChanges(curSc *book.Scene, r *http.Request) bool {
 	if curSc == nil {
 		return false
 	}
 	if _, hasText := r.Form["text"]; hasText {
-		if book.SanitizePlainText(r.FormValue("text")) != curSc.Text {
+		if isolatedKey := strings.TrimSpace(r.FormValue("isolated_voice_section")); isolatedKey != "" {
+			if book.ReplaceSceneVoiceSectionText(curSc.Text, isolatedKey, r.FormValue("text")) != curSc.Text {
+				return true
+			}
+		} else if book.SanitizePlainText(r.FormValue("text")) != curSc.Text {
 			return true
 		}
 	}
@@ -75,12 +107,28 @@ func (s *Server) hasSceneTextModalChanges(curSc *book.Scene, r *http.Request) bo
 	}
 	if s.ActiveBook != nil && s.ActiveBook.Narrated {
 		if _, hasVoice := r.Form["explicit_voice"]; hasVoice {
-			curVoice := curSc.ExplicitVoice
-			if curVoice == "" && curSc.AudioFile != "" {
-				curVoice = curSc.AudioFile
-			}
-			if book.SanitizeRelativeMediaPath(r.FormValue("explicit_voice")) != curVoice {
-				return true
+			newVoice := book.SanitizeRelativeMediaPath(r.FormValue("explicit_voice"))
+			if book.HasConditionalVoiceDirectives(curSc.Text) {
+				secKey := s.activeVoiceSectionKeyForRequest(curSc, r)
+				book.ExtractSceneVoiceSections(curSc, s.ActiveBook)
+				var curVoice string
+				if sec := curSc.FindVoiceSection(secKey); sec != nil {
+					curVoice = sec.ExplicitVoice
+					if curVoice == "" && sec.AudioFile != "" {
+						curVoice = sec.AudioFile
+					}
+				}
+				if newVoice != curVoice {
+					return true
+				}
+			} else {
+				curVoice := curSc.ExplicitVoice
+				if curVoice == "" && curSc.AudioFile != "" {
+					curVoice = curSc.AudioFile
+				}
+				if newVoice != curVoice {
+					return true
+				}
 			}
 		}
 	}
@@ -171,22 +219,52 @@ func (s *Server) applySceneFormFields(target *book.Scene, r *http.Request) {
 			target.ImageURL = ""
 		}
 	}
+	if _, hasText := r.Form["text"]; hasText {
+		if isolatedKey := strings.TrimSpace(r.FormValue("isolated_voice_section")); isolatedKey != "" {
+			target.Text = book.ReplaceSceneVoiceSectionText(target.Text, isolatedKey, r.FormValue("text"))
+		} else {
+			target.Text = book.SanitizePlainText(r.FormValue("text"))
+		}
+	}
+
 	if !s.ActiveBook.Narrated {
 		target.ExplicitVoice = ""
 		target.VoiceTrimStart = 0
 		target.VoiceTrimEnd = 0
+		target.SectionVoices = nil
 		target.AudioFile = ""
 		target.AudioURL = ""
 	} else if _, hasVoice := r.Form["explicit_voice"]; hasVoice {
 		newVoice := book.SanitizeRelativeMediaPath(r.FormValue("explicit_voice"))
-		if newVoice != target.ExplicitVoice {
-			target.VoiceTrimStart = 0
-			target.VoiceTrimEnd = 0
-		}
-		target.ExplicitVoice = newVoice
-		if target.ExplicitVoice == "" {
-			target.AudioFile = ""
-			target.AudioURL = ""
+		if book.HasConditionalVoiceDirectives(target.Text) {
+			secKey := s.activeVoiceSectionKeyForRequest(target, r)
+			book.ExtractSceneVoiceSections(target, s.ActiveBook)
+			var prevVoice string
+			var prevTS, prevTE float64 = 0, 1
+			if sec := target.FindVoiceSection(secKey); sec != nil {
+				prevVoice = sec.ExplicitVoice
+				if prevVoice == "" {
+					prevVoice = sec.AudioFile
+				}
+				prevTS, prevTE = sec.TrimStart, sec.TrimEnd
+			}
+			if newVoice == "" {
+				target.DeleteSectionVoiceMeta(secKey)
+			} else if !strings.EqualFold(newVoice, prevVoice) {
+				target.SetSectionVoiceMeta(secKey, newVoice, 0, 1)
+			} else if book.HasVoiceTrimValues(prevTS, prevTE) {
+				target.SetSectionVoiceMeta(secKey, newVoice, prevTS, prevTE)
+			}
+		} else {
+			if newVoice != target.ExplicitVoice {
+				target.VoiceTrimStart = 0
+				target.VoiceTrimEnd = 0
+			}
+			target.ExplicitVoice = newVoice
+			if target.ExplicitVoice == "" {
+				target.AudioFile = ""
+				target.AudioURL = ""
+			}
 		}
 	}
 	chapterChanged := false
@@ -219,9 +297,6 @@ func (s *Server) applySceneFormFields(target *book.Scene, r *http.Request) {
 	}
 	if _, hasExplicitEnd := r.Form["explicit_end"]; hasExplicitEnd {
 		target.ExplicitEnd = r.FormValue("explicit_end") == "true"
-	}
-	if _, hasText := r.Form["text"]; hasText {
-		target.Text = book.SanitizePlainText(r.FormValue("text"))
 	}
 
 	if countStr := strings.TrimSpace(r.FormValue("choice_count")); countStr != "" {
@@ -1080,6 +1155,47 @@ func (s *Server) toggleSceneVoiceRecorderAction(r *http.Request) string {
 	return ""
 }
 
+func (s *Server) selectSceneVoiceSectionAction(r *http.Request) string {
+	if s.ActiveBook == nil {
+		return ""
+	}
+	_, _, _ = StopNativeAudioCapture()
+	target := s.resolveVoiceActionTargetScene(r)
+	if target != nil && !s.isHistoryPreview() && !s.ActiveBook.IsPacked {
+		if s.hasSceneTextModalChanges(target, r) {
+			s.ensureHistoryBaselineBeforeMutation()
+			s.applySceneFormFields(target, r)
+			book.FinalizeBook(s.ActiveBook)
+			if err := book.SaveBookScenesToDisk(s.ActiveBook); err != nil {
+				return err.Error()
+			}
+			s.reloadActiveBook()
+			target = s.resolveVoiceActionTargetScene(r)
+			if target != nil {
+				s.recordHistoryAfterMutation("Zapisano zmiany w scenie", "scene", target.ID)
+			}
+		}
+	}
+	secKey := strings.TrimSpace(r.FormValue("voice_section"))
+	if target != nil {
+		secs := book.ExtractSceneVoiceSections(target, s.ActiveBook)
+		for _, sec := range secs {
+			if strings.EqualFold(sec.Key, secKey) {
+				s.SelectedVoiceSectionKey = sec.Key
+				return ""
+			}
+		}
+		if len(secs) > 0 {
+			s.SelectedVoiceSectionKey = secs[0].Key
+			return ""
+		}
+	}
+	if secKey != "" {
+		s.SelectedVoiceSectionKey = secKey
+	}
+	return ""
+}
+
 func (s *Server) startSceneVoiceCaptureAction(r *http.Request) string {
 	if s.isHistoryPreview() {
 		return historyPreviewLockedToast
@@ -1097,13 +1213,18 @@ func (s *Server) pollSceneVoiceCaptureAction(r *http.Request) string {
 	return ""
 }
 
-func (s *Server) commitSceneVoiceFile(target *book.Scene, relPath string, err error, historyPrefix string) string {
+func (s *Server) commitSceneVoiceFile(target *book.Scene, secKey string, relPath string, err error, historyPrefix string) string {
 	if err != nil {
 		return err.Error()
 	}
-	target.ExplicitVoice = relPath
-	target.VoiceTrimStart = 0
-	target.VoiceTrimEnd = 0
+	if book.HasConditionalVoiceDirectives(target.Text) {
+		target.SetSectionVoiceMeta(secKey, relPath, 0, 0)
+		s.SelectedVoiceSectionKey = secKey
+	} else {
+		target.ExplicitVoice = relPath
+		target.VoiceTrimStart = 0
+		target.VoiceTrimEnd = 0
+	}
 	s.VoiceRecorderOpen = true
 	book.FinalizeBook(s.ActiveBook)
 	if err := book.SaveBookScenesToDisk(s.ActiveBook); err != nil {
@@ -1134,8 +1255,9 @@ func (s *Server) stopSceneVoiceCaptureAction(r *http.Request) string {
 	if s.hasSceneTextModalChanges(target, r) {
 		s.applySceneFormFields(target, r)
 	}
-	relPath, err := book.SaveSceneVoicePCM(s.ActiveBook, target.ReferenceKey(), pcmLE, sampleRate, 0, 1)
-	return s.commitSceneVoiceFile(target, relPath, err, "Zapisano nagranie audio: ")
+	secKey := s.activeVoiceSectionKeyForRequest(target, r)
+	relPath, err := book.SaveSceneVoiceSectionPCM(s.ActiveBook, target, secKey, pcmLE, sampleRate, 0, 1)
+	return s.commitSceneVoiceFile(target, secKey, relPath, err, "Zapisano nagranie audio: ")
 }
 
 func (s *Server) saveSceneVoiceRecordingAction(r *http.Request) string {
@@ -1175,9 +1297,9 @@ func (s *Server) saveSceneVoiceRecordingAction(r *http.Request) string {
 	if s.hasSceneTextModalChanges(target, r) {
 		s.applySceneFormFields(target, r)
 	}
-
-	relPath, err := book.SaveSceneVoicePCM(s.ActiveBook, target.ReferenceKey(), pcmLE, sampleRate, startRatio, endRatio)
-	return s.commitSceneVoiceFile(target, relPath, err, "Zapisano nagranie audio: ")
+	secKey := s.activeVoiceSectionKeyForRequest(target, r)
+	relPath, err := book.SaveSceneVoiceSectionPCM(s.ActiveBook, target, secKey, pcmLE, sampleRate, startRatio, endRatio)
+	return s.commitSceneVoiceFile(target, secKey, relPath, err, "Zapisano nagranie audio: ")
 }
 
 func (s *Server) trimSceneVoiceAction(r *http.Request) string {
@@ -1208,15 +1330,32 @@ func (s *Server) trimSceneVoiceAction(r *http.Request) string {
 	if s.hasSceneTextModalChanges(target, r) {
 		s.applySceneFormFields(target, r)
 	}
+	secKey := s.activeVoiceSectionKeyForRequest(target, r)
+	s.SelectedVoiceSectionKey = secKey
 
 	isDestructive := strings.EqualFold(strings.TrimSpace(r.FormValue("destructive")), "true")
 	if !isDestructive {
-		if startRatio <= 0.002 && endRatio >= 0.998 {
-			target.VoiceTrimStart = 0
-			target.VoiceTrimEnd = 0
+		if book.HasConditionalVoiceDirectives(target.Text) {
+			book.ExtractSceneVoiceSections(target, s.ActiveBook)
+			var curVoice string
+			if sec := target.FindVoiceSection(secKey); sec != nil {
+				curVoice = sec.ExplicitVoice
+				if curVoice == "" {
+					curVoice = sec.AudioFile
+				}
+				if curVoice == "" {
+					curVoice = sec.TargetFile
+				}
+			}
+			target.SetSectionVoiceMeta(secKey, curVoice, startRatio, endRatio)
 		} else {
-			target.VoiceTrimStart = startRatio
-			target.VoiceTrimEnd = endRatio
+			if startRatio <= 0.002 && endRatio >= 0.998 {
+				target.VoiceTrimStart = 0
+				target.VoiceTrimEnd = 0
+			} else {
+				target.VoiceTrimStart = startRatio
+				target.VoiceTrimEnd = endRatio
+			}
 		}
 		s.VoiceRecorderOpen = true
 		book.FinalizeBook(s.ActiveBook)
@@ -1224,7 +1363,7 @@ func (s *Server) trimSceneVoiceAction(r *http.Request) string {
 			return err.Error()
 		}
 		s.reloadActiveBook()
-		s.recordHistoryAfterMutation("Przycięto nagranie audio: "+target.DisplayName(), "scene", "voicetrim:"+target.ID)
+		s.recordHistoryAfterMutation("Przycięto nagranie audio: "+target.DisplayName(), "scene", "voicetrim:"+target.ID+":"+secKey)
 		return ""
 	}
 
@@ -1239,7 +1378,18 @@ func (s *Server) trimSceneVoiceAction(r *http.Request) string {
 		if sampleRate < 8000 || sampleRate > 65535 {
 			sampleRate = 24000
 		}
-		relPath, err = book.SaveSceneVoicePCM(s.ActiveBook, target.ReferenceKey(), pcmLE, sampleRate, startRatio, endRatio)
+		relPath, err = book.SaveSceneVoiceSectionPCM(s.ActiveBook, target, secKey, pcmLE, sampleRate, startRatio, endRatio)
+	} else if book.HasConditionalVoiceDirectives(target.Text) {
+		book.ExtractSceneVoiceSections(target, s.ActiveBook)
+		var curVoice string
+		if sec := target.FindVoiceSection(secKey); sec != nil {
+			curVoice = sec.ExplicitVoice
+			if curVoice == "" {
+				curVoice = sec.AudioFile
+			}
+		}
+		stemWithSec := book.SceneVoiceBaseStem(target) + "__" + secKey
+		relPath, err = book.TrimSceneVoiceFile(s.ActiveBook, stemWithSec, curVoice, startRatio, endRatio)
 	} else {
 		curVoice := target.ExplicitVoice
 		if curVoice == "" {
@@ -1247,7 +1397,7 @@ func (s *Server) trimSceneVoiceAction(r *http.Request) string {
 		}
 		relPath, err = book.TrimSceneVoiceFile(s.ActiveBook, target.ReferenceKey(), curVoice, startRatio, endRatio)
 	}
-	return s.commitSceneVoiceFile(target, relPath, err, "Przycięto trwale plik audio: ")
+	return s.commitSceneVoiceFile(target, secKey, relPath, err, "Przycięto trwale plik audio: ")
 }
 
 func (s *Server) deleteSceneVoiceAction(r *http.Request) string {
@@ -1265,7 +1415,9 @@ func (s *Server) deleteSceneVoiceAction(r *http.Request) string {
 	if s.hasSceneTextModalChanges(target, r) {
 		s.applySceneFormFields(target, r)
 	}
-	if err := book.DeleteSceneVoiceFile(s.ActiveBook, target); err != nil {
+	secKey := s.activeVoiceSectionKeyForRequest(target, r)
+	s.SelectedVoiceSectionKey = secKey
+	if err := book.DeleteSceneVoiceSectionFile(s.ActiveBook, target, secKey); err != nil {
 		return err.Error()
 	}
 	book.FinalizeBook(s.ActiveBook)

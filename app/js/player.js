@@ -352,20 +352,15 @@ let modalFeedResizeObserver = null;
 
 function parseClientProseBlockDirective(trimmed) {
   if (!trimmed) return null;
-  if (trimmed.toLowerCase() === ":end") {
-    return { kind: "endif", cond: "" };
-  }
   const colonIdx = trimmed.indexOf(":");
   if (colonIdx <= 0) return null;
   const key = trimmed.slice(0, colonIdx).trim().toLowerCase();
   const val = trimmed.slice(colonIdx + 1).trim();
   if (key === "else" && !val) return { kind: "else", cond: "" };
   if (key === "endif" && !val) return { kind: "endif", cond: "" };
-  if ((key === "elif" || key === "else if") && val) return { kind: "elif", cond: val };
-  if ((key === "if" || key === "if?" || key === "gdy" || key === "warunek") && val) {
-    return { kind: "if", cond: val };
-  }
-  if (key === "set" || key === "then") return { kind: "set", cond: val };
+  if (key === "elif" && val) return { kind: "elif", cond: val };
+  if (key === "if" && val) return { kind: "if", cond: val };
+  if (key === "set") return { kind: "set", cond: val };
   return null;
 }
 
@@ -879,27 +874,36 @@ function updateFocusedSceneByViewport() {
     const audio = qs("#story-audio");
     if (audio && audio.paused && !pendingSceneAutoPlay && activeScrollAnimFrame === null) {
       const cardAudio = bestCard.getAttribute("data-scene-audio") || "";
+      const cardQueue = bestCard.getAttribute("data-scene-audio-queue") || "";
       const cardDur = bestCard.getAttribute("data-scene-audio-duration") || "0:00";
       const cardTrimStart = bestCard.getAttribute("data-scene-audio-trim-start") || "0.0000";
       const cardTrimEnd = bestCard.getAttribute("data-scene-audio-trim-end") || "1.0000";
-      if ((audio.getAttribute("data-audio-url") || "") !== cardAudio) {
+      if (
+        (audio.getAttribute("data-audio-url") || "") !== cardAudio ||
+        (audio.getAttribute("data-scene-audio-queue") || "") !== cardQueue
+      ) {
         audio.setAttribute("data-audio-url", cardAudio);
+        audio.setAttribute("data-scene-audio-queue", cardQueue);
         audio.setAttribute("data-trim-start", cardTrimStart);
         audio.setAttribute("data-trim-end", cardTrimEnd);
-        const curEl = qs("#audio-time-current");
-        const totEl = qs("#audio-time-total");
-        const slider = qs("#audio-seek-slider");
-        if (curEl) curEl.textContent = "0:00";
-        if (totEl) totEl.textContent = cardDur;
-        if (slider) {
-          slider.value = "0";
-          slider.style.setProperty("--seek-pct", "0%");
-        }
-        if (cardAudio) {
-          audio.src = cardAudio;
-          audio.load();
+        if (typeof audio._reloadQueueFromAttributes === "function") {
+          audio._reloadQueueFromAttributes(cardDur);
         } else {
-          audio.removeAttribute("src");
+          const curEl = qs("#audio-time-current");
+          const totEl = qs("#audio-time-total");
+          const slider = qs("#audio-seek-slider");
+          if (curEl) curEl.textContent = "0:00";
+          if (totEl) totEl.textContent = cardDur;
+          if (slider) {
+            slider.value = "0";
+            slider.style.setProperty("--seek-pct", "0%");
+          }
+          if (cardAudio) {
+            audio.src = cardAudio;
+            audio.load();
+          } else {
+            audio.removeAttribute("src");
+          }
         }
       }
     }

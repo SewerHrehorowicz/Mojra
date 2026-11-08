@@ -2,6 +2,7 @@ package gui
 
 import (
 	"bytes"
+	"encoding/base64"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -811,15 +812,17 @@ func TestScreenplayModeEndToEndFlow(t *testing.T) {
 		t.Fatalf("expected ActiveBook.ExportDir updated to %q, got %q", updatedExportDir, srv.ActiveBook.ExportDir)
 	}
 
-	// 8. Verify multi-select batch export (playbook + wasm + pdf + fountain + playtxt)
+	// 8. Verify multi-select batch export (playbook + wasm + pdf + fountain + fdx + treatment + book_pdf + vo_csv + actor_pdf + playtxt)
 	_, _ = http.PostForm(ts.URL+"/api/action", url.Values{"action": {"OpenExportModal"}})
 	_, _ = http.PostForm(ts.URL+"/api/action", url.Values{"action": {"ToggleExportModalAdvanced"}})
-	_, _ = http.PostForm(ts.URL+"/api/action", url.Values{"action": {"ToggleExportFormat"}, "format": {"fountain"}})
+	for _, advFmt := range []string{"fountain", "fdx", "treatment", "book_pdf", "vo_csv", "actor_pdf"} {
+		_, _ = http.PostForm(ts.URL+"/api/action", url.Values{"action": {"ToggleExportFormat"}, "format": {advFmt}})
+	}
 	togResp, _ := http.PostForm(ts.URL+"/api/action", url.Values{"action": {"ToggleExportFormat"}, "format": {"playtxt"}})
 	togBytes, _ := io.ReadAll(togResp.Body)
 	_ = togResp.Body.Close()
-	if !strings.Contains(string(togBytes), "5 WYBRANYCH") || !strings.Contains(string(togBytes), "Eksportuj (5)") {
-		t.Fatalf("expected 5 WYBRANYCH and Eksportuj (5) after selecting all 5 formats, got:\n%s", string(togBytes))
+	if !strings.Contains(string(togBytes), "10 WYBRANYCH") || !strings.Contains(string(togBytes), "Eksportuj (10)") {
+		t.Fatalf("expected 10 WYBRANYCH and Eksportuj (10) after selecting all 10 formats, got:\n%s", string(togBytes))
 	}
 
 	batchExportDir := filepath.Join(rootDir, "batch-exports")
@@ -838,6 +841,11 @@ func TestScreenplayModeEndToEndFlow(t *testing.T) {
 		bookID + ".playbook",
 		bookID + ".pdf",
 		bookID + ".fountain",
+		bookID + ".fdx",
+		bookID + "-treatment.pdf",
+		bookID + "-book.pdf",
+		bookID + "-vo.csv",
+		bookID + "-actors.pdf",
 		filepath.Join(bookID+"-playtxt", "book.playtxt"),
 		filepath.Join(bookID+"-web", "index.html"),
 		filepath.Join(bookID+"-web", "mojra.wasm"),
@@ -847,6 +855,19 @@ func TestScreenplayModeEndToEndFlow(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(batchExportDir, relCheck)); err != nil {
 			t.Fatalf("expected batch export artifact %s: %v", relCheck, err)
 		}
+	}
+
+	// Verify importing exported .fdx directly via OpenStudioProjectFromDisk
+	impFDXResp, err := http.PostForm(ts.URL+"/api/action", url.Values{
+		"action": {"OpenStudioProjectFromDisk"},
+		"path":   {filepath.Join(batchExportDir, bookID+".fdx")},
+	})
+	if err != nil || impFDXResp.StatusCode != http.StatusOK {
+		t.Fatalf("OpenStudioProjectFromDisk (.fdx) failed: status=%v err=%v", impFDXResp.StatusCode, err)
+	}
+	_ = impFDXResp.Body.Close()
+	if srv.ActiveBook == nil || len(srv.ActiveBook.Scenes) == 0 {
+		t.Fatalf("expected ActiveBook populated after importing .fdx")
 	}
 
 	// Verify exported Web index.html has Splash Screen with play.svg and NO #topbar, and no separate book.playbook file
@@ -1431,8 +1452,8 @@ func TestSeparatePlayerAndStudioBooksAndPlaybookUnpackWarning(t *testing.T) {
 	if srv.PlayerBook == nil || srv.PlayerBook.ID != bookA.ID {
 		t.Fatalf("expected PlayerBook to remain Book A (%q) while editing Book B in Studio, got %+v", bookA.ID, srv.PlayerBook)
 	}
-	if !strings.Contains(bHTML, `id="tab-player"`) || !strings.Contains(bHTML, `data-hint="Kroniki Czytnika"`) || !strings.Contains(bHTML, `id="editor-book-title">Projekt Studio</span>`) {
-		t.Fatalf("expected topbar to show PlayerBook 'Kroniki Czytnika' and Studio toolbar to show 'Projekt Studio', got:\n%s", bHTML)
+	if !strings.Contains(bHTML, `id="editor-book-title">Projekt Studio</span>`) || strings.Contains(bHTML, `id="topbar-book-title"`) {
+		t.Fatalf("expected Studio topbar to show 'Projekt Studio' and isolate PlayerBook title, got:\n%s", bHTML)
 	}
 
 	// 5. Save license in Book B settings and verify it persists in book.playtxt
@@ -1589,6 +1610,171 @@ func TestSceneTextSlideOutPanelUnifiedChoicesAndSyntaxHoverTooltip(t *testing.T)
 	}
 	if strings.Contains(html, `Błąd typu: zmienna &#39;cwiczenia_z_wioslem&#39;`) {
 		t.Fatalf("expected space-separated set: clauses ('cwiczenia_z_wioslem = false stan_ducha = zbuntowany') to be valid, got:\n%s", html)
+	}
+}
+
+func TestSceneVoiceSectionsRecorderAndTextIsolation(t *testing.T) {
+	rootDir := t.TempDir()
+	srv := NewServer(rootDir, mojra.AppFS)
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	// Create a narrated book in Studio via CreateNewBook action
+	respCreate, err := http.PostForm(ts.URL+"/api/action", url.Values{
+		"action":   {"CreateNewBook"},
+		"title":    {"Test Sekcji Głosu"},
+		"author":   {"Autor"},
+		"narrated": {"true"},
+	})
+	if err != nil {
+		t.Fatalf("CreateNewBook failed: %v", err)
+	}
+	_ = respCreate.Body.Close()
+	if srv.ActiveBook == nil {
+		t.Fatalf("expected ActiveBook after CreateNewBook")
+	}
+
+	b := srv.ActiveBook
+	b.Variables = []book.VariableDef{
+		{Name: "sumienie", Kind: book.VarKindInt, IntVal: 1},
+	}
+	sc := b.Scenes[0]
+	sc.ExplicitID = "komora_topielcow"
+	sc.Name = "Komora topielców"
+	fullSceneText := "Wstęp nad śluzą.\n\nif: sumienie > 0\nKrzysiowi zadrżała dłoń na pręcie.\nelse:\nCofnął stopę i uniósł klapę.\nendif:\n\nFinał w kanale."
+	sc.Text = fullSceneText
+	book.FinalizeBook(b)
+	if err := book.SaveBookMetadataToDisk(b); err != nil {
+		t.Fatalf("SaveBookMetadataToDisk failed: %v", err)
+	}
+	if err := book.SaveBookScenesToDisk(b); err != nil {
+		t.Fatalf("SaveBookScenesToDisk failed: %v", err)
+	}
+	srv.reloadActiveBook()
+
+	resp, err := http.PostForm(ts.URL+"/api/action", url.Values{
+		"action": {"OpenSceneTextModal"},
+		"scene":  {"komora_topielcow"},
+	})
+	if err != nil {
+		t.Fatalf("OpenSceneTextModal failed: %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if !strings.Contains(string(body), "if: sumienie &gt; 0") {
+		t.Fatalf("expected full scene text when recorder is closed, got:\n%s", string(body))
+	}
+
+	// Open voice recorder -> should isolate section 01 text and render .voice-rec-sections
+	resp, err = http.PostForm(ts.URL+"/api/action", url.Values{
+		"action": {"ToggleSceneVoiceRecorder"},
+		"scene":  {"komora_topielcow"},
+		"open":   {"true"},
+	})
+	if err != nil {
+		t.Fatalf("ToggleSceneVoiceRecorder failed: %v", err)
+	}
+	body, _ = io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	html := string(body)
+	if !strings.Contains(html, `id="modal-voice-rec-sections"`) || !strings.Contains(html, `SEKCJA 01 / 04 · WSTĘP`) {
+		t.Fatalf("expected #modal-voice-rec-sections and SEKCJA 01 / 04 · WSTĘP header when recorder is open, got:\n%s", html)
+	}
+
+	// Select section 02_if -> should isolate section 02_if prose and preserve full scene text
+	resp, err = http.PostForm(ts.URL+"/api/action", url.Values{
+		"action":                 {"SelectSceneVoiceSection"},
+		"scene":                  {"komora_topielcow"},
+		"voice_section":          {"02_if"},
+		"isolated_voice_section": {"01"},
+		"text":                   {"Wstęp nad śluzą."},
+	})
+	if err != nil {
+		t.Fatalf("SelectSceneVoiceSection failed: %v", err)
+	}
+	body, _ = io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	html = string(body)
+	if !strings.Contains(html, `SEKCJA 02 / 04 · IF: SUMIENIE &gt; 0`) || !strings.Contains(html, `voice/komora_topielcow__02_if.flac`) {
+		t.Fatalf("expected isolated section 02_if header and target file path, got:\n%s", html)
+	}
+	if !strings.Contains(html, "Krzysiowi zadrżała dłoń na pręcie.") || strings.Contains(html, "Cofnął stopę i uniósł klapę.") {
+		t.Fatalf("expected only section 02_if prose in #modal-scene-textarea, got:\n%s", html)
+	}
+
+	// Record audio for section 02_if, trim it, and delete it
+	pcmBytes := make([]byte, 24000*2)
+	for i := 0; i < 24000; i++ {
+		pcmBytes[i*2] = 0x30
+		pcmBytes[i*2+1] = 0x06
+	}
+	pcmB64 := base64.StdEncoding.EncodeToString(pcmBytes)
+	resp, err = http.PostForm(ts.URL+"/api/action", url.Values{
+		"action":        {"SaveSceneVoiceRecording"},
+		"scene":         {"komora_topielcow"},
+		"voice_section": {"02_if"},
+		"pcm_b64":       {pcmB64},
+		"sample_rate":   {"24000"},
+		"start_ratio":   {"0"},
+		"end_ratio":     {"1"},
+	})
+	if err != nil {
+		t.Fatalf("SaveSceneVoiceRecording failed: %v", err)
+	}
+	_ = resp.Body.Close()
+	secFileOnDisk := filepath.Join(srv.ActiveBook.RootPath, "voice", "komora_topielcow__02_if.flac")
+	if _, err := os.Stat(secFileOnDisk); err != nil {
+		t.Fatalf("expected section file %s to exist on disk: %v", secFileOnDisk, err)
+	}
+
+	// Trim section 02_if non-destructively
+	resp, err = http.PostForm(ts.URL+"/api/action", url.Values{
+		"action":        {"TrimSceneVoice"},
+		"scene":         {"komora_topielcow"},
+		"voice_section": {"02_if"},
+		"start_ratio":   {"0.0500"},
+		"end_ratio":     {"0.9200"},
+		"destructive":   {"false"},
+	})
+	if err != nil {
+		t.Fatalf("TrimSceneVoice failed: %v", err)
+	}
+	body, _ = io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if !strings.Contains(string(body), `data-trim-start="0.0500"`) || !strings.Contains(string(body), `data-trim-end="0.9200"`) {
+		t.Fatalf("expected non-destructive trim attributes on #modal-voice-rec-strip for 02_if, got:\n%s", string(body))
+	}
+
+	// Delete section 02_if audio
+	resp, err = http.PostForm(ts.URL+"/api/action", url.Values{
+		"action":        {"DeleteSceneVoice"},
+		"scene":         {"komora_topielcow"},
+		"voice_section": {"02_if"},
+	})
+	if err != nil {
+		t.Fatalf("DeleteSceneVoice failed: %v", err)
+	}
+	_ = resp.Body.Close()
+	if _, err := os.Stat(secFileOnDisk); !os.IsNotExist(err) {
+		t.Fatalf("expected section file %s to be deleted after DeleteSceneVoice", secFileOnDisk)
+	}
+
+	// Close voice recorder -> full scene text must be restored intact
+	resp, err = http.PostForm(ts.URL+"/api/action", url.Values{
+		"action":                 {"ToggleSceneVoiceRecorder"},
+		"scene":                  {"komora_topielcow"},
+		"open":                   {"false"},
+		"isolated_voice_section": {"02_if"},
+		"text":                   {"Krzysiowi zadrżała dłoń na pręcie."},
+	})
+	if err != nil {
+		t.Fatalf("ToggleSceneVoiceRecorder(false) failed: %v", err)
+	}
+	body, _ = io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	html = string(body)
+	if !strings.Contains(html, "Wstęp nad śluzą.") || !strings.Contains(html, "Cofnął stopę i uniósł klapę.") || !strings.Contains(html, "Finał w kanale.") {
+		t.Fatalf("expected full multi-section scene text to be restored after closing voice recorder, got:\n%s", html)
 	}
 }
 

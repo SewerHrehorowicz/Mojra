@@ -1013,6 +1013,108 @@
   color --text-primary
   font-weight 700
 
+.voice-rec-sections
+  display flex
+  align-items center
+  justify-content space-between
+  gap 12px
+  border-bottom 1px solid --border-subtle
+  margin-top 4px
+  margin-bottom 2px
+
+.inspector-voice-rec-sections
+  margin-top 2px
+  margin-bottom 6px
+
+.voice-rec-sections-tabs
+  display flex
+  align-items center
+  gap 14px
+  flex-wrap wrap
+  min-width 0
+
+.inspector-voice-rec-sections .voice-rec-sections-tabs
+  gap 10px
+
+.voice-rec-section-btn
+  display inline-flex
+  align-items center
+  gap 5px
+  background transparent
+  border none
+  border-bottom 1px solid transparent
+  margin-bottom -1px
+  padding 4px 0 6px 0
+  cursor pointer
+  color --text-muted
+  font-family --font-sans
+  font-size 10px
+  font-weight 400
+  letter-spacing 0.8px
+  transition color 0.15s ease, border-color 0.15s ease
+
+.voice-rec-section-btn:hover
+  color --text-secondary
+
+.voice-rec-section-btn.active
+  color --text-primary
+  font-weight 700
+  border-bottom-color --text-primary
+
+.voice-rec-section-dot
+  width 6px
+  height 6px
+  border 1px solid --border-strong
+  background transparent
+  flex-shrink 0
+  pointer-events none
+
+.inspector-voice-rec-sections .voice-rec-section-dot
+  width 5px
+  height 5px
+
+.voice-rec-section-dot.is-recorded
+  background --text-primary
+  border-color --text-primary
+
+.voice-rec-section-label
+  pointer-events none
+  white-space nowrap
+
+.voice-rec-section-time
+  font-size 9px
+  color --text-secondary
+  font-weight 400
+  margin-left 2px
+  font-variant-numeric tabular-nums
+  pointer-events none
+
+.voice-rec-section-btn.active .voice-rec-section-time
+  color --text-primary
+
+.voice-rec-section-file
+  font-family --font-sans
+  font-size 10px
+  color --text-muted
+  white-space nowrap
+  overflow hidden
+  text-overflow ellipsis
+  flex-shrink 0
+
+.voice-section-isolation-bar
+  display flex
+  align-items center
+  justify-content space-between
+  padding 0 0 10px 0
+  font-family --font-sans
+  font-size 10px
+  font-weight 700
+  letter-spacing 1.2px
+  color --text-secondary
+
+.voice-section-isolation-title
+  color --text-secondary
+
 body[data-ui-scale="large"]
   .history-panel-header
     height 42px

@@ -148,7 +148,42 @@ func (s *Server) openStudioProjectFromDisk(r *http.Request) string {
 	return s.openStudioProjectFromDiskPath(rawPath)
 }
 
+func isScreenplayImportFile(rawPath string) bool {
+	ext := strings.ToLower(filepath.Ext(strings.TrimSpace(rawPath)))
+	return ext == ".fountain" || ext == ".fdx"
+}
+
+func (s *Server) importScreenplayFromDiskFile(rawPath string, openInStudio bool) string {
+	expanded, err := book.ExpandLocalPath(rawPath)
+	if err != nil {
+		return err.Error()
+	}
+	destDir := s.defaultNewBookDir()
+	if destDir == "" {
+		destDir = s.BooksDir
+	}
+	imported, err := book.ImportScreenplayFileToDir(expanded, destDir)
+	if err != nil {
+		return err.Error()
+	}
+	if filepath.Clean(filepath.Dir(imported.RootPath)) != filepath.Clean(s.BooksDir) {
+		s.Settings.AddExternalBook(imported.RootPath)
+		imported.IsExternal = true
+	}
+	s.AddBookModalOpen = false
+	s.StudioProjectModalOpen = false
+	if openInStudio {
+		return s.openBookInStudio(imported)
+	}
+	s.setPlayerBook(imported)
+	s.persistSettings()
+	return "Zaimportowano scenariusz: " + imported.Title
+}
+
 func (s *Server) openStudioProjectFromDiskPath(rawPath string) string {
+	if isScreenplayImportFile(rawPath) {
+		return s.importScreenplayFromDiskFile(rawPath, true)
+	}
 	resolvedPaths, err := book.ResolveDiskBookPaths(rawPath)
 	if err != nil {
 		return err.Error()
@@ -339,6 +374,9 @@ func (s *Server) extractEmbeddedBookAction(_ *http.Request) string {
 }
 
 func (s *Server) addBookFromDiskPath(rawPath string) string {
+	if isScreenplayImportFile(rawPath) {
+		return s.importScreenplayFromDiskFile(rawPath, false)
+	}
 	resolvedPaths, err := book.ResolveDiskBookPaths(rawPath)
 	if err != nil {
 		return err.Error()

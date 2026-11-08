@@ -98,11 +98,14 @@ type Server struct {
 	Settings          *book.AppSettings
 	PlayerBook        *book.Book
 	ActiveBook        *book.Book
+	StudioHome        bool
 	Save              *book.SaveState
+	ZenMode           bool
 	HistoryRevealed   bool
 	FocusedHistoryIdx int
-	SelectedSceneID   string
-	SelectedChapter   string
+	SelectedSceneID         string
+	SelectedChapter         string
+	SelectedVoiceSectionKey string
 	ModalState
 	historyCacheState
 	assetCacheState
@@ -483,6 +486,10 @@ func (s *Server) setPlayerBook(b *book.Book) {
 	s.FocusedHistoryIdx = -1
 }
 
+func (s *Server) hasActiveStudioEditor() bool {
+	return s.ActiveBook != nil && !s.StudioHome
+}
+
 func (s *Server) setActiveBook(b *book.Book) {
 	s.PreviewRevisionID = ""
 	s.PreviewRevisionLabel = ""
@@ -494,6 +501,7 @@ func (s *Server) setActiveBook(b *book.Book) {
 		b.ExportDir = s.Settings.GetBookExportDir(b.ID)
 	}
 	s.ActiveBook = b
+	s.StudioHome = b == nil
 	s.invalidateHistoryCache()
 	if b == nil {
 		if s.Settings != nil {
@@ -840,7 +848,7 @@ func (s *Server) handleRootAndAssets(w http.ResponseWriter, r *http.Request) {
 		defer s.mu.Unlock()
 
 		var books []*book.Book
-		if s.activeWorkspaceView() == "library" {
+		if s.activeWorkspaceView() == "library" || (s.activeWorkspaceView() == "editor" && !s.hasActiveStudioEditor()) {
 			books, _ = s.loadBooks()
 		}
 		s.ensureTemplatesLoaded()

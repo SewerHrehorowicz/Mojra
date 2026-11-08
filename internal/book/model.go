@@ -44,6 +44,46 @@ type VariableDef struct {
 	Options  []string
 }
 
+// VoiceSectionMeta stores optional explicit audio file and trim bounds for a single voice section.
+type VoiceSectionMeta struct {
+	ExplicitVoice string
+	TrimStart     float64
+	TrimEnd       float64
+}
+
+// VoiceSection represents an ordered static or conditional voiceover section extracted from a scene's AST.
+type VoiceSection struct {
+	Index         int
+	Key           string
+	Kind          string // "static", "if", "elif", "else"
+	Condition     string
+	Label         string
+	ShortLabel    string
+	HeaderTitle   string
+	Text          string
+	ExplicitVoice string
+	TargetFile    string
+	AudioFile     string
+	AudioURL      string
+	TrimStart     float64
+	TrimEnd       float64
+	DurationSec   float64
+	DurationLabel string
+	HasAudio      bool
+	HasTrim       bool
+}
+
+// VoiceQueueItem represents an active audio segment in the sequential player queue.
+type VoiceQueueItem struct {
+	Key         string
+	Label       string
+	AudioFile   string
+	AudioURL    string
+	TrimStart   float64
+	TrimEnd     float64
+	DurationSec float64
+}
+
 type Scene struct {
 	ID             string
 	ExplicitID     string
@@ -66,6 +106,8 @@ type Scene struct {
 	ImageFile      string
 	AudioURL       string
 	ImageURL       string
+	SectionVoices  map[string]VoiceSectionMeta
+	VoiceSections  []VoiceSection
 	SourceFile     string
 	OrderIndex     int
 	Row            int
@@ -100,13 +142,8 @@ func (s Scene) ReferenceKey() string {
 	return strings.TrimSpace(s.ID)
 }
 
-// NormalizedVoiceTrim returns the effective non-destructive [startRatio, endRatio] in [0, 1].
-func (s *Scene) NormalizedVoiceTrim() (float64, float64) {
-	if s == nil {
-		return 0, 1
-	}
-	start := s.VoiceTrimStart
-	end := s.VoiceTrimEnd
+// NormalizedVoiceTrimValues normalizes [start, end] ratios to [0, 1].
+func NormalizedVoiceTrimValues(start, end float64) (float64, float64) {
 	if start < 0 || start >= 1 {
 		start = 0
 	}
@@ -119,10 +156,83 @@ func (s *Scene) NormalizedVoiceTrim() (float64, float64) {
 	return start, end
 }
 
+// HasVoiceTrimValues reports whether [start, end] is narrower than [0, 1].
+func HasVoiceTrimValues(start, end float64) bool {
+	ts, te := NormalizedVoiceTrimValues(start, end)
+	return ts > 0.002 || te < 0.998
+}
+
+// NormalizedVoiceTrim returns the effective non-destructive [startRatio, endRatio] in [0, 1].
+func (s *Scene) NormalizedVoiceTrim() (float64, float64) {
+	if s == nil {
+		return 0, 1
+	}
+	return NormalizedVoiceTrimValues(s.VoiceTrimStart, s.VoiceTrimEnd)
+}
+
 // HasVoiceTrim reports whether the scene has a non-destructive audio trim range narrower than [0, 1].
 func (s *Scene) HasVoiceTrim() bool {
-	start, end := s.NormalizedVoiceTrim()
-	return start > 0.002 || end < 0.998
+	if s == nil {
+		return false
+	}
+	return HasVoiceTrimValues(s.VoiceTrimStart, s.VoiceTrimEnd)
+}
+
+// HasConditionalVoiceSections reports whether the scene has more than one voice section.
+func (s *Scene) HasConditionalVoiceSections() bool {
+	if s == nil {
+		return false
+	}
+	if len(s.VoiceSections) > 1 {
+		return true
+	}
+	return HasConditionalVoiceDirectives(s.Text)
+}
+
+// FindVoiceSection returns a pointer to the VoiceSection matching key, or the first section as fallback.
+func (s *Scene) FindVoiceSection(key string) *VoiceSection {
+	if s == nil || len(s.VoiceSections) == 0 {
+		return nil
+	}
+	clean := strings.TrimSpace(key)
+	for i := range s.VoiceSections {
+		if strings.EqualFold(s.VoiceSections[i].Key, clean) {
+			return &s.VoiceSections[i]
+		}
+	}
+	return &s.VoiceSections[0]
+}
+
+// SetSectionVoiceMeta updates the explicit voice path and trim ratios for a section key on the scene.
+func (s *Scene) SetSectionVoiceMeta(key, explicitVoice string, trimStart, trimEnd float64) {
+	if s == nil {
+		return
+	}
+	cleanKey := strings.ToLower(strings.TrimSpace(key))
+	if cleanKey == "" {
+		return
+	}
+	if s.SectionVoices == nil {
+		s.SectionVoices = make(map[string]VoiceSectionMeta)
+	}
+	ts, te := NormalizedVoiceTrimValues(trimStart, trimEnd)
+	if !HasVoiceTrimValues(ts, te) {
+		ts = 0
+		te = 0
+	}
+	s.SectionVoices[cleanKey] = VoiceSectionMeta{
+		ExplicitVoice: SanitizeRelativeMediaPath(explicitVoice),
+		TrimStart:     ts,
+		TrimEnd:       te,
+	}
+}
+
+// DeleteSectionVoiceMeta removes any explicit voice/trim metadata for a section key on the scene.
+func (s *Scene) DeleteSectionVoiceMeta(key string) {
+	if s == nil || s.SectionVoices == nil {
+		return
+	}
+	delete(s.SectionVoices, strings.ToLower(strings.TrimSpace(key)))
 }
 
 // EnsureHTML lazily renders and caches safe HTML paragraphs from s.Text if not already rendered.

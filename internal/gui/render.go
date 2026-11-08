@@ -1,6 +1,10 @@
 package gui
 
 import (
+	"fmt"
+	"path/filepath"
+	"strings"
+
 	"mojra/internal/book"
 	"mojra/internal/tpl"
 )
@@ -16,6 +20,7 @@ func (s *Server) BuildTargetedRenderContext(targetTpl string, books []*book.Book
 		theme = "dark"
 	}
 	vars["theme"] = theme
+	vars["is_dark"] = theme != "light"
 	if theme == "light" {
 		vars["theme_toggle_label"] = s.tr(TrThemeDarkLabel)
 	} else {
@@ -25,6 +30,7 @@ func (s *Server) BuildTargetedRenderContext(targetTpl string, books []*book.Book
 	imagelessLocked := s.isBookImageless()
 	effectiveImageless := s.isEffectiveImageless()
 	vars["imageless_mode"] = effectiveImageless
+	vars["imageless"] = effectiveImageless
 	vars["imageless_locked"] = imagelessLocked
 	if imagelessLocked {
 		vars["imageless_locked_attr"] = "true"
@@ -47,20 +53,16 @@ func (s *Server) BuildTargetedRenderContext(targetTpl string, books []*book.Book
 	}
 
 	uiScale := s.Settings.UIScale
-	if uiScale != "large" && uiScale != "zen" {
+	if uiScale != "large" {
 		uiScale = "small"
 	}
 	vars["ui_scale"] = uiScale
 	vars["is_small_ui"] = uiScale == "small"
 	vars["is_large_ui"] = uiScale == "large"
-	vars["is_zen_ui"] = uiScale == "zen"
 	vars["is_non_small_ui"] = uiScale != "small"
-	switch uiScale {
-	case "large":
-		vars["ui_scale_toggle_title"] = s.tr(TrScaleZenHint)
-	case "zen":
-		vars["ui_scale_toggle_title"] = s.tr(TrScaleExitZenHint)
-	default:
+	if uiScale == "large" {
+		vars["ui_scale_toggle_title"] = s.tr(TrScaleShrinkHint)
+	} else {
 		vars["ui_scale_toggle_title"] = s.tr(TrScaleEnlargeHint)
 	}
 
@@ -78,9 +80,10 @@ func (s *Server) BuildTargetedRenderContext(targetTpl string, books []*book.Book
 	vars["is_scroll_sens_low"] = scrollSens == "low"
 	vars["is_scroll_sens_off"] = scrollSens == "off"
 
+	hasEditorBook := s.hasActiveStudioEditor()
 	vars["standalone_mode"] = s.StandaloneMode
 	vars["has_active_book"] = s.PlayerBook != nil
-	vars["has_editor_book"] = s.ActiveBook != nil
+	vars["has_editor_book"] = hasEditorBook
 	vars["dev_mode"] = s.DevMode
 	if s.DevMode {
 		previewMode := s.Settings.PreviewMode
@@ -110,7 +113,7 @@ func (s *Server) BuildTargetedRenderContext(targetTpl string, books []*book.Book
 		vars["active_book_title"] = s.tr(TrNavLibrary)
 	}
 	isScreenplay := false
-	if s.ActiveBook != nil {
+	if hasEditorBook {
 		vars["editor_book_title"] = s.ActiveBook.Title
 		vars["active_book_save_dir"] = s.ActiveBook.RootPath
 		vars["active_book_export_dir"] = s.ActiveBook.ExportDir
@@ -144,6 +147,17 @@ func (s *Server) BuildTargetedRenderContext(targetTpl string, books []*book.Book
 	}
 
 	vars["show_reset_progress"] = view == "player" && s.PlayerBook != nil
+	showZenMode := view == "player" && s.PlayerBook != nil && !s.PlayerBook.IsScreenplay()
+	zenMode := showZenMode && s.ZenMode
+	vars["show_zen_mode"] = showZenMode
+	vars["zen_mode"] = zenMode
+	if zenMode {
+		vars["zen_mode_attr"] = "true"
+		vars["zen_toggle_title"] = s.tr(TrScaleExitZenHint)
+	} else {
+		vars["zen_mode_attr"] = "false"
+		vars["zen_toggle_title"] = s.tr(TrScaleZenHint)
+	}
 	isHistPreview := s.isHistoryPreview()
 	vars["is_history_preview"] = isHistPreview
 	if isHistPreview {
@@ -168,7 +182,7 @@ func (s *Server) BuildTargetedRenderContext(targetTpl string, books []*book.Book
 		s.populatePlayerContext(vars)
 	}
 
-	if s.ActiveBook != nil && len(s.ActiveBook.Scenes) > 0 && (needsEditorFull || needsEditorPanelOnly) {
+	if hasEditorBook && len(s.ActiveBook.Scenes) > 0 && (needsEditorFull || needsEditorPanelOnly) {
 		vars["is_screenplay_mode"] = s.ActiveBook.IsScreenplay()
 		warnItems := make([]map[string]any, 0, len(s.ActiveBook.Warnings))
 		for _, w := range s.ActiveBook.Warnings {
@@ -221,7 +235,12 @@ func (s *Server) BuildTargetedRenderContext(targetTpl string, books []*book.Book
 		vars["book_settings_open"] = false
 		vars["has_selected_chapter"] = false
 		vars["is_node_inspector_hidden"] = false
+		vars["studio_search_count"] = 0
+		vars["studio_search_items"] = []map[string]any(nil)
 		s.populateEditorHistoryContext(vars)
+		if needsEditorFull {
+			s.populateStudioHomeContext(vars, books)
+		}
 	}
 
 	if needsModals {
@@ -268,4 +287,139 @@ func (s *Server) populateLibraryContext(vars map[string]any, books []*book.Book)
 		})
 	}
 	vars["books"] = bookItems
+}
+
+func (s *Server) populateStudioHomeContext(vars map[string]any, books []*book.Book) {
+	lang := s.lang()
+	items := make([]map[string]any, 0, len(books))
+	for _, b := range books {
+		items = append(items, map[string]any{
+			"id":        b.ID,
+			"title":     b.Title,
+			"author":    b.Author,
+			"meta_line": formatStudioProjectMetaLine(b, lang),
+			"path_line": formatStudioProjectPathLine(b),
+			"is_packed": b.IsPacked,
+		})
+	}
+	vars["has_studio_home_projects"] = len(items) > 0
+	vars["studio_home_projects"] = items
+}
+
+func formatStudioProjectMetaLine(b *book.Book, lang Lang) string {
+	var typePart, scenesPart, chPart, metricPart string
+	if b.IsScreenplay() {
+		std := strings.ToUpper(b.NormalizedStandard())
+		if std == "PL" {
+			std = "PISF"
+		}
+		if lang == LangEN {
+			typePart = "SCREENPLAY (" + std + ")"
+		} else {
+			typePart = "SCENARIUSZ FILMOWY (" + std + ")"
+		}
+	} else {
+		if lang == LangEN {
+			typePart = "INTERACTIVE BOOK"
+		} else {
+			typePart = "KSIĄŻKA INTERAKTYWNA"
+		}
+	}
+
+	scCount := len(b.Scenes)
+	if lang == LangEN {
+		if scCount == 1 {
+			scenesPart = "1 SCENE"
+		} else {
+			scenesPart = fmt.Sprintf("%d SCENES", scCount)
+		}
+	} else {
+		if scCount == 1 {
+			scenesPart = "1 SCENA"
+		} else if scCount%10 >= 2 && scCount%10 <= 4 && (scCount%100 < 12 || scCount%100 > 14) {
+			scenesPart = fmt.Sprintf("%d SCENY", scCount)
+		} else {
+			scenesPart = fmt.Sprintf("%d SCEN", scCount)
+		}
+	}
+
+	chCount := len(b.Chapters)
+	if chCount < 1 {
+		chCount = 1
+	}
+	if b.IsScreenplay() {
+		if lang == LangEN {
+			if chCount == 1 {
+				chPart = "1 ACT"
+			} else {
+				chPart = fmt.Sprintf("%d ACTS", chCount)
+			}
+		} else {
+			if chCount == 1 {
+				chPart = "1 AKT"
+			} else if chCount%10 >= 2 && chCount%10 <= 4 && (chCount%100 < 12 || chCount%100 > 14) {
+				chPart = fmt.Sprintf("%d AKTY", chCount)
+			} else {
+				chPart = fmt.Sprintf("%d AKTÓW", chCount)
+			}
+		}
+	} else {
+		if lang == LangEN {
+			if chCount == 1 {
+				chPart = "1 CHAPTER"
+			} else {
+				chPart = fmt.Sprintf("%d CHAPTERS", chCount)
+			}
+		} else {
+			if chCount == 1 {
+				chPart = "1 ROZDZIAŁ"
+			} else if chCount%10 >= 2 && chCount%10 <= 4 && (chCount%100 < 12 || chCount%100 > 14) {
+				chPart = fmt.Sprintf("%d ROZDZIAŁY", chCount)
+			} else {
+				chPart = fmt.Sprintf("%d ROZDZIAŁÓW", chCount)
+			}
+		}
+	}
+
+	if b.IsPacked {
+		if lang == LangEN {
+			metricPart = ".PLAYBOOK (READ-ONLY)"
+		} else {
+			metricPart = ".PLAYBOOK (TYLKO ODCZYT)"
+		}
+	} else if b.IsScreenplay() {
+		bd := b.ScreenplayBreakdown()
+		metricPart = fmt.Sprintf("%s (1/8)", strings.ToUpper(bd.TotalPagesFormatted))
+	} else if b.Narrated {
+		if lang == LangEN {
+			metricPart = "FLAC NARRATION"
+		} else {
+			metricPart = "NARRACJA FLAC"
+		}
+	} else if b.Imageless {
+		if lang == LangEN {
+			metricPart = "IMAGELESS"
+		} else {
+			metricPart = "BEZ OBRAZÓW"
+		}
+	} else {
+		if lang == LangEN {
+			metricPart = "ILLUSTRATED"
+		} else {
+			metricPart = "ILUSTROWANA"
+		}
+	}
+
+	return strings.Join([]string{typePart, scenesPart, chPart, metricPart}, "  ·  ")
+}
+
+func formatStudioProjectPathLine(b *book.Book) string {
+	if b.IsPacked {
+		return "books/" + filepath.Base(b.RootPath)
+	}
+	parent := filepath.Base(filepath.Dir(filepath.Clean(b.RootPath)))
+	if parent != "books" && parent != "projects" {
+		parent = "projects"
+	}
+	return parent + "/" + b.ID + "/book.playtxt"
 }

@@ -233,7 +233,14 @@ func TestBuildWorkspaceAppAssets(t *testing.T) {
 		t.Fatalf("regression in library_view.tpl: expected #btn-open-add-book and button.book-cover-wrap, got:\n%s", libTpl)
 	}
 	cardStart := strings.Index(libTpl, "article.book-card")
-	if cardStart < 0 || strings.Count(libTpl[cardStart:], "button.") != 1 {
+	cardBlock := ""
+	if cardStart >= 0 {
+		cardBlock = libTpl[cardStart:]
+		if footerIdx := strings.Index(cardBlock, ".home-mode-footer"); footerIdx > 0 {
+			cardBlock = cardBlock[:footerIdx]
+		}
+	}
+	if cardStart < 0 || strings.Count(cardBlock, "button.") != 1 {
 		t.Fatalf("regression in library_view.tpl: expected only 1 button inside article.book-card (button.book-cover-wrap), got:\n%s", libTpl)
 	}
 	for _, forbiddenLibToken := range []string{
@@ -718,6 +725,18 @@ func BuildPlayerOnlyApp(appDir, outDir string) error {
 		return err
 	}
 	return BundleJSFiles(JSPlayerModuleFiles(appDir), filepath.Join(outDir, "app.js"))
+}
+
+func TestBuildDeckPDF(t *testing.T) {
+	rootDir := filepath.Join("..", "..")
+	if err := BuildWWW(rootDir); err != nil {
+		t.Fatalf("BuildWWW error: %v", err)
+	}
+	if FindHeadlessPDFBrowser() != "" {
+		if _, err := BuildDeckPDF(rootDir, ""); err != nil {
+			t.Fatalf("BuildDeckPDF error: %v", err)
+		}
+	}
 }
 
 

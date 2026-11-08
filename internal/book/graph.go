@@ -272,6 +272,7 @@ func FinalizeBook(b *Book) {
 			sc.ExplicitVoice = ""
 			sc.VoiceTrimStart = 0
 			sc.VoiceTrimEnd = 0
+			sc.SectionVoices = nil
 			sc.AudioFile = ""
 			sc.AudioURL = ""
 		}
@@ -538,8 +539,24 @@ func FinalizeBook(b *Book) {
 	// so disk filename order is completely irrelevant.
 	orderChaptersAndScenesByGraph(b, prevChapterMeta)
 
+	if b.Narrated && len(b.AudioFiles) == 0 {
+		b.AudioFiles = discoverBookAudioFilesForSections(b)
+	}
 	for i, sc := range b.Scenes {
 		sc.OrderIndex = i
+		NormalizeSceneInlineSectionVoices(sc)
+		secs := ExtractSceneVoiceSections(sc, b)
+		if HasConditionalVoiceDirectives(sc.Text) && b.Narrated {
+			sc.AudioFile = ""
+			sc.AudioURL = ""
+			for _, sec := range secs {
+				if sec.HasAudio && sc.AudioFile == "" {
+					sc.AudioFile = sec.AudioFile
+					sc.AudioURL = encodeMediaURL(b.ID, sec.AudioFile)
+				}
+			}
+			appendSceneVoiceSectionWarnings(b, sc)
+		}
 		if !b.deferProseHTML {
 			sc.EnsureHTML()
 		}

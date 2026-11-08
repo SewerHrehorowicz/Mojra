@@ -924,17 +924,14 @@ Dopiero kapitan Arvo wszystko mu wytłumaczył.
 	libHTML := string(libHTMLBytes)
 
 	if !strings.Contains(libHTML, `class="brand-mark"`) ||
-		strings.Contains(libHTML, `<span class="brand-logo">Mojra</span>`) ||
+		!strings.Contains(libHTML, `<span class="brand-logo">Mojra</span>`) ||
 		strings.Contains(libHTML, `<span class="brand-logo brand-logo-short">M</span>`) ||
-		!strings.Contains(libHTML, `data-view="library"`) ||
-		!strings.Contains(libHTML, `id="tab-player"`) ||
-		!strings.Contains(libHTML, `data-view="editor"`) ||
-		!strings.Contains(libHTML, `class="tab-icon"`) ||
-		!strings.Contains(libHTML, `id="btn-topbar-menu"`) ||
-		!strings.Contains(libHTML, `id="icon-theme-sun"`) ||
-		!strings.Contains(libHTML, `id="icon-theme-moon"`) ||
-		!strings.Contains(libHTML, `action="OpenQRModal"`) {
-		t.Fatalf("expected responsive topbar with symbol-only brand-mark, tab icons, hamburger menu, sun/moon theme icons, and settings gear icon, got:\n%s", libHTML)
+		!strings.Contains(libHTML, `id="btn-open-settings"`) ||
+		!strings.Contains(libHTML, `action="OpenQRModal"`) ||
+		!strings.Contains(libHTML, `id="btn-toggle-fullscreen"`) ||
+		!strings.Contains(libHTML, `id="btn-switch-to-studio"`) ||
+		!strings.Contains(libHTML, `data-view="studio"`) {
+		t.Fatalf("expected isolated Reader Home topbar with brand-mark, Mojra logo, settings gear icon, fullscreen button, and bottom Studio switch, got:\n%s", libHTML)
 	}
 
 	secStart := strings.Index(libHTML, `<section class="view-panel" id="view-library">`)
@@ -948,7 +945,14 @@ Dopiero kapitan Arvo wszystko mu wytłumaczył.
 		t.Fatalf("expected OpenAddBookModal (+ Dodaj książkę) in #view-library, got:\n%s", libSection)
 	}
 	cardStart := strings.Index(libSection, `<article class="book-card">`)
-	if cardStart < 0 || strings.Count(libSection[cardStart:], "<button") != 1 || !strings.Contains(libSection[cardStart:], `class="book-cover-wrap"`) {
+	cardChunk := ""
+	if cardStart >= 0 {
+		cardChunk = libSection[cardStart:]
+		if endArt := strings.Index(cardChunk, "</article>"); endArt > 0 {
+			cardChunk = cardChunk[:endArt]
+		}
+	}
+	if cardStart < 0 || strings.Count(cardChunk, "<button") != 1 || !strings.Contains(cardChunk, `class="book-cover-wrap"`) {
 		t.Fatalf("regression in .book-card: expected only 1 button (.book-cover-wrap with play icon on cover), got:\n%s", libSection)
 	}
 	if !strings.Contains(libSection, `<progress class="book-progress-bar"`) {
@@ -1079,17 +1083,37 @@ Dopiero kapitan Arvo wszystko mu wytłumaczył.
 	if len(scaleBytes) != 0 || rScale.StatusCode != http.StatusNoContent {
 		t.Fatalf("expected 204 No Content with empty body for ToggleUIScale, got status=%d len=%d", rScale.StatusCode, len(scaleBytes))
 	}
-	if !strings.Contains(libHTML, `id="btn-toggle-ui-scale"`) || !strings.Contains(libHTML, `id="icon-zoom-zen"`) || !strings.Contains(libHTML, `class="topbar-center"`) {
-		t.Fatalf("expected #btn-toggle-ui-scale, #icon-zoom-zen, and .topbar-center in topbar HTML")
+	if strings.Contains(libHTML, `id="btn-toggle-zen"`) {
+		t.Fatalf("expected #btn-toggle-zen to NOT be rendered in library view")
 	}
 
-	rScaleZen, err := http.PostForm(ts.URL+"/api/action", scaleForm)
+	rScaleBack, err := http.PostForm(ts.URL+"/api/action", scaleForm)
 	if err != nil {
-		t.Fatalf("ToggleUIScale to zen failed: %v", err)
+		t.Fatalf("second ToggleUIScale failed: %v", err)
 	}
-	_ = rScaleZen.Body.Close()
-	if rScaleZen.Header.Get("X-UI-Scale") != "zen" {
-		t.Fatalf("expected X-UI-Scale=zen on second ToggleUIScale, got %q", rScaleZen.Header.Get("X-UI-Scale"))
+	_ = rScaleBack.Body.Close()
+	if rScaleBack.Header.Get("X-UI-Scale") != "small" {
+		t.Fatalf("expected X-UI-Scale=small on second ToggleUIScale (never zen), got %q", rScaleBack.Header.Get("X-UI-Scale"))
+	}
+
+	// Switch back to player view and verify ToggleZenMode works exclusively in book reader context
+	_, _ = http.PostForm(ts.URL+"/api/action", url.Values{"action": {"SwitchView"}, "view": {"player"}})
+	zenForm := url.Values{"action": {"ToggleZenMode"}}
+	rZenOn, err := http.PostForm(ts.URL+"/api/action", zenForm)
+	if err != nil {
+		t.Fatalf("ToggleZenMode failed: %v", err)
+	}
+	_ = rZenOn.Body.Close()
+	if rZenOn.Header.Get("X-Zen-Mode") != "true" {
+		t.Fatalf("expected X-Zen-Mode=true in player view, got %q", rZenOn.Header.Get("X-Zen-Mode"))
+	}
+	rZenOff, err := http.PostForm(ts.URL+"/api/action", zenForm)
+	if err != nil {
+		t.Fatalf("ToggleZenMode off failed: %v", err)
+	}
+	_ = rZenOff.Body.Close()
+	if rZenOff.Header.Get("X-Zen-Mode") != "false" {
+		t.Fatalf("expected X-Zen-Mode=false after second ToggleZenMode, got %q", rZenOff.Header.Get("X-Zen-Mode"))
 	}
 
 	setSmallForm := url.Values{}
@@ -1592,7 +1616,7 @@ func TestTopbarAlwaysVisibleIncludingSceneTextEditor(t *testing.T) {
 	if !strings.Contains(backdropBlock, "position: absolute") || strings.Contains(backdropBlock, "position: fixed") {
 		t.Fatalf(".modal-backdrop must use position: absolute inside row 2 (.modals-root) and NEVER position: fixed over #topbar, got:\n%s", backdropBlock)
 	}
-	if !strings.Contains(css, `body[data-ui-scale="zen"] .scene-text-editor-feed .reader-global-meta`) {
+	if !strings.Contains(css, `body[data-zen="true"] .scene-text-editor-feed .reader-global-meta`) {
 		t.Fatalf("expected .scene-text-editor-feed .reader-global-meta to remain visible in zen mode")
 	}
 	for _, panelSel := range []string{".editor-context-panel {", ".editor-history-panel,\n.editor-help-panel {", ".editor-breakdown-panel,\n.editor-variables-panel {"} {
@@ -1644,11 +1668,10 @@ func TestTopbarAlwaysVisibleIncludingSceneTextEditor(t *testing.T) {
 	_ = rOpenFull.Body.Close()
 	openFullHTML := string(openFullBytes)
 	if !strings.Contains(openFullHTML, `<header class="topbar" id="topbar">`) ||
-		!strings.Contains(openFullHTML, `data-view="library"`) ||
-		!strings.Contains(openFullHTML, `id="tab-player"`) ||
-		!strings.Contains(openFullHTML, `data-view="editor"`) ||
+		!strings.Contains(openFullHTML, `id="tab-studio-home"`) ||
+		!strings.Contains(openFullHTML, `id="editor-book-title">Księga Rzeki</span>`) ||
 		!strings.Contains(openFullHTML, `id="modal-scene-text"`) {
-		t.Fatalf("expected #topbar with all navigation tabs to remain present when #modal-scene-text is open, got:\n%s", openFullHTML)
+		t.Fatalf("expected #topbar with Studio navigation and title to remain present when #modal-scene-text is open, got:\n%s", openFullHTML)
 	}
 	modalPart := openFullHTML[strings.Index(openFullHTML, `id="modal-scene-text"`):]
 	if strings.Contains(modalPart, "Graj od tej sceny") || strings.Contains(modalPart, "Usuń scenę") || strings.Contains(modalPart, "Wróć do edytora") {
@@ -1717,9 +1740,7 @@ func TestBookImagelessSettingAndTopbarLock(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ToggleBookImageless ON failed: %v", err)
 	}
-	togOnBytes, _ := io.ReadAll(rTogOn.Body)
 	_ = rTogOn.Body.Close()
-	togOnHTML := string(togOnBytes)
 
 	if !srv.ActiveBook.Imageless {
 		t.Fatalf("expected ActiveBook.Imageless=true after ToggleBookImageless")
@@ -1727,13 +1748,21 @@ func TestBookImagelessSettingAndTopbarLock(t *testing.T) {
 	if rTogOn.Header.Get("X-Imageless") != "true" || rTogOn.Header.Get("X-Imageless-Locked") != "true" {
 		t.Fatalf("expected X-Imageless=true and X-Imageless-Locked=true when imageless book is loaded, got %q / %q", rTogOn.Header.Get("X-Imageless"), rTogOn.Header.Get("X-Imageless-Locked"))
 	}
-	if !strings.Contains(togOnHTML, `class="top-action-btn active is-disabled" id="btn-toggle-imageless" type="button" action="ToggleImageless" disabled="disabled"`) {
-		t.Fatalf("expected #btn-toggle-imageless to be disabled/inactive when imageless book is open, got:\n%s", togOnHTML)
+	rSettingsOn, err := http.PostForm(ts.URL+"/api/action", url.Values{"action": {"OpenQRModal"}})
+	if err != nil {
+		t.Fatalf("OpenQRModal failed: %v", err)
 	}
-	if !strings.Contains(togOnHTML, `class="action-icon hidden" id="icon-imageless-off"`) ||
-		strings.Contains(togOnHTML, `class="action-icon hidden" id="icon-imageless-on"`) {
+	settingsOnBytes, _ := io.ReadAll(rSettingsOn.Body)
+	_ = rSettingsOn.Body.Close()
+	settingsOnHTML := string(settingsOnBytes)
+	if !strings.Contains(settingsOnHTML, `id="btn-toggle-imageless" type="button" action="ToggleImageless" disabled="disabled"`) {
+		t.Fatalf("expected #btn-toggle-imageless to be disabled/inactive in settings modal when imageless book is open, got:\n%s", settingsOnHTML)
+	}
+	if !strings.Contains(settingsOnHTML, `class="action-icon hidden" id="icon-imageless-off"`) ||
+		strings.Contains(settingsOnHTML, `class="action-icon hidden" id="icon-imageless-on"`) {
 		t.Fatalf("expected #btn-toggle-imageless to show no-image icon (#icon-imageless-on) when imageless book is open")
 	}
+	_, _ = http.PostForm(ts.URL+"/api/action", url.Values{"action": {"CloseQRModal"}})
 
 	// Verify book.playtxt persisted imageless: true
 	dataBytes, err := os.ReadFile(filepath.Join(srv.ActiveBook.RootPath, "book.playtxt"))
@@ -2328,7 +2357,7 @@ func TestMultilingualUISwitchAndI18nTableCompleteness(t *testing.T) {
 	if got := togResp.Header.Get("X-Lang"); got != "en" {
 		t.Fatalf("expected X-Lang=en after ToggleLanguage, got %q", got)
 	}
-	if !strings.Contains(togHTML, `+ Add book`) || !strings.Contains(togHTML, `data-hint="Library"`) {
+	if !strings.Contains(togHTML, `+ Add book`) || !strings.Contains(togHTML, `Switch to authoring environment`) {
 		t.Fatalf("expected English UI labels after ToggleLanguage, got:\n%s", togHTML)
 	}
 
@@ -2351,7 +2380,7 @@ func TestMultilingualUISwitchAndI18nTableCompleteness(t *testing.T) {
 	if got := setResp.Header.Get("X-Lang"); got != "pl" {
 		t.Fatalf("expected X-Lang=pl after SetLanguage(pl), got %q", got)
 	}
-	if !strings.Contains(setHTML, `+ Dodaj książkę`) || !strings.Contains(setHTML, `data-hint="Biblioteka"`) {
+	if !strings.Contains(setHTML, `+ Dodaj książkę`) || !strings.Contains(setHTML, `Przełącz na środowisko autorskie`) {
 		t.Fatalf("expected Polish UI labels after SetLanguage(pl), got:\n%s", setHTML)
 	}
 }

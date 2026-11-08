@@ -27,6 +27,7 @@ html lang: "{lang}"
         data-imageless: "{imageless_attr}"
         data-imageless-locked: "{imageless_locked_attr}"
         data-ui-scale: "{ui_scale}"
+        data-zen: "{zen_mode_attr}"
         data-scroll-sensitivity: "{scroll_sensitivity}"
         {if dev_mode}
             .device-stage#device-stage data-preview: "{preview_mode}"

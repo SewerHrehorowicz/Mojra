@@ -49,18 +49,20 @@ func SanitizePlainText(s string) string {
 				b.WriteRune(r)
 				continue
 			}
-			if r == '>' && b.Len() > 0 && strings.HasSuffix(b.String(), "-") {
+			cur := b.String()
+			lastNL := strings.LastIndexByte(cur, '\n')
+			linePrefix := cur
+			if lastNL >= 0 {
+				linePrefix = cur[lastNL+1:]
+			}
+			if isConditionalOrRuleLinePrefix(linePrefix) {
 				b.WriteRune(r)
-			} else if r == '>' {
-				cur := b.String()
-				lastNL := strings.LastIndexByte(cur, '\n')
-				linePrefix := cur
-				if lastNL >= 0 {
-					linePrefix = cur[lastNL+1:]
-				}
-				if strings.TrimSpace(linePrefix) == "" {
-					b.WriteRune(r)
-				}
+				continue
+			}
+			if r == '>' && b.Len() > 0 && strings.HasSuffix(cur, "-") {
+				b.WriteRune(r)
+			} else if r == '>' && strings.TrimSpace(linePrefix) == "" {
+				b.WriteRune(r)
 			}
 			continue
 		}
@@ -69,6 +71,16 @@ func SanitizePlainText(s string) string {
 		}
 	}
 	return strings.TrimSpace(b.String())
+}
+
+func isConditionalOrRuleLinePrefix(linePrefix string) bool {
+	trimmed := strings.ToLower(strings.TrimSpace(linePrefix))
+	for _, pfx := range []string{"if:", "elif:", "set:"} {
+		if strings.HasPrefix(trimmed, pfx) {
+			return true
+		}
+	}
+	return false
 }
 
 // RenderSafeProseHTML converts plain text into safe HTML paragraphs (`<p>`, `<strong>`, `<em>`, `<blockquote>`, `<hr>`)
@@ -153,13 +165,21 @@ func RenderTemplateTo(w io.Writer, tplName string, components map[string]*Parsed
 
 // TranspileStaticHTML transpiles a root .tpl document and its @components into plain HTML.
 func TranspileStaticHTML(tpl *ParsedTemplate, components map[string]*ParsedTemplate) string {
+	return TranspileStaticHTMLWithContext(tpl, components, NewContext(nil))
+}
+
+// TranspileStaticHTMLWithContext transpiles a root .tpl document and its @components into plain HTML using ctx.
+func TranspileStaticHTMLWithContext(tpl *ParsedTemplate, components map[string]*ParsedTemplate, ctx *RenderContext) string {
 	buf := AcquireBuffer()
 	defer ReleaseBuffer(buf)
 
+	if ctx == nil {
+		ctx = NewContext(nil)
+	}
 	if !hasLeadingDoctype(tpl.Nodes) {
 		buf.WriteString("<!DOCTYPE html>")
 	}
-	renderNodesToBuffer(buf, tpl.Nodes, components, NewContext(nil), 0)
+	renderNodesToBuffer(buf, tpl.Nodes, components, ctx, 0)
 	buf.WriteByte('\n')
 	return buf.String()
 }

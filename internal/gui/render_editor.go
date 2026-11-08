@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"encoding/base64"
 	"fmt"
 	"sort"
 	"strings"
@@ -164,6 +165,55 @@ func (s *Server) buildSceneMediaOptions(sc *book.Scene, buildMenus bool) (curImg
 	return
 }
 
+func (s *Server) buildSceneVoiceSectionsView(sc *book.Scene) (hasMultiple bool, activeSec book.VoiceSection, sectionItems []map[string]any) {
+	if sc == nil {
+		return false, book.VoiceSection{Key: "01", TrimStart: 0, TrimEnd: 1, DurationLabel: "0:00"}, nil
+	}
+	sections := book.ExtractSceneVoiceSections(sc, s.ActiveBook)
+	if len(sections) == 0 {
+		return false, book.VoiceSection{Key: "01", TrimStart: 0, TrimEnd: 1, DurationLabel: "0:00"}, nil
+	}
+	hasMultiple = len(sections) > 1
+	activeIdx := 0
+	selKey := strings.TrimSpace(s.SelectedVoiceSectionKey)
+	if selKey != "" {
+		for i := range sections {
+			if strings.EqualFold(sections[i].Key, selKey) {
+				activeIdx = i
+				break
+			}
+		}
+	}
+	activeSec = sections[activeIdx]
+	s.SelectedVoiceSectionKey = activeSec.Key
+
+	sectionItems = make([]map[string]any, len(sections))
+	for i, sec := range sections {
+		isActive := i == activeIdx
+		inspLabel := sec.ShortLabel
+		if isActive {
+			inspLabel = sec.Label
+		}
+		sectionItems[i] = map[string]any{
+			"index":           sec.Index,
+			"key":             sec.Key,
+			"kind":            sec.Kind,
+			"label":           sec.Label,
+			"short_label":     sec.ShortLabel,
+			"inspector_label": inspLabel,
+			"header_title":    sec.HeaderTitle,
+			"target_file":     sec.TargetFile,
+			"audio_file":      sec.AudioFile,
+			"audio_url":       sec.AudioURL,
+			"duration_label":  sec.DurationLabel,
+			"has_audio":       sec.HasAudio,
+			"has_trim":        sec.HasTrim,
+			"is_active":       isActive,
+		}
+	}
+	return hasMultiple, activeSec, sectionItems
+}
+
 func (s *Server) buildEditorNodeMap(sc *book.Scene, isSelected bool) map[string]any {
 	isStart := false
 	isChapterEntry := false
@@ -266,6 +316,45 @@ func (s *Server) buildEditorNodeMap(sc *book.Scene, isSelected bool) map[string]
 	}
 	trimStart, trimEnd := sc.NormalizedVoiceTrim()
 	hasVoiceFile := curVoice != "" && sc.AudioURL != ""
+	hasVoiceTrim := hasVoiceFile && sc.HasVoiceTrim()
+	hasVoiceSections := false
+	activeVoiceSecKey := "01"
+	activeVoiceSecTarget := ""
+	var voiceSectionItems []map[string]any
+
+	if isSelected {
+		hasMultiSec, activeSec, secItems := s.buildSceneVoiceSectionsView(sc)
+		hasVoiceSections = hasMultiSec
+		activeVoiceSecKey = activeSec.Key
+		activeVoiceSecTarget = activeSec.TargetFile
+		voiceSectionItems = secItems
+		if hasMultiSec {
+			curVoice = activeSec.AudioFile
+			if curVoice == "" {
+				curVoice = activeSec.ExplicitVoice
+			}
+			if curVoice != "" {
+				curVoiceLabel = curVoice
+			} else if s.VoiceRecorderOpen && activeSec.TargetFile != "" {
+				curVoiceLabel = activeSec.TargetFile
+			} else {
+				curVoiceLabel = s.tr(TrMediaNoneLabel)
+			}
+			voiceURL = activeSec.AudioURL
+			if activeSec.HasAudio {
+				voiceDurLabel = activeSec.DurationLabel
+			} else {
+				voiceDurLabel = "0:00"
+			}
+			trimStart, trimEnd = activeSec.TrimStart, activeSec.TrimEnd
+			hasVoiceFile = activeSec.HasAudio
+			hasVoiceTrim = activeSec.HasTrim
+			for i := range voiceOptions {
+				val, _ := voiceOptions[i]["value"].(string)
+				voiceOptions[i]["is_active"] = strings.EqualFold(val, curVoice)
+			}
+		}
+	}
 
 	portCount := 0
 	if hasChoices {
@@ -273,20 +362,24 @@ func (s *Server) buildEditorNodeMap(sc *book.Scene, isSelected bool) map[string]
 	}
 
 	return map[string]any{
-		"id":                   sc.ID,
-		"explicit_id":          sc.ExplicitID,
-		"current_image":        curImg,
-		"current_image_label":  curImgLabel,
-		"image_options":        imgOptions,
-		"current_voice":        curVoice,
-		"current_voice_label":  curVoiceLabel,
-		"current_voice_url":    voiceURL,
-		"voice_duration_label": voiceDurLabel,
-		"voice_trim_start":     fmt.Sprintf("%.4f", trimStart),
-		"voice_trim_end":       fmt.Sprintf("%.4f", trimEnd),
-		"has_voice_file":       hasVoiceFile,
-		"has_voice_trim":       hasVoiceFile && sc.HasVoiceTrim(),
-		"voice_options":        voiceOptions,
+		"id":                        sc.ID,
+		"explicit_id":               sc.ExplicitID,
+		"current_image":             curImg,
+		"current_image_label":       curImgLabel,
+		"image_options":             imgOptions,
+		"current_voice":             curVoice,
+		"current_voice_label":       curVoiceLabel,
+		"current_voice_url":         voiceURL,
+		"voice_duration_label":      voiceDurLabel,
+		"voice_trim_start":          fmt.Sprintf("%.4f", trimStart),
+		"voice_trim_end":            fmt.Sprintf("%.4f", trimEnd),
+		"has_voice_file":            hasVoiceFile,
+		"has_voice_trim":            hasVoiceTrim,
+		"voice_options":             voiceOptions,
+		"has_voice_sections":        hasVoiceSections,
+		"active_voice_section_key":  activeVoiceSecKey,
+		"active_voice_section_file": activeVoiceSecTarget,
+		"voice_sections":            voiceSectionItems,
 		"name":                 sc.Name,
 		"slugline":             sc.Slugline,
 		"synopsis":             sc.Synopsis,
@@ -588,9 +681,81 @@ func (s *Server) populateEditorContext(vars map[string]any) {
 		edZoom = 1.0
 	}
 	vars["studio_graph_payload"] = buildStudioGraphPayload(s.ActiveBook, edZoom, selected.ID, orderedScenes)
+	s.populateEditorSearchContext(vars, orderedScenes)
 
 	s.populateEditorBreakdownContext(vars)
 	s.populateEditorHistoryContext(vars)
+}
+
+func (s *Server) populateEditorSearchContext(vars map[string]any, orderedScenes []*book.Scene) {
+	if s.ActiveBook == nil || len(orderedScenes) == 0 {
+		vars["studio_search_count"] = 0
+		vars["studio_search_items"] = []map[string]any(nil)
+		return
+	}
+	lang := s.lang()
+	badgeScene := trLang(lang, TrSpSceneUpperKey)
+	badgeScene = strings.TrimSuffix(badgeScene, ":")
+	isSp := s.ActiveBook.IsScreenplay()
+	defCh := s.ActiveBook.DefaultChapterName()
+
+	items := make([]map[string]any, 0, len(orderedScenes))
+	for _, sc := range orderedScenes {
+		chName := strings.TrimSpace(sc.Chapter)
+		if chName == "" {
+			chName = defCh
+		}
+		dispTitle := sc.DisplayName()
+		if isSp && strings.TrimSpace(sc.Slugline) != "" {
+			dispTitle = strings.TrimSpace(sc.Slugline)
+		}
+		var choiceParts []string
+		for _, ch := range sc.Choices {
+			if ch.IsImplicit && len(sc.Choices) == 1 {
+				continue
+			}
+			t := ch.Target
+			if t == "" {
+				t = ch.TargetSceneID
+			}
+			choiceParts = append(choiceParts, strings.TrimSpace(ch.Label)+" -> "+strings.TrimSpace(t))
+		}
+		flatText := strings.Join(strings.Fields(sc.Text), " ")
+		defSnip := strings.Join(strings.Fields(sc.Synopsis), " ")
+		if defSnip == "" {
+			defSnip = firstSentenceSnippet(flatText)
+		}
+		runes := []rune(defSnip)
+		if len(runes) > 84 {
+			defSnip = string(runes[:84]) + "..."
+		}
+		items = append(items, map[string]any{
+			"id":              sc.ID,
+			"display_title":   dispTitle,
+			"title":           sc.Name,
+			"slugline":        sc.Slugline,
+			"chapter":         chName,
+			"chapter_upper":   strings.ToUpper(chName),
+			"synopsis":        sc.Synopsis,
+			"text_b64":        base64.StdEncoding.EncodeToString([]byte(sc.Text)),
+			"choices":         strings.Join(choiceParts, " | "),
+			"default_badge":   badgeScene,
+			"default_snippet": defSnip,
+			"is_selected":     sc.ID == s.SelectedSceneID,
+		})
+	}
+	vars["studio_search_count"] = len(items)
+	vars["studio_search_items"] = items
+}
+
+func firstSentenceSnippet(s string) string {
+	s = strings.TrimSpace(s)
+	for i, r := range s {
+		if r == '.' || r == '!' || r == '?' {
+			return strings.TrimSpace(s[:i+len(string(r))])
+		}
+	}
+	return s
 }
 
 func sanitizeGraphPayloadField(v string) string {

@@ -1007,7 +1007,13 @@ func registerDefsFromNodes(templates map[string]*ParsedTemplate, nodes []*Node) 
 func LoadTemplatesFromDir(templatesDir string, embeddedFS fs.FS) (map[string]*ParsedTemplate, error) {
 	templates := make(map[string]*ParsedTemplate)
 
-	entries, err := os.ReadDir(templatesDir)
+	var entries []os.DirEntry
+	var err error
+	if templatesDir != "" {
+		entries, err = os.ReadDir(templatesDir)
+	} else {
+		err = os.ErrNotExist
+	}
 	registerTplBytes := func(name string, raw []byte, readErr error) error {
 		if readErr != nil {
 			return readErr

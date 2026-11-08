@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 )
 
 const (
@@ -111,7 +112,7 @@ func CollectBookMediaBytes(b *Book) (map[string][]byte, error) {
 		}
 	}
 	if b.Narrated {
-		for _, aud := range b.AudioFiles {
+		for _, aud := range discoverBookAudioFilesForSections(b) {
 			if err := addFile(aud); err != nil {
 				return nil, err
 			}
@@ -123,9 +124,18 @@ func CollectBookMediaBytes(b *Book) (map[string][]byte, error) {
 				return nil, err
 			}
 		}
-		if b.Narrated && sc.AudioFile != "" {
-			if err := addFile(sc.AudioFile); err != nil {
-				return nil, err
+		if b.Narrated {
+			if sc.AudioFile != "" {
+				if err := addFile(sc.AudioFile); err != nil {
+					return nil, err
+				}
+			}
+			for _, sec := range ExtractSceneVoiceSections(sc, b) {
+				if sec.AudioFile != "" {
+					if err := addFile(sec.AudioFile); err != nil {
+						return nil, err
+					}
+				}
 			}
 		}
 	}
@@ -268,7 +278,7 @@ func CompileEncryptedSTBC(b *Book, media map[string][]byte) (ciphertext []byte, 
 		writeSTBCString(&plain, sc.Effects)
 		writeSTBCString(&plain, sc.Chapter)
 		writeSTBCString(&plain, sc.ChapterID)
-		writeSTBCString(&plain, sc.Text)
+		writeSTBCString(&plain, SerializeSceneProseWithSectionVoices(sc, b))
 		writeSTBCString(&plain, sc.AudioFile)
 		writeSTBCString(&plain, sc.ImageFile)
 		_ = binary.Write(&plain, binary.LittleEndian, int32(sc.OrderIndex))
@@ -553,6 +563,16 @@ func DecodeEncryptedSTBC(ciphertext []byte, key [32]byte, nonce [12]byte, permSe
 				return nil, nil, fmt.Errorf("uszkodzony nagłówek pliku multimedialnego w STBC: %s", rel)
 			}
 			media[rel] = raw
+			var pmEntry PackedMediaEntry
+			pmEntry.Size = int64(len(raw))
+			hdrLen := len(raw)
+			if hdrLen > len(pmEntry.Header512) {
+				hdrLen = len(pmEntry.Header512)
+			}
+			copy(pmEntry.Header512[:], raw[:hdrLen])
+			pmEntry.HeaderLen = hdrLen
+			pmEntry.ValidHeader = true
+			b.PackedMedia[strings.ToLower(rel)] = pmEntry
 			if isAudioFilename(rel) {
 				b.AudioFiles = append(b.AudioFiles, rel)
 			} else if isRasterImageFilename(rel) {
@@ -560,6 +580,10 @@ func DecodeEncryptedSTBC(ciphertext []byte, key [32]byte, nonce [12]byte, permSe
 			}
 
 		case stbcOpEnd:
+			for _, sc := range b.Scenes {
+				NormalizeSceneInlineSectionVoices(sc)
+				ExtractSceneVoiceSections(sc, b)
+			}
 			return b, media, nil
 
 		default:
@@ -567,6 +591,10 @@ func DecodeEncryptedSTBC(ciphertext []byte, key [32]byte, nonce [12]byte, permSe
 		}
 	}
 
+	for _, sc := range b.Scenes {
+		NormalizeSceneInlineSectionVoices(sc)
+		ExtractSceneVoiceSections(sc, b)
+	}
 	return b, media, nil
 }
 

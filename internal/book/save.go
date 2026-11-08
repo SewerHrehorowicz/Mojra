@@ -160,8 +160,6 @@ func LoadAppSettings(savesDir string) *AppSettings {
 		case "display.ui_scale", ".ui_scale":
 			if strings.EqualFold(val, "large") {
 				cfg.UIScale = "large"
-			} else if strings.EqualFold(val, "zen") {
-				cfg.UIScale = "zen"
 			} else {
 				cfg.UIScale = "small"
 			}
@@ -262,7 +260,7 @@ func SaveAppSettings(savesDir string, cfg *AppSettings) error {
 	if cfg.ActiveView != "player" && cfg.ActiveView != "editor" {
 		cfg.ActiveView = "library"
 	}
-	if cfg.UIScale != "large" && cfg.UIScale != "zen" {
+	if cfg.UIScale != "large" {
 		cfg.UIScale = "small"
 	}
 	cfg.ScrollSensitivity = NormalizeScrollSensitivity(cfg.ScrollSensitivity)

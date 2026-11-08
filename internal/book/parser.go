@@ -23,28 +23,28 @@ func ParseDataFile(content string, b *Book) {
 		key := strings.ToLower(strings.TrimSpace(trimmed[:idx]))
 		val := SanitizePlainText(trimmed[idx+1:])
 		switch key {
-		case "title", "tytul", "tytuł":
+		case "title":
 			if val != "" {
 				b.Title = val
 			}
-		case "author", "autor":
+		case "author":
 			if val != "" {
 				b.Author = val
 			}
-		case "license", "licencja", "copyright", "prawa":
+		case "license":
 			if val != "" {
 				b.License = val
 			}
-		case "description", "opis", "summary":
+		case "description":
 			if val != "" {
 				b.Description = val
 			}
-		case "start", "first_scene", "pierwsza_scena":
+		case "start":
 			if val != "" {
 				b.StartSceneID = val
 				b.RawStart = val
 			}
-		case "cover", "okladka", "okładka":
+		case "cover":
 			if val != "" {
 				safeRel := SanitizeRelativeMediaPath(val)
 				if safeRel != "" {
@@ -53,13 +53,13 @@ func ParseDataFile(content string, b *Book) {
 					b.Warnings = append(b.Warnings, fmt.Sprintf("book.playtxt:%d: nieprawidłowa ścieżka okładki „%s”", lineIdx+1, val))
 				}
 			}
-		case "narrated", "narracja", "voiced":
+		case "narrated":
 			vLower := strings.ToLower(strings.TrimSpace(val))
-			b.Narrated = !b.IsScreenplay() && (vLower == "true" || vLower == "1" || vLower == "yes" || vLower == "tak")
-		case "imageless", "bez_obrazow", "bez_obrazów", "text_only":
+			b.Narrated = !b.IsScreenplay() && (vLower == "true" || vLower == "1")
+		case "imageless":
 			vLower := strings.ToLower(strings.TrimSpace(val))
-			b.Imageless = b.IsScreenplay() || vLower == "true" || vLower == "1" || vLower == "yes" || vLower == "tak"
-		case "mode", "tryb", "typ", "type":
+			b.Imageless = b.IsScreenplay() || vLower == "true" || vLower == "1"
+		case "mode":
 			if val != "" {
 				b.Mode = NormalizeBookMode(val)
 				if b.IsScreenplay() {
@@ -67,21 +67,21 @@ func ParseDataFile(content string, b *Book) {
 					b.Imageless = true
 				}
 			}
-		case "standard", "format", "norma":
+		case "standard":
 			if val != "" {
 				b.ScriptStandard = NormalizeScriptStandard(val)
 			}
-		case "enum", "stany", "warianty":
+		case "enum":
 			if ed, ok := ParseEnumDeclaration(val); ok {
 				b.Enums = append(b.Enums, ed)
 			}
-		case "var", "zmienna":
+		case "var":
 			if vd, ok := ParseVariableDeclaration(val, b.Enums); ok {
 				b.Variables = append(b.Variables, vd)
 			}
 		case "export_dir":
 			// Ignored in book.playtxt for security: export target paths are stored in local saves/settings.ini, never trusted from imported books.
-		case "auto_delay", "scene_pause", "pauza":
+		case "auto_delay":
 			// Accepted book-level hint for inter-scene pause; runtime delay is configured via saves/settings.ini.
 		default:
 			b.Warnings = append(b.Warnings, fmt.Sprintf("book.playtxt:%d: nieznany klucz „%s”", lineIdx+1, key))
@@ -158,6 +158,7 @@ func ParseStoryFile(content string, sourceFileName string, b *Book) {
 				currentScene.Text = rest
 			}
 		}
+		NormalizeSceneInlineSectionVoices(currentScene)
 		if !b.deferProseHTML {
 			currentScene.EnsureHTML()
 		}
@@ -254,7 +255,7 @@ func ParseStoryFile(content string, sourceFileName string, b *Book) {
 		// Check structural headers: chapter:, scene:, id:, slugline:, synopsis:, image:, voice:, exit:, label:, if:, set:, end:, text:
 		if key, val, ok := parseStructuralHeader(trimmed); ok {
 			switch key {
-			case "chapter", "rozdzial", "rozdział", "act", "akt":
+			case "chapter", "act":
 				inExitChoiceBlock = false
 				flushScene()
 				rawChVal := SanitizePlainText(val)
@@ -284,7 +285,7 @@ func ParseStoryFile(content string, sourceFileName string, b *Book) {
 				inChapterHeaderBlock = true
 				continue
 
-			case "scene", "scena":
+			case "scene":
 				inChapterHeaderBlock = false
 				inExitChoiceBlock = false
 				rawScVal := SanitizePlainText(val)
@@ -322,7 +323,7 @@ func ParseStoryFile(content string, sourceFileName string, b *Book) {
 				}
 				continue
 
-			case "title", "tytul", "tytuł":
+			case "title":
 				inExitChoiceBlock = false
 				cleanTitle := SanitizePlainText(val)
 				if inChapterHeaderBlock && currentScene == nil {
@@ -348,7 +349,7 @@ func ParseStoryFile(content string, sourceFileName string, b *Book) {
 				}
 				continue
 
-			case "slugline", "naglowek", "nagłówek", "heading":
+			case "slugline":
 				inChapterHeaderBlock = false
 				inExitChoiceBlock = false
 				cleanSlug := strings.TrimSpace(SanitizePlainText(val))
@@ -359,7 +360,7 @@ func ParseStoryFile(content string, sourceFileName string, b *Book) {
 				}
 				continue
 
-			case "synopsis", "streszczenie":
+			case "synopsis":
 				inChapterHeaderBlock = false
 				inExitChoiceBlock = false
 				cleanSyn := strings.TrimSpace(SanitizePlainText(val))
@@ -370,7 +371,7 @@ func ParseStoryFile(content string, sourceFileName string, b *Book) {
 				}
 				continue
 
-			case "set", "effects", "efekty", "zmien", "zmień", "then":
+			case "set":
 				inChapterHeaderBlock = false
 				cleanEff := CleanEffectsExpr(val)
 				if inExitChoiceBlock && currentScene != nil && len(currentScene.Choices) > 0 {
@@ -420,7 +421,7 @@ func ParseStoryFile(content string, sourceFileName string, b *Book) {
 				}
 				continue
 
-			case "start", "first_scene", "pierwsza_scena", "wejscie", "wejście":
+			case "start":
 				if inChapterHeaderBlock && currentScene == nil {
 					startRef := SanitizePlainText(val)
 					ensureCurrentChapter()
@@ -432,7 +433,7 @@ func ParseStoryFile(content string, sourceFileName string, b *Book) {
 					continue
 				}
 
-			case "image", "obraz", "img":
+			case "image":
 				inChapterHeaderBlock = false
 				inExitChoiceBlock = false
 				safeImg := SanitizeRelativeMediaPath(val)
@@ -445,20 +446,32 @@ func ParseStoryFile(content string, sourceFileName string, b *Book) {
 				}
 				continue
 
-			case "voice", "audio", "glos", "głos":
+			case "voice":
 				inChapterHeaderBlock = false
 				inExitChoiceBlock = false
-				safeVoice := SanitizeRelativeMediaPath(val)
-				if val != "" && safeVoice == "" {
+				rawVoicePath, vts, vte := ParseVoiceHeaderValue(val)
+				safeVoice := SanitizeRelativeMediaPath(rawVoicePath)
+				if rawVoicePath != "" && safeVoice == "" {
 					b.Warnings = append(b.Warnings, fmt.Sprintf("%s:%d: nieprawidłowa ścieżka nagrania voice: „%s”", sourceFileName, lineIdx+1, val))
+				} else if currentScene != nil && (headerBlockEnded || len(proseLines) > 0) && len(currentScene.Choices) == 0 && (proseLinesHaveCondDirective(proseLines) || strings.Contains(strings.ToLower(safeVoice), "__")) {
+					headerBlockEnded = true
+					proseLines = append(proseLines, line)
 				} else if currentScene != nil && !headerBlockEnded && len(proseLines) == 0 && len(currentScene.Choices) == 0 {
 					currentScene.ExplicitVoice = safeVoice
+					if HasVoiceTrimValues(vts, vte) {
+						currentScene.VoiceTrimStart = vts
+						currentScene.VoiceTrimEnd = vte
+					}
 				} else {
 					pendingVoice = safeVoice
+					if HasVoiceTrimValues(vts, vte) {
+						pendingVoiceTrimStart = vts
+						pendingVoiceTrimEnd = vte
+					}
 				}
 				continue
 
-			case "voice_trim", "audio_trim", "trim":
+			case "voice_trim":
 				inChapterHeaderBlock = false
 				inExitChoiceBlock = false
 				if ts, te, okTrim := parseVoiceTrimHeader(val); okTrim {
@@ -472,7 +485,7 @@ func ParseStoryFile(content string, sourceFileName string, b *Book) {
 				}
 				continue
 
-			case "exit", "next", "dalej":
+			case "exit", "next":
 				inChapterHeaderBlock = false
 				ensureCurrentSceneStarted()
 				nextVal := SanitizePlainText(val)
@@ -481,7 +494,7 @@ func ParseStoryFile(content string, sourceFileName string, b *Book) {
 					inExitChoiceBlock = false
 					if nextVal != "" {
 						currentScene.ExplicitNext = nextVal
-						isEnd := strings.EqualFold(nextVal, "END") || strings.EqualFold(nextVal, "KONIEC")
+						isEnd := strings.EqualFold(nextVal, "END")
 						currentScene.Choices = []Choice{
 							{
 								Label:      "Dalej",
@@ -497,7 +510,7 @@ func ParseStoryFile(content string, sourceFileName string, b *Book) {
 						currentScene.Choices = nil
 						currentScene.ExplicitNext = ""
 					}
-					isEnd := strings.EqualFold(nextVal, "END") || strings.EqualFold(nextVal, "KONIEC")
+					isEnd := strings.EqualFold(nextVal, "END")
 					currentScene.Choices = append(currentScene.Choices, Choice{
 						Label:      "Dalej",
 						Target:     nextVal,
@@ -513,7 +526,7 @@ func ParseStoryFile(content string, sourceFileName string, b *Book) {
 				}
 				continue
 
-			case "label", "etykieta":
+			case "label":
 				inChapterHeaderBlock = false
 				ensureCurrentSceneStarted()
 				cleanLbl := SanitizePlainText(val)
@@ -533,13 +546,13 @@ func ParseStoryFile(content string, sourceFileName string, b *Book) {
 				}
 				continue
 
-			case "if", "if?", "gdy", "warunek":
+			case "if":
 				inChapterHeaderBlock = false
 				ensureCurrentSceneStarted()
 				if inExitChoiceBlock && len(currentScene.Choices) > 0 {
 					last := &currentScene.Choices[len(currentScene.Choices)-1]
 					cleanCond := CleanConditionExpr(val)
-					if key == "if?" || strings.HasPrefix(cleanCond, "?") {
+					if strings.HasPrefix(cleanCond, "?") {
 						last.ShowWhenLocked = true
 						cleanCond = strings.TrimSpace(strings.TrimPrefix(cleanCond, "?"))
 					}
@@ -551,7 +564,7 @@ func ParseStoryFile(content string, sourceFileName string, b *Book) {
 				proseLines = append(proseLines, line)
 				continue
 
-			case "else", "endif", "elif", "else if":
+			case "else", "endif", "elif":
 				inChapterHeaderBlock = false
 				inExitChoiceBlock = false
 				ensureCurrentSceneStarted()
@@ -559,15 +572,15 @@ func ParseStoryFile(content string, sourceFileName string, b *Book) {
 				proseLines = append(proseLines, line)
 				continue
 
-			case "end", "koniec":
+			case "end":
 				inChapterHeaderBlock = false
 				inExitChoiceBlock = false
 				ensureCurrentSceneStarted()
 				vLower := strings.ToLower(val)
-				currentScene.ExplicitEnd = vLower == "" || vLower == "true" || vLower == "1" || vLower == "yes" || vLower == "tak"
+				currentScene.ExplicitEnd = vLower == "" || vLower == "true" || vLower == "1"
 				continue
 
-			case "text", "tekst":
+			case "text":
 				inChapterHeaderBlock = false
 				ensureCurrentSceneStarted()
 				cleanTxt := SanitizePlainText(val)
@@ -584,15 +597,6 @@ func ParseStoryFile(content string, sourceFileName string, b *Book) {
 				}
 				continue
 			}
-		}
-
-		if strings.EqualFold(trimmed, ":end") {
-			inChapterHeaderBlock = false
-			inExitChoiceBlock = false
-			ensureCurrentSceneStarted()
-			headerBlockEnded = true
-			proseLines = append(proseLines, line)
-			continue
 		}
 
 		// Detect suspicious unknown header right at the top of a scene (before any prose lines)
@@ -667,9 +671,9 @@ func headerBlockHasTitle(rawLines []string, startIdx int) (string, bool) {
 			return "", false
 		}
 		switch k {
-		case "title", "tytul", "tytuł":
+		case "title":
 			return v, true
-		case "chapter", "rozdzial", "rozdział", "act", "akt", "scene", "scena", "exit", "next", "dalej":
+		case "chapter", "act", "scene", "exit", "next":
 			return "", false
 		}
 	}
@@ -692,7 +696,7 @@ func headerBlockHasID(rawLines []string, startIdx int) bool {
 		switch k {
 		case "id":
 			return true
-		case "chapter", "rozdzial", "rozdział", "act", "akt", "scene", "scena", "exit", "next", "dalej":
+		case "chapter", "act", "scene", "exit", "next":
 			return false
 		}
 	}
@@ -713,9 +717,9 @@ func exitBlockHasLabel(rawLines []string, startIdx int) bool {
 			return false
 		}
 		switch k {
-		case "label", "etykieta", "text", "tekst":
+		case "label", "text":
 			return true
-		case "if", "if?", "gdy", "warunek", "set", "effects", "efekty", "zmien", "zmień", "then":
+		case "if", "set":
 			continue
 		default:
 			return false
@@ -732,23 +736,23 @@ func parseStructuralHeader(trimmed string) (string, string, bool) {
 	key := strings.ToLower(strings.TrimSpace(trimmed[:idx]))
 	val := strings.TrimSpace(trimmed[idx+1:])
 	switch key {
-	case "chapter", "rozdzial", "rozdział", "act", "akt",
-		"scene", "scena",
-		"title", "tytul", "tytuł",
+	case "chapter", "act",
+		"scene",
+		"title",
 		"id",
-		"slugline", "naglowek", "nagłówek", "heading",
-		"synopsis", "streszczenie",
-		"set", "effects", "efekty", "zmien", "zmień", "then",
-		"start", "first_scene", "pierwsza_scena", "wejscie", "wejście",
-		"image", "obraz", "img",
-		"voice", "audio", "glos", "głos",
-		"voice_trim", "audio_trim", "trim",
-		"exit", "next", "dalej",
-		"label", "etykieta",
-		"if", "if?", "gdy", "warunek",
-		"elif", "else if", "else", "endif",
-		"end", "koniec",
-		"text", "tekst":
+		"slugline",
+		"synopsis",
+		"set",
+		"start",
+		"image",
+		"voice",
+		"voice_trim",
+		"exit", "next",
+		"label",
+		"if",
+		"elif", "else", "endif",
+		"end",
+		"text":
 		return key, val, true
 	default:
 		return "", "", false
@@ -769,11 +773,14 @@ func parseChoiceLine(trimmed string) (string, string, bool) {
 }
 
 func parseVoiceTrimHeader(val string) (float64, float64, bool) {
-	clean := strings.ReplaceAll(val, "..", ",")
+	clean := strings.TrimSpace(val)
+	clean = strings.TrimPrefix(clean, "[")
+	clean = strings.TrimSuffix(clean, "]")
+	clean = strings.ReplaceAll(clean, "..", ",")
 	clean = strings.ReplaceAll(clean, "-", ",")
 	parts := strings.Split(clean, ",")
 	if len(parts) != 2 {
-		parts = strings.Fields(val)
+		parts = strings.Fields(clean)
 	}
 	if len(parts) != 2 {
 		return 0, 1, false
@@ -793,4 +800,32 @@ func parseVoiceTrimHeader(val string) (float64, float64, bool) {
 		return 0, 1, false
 	}
 	return s, e, true
+}
+
+// ParseVoiceHeaderValue parses a voice header value such as "voice/scene__02_if.flac [0.0420..0.9610]"
+// into its relative file path and optional [trimStart, trimEnd] ratios.
+func ParseVoiceHeaderValue(val string) (string, float64, float64) {
+	trimmed := strings.TrimSpace(val)
+	if strings.HasSuffix(trimmed, "]") {
+		if openIdx := strings.LastIndexByte(trimmed, '['); openIdx > 0 {
+			pathPart := strings.TrimSpace(trimmed[:openIdx])
+			bracketPart := strings.TrimSpace(trimmed[openIdx+1 : len(trimmed)-1])
+			if ts, te, ok := parseVoiceTrimHeader(bracketPart); ok {
+				return pathPart, ts, te
+			}
+		}
+	}
+	return trimmed, 0, 0
+}
+
+func proseLinesHaveCondDirective(lines []string) bool {
+	for _, ln := range lines {
+		if kind, _, ok := parseProseBlockDirective(strings.TrimSpace(ln), nil, nil); ok {
+			switch kind {
+			case "if", "elif", "else", "endif":
+				return true
+			}
+		}
+	}
+	return false
 }

@@ -87,6 +87,11 @@ func buildExportModalFormatLists(selected map[string]bool, lang Lang) ([]map[str
 		ext   string
 	}{
 		{"fountain", fountainLabel, ".fountain"},
+		{"fdx", trLang(lang, TrExportFmtFDX), ".fdx"},
+		{"treatment", trLang(lang, TrExportFmtTreatmentPDF), "-treatment.pdf"},
+		{"book_pdf", trLang(lang, TrExportFmtBookPDF), "-book.pdf"},
+		{"vo_csv", trLang(lang, TrExportFmtVOCSV), "-vo.csv"},
+		{"actor_pdf", trLang(lang, TrExportFmtActorPDF), "-actors.pdf"},
 		{"playtxt", playtxtLabel, ".playtxt"},
 	}
 
@@ -305,10 +310,55 @@ func (s *Server) populateModalsContext(vars map[string]any) {
 			}
 			modalTrimStart, modalTrimEnd := modalSc.NormalizedVoiceTrim()
 			hasModalVoice := curVoice != "" && modalSc.AudioURL != ""
+			hasModalVoiceTrim := hasModalVoice && modalSc.HasVoiceTrim()
+			bookNarrated := s.ActiveBook != nil && !s.ActiveBook.IsScreenplay() && s.ActiveBook.Narrated
+
+			hasModalVoiceSections, activeModalSec, modalVoiceSectionItems := s.buildSceneVoiceSectionsView(modalSc)
+			if hasModalVoiceSections {
+				curVoice = activeModalSec.AudioFile
+				if curVoice == "" {
+					curVoice = activeModalSec.ExplicitVoice
+				}
+				if curVoice != "" {
+					curVoiceLabel = curVoice
+				} else if s.VoiceRecorderOpen && activeModalSec.TargetFile != "" {
+					curVoiceLabel = activeModalSec.TargetFile
+				} else {
+					curVoiceLabel = s.tr(TrMediaNoneLabel)
+				}
+				modalVoiceURL = activeModalSec.AudioURL
+				if activeModalSec.HasAudio {
+					modalVoiceDur = activeModalSec.DurationLabel
+				} else {
+					modalVoiceDur = "0:00"
+				}
+				modalTrimStart, modalTrimEnd = activeModalSec.TrimStart, activeModalSec.TrimEnd
+				hasModalVoice = activeModalSec.HasAudio
+				hasModalVoiceTrim = activeModalSec.HasTrim
+				for i := range voiceOptions {
+					val, _ := voiceOptions[i]["value"].(string)
+					voiceOptions[i]["is_active"] = strings.EqualFold(val, curVoice)
+				}
+			}
+
+			isVoiceSectionIsolated := bookNarrated && s.VoiceRecorderOpen && hasModalVoiceSections
+			displayedModalText := modalSc.Text
+			if isVoiceSectionIsolated {
+				displayedModalText = activeModalSec.Text
+			}
+			vars["scene_text_modal_text"] = displayedModalText
+			vars["scene_text_modal_has_voice_sections"] = hasModalVoiceSections
+			vars["scene_text_modal_voice_sections"] = modalVoiceSectionItems
+			vars["scene_text_modal_active_voice_section_key"] = activeModalSec.Key
+			vars["scene_text_modal_active_voice_section_file"] = activeModalSec.TargetFile
+			vars["is_voice_section_isolated"] = isVoiceSectionIsolated
+			vars["isolated_voice_section_key"] = activeModalSec.Key
+			vars["isolated_voice_section_header"] = activeModalSec.HeaderTitle
+
 			vars["scene_text_modal_current_image"] = curImg
 			vars["scene_text_modal_current_image_label"] = curImgLabel
 			vars["scene_text_modal_image_options"] = imgOptions
-			vars["scene_text_modal_book_narrated"] = s.ActiveBook != nil && !s.ActiveBook.IsScreenplay() && s.ActiveBook.Narrated
+			vars["scene_text_modal_book_narrated"] = bookNarrated
 			vars["scene_text_modal_current_voice"] = curVoice
 			vars["scene_text_modal_current_voice_label"] = curVoiceLabel
 			vars["scene_text_modal_voice_url"] = modalVoiceURL
@@ -316,7 +366,7 @@ func (s *Server) populateModalsContext(vars map[string]any) {
 			vars["scene_text_modal_voice_trim_start"] = fmt.Sprintf("%.4f", modalTrimStart)
 			vars["scene_text_modal_voice_trim_end"] = fmt.Sprintf("%.4f", modalTrimEnd)
 			vars["scene_text_modal_has_voice"] = hasModalVoice
-			vars["scene_text_modal_has_voice_trim"] = hasModalVoice && modalSc.HasVoiceTrim()
+			vars["scene_text_modal_has_voice_trim"] = hasModalVoiceTrim
 			vars["scene_text_modal_voice_options"] = voiceOptions
 			vars["voice_recorder_open"] = s.VoiceRecorderOpen
 
@@ -395,7 +445,7 @@ func (s *Server) populateModalsContext(vars map[string]any) {
 			vars["has_scene_test_vars"] = len(testVarItems) > 0
 			vars["show_scene_test_vars_bar"] = s.SceneTestVarsPopoverOpen || (previewMode == "highlight" && len(testVarItems) > 0)
 			vars["scene_test_vars_spec"] = book.EncodeVariablesStateSpec(testState, s.ActiveBook)
-			vars["scene_text_modal_hl_segments"] = book.BuildSceneProseHighlightSegments(modalSc.Text, testState, s.ActiveBook)
+			vars["scene_text_modal_hl_segments"] = book.BuildSceneProseHighlightSegments(displayedModalText, testState, s.ActiveBook)
 			vars["scene_text_modal_preview_paragraphs"] = book.BuildSceneProsePreviewParagraphs(modalSc.Text, previewMode, testState, s.ActiveBook)
 			vars["scene_text_modal_output_prose"] = book.EvaluateSceneProseText(modalSc, testState, s.ActiveBook)
 

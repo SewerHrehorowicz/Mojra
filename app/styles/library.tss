@@ -1,9 +1,18 @@
-#view-library
+#view-library, .studio-home-container
   padding 16px 24px
   overflow-y auto
   max-width 1680px
   margin 0 auto
   width 100%
+
+#view-editor:has(> .studio-home-container)
+  overflow-y auto
+
+.library-top-actions
+  display flex
+  align-items center
+  gap 8px
+  flex-wrap wrap
 
 .bookshelf-header
   display flex
@@ -80,6 +89,25 @@
   transform scale(1.08)
   color #ffffff
 
+.studio-project-cover-wrap
+  background-color --bg-surface
+  background-image linear-gradient(to right, --border-subtle 1px, transparent 1px), linear-gradient(to bottom, --border-subtle 1px, transparent 1px)
+  background-size 24px 24px
+
+.studio-project-cover-wrap .book-cover-play-overlay
+  background transparent
+
+.studio-project-cover-wrap:hover .book-cover-play-overlay
+  background rgba(0, 0, 0, 0.25)
+
+.book-cover-play-icon.studio-project-cover-icon
+  width 28px
+  height 28px
+  color --text-secondary
+
+.studio-project-cover-wrap:hover .book-cover-play-icon.studio-project-cover-icon
+  color --text-primary
+
 .book-card-body
   display flex
   flex-direction column
@@ -131,6 +159,45 @@
   line-height 1.65
   margin-top 4px
 
+.book-card-desc.studio-project-path
+  font-family --font-mono
+  font-size 12px
+  color --text-muted
+
+.home-mode-footer
+  margin-top 24px
+  padding-top 16px
+  border-top 1px solid --border-subtle
+  display flex
+  align-items center
+
+.home-mode-switch-btn
+  display inline-flex
+  align-items center
+  gap 10px
+  padding 6px 0
+  background transparent
+  border none
+  color --text-secondary
+  font-family --font-sans
+  font-size 12px
+  cursor pointer
+  transition color 0.14s ease
+
+.home-mode-switch-btn:hover
+  color --text-primary
+
+.home-mode-switch-icon
+  width 16px
+  height 16px
+  color --text-primary
+  flex-shrink 0
+  pointer-events none
+
+.home-mode-switch-target
+  color --text-primary
+  font-weight 600
+
 body[data-ui-scale="large"]
   .book-card
     grid-template-columns 144px 1fr
@@ -158,7 +225,7 @@ body[data-ui-scale="large"]
     grid-template-columns repeat(3, minmax(0, 1fr))
 
 @media (max-width: 600px)
-  #view-library
+  #view-library, .studio-home-container
     padding 12px 14px
 
   .book-card
@@ -182,7 +249,7 @@ body[data-ui-scale="large"]
     portrait, landscape
       grid-template-columns 1fr !important
 
-#view-library
+#view-library, .studio-home-container
   @switch preview
     portrait
       padding 12px 14px

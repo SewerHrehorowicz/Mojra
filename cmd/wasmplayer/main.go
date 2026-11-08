@@ -518,7 +518,14 @@ func (r *wasmPlayerRuntime) populateContext(vars map[string]any) {
 			if isScreenplay {
 				pastBlocks = buildWasmScreenplayBlocks(pastScene, pastVars, b, pastScene.OrderIndex+1, normStd)
 			}
+			pastQueue := book.EvaluateSceneAudioQueue(pastScene, pastVars, b)
+			pastQueueSpec, _, pastQueueDurLbl := book.EncodeSceneAudioQueue(pastQueue)
+			pastAudioURL := pastScene.AudioURL
 			pastTrimStart, pastTrimEnd := pastScene.NormalizedVoiceTrim()
+			if len(pastQueue) > 0 {
+				pastAudioURL = pastQueue[0].AudioURL
+				pastTrimStart, pastTrimEnd = book.NormalizedVoiceTrimValues(pastQueue[0].TrimStart, pastQueue[0].TrimEnd)
+			}
 			histList = append(histList, map[string]any{
 				"idx":                  idx,
 				"header_meta":          pastHeaderMeta,
@@ -531,8 +538,9 @@ func (r *wasmPlayerRuntime) populateContext(vars map[string]any) {
 				"has_image":            pastImgURL != "",
 				"image_url":            pastImgURL,
 				"bg_image_url":         lastImageURL,
-				"audio_url":            pastScene.AudioURL,
-				"audio_duration_label": "0:00",
+				"audio_url":            pastAudioURL,
+				"audio_queue":          pastQueueSpec,
+				"audio_duration_label": pastQueueDurLbl,
 				"audio_trim_start":     fmt.Sprintf("%.4f", pastTrimStart),
 				"audio_trim_end":       fmt.Sprintf("%.4f", pastTrimEnd),
 			})
@@ -579,7 +587,14 @@ func (r *wasmPlayerRuntime) populateContext(vars map[string]any) {
 	if isScreenplay {
 		curBlocks = buildWasmScreenplayBlocks(curScene, curVars, b, curScene.OrderIndex+1, normStd)
 	}
+	curQueue := book.EvaluateSceneAudioQueue(curScene, curVars, b)
+	curQueueSpec, _, curQueueDurLbl := book.EncodeSceneAudioQueue(curQueue)
+	curAudioURL := curScene.AudioURL
 	curTrimStart, curTrimEnd := curScene.NormalizedVoiceTrim()
+	if len(curQueue) > 0 {
+		curAudioURL = curQueue[0].AudioURL
+		curTrimStart, curTrimEnd = book.NormalizedVoiceTrimValues(curQueue[0].TrimStart, curQueue[0].TrimEnd)
+	}
 	vars["current_scene"] = map[string]any{
 		"name":                 curScene.Name,
 		"slugline":             curScene.Slugline,
@@ -592,8 +607,9 @@ func (r *wasmPlayerRuntime) populateContext(vars map[string]any) {
 		"image_url":            curImgURL,
 		"has_bg_image":         !imageless && lastImageURL != "",
 		"bg_image_url":         lastImageURL,
-		"audio_url":            curScene.AudioURL,
-		"audio_duration_label": "0:00",
+		"audio_url":            curAudioURL,
+		"audio_queue":          curQueueSpec,
+		"audio_duration_label": curQueueDurLbl,
 		"audio_trim_start":     fmt.Sprintf("%.4f", curTrimStart),
 		"audio_trim_end":       fmt.Sprintf("%.4f", curTrimEnd),
 		"is_terminal":          len(curScene.Choices) == 0 || curScene.ExplicitEnd,
@@ -706,6 +722,13 @@ func applyBlobURLsToBook(b *book.Book, blobs map[string]string) {
 		if sc.AudioFile != "" && b.Narrated {
 			if u, ok := blobs[strings.ToLower(filepath.ToSlash(sc.AudioFile))]; ok {
 				sc.AudioURL = u
+			}
+		}
+		for i := range sc.VoiceSections {
+			if sc.VoiceSections[i].AudioFile != "" && b.Narrated {
+				if u, ok := blobs[strings.ToLower(filepath.ToSlash(sc.VoiceSections[i].AudioFile))]; ok {
+					sc.VoiceSections[i].AudioURL = u
+				}
 			}
 		}
 		if sc.ImageFile != "" {

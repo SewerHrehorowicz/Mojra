@@ -109,6 +109,11 @@ func RebindBookID(b *Book, newID string) {
 		if sc.AudioFile != "" {
 			sc.AudioURL = encodeMediaURL(b.ID, sc.AudioFile)
 		}
+		for i := range sc.VoiceSections {
+			if sc.VoiceSections[i].AudioFile != "" {
+				sc.VoiceSections[i].AudioURL = encodeMediaURL(b.ID, sc.VoiceSections[i].AudioFile)
+			}
+		}
 		if sc.ImageFile != "" {
 			sc.ImageURL = encodeMediaURL(b.ID, sc.ImageFile)
 		}

@@ -455,6 +455,48 @@ func slicePCMByRatio(samples []int16, sampleRate int, startRatio, endRatio float
 	return samples[startIdx:endIdx]
 }
 
+func sanitizeVoiceFileStem(sceneID string) string {
+	if idx := strings.Index(sceneID, "__"); idx > 0 {
+		base := SanitizeChapterID(sceneID[:idx])
+		sec := SanitizeChapterID(sceneID[idx+2:])
+		if base != "" && sec != "" {
+			return base + "__" + sec
+		}
+	}
+	if stem := SanitizeChapterID(sceneID); stem != "" {
+		return stem
+	}
+	if stem := SanitizeBookID(sceneID); stem != "" {
+		return stem
+	}
+	return "scena"
+}
+
+func appendBookAudioFileUnique(b *Book, relPath string) {
+	if b == nil || relPath == "" {
+		return
+	}
+	for _, f := range b.AudioFiles {
+		if strings.EqualFold(f, relPath) {
+			return
+		}
+	}
+	b.AudioFiles = append(b.AudioFiles, relPath)
+}
+
+func removeBookAudioFile(b *Book, relPath string) {
+	if b == nil || relPath == "" || len(b.AudioFiles) == 0 {
+		return
+	}
+	out := b.AudioFiles[:0]
+	for _, f := range b.AudioFiles {
+		if !strings.EqualFold(f, relPath) {
+			out = append(out, f)
+		}
+	}
+	b.AudioFiles = out
+}
+
 func writeVoiceFLACFileAtomically(b *Book, sceneID string, flacBytes []byte) (string, error) {
 	if b == nil {
 		return "", fmt.Errorf("brak aktywnej książki")
@@ -468,10 +510,7 @@ func writeVoiceFLACFileAtomically(b *Book, sceneID string, flacBytes []byte) (st
 	if strings.TrimSpace(b.RootPath) == "" {
 		return "", fmt.Errorf("brak ścieżki katalogu książki na dysku")
 	}
-	stem := SanitizeBookID(sceneID)
-	if stem == "" {
-		stem = "scena"
-	}
+	stem := sanitizeVoiceFileStem(sceneID)
 	relPath := filepath.ToSlash(filepath.Join("voice", stem+".flac"))
 	destDir := filepath.Join(b.RootPath, "voice")
 	if err := os.MkdirAll(destDir, 0755); err != nil {
@@ -489,6 +528,7 @@ func writeVoiceFLACFileAtomically(b *Book, sceneID string, flacBytes []byte) (st
 		_ = os.Remove(tmpPath)
 		return "", fmt.Errorf("błąd podmiany pliku audio: %w", err)
 	}
+	appendBookAudioFileUnique(b, relPath)
 	return relPath, nil
 }
 
@@ -518,7 +558,7 @@ func TrimSceneVoiceFile(b *Book, sceneID string, currentRelVoice string, startRa
 	}
 	cleanRel := SanitizeRelativeMediaPath(currentRelVoice)
 	if cleanRel == "" {
-		stem := SanitizeBookID(sceneID)
+		stem := sanitizeVoiceFileStem(sceneID)
 		if stem != "" {
 			cleanRel = filepath.ToSlash(filepath.Join("voice", stem+".flac"))
 		}
@@ -548,11 +588,30 @@ func TrimSceneVoiceFile(b *Book, sceneID string, currentRelVoice string, startRa
 
 // ReadAudioDurationSecondsAndStamp returns the raw duration in seconds and modtime stamp for a scene's audio file.
 func ReadAudioDurationSecondsAndStamp(b *Book, relVoice string) (float64, int64) {
-	if b == nil || b.IsPacked || strings.TrimSpace(relVoice) == "" || strings.TrimSpace(b.RootPath) == "" {
+	if b == nil || strings.TrimSpace(relVoice) == "" {
 		return 0, 0
 	}
 	cleanRel := SanitizeRelativeMediaPath(relVoice)
 	if cleanRel == "" {
+		return 0, 0
+	}
+	if b.IsPacked {
+		if b.PackedMedia != nil {
+			if entry, ok := b.PackedMedia[strings.ToLower(cleanRel)]; ok && entry.HeaderLen >= 26 {
+				hdr := entry.Header512[:entry.HeaderLen]
+				if string(hdr[:4]) == "fLaC" && (hdr[4]&0x7F) == 0 {
+					packed64 := binary.BigEndian.Uint64(hdr[18:26])
+					sr := (packed64 >> 44) & 0xFFFFF
+					tot := packed64 & 0xFFFFFFFFF
+					if sr > 0 && tot > 0 {
+						return float64(tot) / float64(sr), entry.ModTime.UnixNano()
+					}
+				}
+			}
+		}
+		return 0, 0
+	}
+	if strings.TrimSpace(b.RootPath) == "" {
 		return 0, 0
 	}
 	absPath := filepath.Join(b.RootPath, filepath.FromSlash(cleanRel))
@@ -649,6 +708,126 @@ func DeleteSceneVoiceFile(b *Book, sc *Scene) error {
 			}
 		}
 		if !stillUsed {
+			removeBookAudioFile(b, prevRel)
+			absPath := filepath.Join(b.RootPath, filepath.FromSlash(prevRel))
+			if IsSafePathInsideRoot(b.RootPath, absPath) {
+				_ = os.Remove(absPath)
+			}
+		}
+	}
+	return nil
+}
+
+func isAudioFileReferencedElsewhere(b *Book, ignoreSceneID, ignoreSecKey, relPath string) bool {
+	if b == nil || relPath == "" {
+		return false
+	}
+	for _, sc := range b.Scenes {
+		if sc == nil {
+			continue
+		}
+		if sc.ID != ignoreSceneID {
+			if strings.EqualFold(SanitizeRelativeMediaPath(sc.ExplicitVoice), relPath) ||
+				strings.EqualFold(SanitizeRelativeMediaPath(sc.AudioFile), relPath) {
+				return true
+			}
+		}
+		for k, meta := range sc.SectionVoices {
+			if sc.ID == ignoreSceneID && strings.EqualFold(k, ignoreSecKey) {
+				continue
+			}
+			if strings.EqualFold(SanitizeRelativeMediaPath(meta.ExplicitVoice), relPath) {
+				return true
+			}
+		}
+		for _, vs := range sc.VoiceSections {
+			if sc.ID == ignoreSceneID && strings.EqualFold(vs.Key, ignoreSecKey) {
+				continue
+			}
+			if strings.EqualFold(SanitizeRelativeMediaPath(vs.AudioFile), relPath) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// SaveSceneVoiceSectionPCM saves PCM audio for a specific voice section (or the whole scene if single-section).
+func SaveSceneVoiceSectionPCM(b *Book, sc *Scene, sectionKey string, pcmLE []byte, sampleRate int, startRatio, endRatio float64) (string, error) {
+	if b == nil || sc == nil {
+		return "", fmt.Errorf("brak aktywnej sceny")
+	}
+	if !HasConditionalVoiceDirectives(sc.Text) {
+		relPath, err := SaveSceneVoicePCM(b, sc.ReferenceKey(), pcmLE, sampleRate, startRatio, endRatio)
+		if err != nil {
+			return "", err
+		}
+		sc.ExplicitVoice = relPath
+		sc.VoiceTrimStart = 0
+		sc.VoiceTrimEnd = 0
+		return relPath, nil
+	}
+	secs := ExtractSceneVoiceSections(sc, b)
+	targetKey := strings.TrimSpace(sectionKey)
+	var matchedSec *VoiceSection
+	for i := range secs {
+		if strings.EqualFold(secs[i].Key, targetKey) {
+			matchedSec = &secs[i]
+			break
+		}
+	}
+	if matchedSec == nil && len(secs) > 0 {
+		matchedSec = &secs[0]
+	}
+	if matchedSec == nil {
+		return "", fmt.Errorf("brak sekcji głosowej")
+	}
+	stemWithSec := SceneVoiceBaseStem(sc) + "__" + matchedSec.Key
+	relPath, err := SaveSceneVoicePCM(b, stemWithSec, pcmLE, sampleRate, startRatio, endRatio)
+	if err != nil {
+		return "", err
+	}
+	sc.SetSectionVoiceMeta(matchedSec.Key, relPath, 0, 0)
+	return relPath, nil
+}
+
+// DeleteSceneVoiceSectionFile removes the audio recording for a specific voice section (or the whole scene if single-section).
+func DeleteSceneVoiceSectionFile(b *Book, sc *Scene, sectionKey string) error {
+	if b == nil || sc == nil {
+		return fmt.Errorf("brak aktywnej sceny")
+	}
+	if b.IsPacked {
+		return fmt.Errorf("nie można edytować spakowanego archiwum .stbook")
+	}
+	if !HasConditionalVoiceDirectives(sc.Text) {
+		return DeleteSceneVoiceFile(b, sc)
+	}
+	secs := ExtractSceneVoiceSections(sc, b)
+	targetKey := strings.TrimSpace(sectionKey)
+	var matchedSec *VoiceSection
+	for i := range secs {
+		if strings.EqualFold(secs[i].Key, targetKey) {
+			matchedSec = &secs[i]
+			break
+		}
+	}
+	if matchedSec == nil && len(secs) > 0 {
+		matchedSec = &secs[0]
+	}
+	if matchedSec == nil {
+		return nil
+	}
+	prevRel := SanitizeRelativeMediaPath(matchedSec.AudioFile)
+	if prevRel == "" {
+		prevRel = SanitizeRelativeMediaPath(matchedSec.ExplicitVoice)
+	}
+	if prevRel == "" {
+		prevRel = SanitizeRelativeMediaPath(matchedSec.TargetFile)
+	}
+	sc.DeleteSectionVoiceMeta(matchedSec.Key)
+	if prevRel != "" && strings.TrimSpace(b.RootPath) != "" {
+		if !isAudioFileReferencedElsewhere(b, sc.ID, matchedSec.Key, prevRel) {
+			removeBookAudioFile(b, prevRel)
 			absPath := filepath.Join(b.RootPath, filepath.FromSlash(prevRel))
 			if IsSafePathInsideRoot(b.RootPath, absPath) {
 				_ = os.Remove(absPath)

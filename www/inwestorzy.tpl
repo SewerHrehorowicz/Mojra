@@ -222,9 +222,11 @@ html lang: pl
 
             section.pitch-footer-cta
                 p.pitch-cta-headline "Chcesz zobaczyć Mojrę na żywo i przejrzeć pełne wyliczenia?"
-                p.pitch-cta-sub "Napisz bezpośrednio — pokażemy Ci działające Studio w 15 minut i prześlemy deck finansowy."
-                a.beta-submit href: "mailto:inwestorzy@mojra.pl?subject=Mojra%20%E2%80%94%20Pitch%20Deck%20i%20pokaz%20na%20%C5%BCywo"
+                p.pitch-cta-sub "Pobierz deck finansowy PDF lub napisz bezpośrednio — pokażemy Ci działające Studio w 15 minut."
+                a.beta-submit href: mojra-deck-finansowy.pdf
                     span.corners
+                    "POBIERZ DECK FINANSOWY (PDF)"
+                a.pitch-back href: "mailto:inwestorzy@mojra.pl?subject=Mojra%20%E2%80%94%20Pitch%20Deck%20i%20pokaz%20na%20%C5%BCywo"
                     "NAPISZ DO TWÓRCÓW • INWESTORZY@MOJRA.PL"
 
             footer.pitch-sources

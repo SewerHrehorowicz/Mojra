@@ -216,7 +216,10 @@ function compileStaticSceneQuads(theme) {
     ) {
       continue;
     }
-    const isUnreach = Boolean(nd.unreachable);
+    const hasSearchFilter = Boolean(studioGraphState.searchQuery && studioGraphState.searchMatchSet);
+    const isSearchMatch = hasSearchFilter && studioGraphState.searchMatchSet.has(nd.id);
+    const isSearchDimmed = hasSearchFilter && !isSearchMatch;
+    const isUnreach = Boolean(nd.unreachable) || isSearchDimmed;
     const cardBg = isUnreach ? theme.unreachCardBg : theme.bgObsidian;
     const textPri = isUnreach ? theme.unreachText : theme.textPrimary;
     const textSec = isUnreach ? theme.unreachText : theme.textSecondary;
@@ -225,7 +228,7 @@ function compileStaticSceneQuads(theme) {
       pushSolidQuad(nd.x, nd.y, nd.w, nd.h, cardBg);
       pushDashedRectQuads(nd.x, nd.y, nd.w, nd.h, 1, 8.0, theme.unreachBorder);
     } else {
-      pushBorderedBoxQuads(nd.x, nd.y, nd.w, nd.h, 1, theme.borderStrong, cardBg);
+      pushBorderedBoxQuads(nd.x, nd.y, nd.w, nd.h, 1, isSearchMatch ? theme.textPrimary : theme.borderStrong, cardBg);
     }
 
     pushQuadInstance(

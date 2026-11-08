@@ -35,6 +35,7 @@ const (
 	TrScaleZenHint
 	TrScaleExitZenHint
 	TrScaleEnlargeHint
+	TrScaleShrinkHint
 	TrImagelessLockedHint
 	TrImagelessEnableHint
 	TrImagelessDisableHint
@@ -334,6 +335,18 @@ const (
 	TrUnknownAuthor
 	TrConfirmPlaybookReadonlyTitle
 	TrConfirmPlaybookUnpackMsgFmt
+	TrStudioSearchHint
+	TrStudioSearchPlaceholder
+	TrExportFmtFDX
+	TrExportFmtTreatmentPDF
+	TrExportFmtBookPDF
+	TrExportFmtVOCSV
+	TrExportFmtActorPDF
+	TrNewBookShortBtn
+	TrCreateNewScreenplayBtn
+	TrOpenProjectFromDiskBtn
+	TrHomeSwitchToStudioPrefix
+	TrHomeSwitchToReaderPrefix
 
 	trKeyCount
 )
@@ -356,6 +369,7 @@ var trKeyNames = [trKeyCount]string{
 	"TrScaleZenHint",
 	"TrScaleExitZenHint",
 	"TrScaleEnlargeHint",
+	"TrScaleShrinkHint",
 	"TrImagelessLockedHint",
 	"TrImagelessEnableHint",
 	"TrImagelessDisableHint",
@@ -655,6 +669,18 @@ var trKeyNames = [trKeyCount]string{
 	"TrUnknownAuthor",
 	"TrConfirmPlaybookReadonlyTitle",
 	"TrConfirmPlaybookUnpackMsgFmt",
+	"TrStudioSearchHint",
+	"TrStudioSearchPlaceholder",
+	"TrExportFmtFDX",
+	"TrExportFmtTreatmentPDF",
+	"TrExportFmtBookPDF",
+	"TrExportFmtVOCSV",
+	"TrExportFmtActorPDF",
+	"TrNewBookShortBtn",
+	"TrCreateNewScreenplayBtn",
+	"TrOpenProjectFromDiskBtn",
+	"TrHomeSwitchToStudioPrefix",
+	"TrHomeSwitchToReaderPrefix",
 }
 
 // i18nTable is a static zero-allocation lookup table indexed by [TrKey][Lang], compiled from tpl.I18nDicts with fallback.
@@ -670,11 +696,6 @@ var tplI18nBindings = [...]struct {
 	{"t_preview_desktop", TrPreviewDesktop},
 
 	{"t_nav_library", TrNavLibrary},
-	{"t_nav_studio", TrNavStudio},
-	{"t_menu", TrMenu},
-	{"t_reset_story_hint", TrResetStoryHint},
-	{"t_toggle_theme_hint", TrToggleThemeHint},
-	{"t_toggle_lang_hint", TrToggleLangHint},
 	{"t_app_settings_hint", TrAppSettingsHint},
 	{"t_fullscreen_hint", TrFullscreenHint},
 
@@ -691,7 +712,6 @@ var tplI18nBindings = [...]struct {
 	{"t_end_story_reset", TrEndStoryReset},
 	{"t_history_rail_aria", TrHistoryRailAria},
 
-	{"t_no_active_project", TrNoActiveProject},
 	{"t_new_book_hint", TrNewBookHint},
 	{"t_open_project_hint", TrOpenProjectHint},
 	{"t_export_project_hint", TrExportProjectHint},
@@ -724,8 +744,6 @@ var tplI18nBindings = [...]struct {
 	{"t_ctx_add_chapter", TrCtxAddChapter},
 	{"t_ctx_fit_view", TrCtxFitView},
 	{"t_no_open_project", TrNoOpenProject},
-	{"t_create_new_book_btn", TrCreateNewBookBtn},
-	{"t_open_project_btn", TrOpenProjectBtn},
 
 	{"t_chapter_placeholder", TrChapterPlaceholder},
 	{"t_start_scene_badge_hint", TrStartSceneBadgeHint},
@@ -887,6 +905,13 @@ var tplI18nBindings = [...]struct {
 	{"t_scroll_sens_low", TrScrollSensLow},
 	{"t_scroll_sens_off", TrScrollSensOff},
 	{"t_voice_trim_destructive_hint", TrVoiceTrimDestructiveHint},
+	{"t_studio_search_hint", TrStudioSearchHint},
+	{"t_studio_search_placeholder", TrStudioSearchPlaceholder},
+	{"t_new_book_short_btn", TrNewBookShortBtn},
+	{"t_create_new_screenplay_btn", TrCreateNewScreenplayBtn},
+	{"t_open_project_from_disk_btn", TrOpenProjectFromDiskBtn},
+	{"t_home_switch_to_studio_prefix", TrHomeSwitchToStudioPrefix},
+	{"t_home_switch_to_reader_prefix", TrHomeSwitchToReaderPrefix},
 }
 
 // i18nAnyTable holds pre-boxed interface{} values for i18nTable so PopulateI18nContext performs zero heap allocations.

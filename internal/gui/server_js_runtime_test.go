@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"io/fs"
 	"net/http/httptest"
 	"os"
 	"os/exec"
@@ -10,6 +11,7 @@ import (
 	"testing"
 
 	"mojra"
+	"mojra/internal/book"
 	"mojra/internal/tpl"
 )
 
@@ -1078,12 +1080,12 @@ function makeEvent(type, props) {
     await waitForActions();
   };
 
-  // 1. Switch to Node Studio (#view-editor) via Topbar tab click
-  await clickEl('button.topbar-tab[data-view="editor"]');
-  if (!doc.querySelector("#view-editor")) {
+  // 1. Switch to Studio Home (#view-editor) via bottom mode switch in Reader Home
+  await clickEl('#btn-switch-to-studio');
+  if (!doc.querySelector("#view-editor") || !doc.querySelector("#editor-empty-state")) {
     const appChildren = doc.querySelector("#app") ? doc.querySelector("#app").children.map((c) => c.tagName + "#" + c.id).join(",") : "NONE";
     const allIds = doc.querySelectorAll("*").map((c) => c.tagName + "#" + c.id).filter((s) => !s.endsWith("#")).join(",");
-    throw new Error("Expected #view-editor; actionLog=" + actionLog.join(" | ") + " appChildren=" + appChildren + " allIds=" + allIds);
+    throw new Error("Expected #view-editor and #editor-empty-state; actionLog=" + actionLog.join(" | ") + " appChildren=" + appChildren + " allIds=" + allIds);
   }
 
   // 2. Click OpenNewBookModal button in Node Studio
@@ -1463,32 +1465,51 @@ function makeEvent(type, props) {
     throw new Error("Expected destructive trim button to hide after destructive trim resets bounds to [0, 1]");
   }
 
-  // 10b. Topbar toggles (Theme, UI Scale, Hamburger Menu)
-  await clickEl("#btn-topbar-menu");
-  if (!doc.querySelector("#topbar-actions-menu").classList.contains("open")) {
-    throw new Error("Expected #btn-topbar-menu to open #topbar-actions-menu");
+  // 10b. Settings modal toggles (Theme, UI Scale) & Studio Home <-> Reader Home navigation
+  if (doc.querySelector("#btn-toggle-zen")) {
+    throw new Error("Expected #btn-toggle-zen to NOT exist in Studio view");
   }
-  await clickEl("#btn-toggle-ui-scale");
-  if (doc.body.getAttribute("data-ui-scale") !== "large" || doc.querySelector("#icon-zoom-zen").classList.contains("hidden")) {
-    throw new Error("Expected #btn-toggle-ui-scale to set data-ui-scale=large and show #icon-zoom-zen for next step");
+  await clickEl("#btn-open-settings");
+  if (!doc.querySelector('button[action="SetUIScale"][data-scale="large"]')) {
+    throw new Error("Expected #btn-open-settings to open settings modal with UI scale and theme controls");
   }
-  await clickEl("#btn-toggle-ui-scale");
-  if (doc.body.getAttribute("data-ui-scale") !== "zen" || doc.querySelector("#icon-zoom-out").classList.contains("hidden")) {
-    throw new Error("Expected second click on #btn-toggle-ui-scale to set data-ui-scale=zen and show #icon-zoom-out");
+  await clickEl('button[action="SetUIScale"][data-scale="large"]');
+  if (doc.body.getAttribute("data-ui-scale") !== "large") {
+    throw new Error("Expected SetUIScale(large) to set data-ui-scale=large");
   }
-  await clickEl("#btn-toggle-ui-scale");
-  if (doc.body.getAttribute("data-ui-scale") !== "small" || doc.querySelector("#icon-zoom-in").classList.contains("hidden")) {
-    throw new Error("Expected third click on #btn-toggle-ui-scale to return to data-ui-scale=small");
+  await clickEl('button[action="SetUIScale"][data-scale="small"]');
+  if (doc.body.getAttribute("data-ui-scale") !== "small") {
+    throw new Error("Expected SetUIScale(small) to return directly to data-ui-scale=small");
   }
   await clickEl('button[action="ToggleTheme"]');
   if (doc.body.getAttribute("data-theme") !== "light") {
     throw new Error("Expected ToggleTheme to set data-theme=light");
   }
+  await clickEl('button[action="CloseQRModal"]');
 
-  // 11. Switch to Player view via Topbar, click ChooseBranch to enter the scene with recorded audio, and verify automatic audio playback + pause option
-  await clickEl('#tab-player');
+  // 11. Navigate Node Editor -> Studio Home -> Reader Home -> Book Reader (#view-player)
+  await clickEl("#tab-studio-home");
+  if (!doc.querySelector("#editor-empty-state") || !doc.querySelector("#studio-projects-grid")) {
+    throw new Error("Expected clicking #tab-studio-home to return to Studio Home with #studio-projects-grid");
+  }
+  await clickEl("#btn-switch-to-reader");
+  if (!doc.querySelector("#view-library")) {
+    throw new Error("Expected #view-library after clicking #btn-switch-to-reader");
+  }
+  await clickEl('button.book-cover-wrap[action="OpenBook"]');
   if (!doc.querySelector("#view-player")) {
-    throw new Error("Expected #view-player after clicking #tab-player");
+    throw new Error("Expected #view-player after clicking book cover in Reader Home");
+  }
+  if (!doc.querySelector("#btn-toggle-zen") || doc.querySelector("#btn-open-settings")) {
+    throw new Error("Expected #btn-toggle-zen and no #btn-open-settings in book reader (#view-player)");
+  }
+  await clickEl("#btn-toggle-zen");
+  if (doc.body.getAttribute("data-zen") !== "true" || !doc.querySelector("#btn-toggle-zen").classList.contains("active")) {
+    throw new Error("Expected #btn-toggle-zen to enable data-zen=true in player view");
+  }
+  await clickEl("#btn-toggle-zen");
+  if (doc.body.getAttribute("data-zen") !== "false" || doc.querySelector("#btn-toggle-zen").classList.contains("active")) {
+    throw new Error("Expected second click on #btn-toggle-zen to disable data-zen=false");
   }
   const proseText = doc.querySelector("#active-scene-stage .scene-prose").textContent;
   if (!proseText.includes("Treść zapisana przez mostek JS.")) {
@@ -1526,8 +1547,12 @@ function makeEvent(type, props) {
     }
   }
 
-  // 12. Switch to Editor, create a Screenplay project via custom-select mode picker, test Breakdown Panel forms & jump
-  await clickEl('button.topbar-tab[data-view="editor"]');
+  // 12. Return from Player to Reader Home (#tab-library), switch to Studio Home (#btn-switch-to-studio), create a Screenplay project, test Breakdown Panel forms & jump
+  await clickEl("#tab-library");
+  if (!doc.querySelector("#view-library")) {
+    throw new Error("Expected clicking #tab-library in player topbar to return to Reader Home (#view-library)");
+  }
+  await clickEl("#btn-switch-to-studio");
   await clickEl('button[action="OpenNewBookModal"]');
   await clickEl('button[data-form-toggle="narrated"]');
   if (doc.querySelector('#new-book-narrated-field input[name="narrated"]').value !== "true") {
@@ -1596,6 +1621,29 @@ function makeEvent(type, props) {
   newLocInp.dispatchEvent(makeEvent("blur", { target: newLocInp }));
   await waitForActions();
 
+  // Verify Studio Full-Text Search (#btn-studio-search, #studio-search-palette, live filter, and #modal-scene-text jump)
+  await clickEl("#btn-studio-search");
+  const searchPalette = doc.querySelector("#studio-search-palette");
+  const searchBtn = doc.querySelector("#btn-studio-search");
+  const searchInput = doc.querySelector("#studio-search-input");
+  if (!searchPalette || searchPalette.classList.contains("hidden") || !searchBtn.classList.contains("active")) {
+    throw new Error("Expected #studio-search-palette to open and #btn-studio-search.active on click");
+  }
+  searchInput.value = "DETEKTYW";
+  searchInput.dispatchEvent(makeEvent("input", { target: searchInput }));
+  if (doc.querySelector("#studio-search-count").textContent !== "1") {
+    throw new Error("Expected #studio-search-count to equal '1' when filtering for DETEKTYW, got: " + doc.querySelector("#studio-search-count").textContent);
+  }
+  await clickEl('#studio-search-results .studio-search-row:not(.hidden) [data-search-open-text]');
+  if (!doc.querySelector("#modal-scene-text") || !doc.querySelector("#topbar")) {
+    throw new Error("Expected clicking search result edit button to open #modal-scene-text while keeping #topbar visible");
+  }
+  await clickEl('#modal-scene-text [action="CloseSceneTextModal"]');
+  await clickEl("#btn-close-studio-search");
+  if (!doc.querySelector("#studio-search-palette").classList.contains("hidden")) {
+    throw new Error("Expected #studio-search-palette to close on #btn-close-studio-search click");
+  }
+
   // Verify Export Project Modal multi-select, collapsible ZAAWANSOWANE, and norma dropdown in live DOM
   await clickEl('button[action="OpenExportModal"]');
   if (!doc.querySelector("#modal-export-project")) {
@@ -1648,6 +1696,70 @@ function makeEvent(type, props) {
   }
   doc.body.setAttribute("data-lang", "pl");
 
+  // Verify sequential conditional voice queue (data-scene-audio-queue) in player.js / audio.js:
+  // 01 -> 02_if -> 04 progression, nextAudioPreload buffering, and O(K) seek slider mapping across total duration
+  const queueSpec = "/books/test/media/voice/s__01.flac|0.0000|1.0000|10.000;/books/test/media/voice/s__02_if.flac|0.1000|0.9000|8.000;/books/test/media/voice/s__04.flac|0.0000|1.0000|12.000";
+  const parsedQueue = win.parseSceneAudioQueue(queueSpec, "", "0", "1");
+  if (!parsedQueue || parsedQueue.length !== 3 || Math.abs(parsedQueue[1].rawDurationSec - 10.0) > 0.05) {
+    throw new Error("Expected parseSceneAudioQueue to parse 3 segments with 02_if rawDuration=10s, got: " + String(parsedQueue && parsedQueue.length));
+  }
+  const mockAudioEl = new DOMElement("audio", doc);
+  mockAudioEl.setAttribute("id", "story-audio");
+  mockAudioEl.setAttribute("data-audio-url", "/books/test/media/voice/s__01.flac");
+  mockAudioEl.setAttribute("data-scene-audio-queue", queueSpec);
+  mockAudioEl.setAttribute("data-trim-start", "0.0000");
+  mockAudioEl.setAttribute("data-trim-end", "1.0000");
+  mockAudioEl.setAttribute("data-speed", "1");
+  mockAudioEl.duration = 10;
+  const mockSliderEl = new DOMElement("input", doc);
+  mockSliderEl.setAttribute("id", "audio-seek-slider");
+  mockSliderEl.value = "0";
+  const mockCurTimeEl = new DOMElement("span", doc);
+  mockCurTimeEl.setAttribute("id", "audio-time-current");
+  const mockTotTimeEl = new DOMElement("span", doc);
+  mockTotTimeEl.setAttribute("id", "audio-time-total");
+  const mockPlayBtnEl = new DOMElement("button", doc);
+  mockPlayBtnEl.setAttribute("id", "btn-audio-play");
+  doc.body.appendChild(mockAudioEl);
+  doc.body.appendChild(mockSliderEl);
+  doc.body.appendChild(mockCurTimeEl);
+  doc.body.appendChild(mockTotTimeEl);
+  doc.body.appendChild(mockPlayBtnEl);
+
+  win.initAudioController(false, 0);
+  if (mockTotTimeEl.textContent !== "0:30") {
+    throw new Error("Expected total queue duration 0:30 (10+8+12), got: " + mockTotTimeEl.textContent);
+  }
+  if (!mockAudioEl._nextAudioPreload || mockAudioEl._nextAudioPreload.src !== "/books/test/media/voice/s__02_if.flac") {
+    throw new Error("Expected nextAudioPreload to buffer segment 02_if while on segment 01");
+  }
+
+  // Trigger ended on segment 01 -> must automatically switch to segment 02_if at trimStart (1.0s) and preload segment 04
+  mockAudioEl.dispatchEvent(makeEvent("ended", { target: mockAudioEl }));
+  if (mockAudioEl._currentSegmentIndex !== 1 || mockAudioEl.getAttribute("data-audio-url") !== "/books/test/media/voice/s__02_if.flac") {
+    throw new Error("Expected ended on segment 01 to advance to segment 02_if, got idx=" + mockAudioEl._currentSegmentIndex);
+  }
+  if (Math.abs(mockAudioEl.currentTime - 1.0) > 0.05) {
+    throw new Error("Expected segment 02_if to start at trimStart=1.0s, got currentTime=" + mockAudioEl.currentTime);
+  }
+  if (!mockAudioEl._nextAudioPreload || mockAudioEl._nextAudioPreload.src !== "/books/test/media/voice/s__04.flac") {
+    throw new Error("Expected nextAudioPreload to buffer segment 04 while on segment 02_if");
+  }
+
+  // Advance segment 02_if past trimEnd (9.0s) via timeupdate -> must switch to segment 04
+  mockAudioEl.currentTime = 9.05;
+  mockAudioEl.dispatchEvent(makeEvent("timeupdate", { target: mockAudioEl }));
+  if (mockAudioEl._currentSegmentIndex !== 2 || mockAudioEl.getAttribute("data-audio-url") !== "/books/test/media/voice/s__04.flac") {
+    throw new Error("Expected reaching trimEnd of 02_if to advance to segment 04, got idx=" + mockAudioEl._currentSegmentIndex);
+  }
+
+  // Seek slider to 50% of 30s (= 15.0s global -> 5.0s into segment 02_if -> rawAudioTime = 1.0 + 5.0 = 6.0s)
+  mockSliderEl.value = "500";
+  mockSliderEl.dispatchEvent(makeEvent("input", { target: mockSliderEl }));
+  if (mockAudioEl._currentSegmentIndex !== 1 || Math.abs(mockAudioEl.currentTime - 6.0) > 0.05 || mockCurTimeEl.textContent !== "0:15") {
+    throw new Error("Expected seeking slider to 500 (15s) to map to segment 02_if at rawTime=6.0s and display 0:15, got idx=" + mockAudioEl._currentSegmentIndex + " time=" + mockAudioEl.currentTime + " cur=" + mockCurTimeEl.textContent);
+  }
+
   console.log("STATUS=OK");
   console.log("ACTIONS=" + actionLog.join(","));
 })().catch((err) => {
@@ -1697,3 +1809,607 @@ function makeEvent(type, props) {
 		t.Fatalf("standalone player.js syntax check failed: %v\n%s", err, string(out))
 	}
 }
+
+type filteredEmbedFS struct {
+	base    fs.FS
+	allowed map[string]bool
+}
+
+func (f *filteredEmbedFS) Open(name string) (fs.File, error) {
+	clean := filepath.ToSlash(strings.TrimPrefix(name, "./"))
+	if clean == "app/templates" || clean == "app/icons" || f.allowed[clean] {
+		return f.base.Open(clean)
+	}
+	return nil, fs.ErrNotExist
+}
+
+func (f *filteredEmbedFS) ReadDir(name string) ([]fs.DirEntry, error) {
+	clean := filepath.ToSlash(strings.TrimPrefix(name, "./"))
+	entries, err := fs.ReadDir(f.base, clean)
+	if err != nil {
+		return nil, err
+	}
+	var out []fs.DirEntry
+	for _, e := range entries {
+		full := clean + "/" + e.Name()
+		if f.allowed[full] {
+			out = append(out, e)
+		}
+	}
+	return out, nil
+}
+
+func (f *filteredEmbedFS) ReadFile(name string) ([]byte, error) {
+	clean := filepath.ToSlash(strings.TrimPrefix(name, "./"))
+	if !f.allowed[clean] {
+		return nil, fs.ErrNotExist
+	}
+	return fs.ReadFile(f.base, clean)
+}
+
+func TestWasmPlayerStaticAnalysisAndRuntimeExecution(t *testing.T) {
+	nodeBin, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node not found in PATH")
+	}
+	rootDir := filepath.Clean(filepath.Join("..", ".."))
+
+	// 1. Static Analysis of embed_wasm.go and cmd/wasmplayer/main.go
+	embedWasmRaw, err := os.ReadFile(filepath.Join(rootDir, "embed_wasm.go"))
+	if err != nil {
+		t.Fatalf("read embed_wasm.go failed: %v", err)
+	}
+	var embedPatterns []string
+	for _, line := range strings.Split(string(embedWasmRaw), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "//go:embed ") {
+			embedPatterns = append(embedPatterns, strings.Fields(strings.TrimPrefix(trimmed, "//go:embed "))...)
+		}
+	}
+	if len(embedPatterns) == 0 {
+		t.Fatalf("expected //go:embed patterns in embed_wasm.go")
+	}
+	allowedWasmFiles := make(map[string]bool)
+	for _, pat := range embedPatterns {
+		matches, gErr := fs.Glob(mojra.AppFS, pat)
+		if gErr != nil || len(matches) == 0 {
+			t.Fatalf("embed_wasm.go pattern %q matched 0 files in AppFS (err=%v)", pat, gErr)
+		}
+		for _, m := range matches {
+			allowedWasmFiles[filepath.ToSlash(m)] = true
+		}
+	}
+
+	wasmSimFS := &filteredEmbedFS{base: mojra.AppFS, allowed: allowedWasmFiles}
+	wasmTemplates, err := tpl.LoadTemplatesFromDir("", wasmSimFS)
+	if err != nil {
+		t.Fatalf("LoadTemplatesFromDir(\"\", wasmSimFS) failed (missing template or SVG in embed_wasm.go): %v", err)
+	}
+	for _, reqTpl := range []string{"player_view", "scene_choice_arrow", "modals"} {
+		if _, ok := wasmTemplates[reqTpl]; !ok {
+			t.Fatalf("expected template %q to be loaded from WasmAppFS", reqTpl)
+		}
+	}
+
+	wasmMainRaw, err := os.ReadFile(filepath.Join(rootDir, "cmd", "wasmplayer", "main.go"))
+	if err != nil {
+		t.Fatalf("read cmd/wasmplayer/main.go failed: %v", err)
+	}
+	wasmMainSrc := string(wasmMainRaw)
+	for _, forbiddenOSCall := range []string{"os.Open", "os.ReadFile", "os.ReadDir", "os.WriteFile", "os.Stat", "os.Mkdir"} {
+		if strings.Contains(wasmMainSrc, forbiddenOSCall) {
+			t.Fatalf("cmd/wasmplayer/main.go must not contain host filesystem call %q", forbiddenOSCall)
+		}
+	}
+	for _, reqAction := range []string{
+		"SaveAudioTime",
+		"ChooseBranch",
+		"AutoAdvanceImplicit",
+		"AudioEnded",
+		"SetAutoChoiceDelay",
+		"CycleAudioSpeed",
+		"ToggleAutoChoice",
+		"PromptRewindStep",
+		"PromptResetProgress",
+		"ConfirmModalClose",
+		"ConfirmModalAccept",
+		"RevealHistory",
+		"FocusHistoryStep",
+		"FocusPresent",
+	} {
+		if !strings.Contains(wasmMainSrc, `case "`+reqAction+`":`) {
+			t.Fatalf("cmd/wasmplayer/main.go is missing handler for player action %q", reqAction)
+		}
+	}
+
+	// 2. Build exported Web/WASM bundle and verify Wasm binary sections + STBC integrity
+	sampleBook, err := book.LoadBookFromDir(filepath.Join(rootDir, "books", "nie-boj-sie-policji-rzecznej"))
+	if err != nil || sampleBook == nil {
+		t.Fatalf("LoadBookFromDir failed: %v", err)
+	}
+	exportRoot := t.TempDir()
+	webOutDir, err := book.ExportWebWASMApp(sampleBook, exportRoot, rootDir, mojra.AppFS)
+	if err != nil {
+		t.Fatalf("ExportWebWASMApp failed: %v", err)
+	}
+
+	wasmBytes, err := os.ReadFile(filepath.Join(webOutDir, "mojra.wasm"))
+	if err != nil {
+		t.Fatalf("read exported mojra.wasm failed: %v", err)
+	}
+	if len(wasmBytes) < 64 || string(wasmBytes[:4]) != "\x00asm" {
+		t.Fatalf("invalid Wasm magic header in exported mojra.wasm")
+	}
+	// Static binary section walk of mojra.wasm: verify every Wasm section header is well-formed up to EOF
+	pos := 8
+	foundSTBCCustomSection := false
+	for pos < len(wasmBytes) {
+		secID := wasmBytes[pos]
+		pos++
+		var secLen uint64
+		var shift uint
+		for {
+			if pos >= len(wasmBytes) {
+				t.Fatalf("truncated ULEB128 section length in mojra.wasm at byte %d", pos)
+			}
+			b := wasmBytes[pos]
+			pos++
+			secLen |= uint64(b&0x7f) << shift
+			if (b & 0x80) == 0 {
+				break
+			}
+			shift += 7
+		}
+		if pos+int(secLen) > len(wasmBytes) {
+			t.Fatalf("corrupted Wasm section (id=%d) overflows file size: pos=%d len=%d total=%d", secID, pos, secLen, len(wasmBytes))
+		}
+		if secID == 0 && pos+int(secLen) == len(wasmBytes) && strings.Contains(string(wasmBytes[pos:pos+32]), "mojra_stbc") {
+			foundSTBCCustomSection = true
+		}
+		pos += int(secLen)
+	}
+	if pos != len(wasmBytes) || !foundSTBCCustomSection {
+		t.Fatalf("expected mojra.wasm sections to walk cleanly to EOF (%d==%d) and end with mojra_stbc custom section (%v)",
+			pos, len(wasmBytes), foundSTBCCustomSection)
+	}
+
+	// Also build static showcase website (dist/www) in an isolated temp copy or verify exported app.js + index.html
+	exportedAppJS, err := os.ReadFile(filepath.Join(webOutDir, "app.js"))
+	if err != nil {
+		t.Fatalf("read exported app.js failed: %v", err)
+	}
+	if !strings.Contains(string(exportedAppJS), "const I18N_TABLE =") || !strings.Contains(string(exportedAppJS), "window.__wasmBase64 = \"") {
+		t.Fatalf("expected exported app.js to contain I18N_TABLE and window.__wasmBase64 fallback for file:// protocol")
+	}
+
+	// 3. End-to-End WebAssembly Execution in Node VM (testing both file:// fallback and interactive __wasmBoot / __wasmAction)
+	wasmE2EScript := `
+const fs = require("fs");
+const path = require("path");
+const vm = require("vm");
+
+const webDir = process.env.ST_WASM_WEB_DIR;
+const wwwDir = process.env.ST_WASM_WWW_DIR;
+
+function createDOMElement(tag, ownerDoc) {
+  const el = {
+    tagName: String(tag || "div").toUpperCase(),
+    id: "",
+    className: "",
+    innerHTML: "",
+    textContent: "",
+    value: "",
+    disabled: false,
+    paused: true,
+    ended: false,
+    currentTime: 0,
+    duration: 12,
+    scrollTop: 0,
+    scrollHeight: 600,
+    clientHeight: 600,
+    offsetWidth: 200,
+    offsetHeight: 40,
+    style: {},
+    dataset: {},
+    attributes: new Map(),
+    children: [],
+    parentNode: null,
+    isConnected: true,
+    ownerDocument: ownerDoc,
+    classList: null,
+    setAttribute(k, v) {
+      const sv = String(v);
+      this.attributes.set(k, sv);
+      if (k === "id") this.id = sv;
+      if (k === "class") this.className = sv;
+      if (k.startsWith("data-")) {
+        const camel = k.slice(5).replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+        this.dataset[camel] = sv;
+      }
+    },
+    getAttribute(k) {
+      if (k === "id" && this.id) return this.id;
+      if (k === "class" && this.className) return this.className;
+      return this.attributes.has(k) ? this.attributes.get(k) : null;
+    },
+    removeAttribute(k) {
+      this.attributes.delete(k);
+    },
+    hasAttribute(k) {
+      return this.attributes.has(k);
+    },
+    appendChild(c) {
+      c.parentNode = this;
+      this.children.push(c);
+      return c;
+    },
+    contains(other) {
+      let cur = other;
+      while (cur) {
+        if (cur === this) return true;
+        cur = cur.parentNode;
+      }
+      return false;
+    },
+    closest(sel) {
+      let cur = this;
+      while (cur) {
+        if (matchesSimple(cur, sel)) return cur;
+        cur = cur.parentNode;
+      }
+      return null;
+    },
+    querySelector(sel) {
+      return queryAllSimple(this, sel)[0] || null;
+    },
+    querySelectorAll(sel) {
+      return queryAllSimple(this, sel);
+    },
+    getBoundingClientRect() {
+      return { left: 0, top: 0, right: 200, bottom: 40, width: 200, height: 40 };
+    },
+    getContext() {
+      return null;
+    },
+    addEventListener() {},
+    removeEventListener() {},
+    play() { this.paused = false; return Promise.resolve(); },
+    pause() { this.paused = true; },
+    load() {}
+  };
+  el.classList = {
+    add(...cls) {
+      const set = new Set((el.className || "").split(/\s+/).filter(Boolean));
+      cls.forEach(c => set.add(c));
+      el.className = Array.from(set).join(" ");
+    },
+    remove(...cls) {
+      const set = new Set((el.className || "").split(/\s+/).filter(Boolean));
+      cls.forEach(c => set.delete(c));
+      el.className = Array.from(set).join(" ");
+    },
+    toggle(c, force) {
+      const has = this.contains(c);
+      const next = force !== undefined ? Boolean(force) : !has;
+      if (next) this.add(c); else this.remove(c);
+      return next;
+    },
+    contains(c) {
+      return (el.className || "").split(/\s+/).includes(c);
+    }
+  };
+  let rawHTML = "";
+  Object.defineProperty(el, "innerHTML", {
+    get() { return rawHTML; },
+    set(v) {
+      rawHTML = String(v || "");
+      el.children = parseHTMLFragment(rawHTML, el, ownerDoc);
+    }
+  });
+  return el;
+}
+
+function parseHTMLFragment(html, parent, ownerDoc) {
+  const roots = [];
+  const stack = [ { children: roots } ];
+  const tagRe = /<\/?([a-zA-Z0-9-]+)([^>]*?)(\/?)>/g;
+  let lastIdx = 0;
+  let m;
+  while ((m = tagRe.exec(html)) !== null) {
+    const textChunk = html.slice(lastIdx, m.index).trim();
+    if (textChunk && stack.length > 1) {
+      stack[stack.length - 1].textContent += textChunk;
+    }
+    lastIdx = tagRe.lastIndex;
+    const full = m[0];
+    const tag = m[1].toLowerCase();
+    const attrStr = m[2] || "";
+    const selfClose = m[3] === "/" || tag === "img" || tag === "input" || tag === "meta" || tag === "link" || tag === "hr" || tag === "br";
+    if (full.startsWith("</")) {
+      if (stack.length > 1) stack.pop();
+      continue;
+    }
+    const node = createDOMElement(tag, ownerDoc);
+    const attrRe = /([a-zA-Z0-9_:-]+)(?:="([^"]*)")?/g;
+    let am;
+    while ((am = attrRe.exec(attrStr)) !== null) {
+      node.setAttribute(am[1], am[2] !== undefined ? am[2] : "");
+    }
+    const top = stack[stack.length - 1];
+    node.parentNode = top === stack[0] ? parent : top;
+    top.children.push(node);
+    if (!selfClose) {
+      stack.push(node);
+    }
+  }
+  return roots;
+}
+
+function matchesSimple(el, sel) {
+  if (!el || !el.tagName) return false;
+  sel = sel.trim();
+  if (sel.includes(",")) {
+    return sel.split(",").some(s => matchesSimple(el, s));
+  }
+  if (sel.includes(" ")) {
+    const parts = sel.split(/\s+/);
+    if (!matchesSimple(el, parts[parts.length - 1])) return false;
+    let cur = el.parentNode;
+    for (let i = parts.length - 2; i >= 0; i--) {
+      while (cur && !matchesSimple(cur, parts[i])) cur = cur.parentNode;
+      if (!cur) return false;
+      cur = cur.parentNode;
+    }
+    return true;
+  }
+  let rem = sel;
+  const attrRe = /\[([a-zA-Z0-9_-]+)(?:="([^"]*)")?\]/g;
+  let am;
+  while ((am = attrRe.exec(sel)) !== null) {
+    const k = am[1];
+    const v = am[2];
+    if (v !== undefined) {
+      if (el.getAttribute(k) !== v) return false;
+    } else if (!el.hasAttribute(k)) {
+      return false;
+    }
+  }
+  rem = rem.replace(attrRe, "");
+  if (rem.includes(":not(.hidden)")) {
+    if (el.classList.contains("hidden")) return false;
+    rem = rem.replace(":not(.hidden)", "");
+  }
+  const idMatch = rem.match(/#([a-zA-Z0-9_-]+)/);
+  if (idMatch && el.id !== idMatch[1]) return false;
+  rem = rem.replace(/#[a-zA-Z0-9_-]+/g, "");
+  const clsMatches = rem.match(/\.[a-zA-Z0-9_-]+/g) || [];
+  for (const c of clsMatches) {
+    if (!el.classList.contains(c.slice(1))) return false;
+  }
+  rem = rem.replace(/\.[a-zA-Z0-9_-]+/g, "").trim();
+  if (rem && el.tagName.toLowerCase() !== rem.toLowerCase()) return false;
+  return true;
+}
+
+function queryAllSimple(root, sel) {
+  const out = [];
+  function walk(n) {
+    if (!n || !n.children) return;
+    for (const c of n.children) {
+      if (matchesSimple(c, sel)) out.push(c);
+      walk(c);
+    }
+  }
+  walk(root);
+  return out;
+}
+
+async function runBundleE2E(bundleDir, protocolMode) {
+  const indexHTML = fs.readFileSync(path.join(bundleDir, "index.html"), "utf8");
+  const appJS = fs.readFileSync(path.join(bundleDir, "app.js"), "utf8");
+  const wasmRaw = fs.readFileSync(path.join(bundleDir, "mojra.wasm"));
+
+  const listeners = {};
+  const doc = {
+    body: null,
+    documentElement: null,
+    fullscreenElement: null,
+    addEventListener(type, fn) {
+      (listeners[type] = listeners[type] || []).push(fn);
+    },
+    getElementById(id) { return queryAllSimple(this.body, "#" + id)[0] || null; },
+    querySelector(sel) { return queryAllSimple(this.body, sel)[0] || null; },
+    querySelectorAll(sel) { return queryAllSimple(this.body, sel); }
+  };
+  doc.body = createDOMElement("body", doc);
+  doc.documentElement = doc.body;
+  const bodyMatch = indexHTML.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+  doc.body.innerHTML = bodyMatch ? bodyMatch[1] : indexHTML;
+
+  const storage = new Map();
+  const sandbox = {
+    console,
+    innerWidth: 1280,
+    innerHeight: 800,
+    addEventListener() {},
+    removeEventListener() {},
+    Uint8Array,
+    Int8Array,
+    Uint16Array,
+    Int16Array,
+    Uint32Array,
+    Int32Array,
+    Float32Array,
+    Float64Array,
+    BigInt64Array,
+    BigUint64Array,
+    ArrayBuffer,
+    DataView,
+    WebAssembly,
+    TextEncoder,
+    TextDecoder,
+    Map,
+    Set,
+    Promise,
+    Error,
+    TypeError,
+    Math,
+    Date,
+    Number,
+    String,
+    Boolean,
+    Object,
+    Array,
+    RegExp,
+    JSON,
+    parseInt,
+    parseFloat,
+    isNaN,
+    isFinite,
+    encodeURIComponent,
+    decodeURIComponent,
+    atob,
+    btoa,
+    setTimeout,
+    clearTimeout,
+    requestAnimationFrame: (cb) => setTimeout(cb, 0),
+    performance: { now: () => Date.now() },
+    crypto: require("crypto").webcrypto,
+    URL: {
+      createObjectURL: () => "blob:mojra-test-media",
+      revokeObjectURL: () => {}
+    },
+    Blob: function(parts, opts) { this.parts = parts; this.opts = opts; },
+    Audio: function() {
+      this.muted = false;
+      this.paused = true;
+      this.play = () => Promise.resolve();
+      this.pause = () => {};
+    },
+    localStorage: {
+      getItem: (k) => storage.has(k) ? storage.get(k) : null,
+      setItem: (k, v) => storage.set(k, String(v))
+    },
+    location: {
+      protocol: protocolMode,
+      href: protocolMode + "//localhost/index.html"
+    },
+    fetch: async (url) => {
+      if (protocolMode === "file:") {
+        throw new TypeError("Failed to fetch: file:// URL scheme is not supported");
+      }
+      if (String(url).endsWith("mojra.wasm")) {
+        return {
+          ok: true,
+          status: 200,
+          arrayBuffer: async () => wasmRaw.buffer.slice(wasmRaw.byteOffset, wasmRaw.byteOffset + wasmRaw.byteLength)
+        };
+      }
+      return { ok: false, status: 404 };
+    },
+    document: doc
+  };
+  // Deliberately do NOT expose Node's fs on globalThis so wasm_exec.js uses its browser stub!
+  sandbox.window = sandbox;
+  sandbox.globalThis = sandbox;
+  sandbox.self = sandbox;
+
+  vm.createContext(sandbox);
+  vm.runInContext(appJS, sandbox);
+  (listeners["DOMContentLoaded"] || []).forEach(fn => fn());
+
+  const launchBtn = doc.querySelector("#btn-launch-wasm");
+  if (launchBtn) {
+    launchBtn.click && launchBtn.click();
+  }
+
+  const playBtn = doc.querySelector("#btn-wasm-play");
+  if (!playBtn) {
+    throw new Error("Missing #btn-wasm-play in " + bundleDir);
+  }
+  await sandbox.bootWasmPlayer(playBtn);
+
+  if (typeof sandbox.__wasmBoot !== "function" || typeof sandbox.__wasmAction !== "function") {
+    throw new Error("Expected __wasmBoot and __wasmAction to be registered by mojra.wasm in " + bundleDir + " (" + protocolMode + ")");
+  }
+
+  const playerView = doc.querySelector("#view-player");
+  if (!playerView) {
+    throw new Error("Expected #view-player to be mounted after bootWasmPlayer in " + bundleDir + " (" + protocolMode + ")");
+  }
+  const choiceBtns = doc.querySelectorAll('.choice-btn[action="ChooseBranch"]');
+  if (choiceBtns.length < 2) {
+    throw new Error("Expected at least 2 branch choice buttons in initial scene, got " + choiceBtns.length);
+  }
+
+  // Click first choice via declarative click handler -> window.__wasmAction("ChooseBranch")
+  const clickEvt = {
+    target: choiceBtns[0],
+    defaultPrevented: false,
+    preventDefault() { this.defaultPrevented = true; },
+    stopPropagation() {}
+  };
+  for (const fn of (listeners["click"] || [])) {
+    fn(clickEvt);
+  }
+  await new Promise(r => setTimeout(r, 30));
+
+  const histStack = doc.querySelector("#history-stack");
+  if (!histStack) {
+    throw new Error("Expected #history-stack to render after ChooseBranch transition in WASM player");
+  }
+  if (storage.size === 0) {
+    throw new Error("Expected WASM player progress to be saved in localStorage");
+  }
+
+  // Trigger PromptRewindStep -> ConfirmModalAccept via WASM action bridge
+  const rewindBtn = doc.querySelector('[action="PromptRewindStep"]');
+  if (!rewindBtn) {
+    throw new Error("Expected [action=PromptRewindStep] button in history stack");
+  }
+  for (const fn of (listeners["click"] || [])) {
+    fn({ target: rewindBtn, preventDefault() {}, stopPropagation() {} });
+  }
+  await new Promise(r => setTimeout(r, 20));
+  const confirmModal = doc.querySelector("#modal-confirm");
+  if (!confirmModal) {
+    throw new Error("Expected #modal-confirm to open after PromptRewindStep in WASM player");
+  }
+  const acceptBtn = doc.querySelector('#modal-confirm [action="ConfirmModalAccept"]');
+  if (!acceptBtn) {
+    throw new Error("Expected ConfirmModalAccept button in #modal-confirm");
+  }
+  for (const fn of (listeners["click"] || [])) {
+    fn({ target: acceptBtn, preventDefault() {}, stopPropagation() {} });
+  }
+  await new Promise(r => setTimeout(r, 20));
+  if (doc.querySelector("#history-stack")) {
+    throw new Error("Expected #history-stack to be cleared after rewinding to step 0");
+  }
+}
+
+(async () => {
+  await runBundleE2E(webDir, "http:");
+  await runBundleE2E(webDir, "file:");
+  if (wwwDir && fs.existsSync(path.join(wwwDir, "mojra.wasm"))) {
+    await runBundleE2E(wwwDir, "http:");
+    await runBundleE2E(wwwDir, "file:");
+  }
+  console.log("WASM_E2E=OK");
+})().catch(err => {
+  console.error("WASM_E2E_ERR=" + (err && err.stack ? err.stack : String(err)));
+  process.exit(1);
+});
+`
+	wwwDir := filepath.Join(rootDir, "dist", "www")
+	e2eCmd := exec.Command(nodeBin, "-e", wasmE2EScript)
+	e2eCmd.Env = append(os.Environ(),
+		"ST_WASM_WEB_DIR="+webOutDir,
+		"ST_WASM_WWW_DIR="+wwwDir,
+	)
+	out, err := e2eCmd.CombinedOutput()
+	if err != nil || !strings.Contains(string(out), "WASM_E2E=OK") {
+		t.Fatalf("WASM E2E runtime test failed: %v\nOutput:\n%s", err, string(out))
+	}
+}
+

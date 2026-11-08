@@ -3,6 +3,7 @@ package main
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"encoding/binary"
 	"flag"
 	"fmt"
@@ -16,6 +17,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"mojra"
 	"mojra/internal/audit"
@@ -29,6 +31,10 @@ var productionBuild string
 
 // previewBuild is set to "true" via -ldflags="-X main.previewBuild=true" during preview builds (--preview).
 var previewBuild string
+
+// betaExpiryRFC3339 and betaPubKeyHex can be injected via -ldflags during Closed Beta builds.
+var betaExpiryRFC3339 string
+var betaPubKeyHex string
 
 func isGoRunBinary() bool {
 	exe, err := os.Executable()
@@ -65,6 +71,8 @@ func main() {
 		bundleAndroidCmd(args)
 	case "www", "build-www":
 		buildCmd(append([]string{"--www"}, args...))
+	case "deck", "build-deck", "deck-pdf":
+		buildCmd(append([]string{"--deck"}, args...))
 	case "pack":
 		packCmd(args)
 	case "add", "import":
@@ -110,6 +118,9 @@ Użycie / Usage:
 
   mojra add <ścieżka-na-dysku | url>
       Dodaje książkę do biblioteki z dysku (bez kopiowania plików) lub pobiera z adresu URL (.playbook / .zip).
+
+  mojra deck [-o <plik.pdf>]
+      Kompiluje szablon www/deck.tpl (jasny motyw) i eksportuje deck finansowy PDF (dist/www/mojra-deck-finansowy.pdf).
 
   mojra audit [--js | --go | --tpl | --lang <język>] [--category <kategoria>] [--out <plik.log>] [--strict]
       Uruchamia statyczny audyt kodu Go, szablonów .tpl i skryptów .js.`)
@@ -198,6 +209,131 @@ func resolveRepoRootDir() string {
 	return cwd
 }
 
+func findHeadlessPDFBrowser() string {
+	var candidates []string
+	switch runtime.GOOS {
+	case "darwin":
+		candidates = []string{
+			"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+			"/Applications/Chromium.app/Contents/MacOS/Chromium",
+			"/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
+			"/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+		}
+	case "windows":
+		for _, base := range []string{os.Getenv("ProgramFiles"), os.Getenv("ProgramFiles(x86)"), os.Getenv("LocalAppData")} {
+			if base == "" {
+				continue
+			}
+			candidates = append(candidates,
+				filepath.Join(base, "Google", "Chrome", "Application", "chrome.exe"),
+				filepath.Join(base, "Microsoft", "Edge", "Application", "msedge.exe"),
+				filepath.Join(base, "BraveSoftware", "Brave-Browser", "Application", "brave.exe"),
+			)
+		}
+	default:
+		for _, bin := range []string{"google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "brave-browser", "microsoft-edge"} {
+			if p, err := exec.LookPath(bin); err == nil && p != "" {
+				return p
+			}
+		}
+	}
+	for _, c := range candidates {
+		if info, err := os.Stat(c); err == nil && !info.IsDir() {
+			return c
+		}
+	}
+	return ""
+}
+
+func renderHTMLFileToPDF(browserBin, htmlPath, outPDFPath string) error {
+	absHTML, err := filepath.Abs(htmlPath)
+	if err != nil {
+		return err
+	}
+	if _, err := os.Stat(absHTML); err != nil {
+		return fmt.Errorf("brak skompilowanego pliku %s: %w", absHTML, err)
+	}
+	absOutPDF, err := filepath.Abs(outPDFPath)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(absOutPDF), 0755); err != nil {
+		return err
+	}
+	tmpProfileDir, err := os.MkdirTemp("", "mojra-deck-pdf-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(tmpProfileDir)
+
+	fileURL := "file://" + filepath.ToSlash(absHTML)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(
+		ctx,
+		browserBin,
+		"--headless=new",
+		"--disable-gpu",
+		"--disable-extensions",
+		"--disable-background-networking",
+		"--no-first-run",
+		"--no-default-browser-check",
+		"--user-data-dir="+tmpProfileDir,
+		"--no-pdf-header-footer",
+		"--print-to-pdf-no-header",
+		"--print-to-pdf="+absOutPDF,
+		fileURL,
+	)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("błąd generowania PDF (%v): %s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+func buildDeckPDF(rootDir, customOutPath string) (string, error) {
+	browserBin := findHeadlessPDFBrowser()
+	if browserBin == "" {
+		return "", fmt.Errorf("nie znaleziono przeglądarki Chromium/Chrome/Edge/Brave do wygenerowania PDF")
+	}
+	docsDir := filepath.Join(rootDir, "docs")
+	_ = os.MkdirAll(docsDir, 0755)
+
+	outPDF := filepath.Join(docsDir, "mojra-deck-finansowy.pdf")
+	if strings.TrimSpace(customOutPath) != "" {
+		outPDF = customOutPath
+	}
+	absOutPDF, err := filepath.Abs(outPDF)
+	if err != nil {
+		return "", err
+	}
+	deckHTMLPath := filepath.Join(rootDir, "dist", "www", "deck.html")
+	if err := renderHTMLFileToPDF(browserBin, deckHTMLPath, absOutPDF); err != nil {
+		return "", err
+	}
+	if raw, rErr := os.ReadFile(absOutPDF); rErr == nil {
+		_ = os.WriteFile(filepath.Join(rootDir, "dist", "www", "mojra-deck-finansowy.pdf"), raw, 0644)
+	}
+	planHTMLPath := filepath.Join(rootDir, "dist", "www", "plan.html")
+	if _, err := os.Stat(planHTMLPath); err == nil {
+		docsPlanPDF := filepath.Join(docsDir, "mojra-plan.pdf")
+		if err := renderHTMLFileToPDF(browserBin, planHTMLPath, docsPlanPDF); err == nil {
+			if raw, rErr := os.ReadFile(docsPlanPDF); rErr == nil {
+				_ = os.WriteFile(filepath.Join(rootDir, "dist", "www", "mojra-plan.pdf"), raw, 0644)
+			}
+		}
+	}
+	przegladHTMLPath := filepath.Join(rootDir, "dist", "www", "przeglad.html")
+	if _, err := os.Stat(przegladHTMLPath); err == nil {
+		docsPrzegladPDF := filepath.Join(docsDir, "mojra-przeglad-zalozyciela.pdf")
+		if err := renderHTMLFileToPDF(browserBin, przegladHTMLPath, docsPrzegladPDF); err == nil {
+			if raw, rErr := os.ReadFile(docsPrzegladPDF); rErr == nil {
+				_ = os.WriteFile(filepath.Join(rootDir, "dist", "www", "mojra-przeglad-zalozyciela.pdf"), raw, 0644)
+			}
+		}
+	}
+	return absOutPDF, nil
+}
+
 func resolveRootDir() string {
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -252,6 +388,10 @@ func runCmd(args []string, forceDev bool) {
 	}
 
 	rootDir := resolveRootDir()
+	if err := book.CheckBetaBuildExpiry(betaExpiryRFC3339, os.Getenv("MOJRA_BETA_KEY"), betaPubKeyHex, time.Time{}); err != nil {
+		fmt.Fprintf(os.Stderr, "Błąd autoryzacji buildu Closed Beta: %v\n", err)
+		os.Exit(1)
+	}
 	if err := gui.LaunchWithOptions(rootDir, mojra.AppFS, *port, *headless, devMode); err != nil {
 		fmt.Fprintf(os.Stderr, "Błąd uruchomienia Mojra: %v\n", err)
 		os.Exit(1)
@@ -267,6 +407,7 @@ type buildOptions struct {
 	ShowHelp     bool
 	AssetsOnly   bool
 	WWWOnly      bool
+	DeckOnly     bool
 	BinariesOnly bool
 	Preview      bool
 	OutPath      string
@@ -389,6 +530,8 @@ func parseBuildArgs(args []string) (buildOptions, error) {
 			opts.AssetsOnly = true
 		case "--www", "-www":
 			opts.WWWOnly = true
+		case "--deck", "-deck", "--deck-pdf", "-deck-pdf":
+			opts.DeckOnly = true
 		case "--preview", "-preview", "--dev", "-dev":
 			opts.Preview = true
 		case "--binaries-only", "-binaries-only", "--no-zip", "-no-zip", "--no-bundle", "-no-bundle":
@@ -407,6 +550,14 @@ func parseBuildArgs(args []string) (buildOptions, error) {
 				opts.Preview = true
 				continue
 			}
+			if strings.EqualFold(arg, "deck") || strings.EqualFold(arg, "deck-pdf") {
+				opts.DeckOnly = true
+				continue
+			}
+			if strings.EqualFold(arg, "www") {
+				opts.WWWOnly = true
+				continue
+			}
 			for _, part := range strings.Split(arg, ",") {
 				if p := strings.TrimSpace(part); p != "" {
 					rawPlatformSpecs = append(rawPlatformSpecs, p)
@@ -415,7 +566,7 @@ func parseBuildArgs(args []string) (buildOptions, error) {
 		}
 	}
 
-	if opts.ShowHelp || opts.AssetsOnly || opts.SingleLocal {
+	if opts.ShowHelp || opts.AssetsOnly || opts.WWWOnly || opts.DeckOnly || opts.SingleLocal {
 		return opts, nil
 	}
 
@@ -524,6 +675,9 @@ func prepareBuildAssets(rootDir string) error {
 	if err := tpl.BuildWWW(rootDir); err != nil {
 		return fmt.Errorf("błąd kompilacji strony WWW: %w", err)
 	}
+	if err := book.EmbedDemoBookIntoWWW(rootDir, baseWasm); err != nil {
+		return fmt.Errorf("błąd osadzania STBC w dist/www/mojra.wasm: %w", err)
+	}
 	if entries, rErr := os.ReadDir(booksDir); rErr == nil {
 		for _, e := range entries {
 			if !e.IsDir() || strings.HasPrefix(e.Name(), ".") {
@@ -533,13 +687,6 @@ func prepareBuildAssets(rootDir string) error {
 			sampleBookDir := filepath.Join(booksDir, sampleID)
 			if !book.HasBookFilesInDir(sampleBookDir) {
 				continue
-			}
-			if sampleBook, lErr := book.LoadBookFromDir(sampleBookDir); lErr == nil && sampleBook != nil {
-				if embeddedWasm, wErr := book.EmbedSTBCIntoWasm(baseWasm, sampleBook, nil); wErr == nil {
-					if err := os.WriteFile(filepath.Join(rootDir, "dist", "www", "mojra.wasm"), embeddedWasm, 0644); err != nil {
-						return err
-					}
-				}
 			}
 			_ = os.Remove(filepath.Join(booksDir, sampleID+".playbook"))
 			_ = os.Remove(filepath.Join(booksDir, sampleID+".stbook"))
@@ -552,6 +699,11 @@ func prepareBuildAssets(rootDir string) error {
 	fmt.Println("✓ Połączono moduły JS -> build/app/app.js")
 	fmt.Println("✓ Skompilowano bazowy runtime WASM -> build/wasm/mojra.wasm")
 	fmt.Println("✓ Zbudowano statyczną stronę WWW z zaszytym STBC w mojra.wasm -> dist/www/")
+	if findHeadlessPDFBrowser() != "" {
+		if pdfPath, pdfErr := buildDeckPDF(rootDir, ""); pdfErr == nil {
+			fmt.Printf("✓ Wygenerowano deck finansowy PDF -> %s\n", pdfPath)
+		}
+	}
 	return nil
 }
 
@@ -722,7 +874,7 @@ func buildCmd(args []string) {
 	fmt.Println("  Mojra — Wieloplatformowy System Budowania")
 	fmt.Println("==================================================================")
 
-	if opts.WWWOnly {
+	if opts.WWWOnly || opts.DeckOnly {
 		appDir := filepath.Join(rootDir, "app")
 		_ = writeWindowsAppIconICO(filepath.Join(appDir, "icons", "favicon.ico"))
 		if png256, err := encodeIconPNG(256); err == nil {
@@ -731,11 +883,39 @@ func buildCmd(args []string) {
 				os.Exit(1)
 			}
 		}
-		if err := tpl.BuildWWW(rootDir); err != nil {
-			fmt.Fprintf(os.Stderr, "błąd kompilacji strony WWW: %v\n", err)
-			os.Exit(1)
+		if opts.WWWOnly {
+			baseWasm, _, wasmErr := book.BuildBaseWasmAssets(rootDir)
+			if wasmErr != nil {
+				fmt.Fprintf(os.Stderr, "błąd kompilacji mojra.wasm: %v\n", wasmErr)
+				os.Exit(1)
+			}
+			if err := tpl.BuildWWW(rootDir); err != nil {
+				fmt.Fprintf(os.Stderr, "błąd kompilacji strony WWW: %v\n", err)
+				os.Exit(1)
+			}
+			if err := book.EmbedDemoBookIntoWWW(rootDir, baseWasm); err != nil {
+				fmt.Fprintf(os.Stderr, "błąd osadzania STBC w dist/www/mojra.wasm: %v\n", err)
+				os.Exit(1)
+			}
+			fmt.Println("✓ Zbudowano statyczną stronę WWW -> dist/www/")
+		} else {
+			if err := tpl.BuildWWW(rootDir); err != nil {
+				fmt.Fprintf(os.Stderr, "błąd kompilacji szablonu decku: %v\n", err)
+				os.Exit(1)
+			}
+			_ = book.EmbedDemoBookIntoWWW(rootDir, nil)
 		}
-		fmt.Println("✓ Zbudowano statyczną stronę WWW -> dist/www/")
+		if opts.DeckOnly || findHeadlessPDFBrowser() != "" {
+			pdfPath, err := buildDeckPDF(rootDir, opts.OutPath)
+			if err != nil {
+				if opts.DeckOnly {
+					fmt.Fprintf(os.Stderr, "błąd generowania decku PDF: %v\n", err)
+					os.Exit(1)
+				}
+			} else {
+				fmt.Printf("✓ Wygenerowano deck finansowy PDF (jasny motyw) -> %s\n", pdfPath)
+			}
+		}
 		return
 	}
 

@@ -233,6 +233,27 @@ static NSImage *createAppIcon(void) {
         [defaults setBool:NO forKey:key];
     }
 
+    NSMenu *mainMenu = [[NSMenu alloc] init];
+    NSMenuItem *appMenuItem = [[NSMenuItem alloc] init];
+    [mainMenu addItem:appMenuItem];
+    NSMenu *appMenu = [[NSMenu alloc] initWithTitle:@"Mojra"];
+    [appMenu addItemWithTitle:@"Zakończ Mojra" action:@selector(terminate:) keyEquivalent:@"q"];
+    [appMenuItem setSubmenu:appMenu];
+
+    NSMenuItem *editMenuItem = [[NSMenuItem alloc] init];
+    [mainMenu addItem:editMenuItem];
+    NSMenu *editMenu = [[NSMenu alloc] initWithTitle:@"Edycja"];
+    [editMenu addItemWithTitle:@"Cofnij" action:@selector(undo:) keyEquivalent:@"z"];
+    NSMenuItem *redoItem = [editMenu addItemWithTitle:@"Ponów" action:@selector(redo:) keyEquivalent:@"Z"];
+    [redoItem setKeyEquivalentModifierMask:(NSEventModifierFlagCommand | NSEventModifierFlagShift)];
+    [editMenu addItem:[NSMenuItem separatorItem]];
+    [editMenu addItemWithTitle:@"Wytnij" action:@selector(cut:) keyEquivalent:@"x"];
+    [editMenu addItemWithTitle:@"Kopiuj" action:@selector(copy:) keyEquivalent:@"c"];
+    [editMenu addItemWithTitle:@"Wklej" action:@selector(paste:) keyEquivalent:@"v"];
+    [editMenu addItemWithTitle:@"Zaznacz wszystko" action:@selector(selectAll:) keyEquivalent:@"a"];
+    [editMenuItem setSubmenu:editMenu];
+    [NSApp setMainMenu:mainMenu];
+
     NSRect visibleFrame = [[NSScreen mainScreen] visibleFrame];
     CGFloat winW = MIN(1440.0, visibleFrame.size.width * 0.92);
     CGFloat winH = MIN(900.0, visibleFrame.size.height * 0.90);

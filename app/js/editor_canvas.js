@@ -1544,5 +1544,303 @@ function initNodeEditorCanvas() {
   updateChapterGroupFrames();
   syncNodeSelectionDOM();
   routeStudioWires();
+  restoreStudioSearchUIState();
   applyEditorCanvasTransform();
+}
+
+let studioSearchOpen = false;
+let studioSearchQuery = "";
+let pendingSceneSearchHighlight = "";
+
+function centerCanvasCameraOnScene(sceneId) {
+  if (!sceneId || !studioGraphState.nodeById) return;
+  const nd = studioGraphState.nodeById.get(sceneId);
+  if (!nd) return;
+  const viewport = qs("#timeline-scroll-viewport");
+  const vw = studioGraphState.viewW || (viewport && viewport.clientWidth) || 1200;
+  const vh = studioGraphState.viewH || (viewport && viewport.clientHeight) || 700;
+  const z = editorCanvasState.zoom || 1.0;
+  const cx = nd.x + (nd.w || CARD.w) * 0.5;
+  const cy = nd.y + (nd.h || CARD.baseH) * 0.5;
+  editorCanvasState.panX = Math.round(vw * 0.5 - cx * z);
+  editorCanvasState.panY = Math.round(vh * 0.5 - cy * z);
+  selectedNodeIds.clear();
+  selectedNodeIds.add(sceneId);
+  editorSelectionCleared = false;
+  syncNodeSelectionDOM();
+  applyEditorCanvasTransform();
+  scheduleSaveEditorViewport();
+}
+
+function buildSearchSnippetParts(sourceText, matchIdx, matchLen) {
+  const flat = (sourceText || "").replace(/\s+/g, " ").trim();
+  if (!flat || matchIdx < 0) {
+    return { pre: flat.slice(0, 84), hit: "", post: "" };
+  }
+  const start = Math.max(0, matchIdx - 28);
+  const end = Math.min(flat.length, matchIdx + matchLen + 36);
+  const prefix = start > 0 ? "..." : "";
+  const suffix = end < flat.length ? "..." : "";
+  return {
+    pre: prefix + flat.slice(start, matchIdx),
+    hit: flat.slice(matchIdx, matchIdx + matchLen),
+    post: flat.slice(matchIdx + matchLen, end) + suffix
+  };
+}
+
+function decodeSearchBase64UTF8(b64) {
+  if (!b64) return "";
+  try {
+    const bin = atob(b64);
+    if (typeof TextDecoder === "function") {
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) {
+        bytes[i] = bin.charCodeAt(i);
+      }
+      return new TextDecoder("utf-8").decode(bytes);
+    }
+    return decodeURIComponent(escape(bin));
+  } catch (_e) {
+    return "";
+  }
+}
+
+function detectTextMatchBadge(rawText, queryLower) {
+  const lines = (rawText || "").split(/\r?\n/);
+  let prevWasCue = false;
+  for (let i = 0; i < lines.length; i++) {
+    const ln = lines[i].trim();
+    const isCue = ln.length >= 2 && ln.length <= 42 && ln === ln.toUpperCase() && ln !== ln.toLowerCase() && !/^(WN\.|PL\.|INT\.|EXT\.)/.test(ln);
+    if (ln.toLowerCase().indexOf(queryLower) >= 0) {
+      if (isCue || prevWasCue || ln.indexOf(":") > 0) {
+        return tr("search_badge_dialogue");
+      }
+      break;
+    }
+    prevWasCue = isCue;
+  }
+  return tr("search_badge_prose");
+}
+
+function applyStudioSearchFilter(rawQuery) {
+  studioSearchQuery = (rawQuery || "").trim();
+  const qLower = studioSearchQuery.toLowerCase();
+  const resultsRoot = qs("#studio-search-results");
+  const countEl = qs("#studio-search-count");
+  if (!resultsRoot) return;
+
+  const rows = qsa(".studio-search-row", resultsRoot);
+  const matchedSceneIds = new Set();
+  let visibleCount = 0;
+  let firstVisibleRow = null;
+  let hasActiveVisible = false;
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const sceneId = row.getAttribute("data-search-scene") || "";
+    const title = row.getAttribute("data-search-title") || "";
+    const slug = row.getAttribute("data-search-slug") || "";
+    const chapter = row.getAttribute("data-search-chapter") || "";
+    const synopsis = row.getAttribute("data-search-synopsis") || "";
+    const text = decodeSearchBase64UTF8(row.getAttribute("data-search-b64") || "");
+    const choices = row.getAttribute("data-search-choices") || "";
+    const defBadge = row.getAttribute("data-default-badge") || "";
+    const defSnip = row.getAttribute("data-default-snippet") || "";
+
+    const badgeEl = qs(".studio-search-row-badge", row);
+    const preEl = qs(".studio-search-snip-pre", row);
+    const hitEl = qs(".studio-search-snip-hit", row);
+    const postEl = qs(".studio-search-snip-post", row);
+
+    if (!qLower) {
+      row.classList.remove("hidden");
+      if (badgeEl) badgeEl.textContent = defBadge;
+      if (preEl) preEl.textContent = defSnip;
+      if (hitEl) hitEl.textContent = "";
+      if (postEl) postEl.textContent = "";
+      visibleCount++;
+      if (!firstVisibleRow) firstVisibleRow = row;
+      if (row.classList.contains("is-active")) hasActiveVisible = true;
+      continue;
+    }
+
+    const flatText = (text + " " + synopsis).replace(/\s+/g, " ").trim();
+    const flatChoices = choices.replace(/\s+/g, " ").trim();
+    const flatSlug = slug.replace(/\s+/g, " ").trim();
+    const flatTitle = (title + " " + chapter).replace(/\s+/g, " ").trim();
+
+    let badge = "";
+    let snipSource = defSnip;
+    let hitPos = -1;
+
+    if (sceneId.toLowerCase().indexOf(qLower) >= 0) {
+      badge = "ID";
+      snipSource = sceneId + (defSnip ? " — " + defSnip : "");
+      hitPos = snipSource.toLowerCase().indexOf(qLower);
+    } else if (flatSlug.toLowerCase().indexOf(qLower) >= 0) {
+      badge = tr("search_badge_location");
+      snipSource = flatSlug;
+      hitPos = flatSlug.toLowerCase().indexOf(qLower);
+    } else if (flatTitle.toLowerCase().indexOf(qLower) >= 0) {
+      badge = tr("search_badge_scene") || defBadge;
+      snipSource = flatTitle;
+      hitPos = flatTitle.toLowerCase().indexOf(qLower);
+    } else if (flatChoices.toLowerCase().indexOf(qLower) >= 0) {
+      badge = tr("search_badge_choice");
+      snipSource = flatChoices;
+      hitPos = flatChoices.toLowerCase().indexOf(qLower);
+    } else if (flatText.toLowerCase().indexOf(qLower) >= 0) {
+      badge = detectTextMatchBadge(text, qLower);
+      snipSource = flatText;
+      hitPos = flatText.toLowerCase().indexOf(qLower);
+    }
+
+    if (hitPos < 0) {
+      row.classList.add("hidden");
+      row.classList.remove("is-active");
+      continue;
+    }
+
+    row.classList.remove("hidden");
+    matchedSceneIds.add(sceneId);
+    visibleCount++;
+    if (!firstVisibleRow) firstVisibleRow = row;
+    if (row.classList.contains("is-active")) hasActiveVisible = true;
+
+    const parts = buildSearchSnippetParts(snipSource, hitPos, studioSearchQuery.length);
+    if (badgeEl) badgeEl.textContent = badge;
+    if (preEl) preEl.textContent = parts.pre;
+    if (hitEl) hitEl.textContent = parts.hit;
+    if (postEl) postEl.textContent = parts.post;
+  }
+
+  if (!hasActiveVisible && firstVisibleRow) {
+    firstVisibleRow.classList.add("is-active");
+  }
+  if (countEl) {
+    countEl.textContent = String(visibleCount);
+  }
+
+  if (studioSearchOpen && qLower) {
+    studioGraphState.searchQuery = qLower;
+    studioGraphState.searchMatchSet = matchedSceneIds;
+  } else {
+    studioGraphState.searchQuery = "";
+    studioGraphState.searchMatchSet = null;
+  }
+  studioGraphState.staticBatchDirty = true;
+  renderStudioCanvas();
+}
+
+function restoreStudioSearchUIState() {
+  const palette = qs("#studio-search-palette");
+  const btn = qs("#btn-studio-search");
+  const inp = qs("#studio-search-input");
+  if (!palette) return;
+  palette.classList.toggle("hidden", !studioSearchOpen);
+  if (btn) btn.classList.toggle("active", studioSearchOpen);
+  if (studioSearchOpen) {
+    if (inp && inp.value !== studioSearchQuery) {
+      inp.value = studioSearchQuery;
+    }
+    applyStudioSearchFilter(studioSearchQuery);
+  } else if (studioGraphState.searchQuery) {
+    studioGraphState.searchQuery = "";
+    studioGraphState.searchMatchSet = null;
+    studioGraphState.staticBatchDirty = true;
+  }
+}
+
+function openStudioSearchPalette() {
+  const palette = qs("#studio-search-palette");
+  const btn = qs("#btn-studio-search");
+  const inp = qs("#studio-search-input");
+  if (!palette) return;
+  studioSearchOpen = true;
+  palette.classList.remove("hidden");
+  if (btn) btn.classList.add("active");
+  applyStudioSearchFilter(inp ? inp.value : studioSearchQuery);
+  if (inp) {
+    inp.focus();
+    inp.select();
+  }
+}
+
+function closeStudioSearchPalette() {
+  const palette = qs("#studio-search-palette");
+  const btn = qs("#btn-studio-search");
+  studioSearchOpen = false;
+  if (palette) palette.classList.add("hidden");
+  if (btn) btn.classList.remove("active");
+  if (studioGraphState.searchQuery) {
+    studioGraphState.searchQuery = "";
+    studioGraphState.searchMatchSet = null;
+    studioGraphState.staticBatchDirty = true;
+    renderStudioCanvas();
+  }
+}
+
+function toggleStudioSearchPalette() {
+  if (studioSearchOpen) {
+    closeStudioSearchPalette();
+  } else {
+    openStudioSearchPalette();
+  }
+}
+
+function stepStudioSearchActiveRow(delta) {
+  const resultsRoot = qs("#studio-search-results");
+  if (!resultsRoot) return;
+  const visible = qsa(".studio-search-row:not(.hidden)", resultsRoot);
+  if (visible.length === 0) return;
+  let curIdx = 0;
+  for (let i = 0; i < visible.length; i++) {
+    if (visible[i].classList.contains("is-active")) {
+      curIdx = i;
+      visible[i].classList.remove("is-active");
+    }
+  }
+  const nextIdx = (curIdx + delta + visible.length) % visible.length;
+  const nextRow = visible[nextIdx];
+  nextRow.classList.add("is-active");
+  if (typeof nextRow.scrollIntoView === "function") {
+    nextRow.scrollIntoView({ block: "nearest" });
+  }
+  const sceneId = nextRow.getAttribute("data-search-scene") || "";
+  if (sceneId) {
+    centerCanvasCameraOnScene(sceneId);
+  }
+}
+
+function activateStudioSearchRow(sceneId, openTextModal) {
+  if (!sceneId) return;
+  const resultsRoot = qs("#studio-search-results");
+  if (resultsRoot) {
+    qsa(".studio-search-row", resultsRoot).forEach((r) => {
+      r.classList.toggle("is-active", r.getAttribute("data-search-scene") === sceneId);
+    });
+  }
+  centerCanvasCameraOnScene(sceneId);
+  if (openTextModal) {
+    pendingSceneSearchHighlight = studioSearchQuery;
+    closeStudioSearchPalette();
+    sendServerAction("OpenSceneTextModal", { scene: sceneId });
+  } else {
+    sendServerAction("SelectStudioScene", { scene: sceneId });
+  }
+}
+
+function applyPendingSceneTextSearchHighlight() {
+  if (!pendingSceneSearchHighlight) return;
+  const q = pendingSceneSearchHighlight;
+  pendingSceneSearchHighlight = "";
+  const ta = qs("#modal-scene-textarea");
+  if (!ta || !ta.value) return;
+  const idx = ta.value.toLowerCase().indexOf(q.toLowerCase());
+  if (idx >= 0) {
+    ta.focus();
+    if (typeof ta.setSelectionRange === "function") {
+      ta.setSelectionRange(idx, idx + q.length);
+    }
+  }
 }

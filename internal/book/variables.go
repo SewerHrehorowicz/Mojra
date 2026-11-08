@@ -73,9 +73,7 @@ func StripOuterDoubleBraces(raw string) string {
 func CleanConditionExpr(raw string) string {
 	s := StripOuterDoubleBraces(raw)
 	lower := strings.ToLower(s)
-	if strings.HasPrefix(lower, "if?:") {
-		s = "? " + strings.TrimSpace(s[4:])
-	} else if strings.HasPrefix(lower, "if:") {
+	if strings.HasPrefix(lower, "if:") {
 		s = strings.TrimSpace(s[3:])
 	}
 	s = strings.TrimSuffix(strings.TrimSpace(s), ";")
@@ -88,8 +86,6 @@ func CleanEffectsExpr(raw string) string {
 	lower := strings.ToLower(s)
 	if strings.HasPrefix(lower, "set:") {
 		s = strings.TrimSpace(s[4:])
-	} else if strings.HasPrefix(lower, "then:") {
-		s = strings.TrimSpace(s[5:])
 	}
 	clauses := splitEffectClauses(s)
 	var clean []string

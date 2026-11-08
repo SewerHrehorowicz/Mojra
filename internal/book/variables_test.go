@@ -70,7 +70,7 @@ func TestVariablesParseSerializeEvaluateAndSaveRoundTrip(t *testing.T) {
 		"",
 		"exit: korytarz",
 		"text: Otwórz właz kluczem",
-		"if?: klucz_sluzy",
+		"if: ? klucz_sluzy",
 		"",
 		"exit: ucieczka",
 		"text: Wycofaj się w trzciny",
@@ -119,7 +119,7 @@ func TestVariablesParseSerializeEvaluateAndSaveRoundTrip(t *testing.T) {
 	serializedStory := SerializeScenesForFile(b, "story.playtxt")
 	if !strings.Contains(serializedStory, "scene: sluza\ntitle: Zatopiona śluza\nset: +odwiedzono_sluze; zaufanie += 1") ||
 		!strings.Contains(serializedStory, "exit: korytarz\ntext: Otwórz kratę\nif: latarka && (klucz_sluzy || zaufanie >= 2)\nset: -naboje; frakcja = rzeczni") ||
-		!strings.Contains(serializedStory, "exit: korytarz\ntext: Otwórz właz kluczem\nif?: klucz_sluzy") {
+		!strings.Contains(serializedStory, "exit: korytarz\ntext: Otwórz właz kluczem\nif: ? klucz_sluzy") {
 		t.Fatalf("unexpected serialized story.playtxt:\n%s", serializedStory)
 	}
 
@@ -213,5 +213,141 @@ func TestVariablesParseSerializeEvaluateAndSaveRoundTrip(t *testing.T) {
 	}
 	if ValidateEffectsExpr("+dasdsd", b) || ValidateEffectsExpr("frakcja = nieznana", b) {
 		t.Fatalf("expected unknown variable or invalid enum state in effects to fail validation")
+	}
+}
+
+func TestConditionalVoiceSectionsAutoLinkQueueAndExport(t *testing.T) {
+	tmpDir := t.TempDir()
+	b, err := CreateNewBook(tmpDir, "Komora Test", "Autor", true, false)
+	if err != nil {
+		t.Fatalf("CreateNewBook failed: %v", err)
+	}
+	b.Variables = []VariableDef{
+		{Name: "sumienie", Kind: VarKindInt, IntVal: 0},
+	}
+	sc := b.Scenes[0]
+	sc.ExplicitID = "komora_topielcow"
+	sc.Name = "Komora topielców"
+	sc.Text = strings.Join([]string{
+		"Wstęp nad rzeką.",
+		"",
+		"if: sumienie > 0",
+		"Krzysiowi zadrżała dłoń na żelaznym pręcie.",
+		"else:",
+		"Cofnął stopę i uniósł ciężką żeliwną klapę.",
+		"endif:",
+		"",
+		"Ostatni akapit finałowy.",
+	}, "\n")
+
+	secs := ExtractSceneVoiceSections(sc, b)
+	if len(secs) != 4 {
+		t.Fatalf("expected 4 voice sections (01, 02_if, 03_else, 04), got %d: %+v", len(secs), secs)
+	}
+	expectedKeys := []string{"01", "02_if", "03_else", "04"}
+	expectedTargets := []string{
+		"voice/komora_topielcow__01.flac",
+		"voice/komora_topielcow__02_if.flac",
+		"voice/komora_topielcow__03_else.flac",
+		"voice/komora_topielcow__04.flac",
+	}
+	for i, sec := range secs {
+		if sec.Key != expectedKeys[i] || sec.TargetFile != expectedTargets[i] {
+			t.Fatalf("section %d: expected key=%q target=%q, got key=%q target=%q",
+				i, expectedKeys[i], expectedTargets[i], sec.Key, sec.TargetFile)
+		}
+	}
+	if secs[1].Text != "Krzysiowi zadrżała dłoń na żelaznym pręcie." {
+		t.Fatalf("expected isolated text for 02_if, got %q", secs[1].Text)
+	}
+
+	// Record sections 01, 02_if, 04 (leaving 03_else unrecorded to verify specific warning)
+	sr := 24000
+	makePCM := func(durSec int) []byte {
+		buf := make([]byte, sr*durSec*2)
+		for i := 0; i < sr*durSec; i++ {
+			buf[i*2] = 0x40
+			buf[i*2+1] = 0x08
+		}
+		return buf
+	}
+	if _, err := SaveSceneVoiceSectionPCM(b, sc, "01", makePCM(2), sr, 0, 1); err != nil {
+		t.Fatalf("SaveSceneVoiceSectionPCM 01 failed: %v", err)
+	}
+	if _, err := SaveSceneVoiceSectionPCM(b, sc, "02_if", makePCM(3), sr, 0, 1); err != nil {
+		t.Fatalf("SaveSceneVoiceSectionPCM 02_if failed: %v", err)
+	}
+	if _, err := SaveSceneVoiceSectionPCM(b, sc, "04", makePCM(2), sr, 0, 1); err != nil {
+		t.Fatalf("SaveSceneVoiceSectionPCM 04 failed: %v", err)
+	}
+	sc.SetSectionVoiceMeta("02_if", "voice/komora_topielcow__02_if.flac", 0.10, 0.90)
+
+	FinalizeBook(b)
+	foundMissingElseWarn := false
+	for _, w := range sc.Warnings {
+		if strings.Contains(w, "03 · ELSE") && strings.Contains(w, "voice/komora_topielcow__03_else.flac") {
+			foundMissingElseWarn = true
+		}
+	}
+	if !foundMissingElseWarn {
+		t.Fatalf("expected parser warning pointing to missing 03_else recording, got: %+v", sc.Warnings)
+	}
+
+	// Verify .playtxt serialization and parsing round-trip with inline section voice + trim
+	if err := SaveBookScenesToDisk(b); err != nil {
+		t.Fatalf("SaveBookScenesToDisk failed: %v", err)
+	}
+	reloaded, err := LoadBookFromDir(b.RootPath)
+	if err != nil {
+		t.Fatalf("LoadBookFromDir failed: %v", err)
+	}
+	relSc := reloaded.Scenes[0]
+	if strings.Contains(relSc.Text, "voice:") {
+		t.Fatalf("expected inline voice: directives to be stripped from scene prose text, got:\n%s", relSc.Text)
+	}
+	sec02 := relSc.FindVoiceSection("02_if")
+	if sec02 == nil || !sec02.HasAudio || !sec02.HasTrim || sec02.TrimStart < 0.09 || sec02.TrimEnd > 0.91 {
+		t.Fatalf("expected reloaded 02_if section to preserve audio and trim [0.10..0.90], got: %+v", sec02)
+	}
+
+	// Verify EvaluateSceneAudioQueue for sumienie=1 ([01, 02_if, 04])
+	queueTrue := EvaluateSceneAudioQueue(relSc, map[string]string{"sumienie": "1"}, reloaded)
+	if len(queueTrue) != 3 || queueTrue[0].Key != "01" || queueTrue[1].Key != "02_if" || queueTrue[2].Key != "04" {
+		t.Fatalf("expected active audio queue [01, 02_if, 04] when sumienie=1, got: %+v", queueTrue)
+	}
+	specStr, totalDur, _ := EncodeSceneAudioQueue(queueTrue)
+	if !strings.Contains(specStr, "komora_topielcow__01.flac") || !strings.Contains(specStr, "komora_topielcow__02_if.flac") || totalDur <= 5.0 {
+		t.Fatalf("unexpected encoded audio queue spec=%q totalDur=%.2f", specStr, totalDur)
+	}
+
+	// Verify CollectProjectVOCues exports separate rows per conditional section (4 for komora_topielcow + 1 for rozdroze = 5)
+	cues := CollectProjectVOCues(reloaded)
+	if len(cues) != 5 {
+		t.Fatalf("expected 5 VO cue rows (4 sections in komora_topielcow + 1 in rozdroze), got %d: %+v", len(cues), cues)
+	}
+	if cues[0].VoiceFile != "voice/komora_topielcow__01.flac" || cues[1].VoiceFile != "voice/komora_topielcow__02_if.flac" || cues[2].VoiceFile != "voice/komora_topielcow__03_else.flac" || cues[3].VoiceFile != "voice/komora_topielcow__04.flac" {
+		t.Fatalf("unexpected VO cue voice files: %+v", cues)
+	}
+
+	// Verify STBC compilation packs all section .flac files
+	mediaMap, err := CollectBookMediaBytes(reloaded)
+	if err != nil {
+		t.Fatalf("CollectBookMediaBytes failed: %v", err)
+	}
+	cipher, key, nonce, tag, perm, err := CompileEncryptedSTBC(reloaded, mediaMap)
+	if err != nil {
+		t.Fatalf("CompileEncryptedSTBC failed: %v", err)
+	}
+	decBook, decMedia, err := DecodeEncryptedSTBC(cipher, key, nonce, tag, perm)
+	if err != nil {
+		t.Fatalf("DecodeEncryptedSTBC failed: %v", err)
+	}
+	for _, k := range []string{"voice/komora_topielcow__01.flac", "voice/komora_topielcow__02_if.flac", "voice/komora_topielcow__04.flac"} {
+		if len(decMedia[k]) == 0 {
+			t.Fatalf("expected STBC media to contain %q", k)
+		}
+	}
+	if len(decBook.Scenes[0].VoiceSections) != 4 {
+		t.Fatalf("expected decoded STBC scene to have 4 voice sections, got %d", len(decBook.Scenes[0].VoiceSections))
 	}
 }

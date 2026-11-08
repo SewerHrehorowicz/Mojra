@@ -62,7 +62,7 @@
       .line-strong { stroke: #525252; stroke-width: 1; }
       .line-subtle { stroke: #242424; stroke-width: 1; }
 
-      /* Genuine App Fonts: Lato (--font-sans) & Aleo (--font-serif) */
+      /* Genuine App Fonts: Lato (--font-sans) and Aleo (--font-serif) */
       .sec-num { fill: #666666; font-family: "Lato", sans-serif; font-size: 10px; font-weight: 700; letter-spacing: 1.4px; }
       .sec-tag { fill: #949494; font-family: "Lato", sans-serif; font-size: 10px; font-weight: 400; letter-spacing: 1.2px; text-anchor: end; }
 
@@ -76,6 +76,12 @@
       .meta-placeholder { fill: #949494; font-family: "Lato", sans-serif; font-size: 11px; font-weight: 300; }
       .timer { fill: #949494; font-family: "Lato", sans-serif; font-size: 10px; font-weight: 400; text-anchor: end; }
       .timer-live { fill: #ffffff; font-family: "Lato", sans-serif; font-size: 10px; font-weight: 700; text-anchor: end; }
+
+      .sec-pill-active { fill: #ffffff; font-family: "Lato", sans-serif; font-size: 10px; font-weight: 700; letter-spacing: 0.8px; }
+      .sec-pill-idle { fill: #7a7a7a; font-family: "Lato", sans-serif; font-size: 10px; font-weight: 400; letter-spacing: 0.8px; }
+      .sec-pill-time { fill: #949494; font-family: "Lato", sans-serif; font-size: 9px; font-weight: 400; }
+      .sec-file-tag { fill: #7a7a7a; font-family: "Lato", sans-serif; font-size: 10px; font-weight: 400; text-anchor: end; }
+      .line-active { stroke: #ffffff; stroke-width: 1; }
 
       .icon { fill: none; stroke: #c8c8c8; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
       .icon-active { fill: none; stroke: #ffffff; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
@@ -278,12 +284,72 @@
     </g>
   </g>
 
+  <!-- 04 / SEKCJE WARUNKOWE (INSPEKTOR 320PX) -->
+  <g transform="translate(48, 690)">
+    <text class="sec-num" x="0" y="12">04 / SEKCJE WARUNKOWE</text>
+    <text class="sec-tag" x="320" y="12">INSPEKTOR 320PX</text>
+
+    <g transform="translate(0, 28)">
+      <rect class="panel" x="0" y="0" width="320" height="146" />
+
+      <!-- Compact Section Selector Tabs in 320px Inspector -->
+      <g transform="translate(18, 16)">
+        <rect x="0" y="3" width="5" height="5" fill="#ffffff" />
+        <text class="sec-pill-idle" x="10" y="9">01</text>
+
+        <rect x="38" y="3" width="5" height="5" fill="#ffffff" />
+        <text class="sec-pill-active" x="48" y="9">02 · IF: SUMIENIE &gt; 0</text>
+        <line class="line-active" x1="38" y1="16" x2="174" y2="16" />
+
+        <rect x="190" y="3" width="5" height="5" fill="none" stroke="#525252" stroke-width="1" />
+        <text class="sec-pill-idle" x="200" y="9">03 · ELSE</text>
+
+        <rect x="260" y="3" width="5" height="5" fill="#ffffff" />
+        <text class="sec-pill-idle" x="270" y="9">04</text>
+
+        <line class="line-subtle" x1="0" y1="16" x2="284" y2="16" />
+      </g>
+
+      <!-- Auto-linked section file row -->
+      <text class="meta-key" x="18" y="56">voice:</text>
+      <text class="meta-val" x="64" y="56">voice/komora__02_if.flac</text>
+      <line class="line-strong" x1="64" y1="63" x2="255" y2="63" />
+      <g transform="translate(282.5, 43.5)">
+        <use href="#btn-brackets" />
+        <g class="icon-active" transform="translate(3.5, 3)">
+          <use href="#ico-mic" />
+        </g>
+      </g>
+
+      <!-- Waveform for selected section 02 -->
+      <g transform="translate(18, 86)">
+        <g transform="translate(0, 6.5)">
+          <use href="#ico-play" />
+        </g>
+        <g transform="translate(22, 0)">
+          <g clip-path="url(#clip-mid-320)" stroke="#7a7a7a">
+            <use href="#wave-lines-216" />
+          </g>
+          <line class="playhead" x1="86" y1="0" x2="86" y2="28" />
+          <polyline class="bracket" points="32,6 32,0 38,0" />
+          <polyline class="bracket" points="32,22 32,28 38,28" />
+          <polyline class="bracket" points="180,0 186,0 186,6" />
+          <polyline class="bracket" points="180,28 186,28 186,22" />
+        </g>
+        <text class="timer" x="264" y="18">0:09</text>
+        <g class="icon-muted" transform="translate(269, 6.5)">
+          <use href="#ico-trash" />
+        </g>
+      </g>
+    </g>
+  </g>
+
   <!-- ===================================================================== -->
-  <!-- RIGHT COLUMN: 04 / WIDOK TREŚCI SCENY (#MODAL-SCENE-TEXT)             -->
+  <!-- RIGHT COLUMN: 05 / WIDOK TREŚCI SCENY (#MODAL-SCENE-TEXT)             -->
   <!-- ===================================================================== -->
   <g transform="translate(532, 36)">
-    <text class="sec-num" x="0" y="12">04 / EDYTOR TREŚCI SCENY (#MODAL-SCENE-TEXT)</text>
-    <text class="sec-tag" x="860" y="12">#TOPBAR WIDOCZNY • NAGRYWANIE NAD TEKSTEM</text>
+    <text class="sec-num" x="0" y="12">05 / EDYTOR TREŚCI SCENY (#MODAL-SCENE-TEXT)</text>
+    <text class="sec-tag" x="860" y="12">SEKCJE WARUNKOWE • IZOLACJA TEKSTU SEKCJI</text>
 
     <g transform="translate(0, 28)">
       <rect class="panel" x="0" y="0" width="860" height="800" />
@@ -306,7 +372,7 @@
       <!-- ROW 2: Book Page Content -->
       <g transform="translate(120, 82)">
         <text class="chapter-kicker" x="0" y="0">ZATOPIONA ŚLUZA</text>
-        <text class="modal-title" x="0" y="30">Kanał kwarantanny</text>
+        <text class="modal-title" x="0" y="30">Komora topielców</text>
 
         <!-- Header Right Icons: Mic (Active with 4-corner brackets), Settings, Close -->
         <g transform="translate(536, 11)">
@@ -322,8 +388,43 @@
 
         <line class="line-subtle" x1="0" y1="46" x2="620" y2="46" />
 
-        <!-- Single-Row Audio Recorder/Trimmer (Thin 1px Gray Lines + 1px Playhead + Corner Brackets) -->
-        <g transform="translate(0, 64)">
+        <!-- SECTION SELECTOR BAR (Auto-split from scene AST: 01, 02 if, 03 else, 04) -->
+        <g transform="translate(0, 62)">
+          <!-- Tab 01: Recorded static intro -->
+          <rect x="0" y="3" width="6" height="6" fill="#ffffff" />
+          <text class="sec-pill-idle" x="11" y="10">01 · WSTĘP</text>
+          <text class="sec-pill-time" x="78" y="10">0:14</text>
+
+          <!-- Tab 02: Active conditional branch (if: sumienie > 0) -->
+          <g transform="translate(112, 0)">
+            <rect x="0" y="3" width="6" height="6" fill="#ffffff" />
+            <text class="sec-pill-active" x="11" y="10">02 · IF: SUMIENIE &gt; 0</text>
+            <text class="sec-pill-time" x="136" y="10" fill="#ffffff">0:09</text>
+            <line class="line-active" x1="0" y1="20" x2="156" y2="20" />
+          </g>
+
+          <!-- Tab 03: Unrecorded conditional branch (else) -->
+          <g transform="translate(284, 0)">
+            <rect x="0" y="3" width="6" height="6" fill="none" stroke="#525252" stroke-width="1" />
+            <text class="sec-pill-idle" x="11" y="10">03 · ELSE</text>
+            <text class="sec-pill-time" x="66" y="10">—</text>
+          </g>
+
+          <!-- Tab 04: Recorded static outro -->
+          <g transform="translate(370, 0)">
+            <rect x="0" y="3" width="6" height="6" fill="#ffffff" />
+            <text class="sec-pill-idle" x="11" y="10">04 · FINAŁ</text>
+            <text class="sec-pill-time" x="74" y="10">0:06</text>
+          </g>
+
+          <!-- Right-aligned auto-linked FLAC file path for active section -->
+          <text class="sec-file-tag" x="620" y="10">voice/komora__02_if.flac</text>
+
+          <line class="line-subtle" x1="0" y1="20" x2="620" y2="20" />
+        </g>
+
+        <!-- Single-Row Audio Recorder/Trimmer for Active Section (02 · IF: SUMIENIE > 0) -->
+        <g transform="translate(0, 98)">
           <g transform="translate(0, 7.5)">
             <use href="#ico-play" />
           </g>
@@ -342,14 +443,14 @@
             <!-- 1px Solid White Playhead -->
             <line class="playhead" x1="210" y1="0" x2="210" y2="30" />
 
-            <!-- Left & Right 4-corner bracket markers -->
+            <!-- Left and Right 4-corner bracket markers -->
             <polyline class="bracket" points="54,6 54,0 60,0" />
             <polyline class="bracket" points="54,24 54,30 60,30" />
             <polyline class="bracket" points="446,0 452,0 452,6" />
             <polyline class="bracket" points="446,30 452,30 452,24" />
           </g>
 
-          <text class="timer" x="576" y="19">0:17</text>
+          <text class="timer" x="576" y="19">0:09</text>
           <g class="icon-muted" transform="translate(586, 7.5)">
             <use href="#ico-mic" />
           </g>
@@ -358,15 +459,50 @@
           </g>
         </g>
 
-        <!-- Scene Prose directly underneath -->
-        <g transform="translate(0, 132)">
-          <text class="prose" x="0" y="0">Nocna szpica pod komendą sierżanta Niedźwiedzia odbiła od głównego koryta</text>
-          <text class="prose" x="0" y="25">w wąski, wyłożony cegłą kanał dawnej kwarantanny. Nad wodą wisiał tu ciężki</text>
-          <text class="prose" x="0" y="50">odór zardzewiałego żelaza i gnijącego drewna, a wysokie mury porastał śliski,</text>
-          <text class="prose" x="0" y="75">czarny mech.</text>
+        <line class="line-subtle" x1="0" y1="144" x2="620" y2="144" />
 
-          <text class="prose" x="0" y="120">Drogę na północ zagradzały potężne wrota starej śluzy oraz przycumowana</text>
-          <text class="prose" x="0" y="145">do nich, nawpół zatopiona barka szpitalna z czasów wielkiej zarazy.</text>
+        <!-- Isolated Prose of Selected Section ONLY (02 · IF: SUMIENIE > 0) -->
+        <g transform="translate(0, 178)">
+          <text class="sec-num" x="0" y="0" fill="#949494">SEKCJA 02 / 04 · IF: SUMIENIE &gt; 0</text>
+          <text class="sec-tag" x="620" y="0">WIDOK TEKSTU NAGRYWANEJ SEKCJI</text>
+
+          <text class="prose" fill="#ffffff" x="0" y="36">Krzysiowi zadrżała dłoń na żelaznym pręcie. W mroku pod kratą dostrzegł</text>
+          <text class="prose" fill="#ffffff" x="0" y="62">twarz chłopaka z rozbitej barki, któremu jeszcze przed godziną oddał</text>
+          <text class="prose" fill="#ffffff" x="0" y="88">ostatni koszarowy suchar.</text>
+
+          <text class="prose" fill="#ffffff" x="0" y="132">— Nie patrz w dół, rekrucie — warknął cicho Niedźwiedź, przyciskając</text>
+          <text class="prose" fill="#ffffff" x="0" y="158">butem krawędź włazu.</text>
+        </g>
+
+        <!-- Player Sequential Queue Preview at bottom of card -->
+        <g transform="translate(0, 440)">
+          <line class="line-subtle" x1="0" y1="0" x2="620" y2="0" />
+          <text class="sec-num" x="0" y="28">KOLEJKA ODTWARZANIA (#VIEW-PLAYER)</text>
+          <text class="sec-tag" x="620" y="28">JEDEN PO DRUGIM BEZ SKLEJANIA (SUMA: 0:29)</text>
+
+          <!-- Segment 1 -->
+          <g transform="translate(0, 48)">
+            <rect x="0" y="0" width="268" height="44" fill="#050505" stroke="#525252" stroke-width="1" />
+            <text class="sec-pill-active" x="14" y="18">01 · WSTĘP</text>
+            <text class="sec-pill-time" x="254" y="18" text-anchor="end">0:14</text>
+            <text class="meta-key" x="14" y="34">voice/komora_topielcow__01.flac</text>
+          </g>
+
+          <!-- Segment 2 (Active branch for sumienie > 0) -->
+          <g transform="translate(276, 48)">
+            <rect x="0" y="0" width="208" height="44" fill="#050505" stroke="#ffffff" stroke-width="1" />
+            <text class="sec-pill-active" x="14" y="18">02 · IF: SUMIENIE &gt; 0</text>
+            <text class="sec-pill-time" x="194" y="18" text-anchor="end" fill="#ffffff">0:09</text>
+            <text class="meta-key" x="14" y="34" fill="#c8c8c8">voice/komora_topielcow__02_if.flac</text>
+          </g>
+
+          <!-- Segment 4 -->
+          <g transform="translate(492, 48)">
+            <rect x="0" y="0" width="128" height="44" fill="#050505" stroke="#525252" stroke-width="1" />
+            <text class="sec-pill-active" x="14" y="18">04 · FINAŁ</text>
+            <text class="sec-pill-time" x="114" y="18" text-anchor="end">0:06</text>
+            <text class="meta-key" x="14" y="34">...__04.flac</text>
+          </g>
         </g>
       </g>
     </g>

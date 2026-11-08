@@ -354,6 +354,9 @@ func (s *Server) deleteScenesFromForm(r *http.Request) string {
 func (s *Server) selectStudioScene(r *http.Request) string {
 	scID := strings.TrimSpace(r.FormValue("scene"))
 	if found := s.findScene(scID); found != nil {
+		if s.SelectedSceneID != found.ID {
+			s.SelectedVoiceSectionKey = "01"
+		}
 		s.SelectedSceneID = found.ID
 		if s.SceneTextModalID != "" {
 			s.SceneTextModalID = found.ID
@@ -498,6 +501,9 @@ func (s *Server) openSceneTextModal(r *http.Request) string {
 		}
 	}
 	if sc := s.findScene(scID); sc != nil {
+		if s.SelectedSceneID != sc.ID || s.SceneTextModalID != sc.ID {
+			s.SelectedVoiceSectionKey = "01"
+		}
 		if s.SelectedSceneID != sc.ID {
 			s.SceneTextModalSettingsOpen = false
 		}
@@ -540,6 +546,7 @@ func (s *Server) closeSceneTextModal(r *http.Request) string {
 	}
 	s.SceneTextModalID = ""
 	s.SceneTestVarsPopoverOpen = false
+	s.SelectedVoiceSectionKey = "01"
 	return toast
 }
 
@@ -795,9 +802,11 @@ func (s *Server) navigateSceneTextModal(r *http.Request) string {
 		}
 		s.SelectedSceneID = nextSc.ID
 		s.SceneTextModalID = nextSc.ID
+		s.SelectedVoiceSectionKey = "01"
 	} else if s.ActiveBook != nil && len(s.ActiveBook.Scenes) > 0 && targetID == "" {
 		s.SelectedSceneID = s.ActiveBook.Scenes[0].ID
 		s.SceneTextModalID = s.ActiveBook.Scenes[0].ID
+		s.SelectedVoiceSectionKey = "01"
 	}
 	return toast
 }
@@ -909,7 +918,7 @@ func (s *Server) exportProjectAction(r *http.Request) string {
 		}
 		selectedOrder = []string{explicitFormat}
 	} else if len(s.ExportModalFormats) > 0 {
-		for _, id := range []string{"playbook", "wasm", "pdf", "fountain", "playtxt"} {
+		for _, id := range []string{"playbook", "wasm", "pdf", "fountain", "fdx", "treatment", "book_pdf", "vo_csv", "actor_pdf", "playtxt"} {
 			if s.ExportModalFormats[id] {
 				selectedOrder = append(selectedOrder, id)
 			}
@@ -986,6 +995,54 @@ func (s *Server) exportProjectAction(r *http.Request) string {
 				return err.Error()
 			}
 			exportedPaths = append(exportedPaths, outFountain)
+		case "fdx":
+			bookClone := *s.ActiveBook
+			bookClone.ScriptStandard = expStd
+			fdxText := book.ExportScreenplayFDX(&bookClone)
+			outFDX := filepath.Join(exportDir, s.ActiveBook.ID+".fdx")
+			if err := os.WriteFile(outFDX, []byte(fdxText), 0644); err != nil {
+				return err.Error()
+			}
+			exportedPaths = append(exportedPaths, outFDX)
+		case "treatment":
+			bookClone := *s.ActiveBook
+			bookClone.ScriptStandard = expStd
+			pdfBytes, err := book.ExportScreenplayTreatmentPDF(&bookClone)
+			if err != nil {
+				return err.Error()
+			}
+			outPDF := filepath.Join(exportDir, s.ActiveBook.ID+"-treatment.pdf")
+			if err := os.WriteFile(outPDF, pdfBytes, 0644); err != nil {
+				return err.Error()
+			}
+			exportedPaths = append(exportedPaths, outPDF)
+		case "book_pdf":
+			pdfBytes, err := book.ExportBookPDF(s.ActiveBook)
+			if err != nil {
+				return err.Error()
+			}
+			outPDF := filepath.Join(exportDir, s.ActiveBook.ID+"-book.pdf")
+			if err := os.WriteFile(outPDF, pdfBytes, 0644); err != nil {
+				return err.Error()
+			}
+			exportedPaths = append(exportedPaths, outPDF)
+		case "vo_csv":
+			csvText := book.ExportVOTableCSV(s.ActiveBook)
+			outCSV := filepath.Join(exportDir, s.ActiveBook.ID+"-vo.csv")
+			if err := os.WriteFile(outCSV, []byte(csvText), 0644); err != nil {
+				return err.Error()
+			}
+			exportedPaths = append(exportedPaths, outCSV)
+		case "actor_pdf":
+			pdfBytes, err := book.ExportActorScriptsPDF(s.ActiveBook)
+			if err != nil {
+				return err.Error()
+			}
+			outPDF := filepath.Join(exportDir, s.ActiveBook.ID+"-actors.pdf")
+			if err := os.WriteFile(outPDF, pdfBytes, 0644); err != nil {
+				return err.Error()
+			}
+			exportedPaths = append(exportedPaths, outPDF)
 		case "playtxt":
 			outPlaytxtDir, err := book.ExportPlaytxtProject(s.ActiveBook, exportDir)
 			if err != nil {

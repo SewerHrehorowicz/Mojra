@@ -76,6 +76,7 @@ var jsI18nKeys = [...]string{
 	"scale_zen_hint",
 	"scale_exit_zen_hint",
 	"scale_enlarge_hint",
+	"scale_shrink_hint",
 	"imageless_locked_hint",
 	"imageless_enable_hint",
 	"imageless_disable_hint",
@@ -142,6 +143,13 @@ var jsI18nKeys = [...]string{
 	"err_exit_self_chapter",
 	"err_exit_unknown_chapter",
 	"err_exit_unknown_target",
+	"search_badge_scene",
+	"search_badge_location",
+	"search_badge_dialogue",
+	"search_badge_prose",
+	"search_badge_choice",
+	"undo_toast",
+	"redo_toast",
 }
 
 // I18nDicts holds per-language dictionaries parsed from internal/tpl/i18n/<code.cfg>.

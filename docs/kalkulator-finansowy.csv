@@ -1,0 +1,23 @@
+Sekcja / Pozycja,Rok 1,Rok 2,Rok 3,Suma 3 Lat / Szczegóły (Źródło: docs/finanse.cfg)
+0. PODZIAŁ TORTU — KTO ILE DOSTAJE (GOTÓWKA + WYCENA UDZIAŁÓW),Rok 1,Rok 2,Rok 3,Pełna zgodność z Deckiem Inwestorskim i symulacją M1–M36
+A. Ty — Główny Architekt (78% udziałów): Faktura B2B R&D + Dywidenda,328 355 zł (27 363 zł/m),622 705 zł (51 892 zł/m),1 119 776 zł (93 315 zł/m),"Gotówka 3 lata: 2 070 836 zł + wycena 78%: 6,09–8,12 mln zł"
+B. Przyjaciel — Co-Founder Biznes/BD (12% udziałów): Retainer + 15% Prowizji B2B + Dywidenda,60 381 zł (5 032 zł/m),146 812 zł (12 234 zł/m),286 463 zł (23 872 zł/m),"Gotówka 3 lata: 493 656 zł + wycena 12% (vesting 36M): 0,94–1,25 mln zł"
+C. Inwestorzy Seed (10% udziałów za 80 000 zł),11 327 zł dywidendy,41 372 zł dywidendy,97 407 zł dywidendy,"Dywidenda 3 lata: 150 106 zł + wycena 10%: 0,78–1,04 mln zł (zwrot 11,6×–14,9×)"
+1. ŹRÓDŁA BUDŻETU STARTOWEGO,270 000 zł,100% budżetu,190 000 zł bez rozwodnienia udziałów,4 niezależne źródła finansowania
+A. Dotacje rządowe (CRPK / MKiDN / PARP Dostępność),90 000 zł,33% budżetu,0% oddanych udziałów,"Granty na narzędzia kreatywne, R&D i dostępność audio (TRL 7)"
+B. Inwestorzy Seed (2 bilety po 40 tys. zł),80 000 zł,30% budżetu,10% udziałów (Zespół zachowuje 90%!),2 aniołów biznesu po 40 tys. zł (5% każdy)
+C. Przedsprzedaż po darmowych Pilotach (Wspieram.to),70 000 zł,26% budżetu,0% oddanych udziałów,Przedsprzedaż 4 premier po wypuszczeniu darmowych 1h Pilotów
+D. Pierwsze wdrożenia uczelniane B2B,30 000 zł,11% budżetu,0% oddanych udziałów,Pierwsze 4 szkoły filmowe / uczelnie × 7 500 zł
+2. KOSZTORYS STARTOWY CAPEX,270 000 zł,100% wydatków,12 miesięcy,Produkcja Pilot-First (150 tys.) + R&D/Audyt/Mobile (60 tys.) + Dystrybucja/B2B (60 tys.)
+A. Produkcja 4 własnych premier Mojra Originals (Pilot-First),150 000 zł,56%,4 tytuły etapowane Pilotami,Aktorzy (60 tys.) + Studio (40 tys.) + Autorzy (34 tys.) + Ilustracje/SFX (16 tys.)
+"B. R&D Aplikacji: Architektura Mobile/Steam, Audyt i Płatności",60 000 zł,22%,Gotowy silnik Go/WebGL,Pentest i certyfikaty (18 tys.) + R&D iOS/Android (24 tys.) + Płatności i umowy (18 tys.)
+"C. Kampania Wspieram.to, promocja Steam/Mobile i akwizycja B2B",60 000 zł,22%,4 kampanie + uczelnie B2B,Wideo CF (18 tys.) + Promocja premier (24 tys.) + Spotkania B2B i targi (18 tys.)
+3. RACHUNEK ZYSKÓW I STRAT SPÓŁKI (P&L ROK 1–3),Rok 1,Rok 2,Rok 3,Suma 3 Lat / Opis pozycji
+Przychód 1: Własne produkcje Mojra Originals (32 zł marży/szt.),358 400 zł,665 600 zł,1 152 000 zł,"Wydania własne na Steam, App Store, Google Play i Wspieram.to"
+Przychód 2: Katalog zewnętrznych autorów (6 zł prowizji/szt.),19 200 zł,90 000 zł,252 000 zł,15% prowizji platformowej od zewnętrznych twórców
+Przychód 3: Licencje (Uczelnie B2B 7 500 zł + Indie 249 zł + Pro 599 zł),71 920 zł,167 765 zł,330 490 zł,Licencje kampusowe dla szkół filmowych oraz subskrypcje Playbook Studio
+PRZYCHÓD SPÓŁKI OGÓŁEM,449 520 zł,923 365 zł,1 734 490 zł,3 107 375 zł łącznie w 3 lata
+"Koszt OPEX 1: R&D, architektura silnika i rozwój wieloplatformowy (B2B Architekt)",240 000 zł,300 000 zł,360 000 zł,Kontrakt B2B Głównego Architekta (IP Box 5%) ujęty w kosztach rozwoju oprogramowania
+Koszt OPEX 2: Rozwój biznesu B2B (Retainer BD + 15% prowizji) oraz księgowość,70 788 zł,121 165 zł,193 574 zł,Wynagrodzenie i prowizje Co-Foundera Biznesowego (BD) + biuro rachunkowe (2 000 zł/m)
+ZYSK OPERACYJNY SPÓŁKI (EBITDA),133 265 zł,486 734 zł,1 145 967 zł,1 765 966 zł łącznie w 3 lata
+ZYSK NETTO PO PODATKU CIT (DO PODZIAŁU DYWIDENDOWEGO),113 275 zł,413 724 zł,974 072 zł,"1 501 071 zł (podział: 78% Architekt, 12% Biznes/BD, 10% Inwestorzy)"

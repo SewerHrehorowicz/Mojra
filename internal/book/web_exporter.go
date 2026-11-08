@@ -2,6 +2,7 @@ package book
 
 import (
 	"bytes"
+	"encoding/base64"
 	"fmt"
 	"io/fs"
 	"os"
@@ -130,10 +131,15 @@ func resolveBaseWasmAndExecJS(rootDir string, embeddedFS fs.FS) ([]byte, string,
 	return nil, "", fmt.Errorf("brak szablonu runtime mojra.wasm")
 }
 
-// RenderWasmSplashHTML renders the minimalist Splash Screen with play.svg, title, and author (no #topbar).
+// RenderWasmSplashHTML renders the minimalist Splash Screen with play.svg, title, author, description, and optional cover image (no #topbar).
 func RenderWasmSplashHTML(b *Book, wasmSrc string, playSVG string) string {
+	return renderWasmSplashHTMLWithCover(b, "", wasmSrc, playSVG)
+}
+
+func renderWasmSplashHTMLWithCover(b *Book, coverSrc string, wasmSrc string, playSVG string) string {
 	title := "Mojra"
 	author := ""
+	description := ""
 	bookID := "book"
 	imagelessAttr := "false"
 	if b != nil {
@@ -141,17 +147,19 @@ func RenderWasmSplashHTML(b *Book, wasmSrc string, playSVG string) string {
 			title = strings.TrimSpace(b.Title)
 		}
 		author = strings.TrimSpace(b.Author)
+		description = strings.TrimSpace(b.Description)
 		if b.ID != "" {
 			bookID = b.ID
 		}
 		if b.Imageless {
 			imagelessAttr = "true"
+			coverSrc = ""
 		}
 	}
 	if strings.TrimSpace(wasmSrc) == "" {
 		wasmSrc = "mojra.wasm"
 	}
-	return tpl.RenderWasmSplashPageHTML(title, author, bookID, imagelessAttr, wasmSrc, playSVG)
+	return tpl.RenderWasmSplashPageHTML(title, author, description, coverSrc, bookID, imagelessAttr, wasmSrc, playSVG)
 }
 
 // ExportWebWASMApp exports a self-contained Web/WASM player directory (<exportDir>/<book.ID>-web/)
@@ -183,6 +191,7 @@ func ExportWebWASMApp(b *Book, exportDir string, rootDir string, embeddedFS fs.F
 	if err != nil {
 		return "", err
 	}
+	jsStr += "\n;\nwindow.__wasmBase64 = \"" + base64.StdEncoding.EncodeToString(embeddedWasm) + "\";\n"
 	relCSS := strings.ReplaceAll(cssStr, `url("/fonts/`, `url("fonts/`)
 	if err := os.WriteFile(filepath.Join(outDir, "style.css"), []byte(relCSS), 0644); err != nil {
 		return "", err
@@ -191,13 +200,82 @@ func ExportWebWASMApp(b *Book, exportDir string, rootDir string, embeddedFS fs.F
 		return "", err
 	}
 
-	indexHTML := RenderWasmSplashHTML(b, "mojra.wasm", playSVG)
+	coverFilename := ""
+	if !b.Imageless && b.CoverFile != "" {
+		cleanCover := SanitizeRelativeMediaPath(b.CoverFile)
+		if rawCover, cErr := readBookMediaRawBytes(b, cleanCover); cErr == nil && len(rawCover) > 0 {
+			ext := strings.ToLower(filepath.Ext(cleanCover))
+			if ext == "" {
+				ext = ".jpg"
+			}
+			coverFilename = "cover" + ext
+			_ = os.WriteFile(filepath.Join(outDir, coverFilename), rawCover, 0644)
+		}
+	}
+
+	indexHTML := renderWasmSplashHTMLWithCover(b, coverFilename, "mojra.wasm", playSVG)
 	if err := os.WriteFile(filepath.Join(outDir, "index.html"), []byte(indexHTML), 0644); err != nil {
 		return "", err
 	}
 
 	copyWebFontsAndIcons(outDir, rootDir, embeddedFS)
 	return outDir, nil
+}
+
+// EmbedDemoBookIntoWWW embeds the sample book into dist/www/mojra.wasm and appends window.__wasmBase64 to dist/www/app.js
+// so the static showcase site works both over HTTP/HTTPS (fetch) and directly from disk via file://.
+func EmbedDemoBookIntoWWW(rootDir string, baseWasm []byte) error {
+	if len(baseWasm) == 0 {
+		var err error
+		baseWasm, _, err = resolveBaseWasmAndExecJS(rootDir, nil)
+		if err != nil {
+			return err
+		}
+	}
+	booksDir := filepath.Join(rootDir, "books")
+	demoDir := filepath.Join(booksDir, "nie-boj-sie-policji-rzecznej")
+	if !HasBookFilesInDir(demoDir) {
+		entries, err := os.ReadDir(booksDir)
+		if err != nil {
+			return err
+		}
+		for _, e := range entries {
+			if e.IsDir() && !strings.HasPrefix(e.Name(), ".") {
+				cand := filepath.Join(booksDir, e.Name())
+				if HasBookFilesInDir(cand) {
+					demoDir = cand
+					break
+				}
+			}
+		}
+	}
+	sampleBook, err := LoadBookFromDir(demoDir)
+	if err != nil || sampleBook == nil {
+		return fmt.Errorf("nie można wczytać książki demonstracyjnej z %s: %w", demoDir, err)
+	}
+	embeddedWasm, err := EmbedSTBCIntoWasm(baseWasm, sampleBook, nil)
+	if err != nil {
+		return err
+	}
+	wwwOutDir := filepath.Join(rootDir, "dist", "www")
+	if err := os.MkdirAll(wwwOutDir, 0755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(wwwOutDir, "mojra.wasm"), embeddedWasm, 0644); err != nil {
+		return err
+	}
+	appJSPath := filepath.Join(wwwOutDir, "app.js")
+	if rawJS, err := os.ReadFile(appJSPath); err == nil {
+		jsStr := string(rawJS)
+		if idx := strings.Index(jsStr, "\nwindow.__wasmBase64 = \""); idx >= 0 {
+			jsStr = jsStr[:idx]
+		}
+		jsStr += "\nwindow.__wasmBase64 = \"" + base64.StdEncoding.EncodeToString(embeddedWasm) + "\";\n"
+		if err := os.WriteFile(appJSPath, []byte(jsStr), 0644); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func buildPlayerWebBundleAssets(rootDir string, embeddedFS fs.FS, wasmExecJS string) (cssStr, jsStr, playSVG string, err error) {
@@ -207,17 +285,14 @@ func buildPlayerWebBundleAssets(rootDir string, embeddedFS fs.FS, wasmExecJS str
 		if err != nil {
 			return "", "", "", err
 		}
+		playerJS, jErr := tpl.BundleFilesToString(tpl.JSPlayerModuleFiles(appDir), true)
+		if jErr != nil {
+			return "", "", "", jErr
+		}
 		var jsBuf bytes.Buffer
 		jsBuf.WriteString(wasmExecJS)
 		jsBuf.WriteString("\n;\n")
-		for _, p := range tpl.JSPlayerModuleFiles(appDir) {
-			raw, rErr := os.ReadFile(p)
-			if rErr != nil {
-				return "", "", "", rErr
-			}
-			jsBuf.WriteString(tpl.StripDevOnlyBlocks(string(raw)))
-			jsBuf.WriteByte('\n')
-		}
+		jsBuf.WriteString(playerJS)
 		jsStr = jsBuf.String()
 		if rawSVG, sErr := os.ReadFile(filepath.Join(appDir, "icons", "play.svg")); sErr == nil {
 			playSVG = strings.TrimSpace(string(rawSVG))

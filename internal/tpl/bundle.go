@@ -1,6 +1,7 @@
 package tpl
 
 import (
+	"encoding/base64"
 	"fmt"
 	"io/fs"
 	"os"
@@ -367,7 +368,7 @@ func BuildApp(appDir string) error {
 }
 
 // RenderWasmSplashPageHTML renders the standalone Web/WASM splash page HTML document.
-func RenderWasmSplashPageHTML(title, author, bookID, imagelessAttr, wasmSrc, playSVG string) string {
+func RenderWasmSplashPageHTML(title, author, description, coverSrc, bookID, imagelessAttr, wasmSrc, playSVG string) string {
 	if strings.TrimSpace(playSVG) == "" {
 		playSVG = `<svg class="wasm-splash-play-icon" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm-2.5 5.5 7.5 4.5-7.5 4.5v-9z"/></svg>`
 	} else if !strings.Contains(playSVG, "wasm-splash-play-icon") {
@@ -375,6 +376,8 @@ func RenderWasmSplashPageHTML(title, author, bookID, imagelessAttr, wasmSrc, pla
 	}
 	escTitle := escapeHTMLText(title)
 	escAuthor := escapeHTMLText(author)
+	escDesc := escapeHTMLText(description)
+	escCover := escapeHTMLText(coverSrc)
 	escWasm := escapeHTMLText(wasmSrc)
 	escBookID := escapeHTMLText(bookID)
 
@@ -390,13 +393,22 @@ func RenderWasmSplashPageHTML(title, author, bookID, imagelessAttr, wasmSrc, pla
 	fmt.Fprintf(&sb, "<body data-theme=\"dark\" data-imageless=\"%s\" data-imageless-locked=\"%s\" data-ui-scale=\"small\">\n", imagelessAttr, imagelessAttr)
 	fmt.Fprintf(&sb, "  <div class=\"app-root wasm-player-root\" id=\"app\" data-wasm-src=\"%s\" data-book-id=\"%s\">\n", escWasm, escBookID)
 	sb.WriteString("    <div class=\"wasm-splash\" id=\"wasm-splash\">\n")
-	fmt.Fprintf(&sb, "      <h1 class=\"wasm-splash-title\">%s</h1>\n", escTitle)
-	if author != "" {
-		fmt.Fprintf(&sb, "      <p class=\"wasm-splash-author\">%s</p>\n", escAuthor)
+	if escCover != "" {
+		fmt.Fprintf(&sb, "      <img class=\"wasm-splash-bg\" src=\"%s\" alt=\"\" aria-hidden=\"true\">\n", escCover)
 	}
-	fmt.Fprintf(&sb, "      <button class=\"wasm-splash-play-btn\" id=\"btn-wasm-play\" type=\"button\" data-wasm-play=\"true\" data-wasm-src=\"%s\" data-book-id=\"%s\" aria-label=\"Odtwórz\">\n", escWasm, escBookID)
-	sb.WriteString("        " + playSVG + "\n")
-	sb.WriteString("      </button>\n")
+	sb.WriteString("      <div class=\"wasm-splash-content\">\n")
+	fmt.Fprintf(&sb, "        <h1 class=\"wasm-splash-title\">%s</h1>\n", escTitle)
+	if author != "" {
+		fmt.Fprintf(&sb, "        <p class=\"wasm-splash-author\">%s</p>\n", escAuthor)
+	}
+	if description != "" {
+		sb.WriteString("        <div class=\"wasm-splash-divider\" aria-hidden=\"true\"></div>\n")
+		fmt.Fprintf(&sb, "        <p class=\"wasm-splash-desc\">%s</p>\n", escDesc)
+	}
+	fmt.Fprintf(&sb, "        <button class=\"wasm-splash-play-btn\" id=\"btn-wasm-play\" type=\"button\" data-wasm-play=\"true\" data-wasm-src=\"%s\" data-book-id=\"%s\" aria-label=\"Odtwórz\">\n", escWasm, escBookID)
+	sb.WriteString("          " + playSVG + "\n")
+	sb.WriteString("        </button>\n")
+	sb.WriteString("      </div>\n")
 	sb.WriteString("    </div>\n")
 	sb.WriteString("  </div>\n")
 	sb.WriteString("  <script src=\"app.js\"></script>\n")
@@ -423,9 +435,10 @@ func BuildWWW(rootDir string) error {
 	if _, ok := templates["index"]; !ok {
 		return fmt.Errorf("missing index.tpl in %s", wwwDir)
 	}
+	financeCtx := LoadDeckFinanceContext(rootDir)
 	for name, tmpl := range templates {
 		htmlPath := filepath.Join(outDir, name+".html")
-		htmlStr := TranspileStaticHTML(tmpl, templates)
+		htmlStr := TranspileStaticHTMLWithContext(tmpl, templates, financeCtx)
 		relHTML := strings.ReplaceAll(htmlStr, `src="/app.js"`, `src="app.js"`)
 		if err := os.WriteFile(htmlPath, []byte(relHTML), 0644); err != nil {
 			return fmt.Errorf("write %s: %w", htmlPath, err)
@@ -459,6 +472,13 @@ func BuildWWW(rootDir string) error {
 	); err != nil {
 		return fmt.Errorf("www js bundle error: %w", err)
 	}
+	if wasmBytes, wErr := os.ReadFile(filepath.Join(outDir, "mojra.wasm")); wErr == nil && len(wasmBytes) > 0 {
+		appJSPath := filepath.Join(outDir, "app.js")
+		if rawJS, jErr := os.ReadFile(appJSPath); jErr == nil {
+			jsStr := string(rawJS) + "\nwindow.__wasmBase64 = \"" + base64.StdEncoding.EncodeToString(wasmBytes) + "\";\n"
+			_ = os.WriteFile(appJSPath, []byte(jsStr), 0644)
+		}
+	}
 
 	if fontEntries, err := os.ReadDir(filepath.Join(appDir, "fonts")); err == nil {
 		for _, fe := range fontEntries {
@@ -478,6 +498,9 @@ func BuildWWW(rootDir string) error {
 				return err
 			}
 		}
+	}
+	if rawCover, cErr := os.ReadFile(filepath.Join(rootDir, "books", "nie-boj-sie-policji-rzecznej", "images", "cover.jpg")); cErr == nil && len(rawCover) > 0 {
+		_ = os.WriteFile(filepath.Join(outDir, "cover.jpg"), rawCover, 0644)
 	}
 	return nil
 }

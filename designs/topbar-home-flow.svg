@@ -1,0 +1,445 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1480" height="980" viewBox="0 0 1480 980">
+  <defs>
+    <style>
+      .bg { fill: #050505; }
+      .panel { fill: #000000; stroke: #242424; stroke-width: 1; }
+      .panel-strong { fill: #000000; stroke: #525252; stroke-width: 1; }
+      .panel-active { fill: #080808; stroke: #ffffff; stroke-width: 1; }
+      .topbar-bg { fill: #000000; stroke: #242424; stroke-width: 1; }
+      .subbar-bg { fill: #050505; stroke: #1c1c1c; stroke-width: 1; }
+      .div { stroke: #1a1a1a; stroke-width: 1; }
+      .div-v { stroke: #242424; stroke-width: 1; }
+
+      .sec-num { fill: #707070; font-family: "Lato", -apple-system, sans-serif; font-size: 10px; font-weight: 700; letter-spacing: 1.4px; }
+      .sec-tag { fill: #949494; font-family: "Lato", -apple-system, sans-serif; font-size: 10px; font-weight: 400; letter-spacing: 1.2px; text-anchor: end; }
+      .var-label { fill: #8a8a8a; font-family: "Lato", -apple-system, sans-serif; font-size: 10px; font-weight: 700; letter-spacing: 1px; }
+      .var-note { fill: #666666; font-family: "Lato", -apple-system, sans-serif; font-size: 10px; font-weight: 400; text-anchor: end; }
+
+      .brand { fill: #ffffff; font-family: "Aleo", Georgia, serif; font-size: 13px; font-weight: 700; letter-spacing: 0.4px; }
+      .state-title { fill: #ffffff; font-family: "Lato", -apple-system, sans-serif; font-size: 12px; font-weight: 600; }
+      .state-sub { fill: #8a8a8a; font-family: "Lato", -apple-system, sans-serif; font-size: 11px; font-weight: 400; }
+      .lang-act { fill: #949494; font-family: "Lato", -apple-system, sans-serif; font-size: 11px; font-weight: 700; letter-spacing: 0.5px; text-anchor: middle; }
+      .lang-dim { fill: #262626; font-family: "Lato", -apple-system, sans-serif; font-size: 11px; font-weight: 700; letter-spacing: 0.5px; text-anchor: middle; }
+
+      .tile-title { fill: #ffffff; font-family: "Aleo", Georgia, serif; font-size: 20px; font-weight: 700; letter-spacing: 0.3px; }
+      .tile-meta { fill: #7a7a7a; font-family: "Lato", -apple-system, sans-serif; font-size: 10px; font-weight: 700; letter-spacing: 1.2px; }
+
+      .book-title { fill: #ffffff; font-family: "Aleo", Georgia, serif; font-size: 13px; font-weight: 700; }
+      .book-author { fill: #7a7a7a; font-family: "Lato", -apple-system, sans-serif; font-size: 9px; font-weight: 700; letter-spacing: 0.8px; }
+      .btn-text { fill: #e0e0e0; font-family: "Lato", -apple-system, sans-serif; font-size: 10px; font-weight: 600; }
+
+      .prose-h { fill: #ffffff; font-family: "Aleo", Georgia, serif; font-size: 16px; font-weight: 700; }
+      .prose-p { fill: #c4c4c4; font-family: "Aleo", Georgia, serif; font-size: 12px; font-weight: 400; }
+      .choice-lbl { fill: #ffffff; font-family: "Lato", -apple-system, sans-serif; font-size: 11px; font-weight: 400; }
+      .node-h { fill: #ffffff; font-family: "Aleo", Georgia, serif; font-size: 11px; font-weight: 700; }
+      .node-p { fill: #8a8a8a; font-family: "Lato", -apple-system, sans-serif; font-size: 9px; font-weight: 400; }
+    </style>
+
+    <!-- Mojra Brand Symbol (scaled to 16x16) -->
+    <g id="ico-mojra">
+      <svg viewBox="8 14 80 84" width="16" height="16" fill="none" stroke="currentColor" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="16" y1="22.4" x2="16" y2="89.6"/>
+        <line x1="80" y1="28.8" x2="80" y2="89.6"/>
+        <line x1="16" y1="22.4" x2="41.24" y2="48.9"/>
+        <line x1="75.59" y1="27.03" x2="54.76" y2="48.9"/>
+        <line x1="48" y1="65.8" x2="48" y2="89.6" stroke-width="3.4"/>
+        <circle cx="16" cy="22.4" r="6.4" fill="currentColor" stroke="none"/>
+        <circle cx="80" cy="22.4" r="6.4" fill="none" stroke-width="3.8"/>
+        <circle cx="16" cy="89.6" r="6.4" fill="currentColor" stroke="none"/>
+        <circle cx="80" cy="89.6" r="6.4" fill="currentColor" stroke="none"/>
+        <circle cx="48" cy="56" r="9.8" fill="none" stroke-width="3.8"/>
+        <circle cx="48" cy="56" r="3.8" fill="currentColor" stroke="none"/>
+      </svg>
+    </g>
+
+    <!-- Back / Exit State Arrow (15x15) -->
+    <g id="ico-back">
+      <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="19" y1="12" x2="5" y2="12"/>
+        <polyline points="12 19 5 12 12 5"/>
+      </svg>
+    </g>
+
+    <!-- Library Spines (Large 44x44) -->
+    <g id="ico-library-lg">
+      <svg viewBox="0 0 24 24" width="44" height="44" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="3.5" y1="4.5" x2="3.5" y2="19.5"/>
+        <line x1="8" y1="6.5" x2="8" y2="19.5"/>
+        <line x1="12.5" y1="3.8" x2="12.5" y2="19.5"/>
+        <line x1="16.8" y1="5.2" x2="20.6" y2="19.5"/>
+      </svg>
+    </g>
+
+    <!-- Studio Pencil + Nodes (Large 44x44) -->
+    <g id="ico-studio-lg">
+      <svg viewBox="0 0 24 24" width="44" height="44" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M18 2.5l3.5 3.5L12.5 15H9v-3.5L18 2.5z"/>
+        <line x1="15.2" y1="5.3" x2="18.7" y2="8.8"/>
+        <line x1="9" y1="15" x2="3.8" y2="13.2"/>
+        <line x1="9" y1="15" x2="10.8" y2="20.2"/>
+        <circle cx="2.5" cy="12.6" r="2.1" fill="currentColor" stroke="none"/>
+        <circle cx="11.4" cy="21.2" r="2" fill="none"/>
+      </svg>
+    </g>
+
+    <!-- Topbar Action Icons (15x15) -->
+    <g id="ico-reset">
+      <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="1 4 1 10 7 10"/>
+        <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
+      </svg>
+    </g>
+    <g id="ico-image">
+      <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="3" width="18" height="18"/>
+        <circle cx="8.5" cy="8.5" r="1.5"/>
+        <polyline points="21 15 16 10 5 21"/>
+      </svg>
+    </g>
+    <g id="ico-zen">
+      <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <ellipse cx="12" cy="5" rx="3.4" ry="2.1"/>
+        <ellipse cx="12" cy="11.2" rx="6" ry="2.5"/>
+        <ellipse cx="12" cy="18.2" rx="8.8" ry="2.8"/>
+      </svg>
+    </g>
+    <g id="ico-uiscale">
+      <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M1.5 19L5 10l3.5 9"/>
+        <path d="M2.7 16h4.6"/>
+        <path d="M11 19L16.5 5 22 19"/>
+        <path d="M13 14h7"/>
+      </svg>
+    </g>
+    <g id="ico-sun">
+      <svg viewBox="-1.5 -1.5 27 27" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="5"/>
+        <line x1="12" y1="1" x2="12" y2="3"/>
+        <line x1="12" y1="21" x2="12" y2="23"/>
+        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+        <line x1="1" y1="12" x2="3" y2="12"/>
+        <line x1="21" y1="12" x2="23" y2="12"/>
+        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+      </svg>
+    </g>
+    <g id="ico-settings">
+      <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="3"/>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+      </svg>
+    </g>
+    <g id="ico-fullscreen">
+      <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="15 3 21 3 21 9"/>
+        <polyline points="9 21 3 21 3 15"/>
+        <line x1="21" y1="3" x2="14" y2="10"/>
+        <line x1="3" y1="21" x2="10" y2="14"/>
+      </svg>
+    </g>
+    <g id="ico-close">
+      <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="18" y1="6" x2="6" y2="18"/>
+        <line x1="6" y1="6" x2="18" y2="18"/>
+      </svg>
+    </g>
+    <!-- 4-corner bracket active indicator (23x23 around 15x15 icon) -->
+    <g id="active-brackets" stroke="#ffffff" stroke-width="1.2" fill="none">
+      <polyline points="0,4 0,0 4,0"/>
+      <polyline points="19,0 23,0 23,4"/>
+      <polyline points="0,19 0,23 4,23"/>
+      <polyline points="19,23 23,23 23,19"/>
+    </g>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1480" height="980" class="bg"/>
+
+  <!-- ===================================================================== -->
+  <!-- SECTION 01: ODCHUDZONY #TOPBAR — 4 STANY (SKALA 1:1, BEZ ZAKŁADEK)     -->
+  <!-- ===================================================================== -->
+  <text x="28" y="28" class="sec-num">01 / ODCHUDZONY #TOPBAR W SKALI 1:1 — BRAK ZAKŁADEK NAWIGACYJNYCH • KSIĄŻKA I STUDIO JAKO STANY</text>
+  <text x="1452" y="28" class="sec-tag">PORÓWNANIE 4 STANÓW PASKA GÓRNEGO</text>
+  <line x1="28" y1="36" x2="1452" y2="36" class="div"/>
+
+  <!-- 1A: STAN HOME / BIBLIOTEKA -->
+  <text x="28" y="56" class="var-label">STAN 1 — EKRAN HOME (WERSJA STUDIO) LUB BIBLIOTEKA (WERSJA READER) • BRAK ZAKŁADEK NAWIGACJI</text>
+  <text x="1452" y="56" class="var-note">TYLKO LOGO MOJRA + GLOBALNE KONTROLKI APLIKACJI</text>
+  <g transform="translate(28, 64)">
+    <rect width="1424" height="32" class="topbar-bg"/>
+    <g transform="translate(10, 8)" color="#ffffff"><use href="#ico-mojra"/></g>
+    <text x="34" y="20" class="brand">Mojra</text>
+    <!-- Right controls -->
+    <g transform="translate(1234, 8)" color="#949494"><use href="#ico-uiscale"/></g>
+    <g transform="translate(1264, 8)" color="#949494"><use href="#ico-sun"/></g>
+    <text x="1301" y="19" class="lang-act">PL</text>
+    <g transform="translate(1324, 8)" color="#949494"><use href="#ico-settings"/></g>
+    <g transform="translate(1354, 8)" color="#949494"><use href="#ico-fullscreen"/></g>
+    <g transform="translate(1392, 8)" color="#949494"><use href="#ico-close"/></g>
+  </g>
+
+  <!-- 1B: STAN OTWARTA KSIĄŻKA — WARIANT A (WYGASZONE POZOSTAŁE KONTROLKI) -->
+  <text x="28" y="118" class="var-label">STAN 2A — OTWARTA KSIĄŻKA (WARIANT A: WYGASZENIE KONTROLEK) • AKTYWNE TYLKO: WYJŚCIE DO BIBLIOTEKI, ZEN, MOTYW, ZAMKNIJ</text>
+  <text x="1452" y="118" class="var-note">POZOSTAŁE IKONY WYGASZONE (OPACITY 0.22 / DISABLED)</text>
+  <g transform="translate(28, 126)">
+    <rect width="1424" height="32" class="topbar-bg"/>
+    <g transform="translate(10, 8)" color="#ffffff"><use href="#ico-mojra"/></g>
+    <line x1="34" y1="9" x2="34" y2="23" class="div-v"/>
+    <!-- Back to Library button -->
+    <g transform="translate(44, 8)" color="#ffffff"><use href="#ico-back"/></g>
+    <text x="66" y="20" class="state-title">Nie bój się policji rzecznej</text>
+    <!-- Right controls: dimmed except Zen, Theme, Quit -->
+    <g transform="translate(1144, 8)" color="#252525"><use href="#ico-reset"/></g>
+    <g transform="translate(1174, 8)" color="#252525"><use href="#ico-image"/></g>
+    <g transform="translate(1200, 4)"><use href="#active-brackets"/></g>
+    <g transform="translate(1204, 8)" color="#ffffff"><use href="#ico-zen"/></g>
+    <g transform="translate(1234, 8)" color="#252525"><use href="#ico-uiscale"/></g>
+    <g transform="translate(1264, 8)" color="#ffffff"><use href="#ico-sun"/></g>
+    <text x="1301" y="19" class="lang-dim">PL</text>
+    <g transform="translate(1324, 8)" color="#252525"><use href="#ico-settings"/></g>
+    <g transform="translate(1354, 8)" color="#252525"><use href="#ico-fullscreen"/></g>
+    <g transform="translate(1392, 8)" color="#949494"><use href="#ico-close"/></g>
+  </g>
+
+  <!-- 1C: STAN OTWARTA KSIĄŻKA — WARIANT B (CZYSTA REDUKCJA) -->
+  <text x="28" y="180" class="var-label">STAN 2B — OTWARTA KSIĄŻKA (WARIANT B: CZYSTA REDUKCJA) • WIDOCZNE WYŁĄCZNIE: WYJŚCIE DO BIBLIOTEKI, ZEN, MOTYW, ZAMKNIJ</text>
+  <text x="1452" y="180" class="var-note">NIEAKTYWNE KONTROLKI CAŁKOWICIE UKRYTE W CZYTNIKU</text>
+  <g transform="translate(28, 188)">
+    <rect width="1424" height="32" class="topbar-bg"/>
+    <g transform="translate(10, 8)" color="#ffffff"><use href="#ico-mojra"/></g>
+    <line x1="34" y1="9" x2="34" y2="23" class="div-v"/>
+    <g transform="translate(44, 8)" color="#ffffff"><use href="#ico-back"/></g>
+    <text x="66" y="20" class="state-title">Nie bój się policji rzecznej</text>
+    <!-- Right controls: only Zen, Theme, Quit -->
+    <g transform="translate(1320, 4)"><use href="#active-brackets"/></g>
+    <g transform="translate(1324, 8)" color="#ffffff"><use href="#ico-zen"/></g>
+    <g transform="translate(1356, 8)" color="#ffffff"><use href="#ico-sun"/></g>
+    <g transform="translate(1392, 8)" color="#949494"><use href="#ico-close"/></g>
+  </g>
+
+  <!-- 1D: STAN OTWARTE STUDIO -->
+  <text x="28" y="242" class="var-label">STAN 3 — OTWARTE STUDIO • WYJŚCIE ZE STUDIO (←) WRACA DO EKRANU HOME</text>
+  <text x="1452" y="242" class="var-note">PROJEKTY STUDIO NIE TRAFIAJĄ AUTOMATYCZNIE DO BIBLIOTEKI</text>
+  <g transform="translate(28, 250)">
+    <rect width="1424" height="32" class="topbar-bg"/>
+    <g transform="translate(10, 8)" color="#ffffff"><use href="#ico-mojra"/></g>
+    <line x1="34" y1="9" x2="34" y2="23" class="div-v"/>
+    <g transform="translate(44, 8)" color="#ffffff"><use href="#ico-back"/></g>
+    <text x="66" y="20" class="state-title">Playbook Studio</text>
+    <!-- Right controls -->
+    <g transform="translate(1234, 8)" color="#949494"><use href="#ico-uiscale"/></g>
+    <g transform="translate(1264, 8)" color="#949494"><use href="#ico-sun"/></g>
+    <text x="1301" y="19" class="lang-act">PL</text>
+    <g transform="translate(1324, 8)" color="#949494"><use href="#ico-settings"/></g>
+    <g transform="translate(1354, 8)" color="#949494"><use href="#ico-fullscreen"/></g>
+    <g transform="translate(1392, 8)" color="#949494"><use href="#ico-close"/></g>
+  </g>
+
+  <!-- ===================================================================== -->
+  <!-- SECTION 02: EKRAN STARTOWY (HOME) — WERSJA STUDIO VS WERSJA READER     -->
+  <!-- ===================================================================== -->
+  <text x="28" y="314" class="sec-num">02 / EKRAN STARTOWY PO ODPALENIU APLIKACJI — WERSJA STUDIO (2 KAFELKI) VS WERSJA READER (OD RAZU BIBLIOTEKA)</text>
+  <text x="1452" y="314" class="sec-tag">ARCHITEKTURA WEJŚCIA I SEPARACJI</text>
+  <line x1="28" y1="322" x2="1452" y2="322" class="div"/>
+
+  <!-- 02A: HOME W WERSJI STUDIO (2 KAFELKI: BIBLIOTEKA + STUDIO) -->
+  <text x="28" y="342" class="var-label">02A. WERSJA STUDIO — EKRAN HOME (WYBÓR TRYBU: BIBLIOTEKA LUB STUDIO)</text>
+  <g transform="translate(28, 350)">
+    <rect width="698" height="270" class="panel"/>
+    <!-- Topbar -->
+    <rect width="698" height="28" class="topbar-bg"/>
+    <g transform="translate(8, 6)" color="#ffffff"><use href="#ico-mojra"/></g>
+    <text x="30" y="18" class="brand">Mojra</text>
+    <g transform="translate(550, 6)" color="#949494"><use href="#ico-uiscale"/></g>
+    <g transform="translate(576, 6)" color="#949494"><use href="#ico-sun"/></g>
+    <text x="608" y="17" class="lang-act">PL</text>
+    <g transform="translate(626, 6)" color="#949494"><use href="#ico-settings"/></g>
+    <g transform="translate(650, 6)" color="#949494"><use href="#ico-fullscreen"/></g>
+    <g transform="translate(674, 6)" color="#949494"><use href="#ico-close"/></g>
+
+    <!-- Two Centered Tiles -->
+    <!-- Tile 1: Biblioteka -->
+    <g transform="translate(95, 64)">
+      <rect width="240" height="162" class="panel-active"/>
+      <g transform="translate(98, 28)" color="#ffffff"><use href="#ico-library-lg"/></g>
+      <text x="120" y="106" text-anchor="middle" class="tile-title">Biblioteka</text>
+      <line x1="88" y1="120" x2="152" y2="120" stroke="#333333" stroke-width="1"/>
+      <text x="120" y="140" text-anchor="middle" class="tile-meta">3 KSIĄŻKI</text>
+    </g>
+
+    <!-- Tile 2: Playbook Studio -->
+    <g transform="translate(363, 64)">
+      <rect width="240" height="162" class="panel-strong"/>
+      <g transform="translate(98, 28)" color="#ffffff"><use href="#ico-studio-lg"/></g>
+      <text x="120" y="106" text-anchor="middle" class="tile-title">Studio</text>
+      <line x1="88" y1="120" x2="152" y2="120" stroke="#333333" stroke-width="1"/>
+      <text x="120" y="140" text-anchor="middle" class="tile-meta">2 PROJEKTY ROBOCZE</text>
+    </g>
+  </g>
+
+  <!-- 02B: HOME W WERSJI READER (OD RAZU BIBLIOTEKA) / WIDOK BIBLIOTEKI -->
+  <text x="754" y="342" class="var-label">02B. WERSJA READER (HOME = BIBLIOTEKA) • W WERSJI STUDIO: POWRÓT (←) DO HOME</text>
+  <g transform="translate(754, 350)">
+    <rect width="698" height="270" class="panel"/>
+    <!-- Topbar -->
+    <rect width="698" height="28" class="topbar-bg"/>
+    <g transform="translate(8, 6)" color="#ffffff"><use href="#ico-mojra"/></g>
+    <line x1="30" y1="7" x2="30" y2="21" class="div-v"/>
+    <g transform="translate(38, 6)" color="#ffffff"><use href="#ico-back"/></g>
+    <text x="60" y="18" class="state-title">Biblioteka</text>
+    <g transform="translate(550, 6)" color="#949494"><use href="#ico-uiscale"/></g>
+    <g transform="translate(576, 6)" color="#949494"><use href="#ico-sun"/></g>
+    <text x="608" y="17" class="lang-act">PL</text>
+    <g transform="translate(626, 6)" color="#949494"><use href="#ico-settings"/></g>
+    <g transform="translate(650, 6)" color="#949494"><use href="#ico-fullscreen"/></g>
+    <g transform="translate(674, 6)" color="#949494"><use href="#ico-close"/></g>
+
+    <!-- Library top action -->
+    <rect x="24" y="42" width="108" height="22" fill="#000000" stroke="#525252"/>
+    <text x="78" y="56" text-anchor="middle" class="btn-text">+ Dodaj książkę</text>
+
+    <!-- Bookshelf Grid (Only added books, no raw Studio drafts) -->
+    <g transform="translate(24, 76)">
+      <!-- Book 1 -->
+      <rect x="0" y="0" width="196" height="170" class="panel"/>
+      <rect x="0" y="0" width="196" height="104" fill="#0f0f0f"/>
+      <line x1="0" y1="104" x2="196" y2="104" stroke="#242424"/>
+      <text x="12" y="122" class="book-author">S. HREHOROWICZ</text>
+      <rect x="136" y="116" width="48" height="3" fill="#242424"/>
+      <rect x="136" y="116" width="28" height="3" fill="#ffffff"/>
+      <text x="12" y="142" class="book-title">Nie bój się policji</text>
+      <text x="12" y="158" class="book-title">rzecznej</text>
+
+      <!-- Book 2 -->
+      <rect x="214" y="0" width="196" height="170" class="panel"/>
+      <rect x="214" y="0" width="196" height="104" fill="#0b0b0b"/>
+      <line x1="214" y1="104" x2="410" y2="104" stroke="#242424"/>
+      <text x="226" y="122" class="book-author">ARCHIWUM .STBOOK</text>
+      <rect x="350" y="116" width="48" height="3" fill="#242424"/>
+      <text x="226" y="142" class="book-title">Czarny Kanał</text>
+
+      <!-- Book 3 -->
+      <rect x="428" y="0" width="196" height="170" class="panel"/>
+      <rect x="428" y="0" width="196" height="104" fill="#0b0b0b"/>
+      <line x1="428" y1="104" x2="624" y2="104" stroke="#242424"/>
+      <text x="440" y="122" class="book-author">ARCHIWUM .STBOOK</text>
+      <rect x="564" y="116" width="48" height="3" fill="#242424"/>
+      <rect x="564" y="116" width="48" height="3" fill="#ffffff"/>
+      <text x="440" y="142" class="book-title">Ostatni Prom</text>
+    </g>
+  </g>
+
+  <!-- ===================================================================== -->
+  <!-- SECTION 03: WIDOK CZYTNIKA (OTWARTA KSIĄŻKA) VS WIDOK STUDIO          -->
+  <!-- ===================================================================== -->
+  <text x="28" y="654" class="sec-num">03 / STANY ZAMKNIĘTE — OTWARTA KSIĄŻKA (POWRÓT DO BIBLIOTEKI) ORAZ OTWARTE STUDIO (POWRÓT DO HOME)</text>
+  <text x="1452" y="654" class="sec-tag">PEŁNY KONTEKST OKNA APLIKACJI</text>
+  <line x1="28" y1="662" x2="1452" y2="662" class="div"/>
+
+  <!-- 03A: OTWARTA KSIĄŻKA (STAN CZYTANIA) -->
+  <text x="28" y="682" class="var-label">03A. STAN OTWARTEJ KSIĄŻKI — WYJŚCIE (←) ZAMYKA KSIĄŻKĘ I WRACA DO BIBLIOTEKI • TYLKO ZEN + MOTYW</text>
+  <g transform="translate(28, 690)">
+    <rect width="698" height="260" class="panel"/>
+    <!-- Topbar -->
+    <rect width="698" height="28" class="topbar-bg"/>
+    <g transform="translate(8, 6)" color="#ffffff"><use href="#ico-mojra"/></g>
+    <line x1="30" y1="7" x2="30" y2="21" class="div-v"/>
+    <g transform="translate(38, 6)" color="#ffffff"><use href="#ico-back"/></g>
+    <text x="60" y="18" class="state-title">Nie bój się policji rzecznej</text>
+    <!-- Dimmed other controls, active Zen + Sun + Close -->
+    <g transform="translate(472, 6)" color="#222222"><use href="#ico-reset"/></g>
+    <g transform="translate(498, 6)" color="#222222"><use href="#ico-image"/></g>
+    <g transform="translate(520, 2)"><use href="#active-brackets"/></g>
+    <g transform="translate(524, 6)" color="#ffffff"><use href="#ico-zen"/></g>
+    <g transform="translate(550, 6)" color="#222222"><use href="#ico-uiscale"/></g>
+    <g transform="translate(576, 6)" color="#ffffff"><use href="#ico-sun"/></g>
+    <text x="608" y="17" class="lang-dim">PL</text>
+    <g transform="translate(626, 6)" color="#222222"><use href="#ico-settings"/></g>
+    <g transform="translate(650, 6)" color="#222222"><use href="#ico-fullscreen"/></g>
+    <g transform="translate(674, 6)" color="#949494"><use href="#ico-close"/></g>
+
+    <!-- Reader Layout -->
+    <rect x="0" y="28" width="270" height="206" fill="#0b0b0b" stroke="#1c1c1c"/>
+    <line x1="0" y1="28" x2="270" y2="234" stroke="#181818"/>
+    <line x1="270" y1="28" x2="0" y2="234" stroke="#181818"/>
+
+    <g transform="translate(302, 54)">
+      <text x="0" y="0" class="prose-h">Zatopiona śluza</text>
+      <text x="0" y="28" class="prose-p">Woda w komorze stała nieruchomo, gęsta od rzecznych</text>
+      <text x="0" y="46" class="prose-p">osadów i rdzy. Latarka wyłowiła z mroku stalowe wrota.</text>
+      <text x="0" y="70" class="prose-p">Na betonowym pomoście leżała przemoczona księga wachtowa.</text>
+
+      <!-- Choices -->
+      <rect x="0" y="102" width="356" height="28" fill="#000000" stroke="#525252"/>
+      <text x="12" y="120" class="choice-lbl">Zejdź po klamrach do komory śluzy</text>
+      <rect x="0" y="138" width="356" height="28" fill="#000000" stroke="#242424"/>
+      <text x="12" y="156" class="choice-lbl">Sprawdź dziennik w budce strażnika</text>
+    </g>
+
+    <!-- Reader Progress Footer -->
+    <rect x="0" y="234" width="698" height="26" fill="#000000" stroke="#1c1c1c"/>
+    <rect x="24" y="246" width="650" height="2" fill="#242424"/>
+    <rect x="24" y="246" width="210" height="2" fill="#ffffff"/>
+  </g>
+
+  <!-- 03B: OTWARTE STUDIO (STAN EDYCJI, ODSEPAROWANY OD BIBLIOTEKI) -->
+  <text x="754" y="682" class="var-label">03B. STAN OTWARTEGO STUDIO — WYJŚCIE (←) WRACA DO HOME • PROJEKTY STUDIO POZA BIBLIOTEKĄ</text>
+  <g transform="translate(754, 690)">
+    <rect width="698" height="260" class="panel"/>
+    <!-- Topbar -->
+    <rect width="698" height="28" class="topbar-bg"/>
+    <g transform="translate(8, 6)" color="#ffffff"><use href="#ico-mojra"/></g>
+    <line x1="30" y1="7" x2="30" y2="21" class="div-v"/>
+    <g transform="translate(38, 6)" color="#ffffff"><use href="#ico-back"/></g>
+    <text x="60" y="18" class="state-title">Playbook Studio</text>
+    <g transform="translate(550, 6)" color="#949494"><use href="#ico-uiscale"/></g>
+    <g transform="translate(576, 6)" color="#949494"><use href="#ico-sun"/></g>
+    <text x="608" y="17" class="lang-act">PL</text>
+    <g transform="translate(626, 6)" color="#949494"><use href="#ico-settings"/></g>
+    <g transform="translate(650, 6)" color="#949494"><use href="#ico-fullscreen"/></g>
+    <g transform="translate(674, 6)" color="#949494"><use href="#ico-close"/></g>
+
+    <!-- Studio Sub-toolbar (Canvas Toolbar) -->
+    <rect x="0" y="28" width="698" height="26" class="subbar-bg"/>
+    <text x="12" y="45" class="state-title">Szkic: Nocny Patrol</text>
+    <text x="134" y="45" class="state-sub">(projekt roboczy — poza Biblioteką)</text>
+    <rect x="554" y="33" width="132" height="16" fill="#000000" stroke="#525252"/>
+    <text x="620" y="44" text-anchor="middle" class="btn-text">Dodaj do Biblioteki</text>
+
+    <!-- Node Canvas + Right 320px Inspector -->
+    <g transform="translate(24, 82)">
+      <!-- Node 1 -->
+      <rect x="0" y="24" width="144" height="64" class="panel-active"/>
+      <text x="10" y="44" class="node-h">Nabrzeże Mgły</text>
+      <text x="10" y="60" class="node-p">start • 2 wybory</text>
+      <circle cx="144" cy="48" r="3.5" fill="#ffffff"/>
+      <circle cx="144" cy="68" r="3.5" fill="#ffffff"/>
+
+      <!-- Wires -->
+      <path d="M144 48 L180 48 L180 28 L216 28" fill="none" stroke="#ffffff" stroke-width="1.2"/>
+      <path d="M144 68 L180 68 L180 108 L216 108" fill="none" stroke="#525252" stroke-width="1.2"/>
+
+      <!-- Node 2 -->
+      <rect x="216" y="0" width="144" height="56" class="panel-strong"/>
+      <circle cx="216" cy="28" r="3.5" fill="#000000" stroke="#ffffff" stroke-width="1.2"/>
+      <text x="228" y="22" class="node-h">Zatopiona śluza</text>
+      <text x="228" y="38" class="node-p">rozdział 1</text>
+
+      <!-- Node 3 -->
+      <rect x="216" y="80" width="144" height="56" class="panel"/>
+      <circle cx="216" cy="108" r="3.5" fill="#000000" stroke="#525252" stroke-width="1.2"/>
+      <text x="228" y="102" class="node-h">Barka celników</text>
+      <text x="228" y="118" class="node-p">rozdział 1</text>
+    </g>
+
+    <!-- Right Inspector Column -->
+    <rect x="498" y="54" width="200" height="206" fill="#000000" stroke="#242424"/>
+    <text x="512" y="78" class="node-h">Nabrzeże Mgły</text>
+    <line x1="512" y1="86" x2="684" y2="86" stroke="#525252"/>
+    <text x="512" y="108" class="node-p">ID: nabrzeze_mgly</text>
+    <line x1="512" y1="114" x2="684" y2="114" stroke="#242424"/>
+    <text x="512" y="138" class="node-p">ROZDZIAŁ: Akt I</text>
+    <line x1="512" y1="144" x2="684" y2="144" stroke="#242424"/>
+  </g>
+</svg>

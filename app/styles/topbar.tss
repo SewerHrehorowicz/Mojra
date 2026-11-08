@@ -67,17 +67,39 @@
   margin 0 2px
   pointer-events none
 
+.topbar-brand-btn
+  display inline-flex
+  align-items center
+  justify-content center
+  padding 2px
+  margin 0
+  background transparent
+  border none !important
+  text-decoration none !important
+  color --text-primary
+  cursor pointer
+  flex-shrink 0
+  opacity 0.9
+
+.topbar-brand-btn:hover
+  opacity 1
+  border none !important
+  text-decoration none !important
+
 .brand-logo
   font-family --font-serif
   font-size 14px
   font-weight 700
-  letter-spacing 0.6px
+  letter-spacing 0.4px
   color --text-primary
   padding 2px 6px 2px 2px
   white-space nowrap
   overflow hidden
   text-overflow ellipsis
   user-select none
+
+.topbar-book-title
+  max-width 420px
 
 .topbar-tab
   display inline-flex
@@ -164,7 +186,7 @@
   flex-shrink 0
   pointer-events none
 
-#icon-imageless-on, #icon-zoom-out, #icon-zoom-zen, #icon-theme-moon
+#icon-imageless-on, #icon-theme-moon
   display none
 
 body[data-imageless="true"] #icon-imageless-off, body[data-imageless-locked="true"] #icon-imageless-off
@@ -173,19 +195,7 @@ body[data-imageless="true"] #icon-imageless-off, body[data-imageless-locked="tru
 body[data-imageless="true"] #icon-imageless-on, body[data-imageless-locked="true"] #icon-imageless-on
   display block
 
-body[data-ui-scale="large"] #icon-zoom-in, body[data-ui-scale="large"] #icon-zoom-out
-  display none
-
-body[data-ui-scale="large"] #icon-zoom-zen
-  display block
-
-body[data-ui-scale="zen"] #icon-zoom-in, body[data-ui-scale="zen"] #icon-zoom-zen
-  display none
-
-body[data-ui-scale="zen"] #icon-zoom-out
-  display block
-
-body[data-ui-scale="zen"]
+body[data-zen="true"]
   #tab-library, #tab-editor, .topbar-divider, #btn-topbar-menu, #btn-toggle-imageless, #btn-toggle-lang, #btn-toggle-fullscreen, .topbar-actions-menu button[action="PromptResetProgress"], .topbar-actions-menu button[action="OpenQRModal"]
     display none !important
 
@@ -241,29 +251,6 @@ body[data-ui-scale="large"]
   @switch preview
     portrait
       gap 4px
-
-.topbar-hamburger-btn, .top-action-btn.topbar-hamburger-btn
-  display switch(preview)
-    portrait inline-flex !important
-
-.topbar-actions-menu
-  @switch preview
-    portrait
-      display none
-      position absolute
-      top calc(100% + 6px)
-      right 0
-      background --bg-obsidian
-      border 1px solid --text-primary
-      padding 6px 8px
-      gap 6px
-      align-items center
-      z-index 120
-      box-shadow 0 6px 18px rgba(0, 0, 0, 0.45)
-
-.topbar-actions-menu.open
-  display switch(preview)
-    portrait flex !important
 /* @dev-only-end */
 
 @media (max-width: 900px)
@@ -281,22 +268,3 @@ body[data-ui-scale="large"]
 
   .topbar-left
     gap 4px
-
-  .topbar-hamburger-btn, .top-action-btn.topbar-hamburger-btn
-    display inline-flex !important
-
-  .topbar-actions-menu
-    display none
-    position absolute
-    top calc(100% + 6px)
-    right 0
-    background --bg-obsidian
-    border 1px solid --text-primary
-    padding 6px 8px
-    gap 6px
-    align-items center
-    z-index 120
-    box-shadow 0 6px 18px rgba(0, 0, 0, 0.45)
-
-  .topbar-actions-menu.open
-    display flex !important

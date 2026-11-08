@@ -165,14 +165,14 @@ func SerializeScenesForFile(b *Book, sourceFile string) string {
 		if !b.IsScreenplay() && sc.ExplicitImage != "" {
 			fmt.Fprintf(&out, "image: %s\n", strings.TrimSpace(sc.ExplicitImage))
 		}
-		if b.Narrated && sc.ExplicitVoice != "" {
+		if b.Narrated && sc.ExplicitVoice != "" && !HasConditionalVoiceDirectives(sc.Text) {
 			fmt.Fprintf(&out, "voice: %s\n", strings.TrimSpace(sc.ExplicitVoice))
 			if sc.HasVoiceTrim() {
 				ts, te := sc.NormalizedVoiceTrim()
 				fmt.Fprintf(&out, "voice_trim: %.4f, %.4f\n", ts, te)
 			}
 		}
-		text := strings.TrimSpace(sc.Text)
+		text := strings.TrimSpace(SerializeSceneProseWithSectionVoices(sc, b))
 		if text != "" {
 			fmt.Fprintf(&out, "\n%s\n", text)
 		}
@@ -203,7 +203,7 @@ func SerializeScenesForFile(b *Book, sourceFile string) string {
 				fmt.Fprintf(&out, "\nexit: %s\n", nextRef)
 				if cond := CleanConditionExpr(chItem.Condition); cond != "" {
 					if chItem.ShowWhenLocked {
-						fmt.Fprintf(&out, "if?: %s\n", cond)
+						fmt.Fprintf(&out, "if: ? %s\n", cond)
 					} else {
 						fmt.Fprintf(&out, "if: %s\n", cond)
 					}
@@ -225,7 +225,7 @@ func SerializeScenesForFile(b *Book, sourceFile string) string {
 				fmt.Fprintf(&out, "text: %s\n", sanitizeSingleLineMeta(chItem.Label))
 				if cond := CleanConditionExpr(chItem.Condition); cond != "" {
 					if chItem.ShowWhenLocked {
-						fmt.Fprintf(&out, "if?: %s\n", cond)
+						fmt.Fprintf(&out, "if: ? %s\n", cond)
 					} else {
 						fmt.Fprintf(&out, "if: %s\n", cond)
 					}

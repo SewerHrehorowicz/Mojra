@@ -32,6 +32,7 @@ section.view-panel#view-player
                             data-scene-image: "{h.bg_image_url}"
                             data-scene-meta: "{h.header_meta}"
                             data-scene-audio: "{h.audio_url}"
+                            data-scene-audio-queue: "{h.audio_queue}"
                             data-scene-audio-duration: "{h.audio_duration_label}"
                             data-scene-audio-trim-start: "{h.audio_trim_start}"
                             data-scene-audio-trim-end: "{h.audio_trim_end}"
@@ -94,6 +95,7 @@ section.view-panel#view-player
                     data-scene-image: "{current_scene.bg_image_url}"
                     data-scene-meta: "{current_scene.header_meta}"
                     data-scene-audio: "{current_scene.audio_url}"
+                    data-scene-audio-queue: "{current_scene.audio_queue}"
                     data-scene-audio-duration: "{current_scene.audio_duration_label}"
                     data-scene-audio-trim-start: "{current_scene.audio_trim_start}"
                     data-scene-audio-trim-end: "{current_scene.audio_trim_end}"
@@ -173,6 +175,7 @@ section.view-panel#view-player
                 audio#story-audio
                     preload: auto
                     data-audio-url: "{current_scene.audio_url}"
+                    data-scene-audio-queue: "{current_scene.audio_queue}"
                     data-trim-start: "{current_scene.audio_trim_start}"
                     data-trim-end: "{current_scene.audio_trim_end}"
                     data-resume-time: "{audio_resume_time}"

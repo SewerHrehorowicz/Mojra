@@ -473,7 +473,12 @@ function commitChosenSynItem(itemBtn, inputEl, form, dropdown) {
   const varName = itemBtn.getAttribute("data-syn-var-name") || "";
   if (!varName) return;
   replaceCurrentTypingToken(inputEl, varName);
-  if (form) validateRuleInputElement(inputEl, form);
+  if (form) {
+    validateRuleInputElement(inputEl, form);
+    if (typeof syncChoiceTargetToCanvas === "function" && inputEl.name && inputEl.name.indexOf("choice_target_") === 0) {
+      syncChoiceTargetToCanvas(form, inputEl);
+    }
+  }
   if (dropdown) dropdown.classList.add("hidden");
   if (form && typeof scheduleNodeLiveSave === "function") scheduleNodeLiveSave(form);
 }
@@ -619,7 +624,10 @@ function bindSynAutocompleteDropdown() {
         inner = inner.replace(/\?/g, "").trim();
         t.value = inner;
         const form = t.closest("form.editor-context-form, form#form-scene-text");
-        if (form) validateRuleInputElement(t, form);
+        if (form) {
+          validateRuleInputElement(t, form);
+          if (typeof syncChoiceTargetToCanvas === "function") syncChoiceTargetToCanvas(form, t);
+        }
         return;
       }
       t.value = inner;

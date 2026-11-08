@@ -1,5 +1,143 @@
 "use strict";
 
+function syncChoiceTargetToCanvas(form, inputEl) {
+  if (!form || !inputEl || typeof studioGraphState === "undefined" || !studioGraphState.nodeById) return;
+  const name = inputEl.name || "";
+  if (name.indexOf("choice_target_") !== 0) return;
+  const idx = Number(inputEl.getAttribute("data-choice-idx") || name.replace("choice_target_", ""));
+  if (isNaN(idx) || idx < 0) return;
+  const sceneIdInput = qs('input[name="scene_id"]', form);
+  const sceneId =
+    form.getAttribute("data-context-scene-id") ||
+    (sceneIdInput ? sceneIdInput.value : "") ||
+    "";
+  const nd = sceneId ? studioGraphState.nodeById.get(sceneId) : null;
+  if (!nd) return;
+
+  const rawVal = (typeof stripOuterBracesClient === "function" ? stripOuterBracesClient(inputEl.value || "") : (inputEl.value || ""))
+    .replace(/\?/g, "")
+    .trim();
+  let targetId = "";
+  let targetChapter = "";
+
+  if (!rawVal || rawVal.toUpperCase() === "END") {
+    targetId = "END";
+  } else if (rawVal.toLowerCase().indexOf("chapter:") === 0) {
+    const chQuery = rawVal.slice(8).trim().toLowerCase();
+    const chObj = studioGraphState.chapterByKey ? studioGraphState.chapterByKey.get(chQuery) : null;
+    if (chObj && chObj.nameLower !== nd.chapterLower) {
+      targetChapter = chObj.name;
+    } else if (chObj && chObj.startSceneId) {
+      targetId = chObj.startSceneId;
+    }
+  } else {
+    const lower = rawVal.toLowerCase();
+    let matchedNode = studioGraphState.nodeById.get(rawVal) || null;
+    if (!matchedNode && studioGraphState.nodes) {
+      for (let i = 0; i < studioGraphState.nodes.length; i++) {
+        const cand = studioGraphState.nodes[i];
+        if (cand.id.toLowerCase() === lower || (cand.name || "").trim().toLowerCase() === lower) {
+          matchedNode = cand;
+          break;
+        }
+      }
+    }
+    if (matchedNode) {
+      if (matchedNode.chapterLower && nd.chapterLower && matchedNode.chapterLower !== nd.chapterLower) {
+        targetId = matchedNode.id;
+        targetChapter = matchedNode.chapter;
+      } else {
+        targetId = matchedNode.id;
+      }
+    } else if (studioGraphState.chapterByKey) {
+      const chObj = studioGraphState.chapterByKey.get(lower);
+      if (chObj && chObj.nameLower !== nd.chapterLower) {
+        targetChapter = chObj.name;
+      }
+    }
+  }
+
+  if (nd.hasChoices && nd.ports && nd.ports[idx]) {
+    nd.ports[idx].targetId = targetId;
+    nd.ports[idx].targetChapter = targetChapter;
+  } else if (idx === 0) {
+    nd.implicitTarget = targetId;
+    nd.impTarget = targetId;
+    nd.implicitChapter = targetChapter;
+    nd.impChapter = targetChapter;
+    if (nd.ports && nd.ports[0]) {
+      nd.ports[0].targetId = targetId;
+      nd.ports[0].targetChapter = targetChapter;
+    }
+  }
+
+  if (typeof recomputeNodeMetrics === "function") {
+    recomputeNodeMetrics(nd);
+  }
+
+  if (studioGraphState.nodes && studioGraphState.nodes.length > 0) {
+    const visited = new Set();
+    const queue = [];
+    for (let i = 0; i < studioGraphState.nodes.length; i++) {
+      if (studioGraphState.nodes[i].isStart) {
+        visited.add(studioGraphState.nodes[i].id);
+        queue.push(studioGraphState.nodes[i]);
+      }
+    }
+    if (queue.length === 0) {
+      visited.add(studioGraphState.nodes[0].id);
+      queue.push(studioGraphState.nodes[0]);
+    }
+    while (queue.length > 0) {
+      const cur = queue.shift();
+      const pList =
+        cur.hasChoices && cur.ports && cur.ports.length > 0
+          ? cur.ports
+          : cur.implicitPort
+            ? [cur.implicitPort]
+            : cur.ports || [];
+      for (let j = 0; j < pList.length; j++) {
+        const pt = pList[j];
+        if (pt.targetId && pt.targetId !== "END") {
+          const tNode = studioGraphState.nodeById.get(pt.targetId);
+          if (tNode && !visited.has(tNode.id)) {
+            visited.add(tNode.id);
+            queue.push(tNode);
+          }
+        }
+        if (pt.targetChapter && studioGraphState.chapterByKey) {
+          const tCh = studioGraphState.chapterByKey.get(pt.targetChapter.toLowerCase());
+          if (tCh) {
+            const entry =
+              (tCh.startSceneId && studioGraphState.nodeById.get(tCh.startSceneId)) ||
+              (tCh.nodes && tCh.nodes[0]);
+            if (entry && !visited.has(entry.id)) {
+              visited.add(entry.id);
+              queue.push(entry);
+            }
+          }
+        }
+      }
+    }
+    for (let i = 0; i < studioGraphState.nodes.length; i++) {
+      studioGraphState.nodes[i].unreachable = !visited.has(studioGraphState.nodes[i].id);
+    }
+  }
+
+  const contextForm = qs("#editor-context-form");
+  if (contextForm && contextForm !== form && contextForm.getAttribute("data-context-scene-id") === sceneId) {
+    const otherInput = qs('input[name="' + CSS.escape(name) + '"]', contextForm);
+    if (otherInput && otherInput !== inputEl) {
+      otherInput.value = inputEl.value;
+    }
+  }
+
+  if (typeof updateChapterGroupFrames === "function") updateChapterGroupFrames();
+  if (typeof drawStudioWires === "function") drawStudioWires();
+  studioGraphState.staticBatchDirty = true;
+  if (typeof renderStudioCanvas === "function") renderStudioCanvas();
+}
+
 function isEditorTouchClickSuppressed(e) {
   return (
     Date.now() < suppressNextTouchClickUntil &&
@@ -1248,19 +1386,40 @@ function bindEditorCanvasEvents() {
     if (
       (e.ctrlKey || e.metaKey) &&
       !e.altKey &&
-      !e.target.closest("input, textarea, select, [contenteditable]") &&
       qs("#timeline-scroll-viewport") &&
       !(typeof isEditorHistoryPreview === "function" && isEditorHistoryPreview())
     ) {
       const keyLower = (e.key || "").toLowerCase();
-      if (keyLower === "z" && !e.shiftKey) {
+      const isUndo = (keyLower === "z" || e.code === "KeyZ") && !e.shiftKey;
+      const isRedo = ((keyLower === "z" || e.code === "KeyZ") && e.shiftKey) || ((keyLower === "y" || e.code === "KeyY") && !e.shiftKey);
+      if (isUndo || isRedo) {
+        const editEl = e.target && e.target.closest ? e.target.closest("input, textarea") : null;
+        if (editEl && !editEl.readOnly && !editEl.disabled) {
+          const beforeVal = editEl.value;
+          try {
+            if (typeof document.execCommand === "function") {
+              document.execCommand(isRedo ? "redo" : "undo");
+            }
+          } catch (_err) {}
+          if (editEl.value !== beforeVal) {
+            e.preventDefault();
+            if (editEl.id === "modal-scene-textarea" && typeof autoResizeSceneTextarea === "function") {
+              autoResizeSceneTextarea(editEl);
+            }
+            const form = editEl.closest("form.editor-context-form, form#form-scene-text");
+            if (form) {
+              if (typeof validateRuleInputElement === "function") validateRuleInputElement(editEl, form);
+              if (editEl.name && editEl.name.indexOf("choice_target_") === 0) syncChoiceTargetToCanvas(form, editEl);
+              if (typeof scheduleNodeLiveSave === "function") scheduleNodeLiveSave(form);
+            }
+            if (typeof showToast === "function") {
+              showToast(isRedo ? tr("redo_toast") : tr("undo_toast"));
+            }
+            return;
+          }
+        }
         e.preventDefault();
-        sendServerAction("UndoEditor", {});
-        return;
-      }
-      if ((keyLower === "z" && e.shiftKey) || (keyLower === "y" && !e.shiftKey)) {
-        e.preventDefault();
-        sendServerAction("RedoEditor", {});
+        sendServerAction(isRedo ? "RedoEditor" : "UndoEditor", {});
         return;
       }
     }
@@ -2622,6 +2781,9 @@ function bindEditorCanvasEvents() {
         studioGraphState.staticBatchDirty = true;
         renderStudioCanvas();
       }
+    }
+    if (e.target && e.target.name && e.target.name.indexOf("choice_target_") === 0) {
+      syncChoiceTargetToCanvas(form, e.target);
     }
     if (e.target && e.target.classList && e.target.classList.contains("choice-exit-input") && (e.target.value || "").indexOf("?") >= 0) {
       return;

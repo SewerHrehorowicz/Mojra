@@ -2,6 +2,10 @@ package book
 
 import (
 	"fmt"
+	"image/color"
+	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -447,4 +451,379 @@ func ExportScreenplayFountain(b *Book) string {
 	}
 
 	return strings.TrimSpace(sb.String()) + "\n"
+}
+
+var fountainSceneNumSuffixRe = regexp.MustCompile(`\s*#[A-Za-z0-9.\-]+#\s*$`)
+
+// ImportedSceneDraft holds a parsed scene before building a Book graph.
+type ImportedSceneDraft struct {
+	ActName  string
+	Slugline string
+	Title    string
+	Synopsis string
+	Body     string
+}
+
+// ImportScreenplayFileToDir imports a .fountain or .fdx screenplay file into destParentDir as a Playbook Studio project.
+func ImportScreenplayFileToDir(srcPath, destParentDir string) (*Book, error) {
+	cleanPath := filepath.Clean(strings.TrimSpace(srcPath))
+	rawBytes, err := os.ReadFile(cleanPath)
+	if err != nil {
+		return nil, err
+	}
+	base := filepath.Base(cleanPath)
+	ext := strings.ToLower(filepath.Ext(base))
+	fallbackTitle := strings.TrimSuffix(base, filepath.Ext(base))
+	raw := string(rawBytes)
+	switch ext {
+	case ".fdx":
+		return ImportScreenplayFDX(raw, fallbackTitle, destParentDir)
+	case ".fountain":
+		return ImportScreenplayFountain(raw, fallbackTitle, destParentDir)
+	default:
+		return nil, fmt.Errorf("nieobsługiwany format scenariusza: %s (oczekiwano .fountain lub .fdx)", ext)
+	}
+}
+
+// ImportScreenplayFountain parses a UTF-8 .fountain screenplay into a Playbook Studio node-graph Book saved under destParentDir.
+func ImportScreenplayFountain(raw, fallbackTitle, destParentDir string) (*Book, error) {
+	normalized := strings.ReplaceAll(strings.TrimPrefix(raw, "\xef\xbb\xbf"), "\r\n", "\n")
+	lines := strings.Split(normalized, "\n")
+
+	title := ""
+	author := "Autor"
+	description := ""
+	idx := 0
+
+	// 1. Parse optional Fountain Title Page key: value block at top of file
+	var curMetaKey string
+	for idx < len(lines) {
+		ln := lines[idx]
+		trimmed := strings.TrimSpace(ln)
+		if trimmed == "" {
+			idx++
+			break
+		}
+		if colon := strings.IndexByte(ln, ':'); colon > 0 && !strings.HasPrefix(ln, " ") && !strings.HasPrefix(ln, "\t") {
+			candidateKey := strings.ToLower(strings.TrimSpace(ln[:colon]))
+			if candidateKey == "title" || candidateKey == "credit" || candidateKey == "author" || candidateKey == "authors" || candidateKey == "source" || candidateKey == "draft date" || candidateKey == "contact" || candidateKey == "notes" || candidateKey == "copyright" {
+				curMetaKey = candidateKey
+				val := strings.TrimSpace(ln[colon+1:])
+				applyFountainMeta(curMetaKey, val, &title, &author, &description)
+				idx++
+				continue
+			}
+		}
+		if curMetaKey != "" && (strings.HasPrefix(ln, " ") || strings.HasPrefix(ln, "\t")) {
+			applyFountainMeta(curMetaKey, trimmed, &title, &author, &description)
+			idx++
+			continue
+		}
+		// Not a title page header; rewind to start of document
+		if curMetaKey == "" {
+			idx = 0
+		}
+		break
+	}
+	if strings.TrimSpace(title) == "" {
+		title = strings.TrimSpace(fallbackTitle)
+	}
+
+	curAct := ""
+	var drafts []ImportedSceneDraft
+	var curScene *ImportedSceneDraft
+	var bodyLines []string
+
+	flushScene := func() {
+		if curScene == nil {
+			return
+		}
+		curScene.Body = strings.TrimSpace(strings.Join(bodyLines, "\n"))
+		drafts = append(drafts, *curScene)
+		curScene = nil
+		bodyLines = nil
+	}
+
+	for ; idx < len(lines); idx++ {
+		rawLn := lines[idx]
+		trimmed := strings.TrimSpace(rawLn)
+
+		// Act / Section heading: # Act Name (single '#', not scene number '#1#')
+		if strings.HasPrefix(trimmed, "#") && !strings.HasSuffix(trimmed, "#") {
+			hashes := 0
+			for hashes < len(trimmed) && trimmed[hashes] == '#' {
+				hashes++
+			}
+			secTitle := strings.TrimSpace(trimmed[hashes:])
+			if secTitle != "" && hashes == 1 {
+				flushScene()
+				curAct = secTitle
+				continue
+			}
+		}
+
+		// Forced slugline (.SLUG) or standard slugline (WN./PL./INT./EXT.)
+		isForcedSlug := strings.HasPrefix(trimmed, ".") && len(trimmed) > 1 && trimmed[1] != '.'
+		if isForcedSlug || IsSluglineLine(trimmed) {
+			flushScene()
+			slug := trimmed
+			if isForcedSlug {
+				slug = strings.TrimSpace(slug[1:])
+			}
+			slug = strings.TrimSpace(fountainSceneNumSuffixRe.ReplaceAllString(slug, ""))
+			slug = strings.ToUpper(slug)
+			curScene = &ImportedSceneDraft{
+				ActName:  curAct,
+				Slugline: slug,
+				Title:    slug,
+			}
+			continue
+		}
+
+		// Synopsis line (= synopsis)
+		if strings.HasPrefix(trimmed, "=") && !strings.HasPrefix(trimmed, "===") {
+			syn := strings.TrimSpace(trimmed[1:])
+			if curScene != nil && syn != "" {
+				if curScene.Synopsis == "" {
+					curScene.Synopsis = syn
+				} else {
+					curScene.Synopsis += " " + syn
+				}
+			}
+			continue
+		}
+
+		// Forced transition (> CUT TO:)
+		if strings.HasPrefix(trimmed, ">") && !strings.HasSuffix(trimmed, "<") {
+			trimmed = strings.TrimSpace(trimmed[1:])
+			rawLn = trimmed
+		}
+
+		if curScene == nil {
+			if trimmed == "" {
+				continue
+			}
+			curScene = &ImportedSceneDraft{
+				ActName:  curAct,
+				Slugline: "",
+			}
+		}
+		bodyLines = append(bodyLines, rawLn)
+	}
+	flushScene()
+
+	return buildImportedScreenplayBook(title, author, description, drafts, destParentDir)
+}
+
+func applyFountainMeta(key, val string, title, author, description *string) {
+	if val == "" {
+		return
+	}
+	switch key {
+	case "title":
+		if *title == "" || strings.EqualFold(*title, "Bez tytułu") {
+			*title = val
+		} else {
+			*title += " " + val
+		}
+	case "author", "authors":
+		if *author == "" || *author == "Autor" {
+			*author = val
+		} else {
+			*author += ", " + val
+		}
+	case "notes":
+		if *description == "" {
+			*description = val
+		} else {
+			*description += " " + val
+		}
+	}
+}
+
+func buildImportedScreenplayBook(title, author, description string, drafts []ImportedSceneDraft, destParentDir string) (*Book, error) {
+	cleanTitle := SanitizePlainText(title)
+	if cleanTitle == "" {
+		cleanTitle = "Zaimportowany Scenariusz"
+	}
+	cleanAuthor := SanitizePlainText(author)
+	if cleanAuthor == "" {
+		cleanAuthor = "Autor"
+	}
+	cleanDesc := SanitizePlainText(description)
+	if cleanDesc == "" {
+		cleanDesc = "Scenariusz zaimportowany do Playbook Studio."
+	}
+
+	// Detect PL vs US standard from sluglines
+	plCount, intlCount := 0, 0
+	for _, d := range drafts {
+		up := strings.ToUpper(strings.TrimSpace(d.Slugline))
+		if strings.HasPrefix(up, "WN.") || strings.HasPrefix(up, "PL.") || strings.HasPrefix(up, "WN/PL") {
+			plCount++
+		} else if strings.HasPrefix(up, "INT.") || strings.HasPrefix(up, "EXT.") || strings.HasPrefix(up, "I/E") {
+			intlCount++
+		}
+	}
+	std := "pl"
+	if intlCount > plCount {
+		std = "us"
+	}
+	defActName := DefaultScreenplayActName
+	if std != "pl" {
+		defActName = "Act I"
+	}
+	defSlug := DefaultSluglineForStandard(std)
+
+	if len(drafts) == 0 {
+		drafts = []ImportedSceneDraft{
+			{
+				ActName:  defActName,
+				Slugline: defSlug,
+				Title:    "Scena 1",
+				Body:     "",
+			},
+		}
+	}
+
+	id := SanitizeBookID(cleanTitle)
+	cleanBaseDir := filepath.Clean(strings.TrimSpace(destParentDir))
+	if cleanBaseDir == "" || cleanBaseDir == "." {
+		cleanBaseDir = DefaultProjectsDir()
+	}
+	bookDir := filepath.Join(cleanBaseDir, id)
+	if _, err := os.Stat(bookDir); err == nil {
+		id = fmt.Sprintf("%s-%d", id, time.Now().Unix()%10000)
+		bookDir = filepath.Join(cleanBaseDir, id)
+	}
+	if err := os.MkdirAll(bookDir, 0755); err != nil {
+		return nil, err
+	}
+
+	var chapters []Chapter
+	chapterByLower := make(map[string]int)
+	usedChIDs := make(map[string]bool)
+	usedSceneIDs := make(map[string]bool)
+
+	ensureChapter := func(actName string) Chapter {
+		name := strings.TrimSpace(actName)
+		if name == "" {
+			name = defActName
+		}
+		key := strings.ToLower(name)
+		if idx, ok := chapterByLower[key]; ok {
+			return chapters[idx]
+		}
+		baseID := SanitizeSceneID(name)
+		if baseID == "" {
+			baseID = fmt.Sprintf("akt_%d", len(chapters)+1)
+		}
+		chID := baseID
+		seq := 2
+		for usedChIDs[chID] {
+			chID = fmt.Sprintf("%s_%d", baseID, seq)
+			seq++
+		}
+		usedChIDs[chID] = true
+		ch := Chapter{
+			ID:         chID,
+			ExplicitID: chID,
+			Name:       name,
+			SourceFile: chID + PlaytxtExt,
+		}
+		chapterByLower[key] = len(chapters)
+		chapters = append(chapters, ch)
+		return ch
+	}
+
+	scenes := make([]*Scene, 0, len(drafts))
+	for i, d := range drafts {
+		ch := ensureChapter(d.ActName)
+		slug := strings.TrimSpace(d.Slugline)
+		if slug == "" {
+			slug = defSlug
+		}
+		scTitle := strings.TrimSpace(d.Title)
+		if scTitle == "" {
+			scTitle = fmt.Sprintf("Scena %d", i+1)
+		}
+		baseID := SanitizeSceneID(scTitle)
+		if baseID == "" || baseID == "scena" {
+			baseID = fmt.Sprintf("scena_%d", i+1)
+		}
+		if len(baseID) > 36 {
+			baseID = strings.Trim(baseID[:36], "_")
+		}
+		scID := baseID
+		seq := 2
+		for usedSceneIDs[scID] {
+			scID = fmt.Sprintf("%s_%d", baseID, seq)
+			seq++
+		}
+		usedSceneIDs[scID] = true
+
+		sc := &Scene{
+			ID:         scID,
+			ExplicitID: scID,
+			Name:       scTitle,
+			Slugline:   slug,
+			Synopsis:   strings.TrimSpace(d.Synopsis),
+			Chapter:    ch.Name,
+			ChapterID:  ch.ID,
+			Text:       strings.TrimSpace(d.Body),
+			SourceFile: ch.SourceFile,
+		}
+		scenes = append(scenes, sc)
+	}
+
+	// Wire sequential transitions within acts and across acts
+	for i, sc := range scenes {
+		if i+1 < len(scenes) {
+			nextSc := scenes[i+1]
+			if strings.EqualFold(sc.Chapter, nextSc.Chapter) {
+				sc.ExplicitNext = nextSc.ID
+				sc.Choices = []Choice{{Label: "Dalej", Target: nextSc.ID, TargetSceneID: nextSc.ID, IsImplicit: true}}
+			} else {
+				targetRef := "chapter:" + nextSc.ChapterID
+				sc.ExplicitNext = targetRef
+				sc.Choices = []Choice{{Label: "Dalej", Target: targetRef, TargetChapterID: nextSc.ChapterID, IsChapterLink: true, IsImplicit: true}}
+			}
+		} else {
+			sc.ExplicitEnd = true
+		}
+	}
+
+	for i := range chapters {
+		for _, sc := range scenes {
+			if strings.EqualFold(sc.Chapter, chapters[i].Name) {
+				chapters[i].StartSceneID = sc.ID
+				chapters[i].ExplicitStart = sc.ID
+				break
+			}
+		}
+	}
+
+	startID := scenes[0].ID
+	b := &Book{
+		ID:             id,
+		Title:          cleanTitle,
+		Author:         cleanAuthor,
+		Description:    cleanDesc,
+		Mode:           "screenplay",
+		ScriptStandard: std,
+		StartSceneID:   startID,
+		RawStart:       startID,
+		Narrated:       false,
+		Imageless:      true,
+		RootPath:       bookDir,
+		Chapters:       chapters,
+		Scenes:         scenes,
+	}
+	FinalizeBook(b)
+	AutoLayoutBook(b)
+	if err := SaveBookScenesToDisk(b); err != nil {
+		return nil, err
+	}
+	_ = GenerateAtmosphericPNG(filepath.Join(bookDir, "cover.png"), 400, 560, color.RGBA{24, 30, 44, 255}, color.RGBA{214, 158, 76, 255}, 1)
+	return LoadBookFromDir(bookDir)
 }

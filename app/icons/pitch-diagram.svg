@@ -1,12 +1,12 @@
 <svg viewBox="0 0 180 220" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <circle cx="14" cy="110" r="8" fill="#000000" stroke="#ffffff" stroke-width="1.8"/>
-  <circle cx="14" cy="110" r="2.8" fill="#ffffff"/>
-  <path d="M 22 110 C 86 110, 102 27.5, 166 27.5" stroke="#484848" stroke-width="1.2"/>
-  <path d="M 22 110 C 86 110, 102 82.5, 166 82.5" stroke="#ffffff" stroke-width="1.4"/>
-  <path d="M 22 110 C 86 110, 102 137.5, 166 137.5" stroke="#888888" stroke-width="1.2"/>
-  <path d="M 22 110 C 86 110, 102 192.5, 166 192.5" stroke="#484848" stroke-width="1.2"/>
-  <circle cx="166" cy="27.5" r="4" fill="#ffffff"/>
-  <circle cx="166" cy="82.5" r="4" fill="#000000" stroke="#ffffff" stroke-width="1.6"/>
-  <circle cx="166" cy="137.5" r="4" fill="#ffffff"/>
-  <circle cx="166" cy="192.5" r="4" fill="#000000" stroke="#ffffff" stroke-width="1.6"/>
+  <circle cx="14" cy="110" r="8" fill="none" stroke="currentColor" stroke-width="1.8"/>
+  <circle cx="14" cy="110" r="2.8" fill="currentColor"/>
+  <path d="M 22 110 C 86 110, 102 27.5, 162 27.5" stroke="currentColor" stroke-opacity="0.35" stroke-width="1.2"/>
+  <path d="M 22 110 C 86 110, 102 82.5, 162 82.5" stroke="currentColor" stroke-width="1.4"/>
+  <path d="M 22 110 C 86 110, 102 137.5, 162 137.5" stroke="currentColor" stroke-opacity="0.55" stroke-width="1.2"/>
+  <path d="M 22 110 C 86 110, 102 192.5, 162 192.5" stroke="currentColor" stroke-opacity="0.35" stroke-width="1.2"/>
+  <circle cx="166" cy="27.5" r="4" fill="currentColor"/>
+  <circle cx="166" cy="82.5" r="4" fill="none" stroke="currentColor" stroke-width="1.6"/>
+  <circle cx="166" cy="137.5" r="4" fill="currentColor"/>
+  <circle cx="166" cy="192.5" r="4" fill="none" stroke="currentColor" stroke-width="1.6"/>
 </svg>

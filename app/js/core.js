@@ -152,26 +152,23 @@ function showToast(message) {
 }
 
 function syncTopbarToggleIcons() {
-  const uiScaleAttr = document.body.getAttribute("data-ui-scale");
-  const isLarge = uiScaleAttr === "large";
-  const isZen = uiScaleAttr === "zen";
-  const isSmall = !isLarge && !isZen;
-  const zoomInIcon = qs("#icon-zoom-in");
-  const zoomOutIcon = qs("#icon-zoom-out");
-  const zoomZenIcon = qs("#icon-zoom-zen");
-  const zoomBtn = qs("#btn-toggle-ui-scale");
-  if (zoomInIcon) zoomInIcon.classList.toggle("hidden", !isSmall);
-  if (zoomZenIcon) zoomZenIcon.classList.toggle("hidden", !isLarge);
-  if (zoomOutIcon) zoomOutIcon.classList.toggle("hidden", !isZen);
-  if (zoomBtn) {
-    zoomBtn.classList.toggle("active", isZen);
+  const isLarge = document.body.getAttribute("data-ui-scale") === "large";
+  const scaleBtn = qs("#btn-toggle-ui-scale");
+  if (scaleBtn) {
+    scaleBtn.classList.toggle("active", isLarge);
     setElementHint(
-      zoomBtn,
-      isLarge
-        ? tr("scale_zen_hint")
-        : isZen
-          ? tr("scale_exit_zen_hint")
-          : tr("scale_enlarge_hint")
+      scaleBtn,
+      isLarge ? tr("scale_shrink_hint") : tr("scale_enlarge_hint")
+    );
+  }
+
+  const isZen = document.body.getAttribute("data-zen") === "true";
+  const zenBtn = qs("#btn-toggle-zen");
+  if (zenBtn) {
+    zenBtn.classList.toggle("active", isZen);
+    setElementHint(
+      zenBtn,
+      isZen ? tr("scale_exit_zen_hint") : tr("scale_zen_hint")
     );
   }
 
@@ -185,7 +182,7 @@ function syncTopbarToggleIcons() {
   if (imgBtn) {
     imgBtn.disabled = isImagelessLocked;
     imgBtn.classList.toggle("is-disabled", isImagelessLocked);
-    imgBtn.classList.toggle("active", isImageless);
+    imgBtn.classList.toggle("active", imgBtn.classList.contains("form-toggle-btn") ? !isImageless : isImageless);
     setElementHint(
       imgBtn,
       isImagelessLocked
@@ -204,16 +201,13 @@ function syncTopbarToggleIcons() {
 }
 
 function toggleUIScaleClient(forcedScale) {
-  const rawScale = document.body.getAttribute("data-ui-scale");
-  const currentScale = rawScale === "large" || rawScale === "zen" ? rawScale : "small";
+  const currentScale = document.body.getAttribute("data-ui-scale") === "large" ? "large" : "small";
   const nextScale =
-    forcedScale === "large" || forcedScale === "small" || forcedScale === "zen"
+    forcedScale === "large" || forcedScale === "small"
       ? forcedScale
-      : currentScale === "small"
-        ? "large"
-        : currentScale === "large"
-          ? "zen"
-          : "small";
+      : currentScale === "large"
+        ? "small"
+        : "large";
   document.body.setAttribute("data-ui-scale", nextScale);
   syncTopbarToggleIcons();
   if (typeof restorePlayerScrollPosition === "function") {
@@ -308,8 +302,13 @@ function applyServerResponseHeaders(resp, actionName) {
   }
 
   const uiScale = resp.headers.get("X-UI-Scale");
-  if (uiScale) {
+  if (uiScale === "large" || uiScale === "small") {
     document.body.setAttribute("data-ui-scale", uiScale);
+  }
+
+  const zenMode = resp.headers.get("X-Zen-Mode");
+  if (zenMode === "true" || zenMode === "false") {
+    document.body.setAttribute("data-zen", zenMode);
   }
 
   const audioSpeed = resp.headers.get("X-Audio-Speed");
@@ -570,17 +569,36 @@ async function bootWasmPlayer(playBtn) {
       return;
     }
 
-    const resp = await fetch(wasmSrc);
-    if (!resp || !resp.ok) {
+    let wasmBuf = null;
+    let wasmBytes = null;
+    const isFileProtocol = typeof location !== "undefined" && location && location.protocol === "file:";
+    if (!isFileProtocol && typeof fetch === "function") {
+      try {
+        const resp = await fetch(wasmSrc);
+        if (resp && resp.ok) {
+          wasmBuf = await resp.arrayBuffer();
+          wasmBytes = new Uint8Array(wasmBuf);
+        }
+      } catch (_) {}
+    }
+    if ((!wasmBytes || wasmBytes.length === 0) && typeof window.__wasmBase64 === "string" && window.__wasmBase64.length > 0) {
+      const binStr = atob(window.__wasmBase64);
+      wasmBytes = new Uint8Array(binStr.length);
+      for (let i = 0; i < binStr.length; i++) {
+        wasmBytes[i] = binStr.charCodeAt(i);
+      }
+      wasmBuf = wasmBytes.buffer;
+    }
+    if (!wasmBytes || wasmBytes.length === 0) {
       playBtn.classList.remove("is-loading");
       return;
     }
-    const wasmBuf = await resp.arrayBuffer();
-    const wasmBytes = new Uint8Array(wasmBuf);
 
-    const go = new Go();
-    const instantiated = await WebAssembly.instantiate(wasmBuf, go.importObject);
-    go.run(instantiated.instance);
+    if (typeof window.__wasmBoot !== "function") {
+      const go = new Go();
+      const instantiated = await WebAssembly.instantiate(wasmBuf, go.importObject);
+      go.run(instantiated.instance);
+    }
 
     if (typeof window.__wasmBoot !== "function") {
       playBtn.classList.remove("is-loading");
@@ -638,7 +656,6 @@ async function bootWasmPlayer(playBtn) {
 }
 
 const ACTIONS_FLUSH_INSPECTOR = new Set([
-  "UndoEditor",
   "ToggleEditorHistoryPanel",
   "OpenEditorHistoryPanel",
   "PreviewHistoryRevision",
@@ -671,6 +688,7 @@ const ACTIONS_FLUSH_INSPECTOR = new Set([
   "AddBookEnumOption",
   "RemoveBookEnumOption",
   "ToggleSceneVoiceRecorder",
+  "SelectSceneVoiceSection",
   "StartSceneVoiceCapture",
   "StopSceneVoiceCapture",
   "SaveSceneVoiceRecording",
@@ -712,6 +730,7 @@ const ACTIONS_KEEP_MODAL_SCROLL = new Set([
   "ToggleChoiceRule",
   "ToggleSyntaxHelp",
   "ToggleSceneVoiceRecorder",
+  "SelectSceneVoiceSection",
   "StopSceneVoiceCapture",
   "SaveSceneVoiceRecording",
   "TrimSceneVoice",
@@ -751,7 +770,7 @@ async function sendServerAction(actionName, params) {
     if (typeof consumeDirtyInspectorFormIntoParams === "function") {
       consumeDirtyInspectorFormIntoParams(params);
     }
-  } else if (actionName === "RedoEditor" || actionName === "RestoreHistoryRevision" || actionName === "ExitHistoryPreview") {
+  } else if (actionName === "UndoEditor" || actionName === "RedoEditor" || actionName === "RestoreHistoryRevision" || actionName === "ExitHistoryPreview") {
     if (typeof cancelPendingInspectorTimers === "function") {
       cancelPendingInspectorTimers();
     }
@@ -1073,6 +1092,12 @@ async function sendServerAction(actionName, params) {
   const targetEl = qs(targetSelector) || qs("#app");
   if (targetEl) {
     targetEl.innerHTML = html;
+    if (targetSelector === "#app" || targetEl.id === "app") {
+      const restoredToast = decodeHeaderUTF8(resp.headers.get("X-Toast"));
+      if (restoredToast) {
+        showToast(restoredToast);
+      }
+    }
     if (targetSelector === "#workspace") {
       const modalsRoot = qs("#modals-root");
       if (modalsRoot && modalsRoot.innerHTML !== "") {
@@ -1184,6 +1209,9 @@ async function sendServerAction(actionName, params) {
       const modalTa = qs("#modal-scene-textarea");
       if (modalTa) {
         modalTa.focus({ preventScroll: true });
+      }
+      if (typeof applyPendingSceneTextSearchHighlight === "function") {
+        applyPendingSceneTextSearchHighlight();
       }
     } else if (qs("#modal-scene-text") && typeof initSceneTextModalFeed === "function") {
       initSceneTextModalFeed(false);
@@ -1379,7 +1407,43 @@ function bindDeclarativeActionBridge() {
       }
     }
 
+    if (hasZoomMod && !e.altKey && (e.key === "f" || e.key === "F" || e.code === "KeyF")) {
+      if (qs("#view-editor") && typeof openStudioSearchPalette === "function") {
+        e.preventDefault();
+        e.stopPropagation();
+        openStudioSearchPalette();
+        return;
+      }
+    }
+
+    if (e.target && e.target.id === "studio-search-input") {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        if (typeof stepStudioSearchActiveRow === "function") stepStudioSearchActiveRow(1);
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        if (typeof stepStudioSearchActiveRow === "function") stepStudioSearchActiveRow(-1);
+        return;
+      }
+      if (e.key === "Enter") {
+        e.preventDefault();
+        const activeRow = qs("#studio-search-results .studio-search-row.is-active:not(.hidden)");
+        if (activeRow && typeof activateStudioSearchRow === "function") {
+          activateStudioSearchRow(activeRow.getAttribute("data-search-scene") || "", Boolean(e.shiftKey));
+        }
+        return;
+      }
+    }
+
     if (e.key === "Escape") {
+      const searchPalette = qs("#studio-search-palette");
+      if (searchPalette && !searchPalette.classList.contains("hidden") && typeof closeStudioSearchPalette === "function") {
+        e.preventDefault();
+        closeStudioSearchPalette();
+        return;
+      }
       const topbarMenu = qs("#topbar-actions-menu");
       const topbarToggle = qs("#btn-topbar-menu");
       if (topbarMenu) topbarMenu.classList.remove("open");
@@ -1397,6 +1461,10 @@ function bindDeclarativeActionBridge() {
           sendServerAction(closeAct, {});
           return;
         }
+      }
+      if (document.body.getAttribute("data-zen") === "true" && qs("#view-player")) {
+        sendServerAction("ToggleZenMode", { zen: "false" });
+        return;
       }
     }
   });
@@ -1450,6 +1518,38 @@ function bindDeclarativeActionBridge() {
         sendServerAction(backdropAction, {});
         return;
       }
+    }
+
+    const searchToggleBtn = e.target && e.target.closest ? e.target.closest("[data-studio-search-toggle]") : null;
+    if (searchToggleBtn && typeof toggleStudioSearchPalette === "function") {
+      e.preventDefault();
+      e.stopPropagation();
+      toggleStudioSearchPalette();
+      return;
+    }
+
+    const searchCloseBtn = e.target && e.target.closest ? e.target.closest("[data-studio-search-close]") : null;
+    if (searchCloseBtn && typeof closeStudioSearchPalette === "function") {
+      e.preventDefault();
+      e.stopPropagation();
+      closeStudioSearchPalette();
+      return;
+    }
+
+    const searchOpenTextBtn = e.target && e.target.closest ? e.target.closest("[data-search-open-text]") : null;
+    if (searchOpenTextBtn && typeof activateStudioSearchRow === "function") {
+      e.preventDefault();
+      e.stopPropagation();
+      activateStudioSearchRow(searchOpenTextBtn.getAttribute("data-search-open-text") || "", true);
+      return;
+    }
+
+    const searchRowEl = e.target && e.target.closest ? e.target.closest(".studio-search-row[data-search-scene]") : null;
+    if (searchRowEl && typeof activateStudioSearchRow === "function") {
+      e.preventDefault();
+      e.stopPropagation();
+      activateStudioSearchRow(searchRowEl.getAttribute("data-search-scene") || "", false);
+      return;
     }
 
     const wasmPlayBtn = e.target && e.target.closest ? e.target.closest("[data-wasm-play]") : null;
@@ -1616,6 +1716,12 @@ function bindDeclarativeActionBridge() {
     if (topbarMenu) topbarMenu.classList.remove("open");
     if (topbarToggle) topbarToggle.classList.remove("active");
     sendServerAction(actionName, params);
+  });
+
+  document.addEventListener("input", (e) => {
+    if (e.target && e.target.id === "studio-search-input" && typeof applyStudioSearchFilter === "function") {
+      applyStudioSearchFilter(e.target.value || "");
+    }
   });
 
   document.addEventListener("submit", (e) => {

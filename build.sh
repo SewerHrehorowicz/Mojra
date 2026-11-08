@@ -172,4 +172,9 @@ if [ "${1:-}" = "audit" ] || [ "${1:-}" = "--audit" ]; then
     exec go run ./cmd/mojra audit "$@"
 fi
 
+if [ "${1:-}" = "deck" ] || [ "${1:-}" = "--deck" ]; then
+    shift
+    exec go test -v ./internal/tpl -run TestBuildDeckPDF
+fi
+
 exec go run ./cmd/mojra build "$@"

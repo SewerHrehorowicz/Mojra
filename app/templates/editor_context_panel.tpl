@@ -156,6 +156,18 @@ aside.editor-context-panel#editor-context-panel .hidden?: {is_context_panel_hidd
                                     data-scene: "{selected_node.id}"
                                     svg.media-plus-icon src: /icons/plus.svg
                     {if book_narrated}
+                        {if not is_history_preview}
+                            {if selected_node.has_voice_sections}
+                                .voice-rec-sections.inspector-voice-rec-sections .hidden?: {!voice_recorder_open}
+                                    .voice-rec-sections-tabs
+                                        {for vsec in selected_node.voice_sections}
+                                            button.voice-rec-section-btn .active?: {vsec.is_active} .is-recorded?: {vsec.has_audio}
+                                                type: button
+                                                action: SelectSceneVoiceSection
+                                                data-scene: "{selected_node.id}"
+                                                data-voice-section: "{vsec.key}"
+                                                span.voice-rec-section-dot .is-recorded?: {vsec.has_audio}
+                                                span.voice-rec-section-label {vsec.inspector_label}
                         .node-meta-row
                             span.node-meta-key "voice:"
                             .custom-select.node-media-select
@@ -191,6 +203,7 @@ aside.editor-context-panel#editor-context-panel .hidden?: {is_context_panel_hidd
                         {if not is_history_preview}
                             .voice-rec-strip#inspector-voice-rec-strip .hidden?: {!voice_recorder_open}
                                 data-scene: "{selected_node.id}"
+                                data-voice-section: "{selected_node.active_voice_section_key}"
                                 data-voice-url: "{selected_node.current_voice_url}"
                                 data-voice-file: "{selected_node.current_voice}"
                                 data-trim-start: "{selected_node.voice_trim_start}"
@@ -220,6 +233,7 @@ aside.editor-context-panel#editor-context-panel .hidden?: {is_context_panel_hidd
                                     type: button
                                     data-voice-trim-destructive: "true"
                                     data-scene: "{selected_node.id}"
+                                    data-voice-section: "{selected_node.active_voice_section_key}"
                                     data-hint: "{t_voice_trim_destructive_hint}"
                                     svg.voice-rec-btn-icon src: /icons/scissors.svg
                                 button.voice-rec-action-btn.voice-rec-rerecord-btn .hidden?: {!selected_node.has_voice_file}
@@ -230,6 +244,7 @@ aside.editor-context-panel#editor-context-panel .hidden?: {is_context_panel_hidd
                                     type: button
                                     action: DeleteSceneVoice
                                     data-scene: "{selected_node.id}"
+                                    data-voice-section: "{selected_node.active_voice_section_key}"
                                     svg.voice-rec-btn-icon src: /icons/trash.svg
 
             .context-panel-section

@@ -949,7 +949,7 @@ body[data-ui-scale="large"]
     height 18px
 
 // Zen Mode — Pure E-Book Reading (no images, no meta bar, no history rail, no footer, no side/header box borders)
-body[data-ui-scale="zen"]
+body[data-zen="true"]
   .player-bg-stage, .scene-portrait-frame, .scene-illustration-spacer, #reader-global-meta, .story-history-rail, .reader-progress-footer, .audio-deck
     display none !important
 
@@ -1000,6 +1000,7 @@ body[data-ui-scale="zen"]
   height 100%
 
 .wasm-splash
+  position relative
   grid-row 1
   grid-column 1
   width 100%
@@ -1008,16 +1009,45 @@ body[data-ui-scale="zen"]
   flex-direction column
   align-items center
   justify-content center
-  gap 20px
   padding 32px
   text-align center
+  overflow hidden
   background --bg-obsidian
   background-image linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px), linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px)
   background-size 24px 24px
 
+.wasm-splash::after
+  content ""
+  position absolute
+  inset 0
+  pointer-events none
+  z-index 1
+  background radial-gradient(circle at 50% 46%, rgba(0, 0, 0, 0.42) 0%, rgba(0, 0, 0, 0.82) 64%, rgba(0, 0, 0, 0.97) 100%)
+
+.wasm-splash-bg
+  position absolute
+  inset 0
+  width 100%
+  height 100%
+  object-fit cover
+  opacity 0.48
+  pointer-events none
+  z-index 0
+
+.wasm-splash-content
+  position relative
+  z-index 2
+  display flex
+  flex-direction column
+  align-items center
+  justify-content center
+  gap 14px
+  max-width 520px
+  width 100%
+
 .wasm-splash-title
   font-family --font-serif, Georgia, serif
-  font-size 24px
+  font-size 30px
   font-weight 400
   letter-spacing 0.02em
   color --text-primary
@@ -1025,41 +1055,57 @@ body[data-ui-scale="zen"]
 
 .wasm-splash-author
   font-family --font-sans
-  font-size 11px
+  font-size 10.5px
   font-weight 600
-  letter-spacing 0.18em
+  letter-spacing 0.22em
   text-transform uppercase
-  color --text-muted
+  color --text-secondary
+  margin 0
+
+.wasm-splash-divider
+  width 36px
+  height 1px
+  background --border-strong
+  margin 2px 0
+
+.wasm-splash-desc
+  font-family --font-serif, Georgia, serif
+  font-size 14px
+  font-style italic
+  line-height 1.6
+  color --text-secondary
+  max-width 460px
   margin 0
 
 .wasm-splash-play-btn
   position relative
+  z-index 2
   appearance none
-  width 68px
-  height 68px
+  width 48px
+  height 48px
   display inline-flex
   align-items center
   justify-content center
   background transparent
-  border 1px solid --border-strong
+  border none !important
   color --text-primary
   cursor pointer
   padding 0
-  margin-top 8px
-  transition border-color 0.2s ease, transform 0.2s ease, background 0.2s ease
+  margin-top 10px
+  transition transform 0.2s ease, opacity 0.2s ease
 
 .wasm-splash-play-btn:hover
-  border-color --text-primary
-  background rgba(255, 255, 255, 0.04)
-  transform scale(1.04)
+  background transparent
+  border none !important
+  transform scale(1.08)
 
 .wasm-splash-play-btn.is-loading
   opacity 0.55
   pointer-events none
 
 .wasm-splash-play-icon
-  width 34px
-  height 34px
+  width 44px
+  height 44px
   display block
   color --text-primary
   pointer-events none

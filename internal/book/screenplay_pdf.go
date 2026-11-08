@@ -598,3 +598,157 @@ func serializePDFDocument(pages []pdfPage, pageWidth, pageHeight float64) []byte
 	fmt.Fprintf(&buf, "trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n", totalObjs+1, xrefOffset)
 	return buf.Bytes()
 }
+
+type pdfLinearPageWriter struct {
+	pageWidth   float64
+	pageHeight  float64
+	leftX       float64
+	rightMargin float64
+	topMargin   float64
+	lineHeight  float64
+	maxLines    int
+	pages       []pdfPage
+	curPage     pdfPage
+	curLine     int
+	pageNo      int
+}
+
+func newPDFLinearPageWriter(pageWidth, pageHeight, leftX, rightMargin, topMargin, lineHeight float64, maxLines int) *pdfLinearPageWriter {
+	return &pdfLinearPageWriter{
+		pageWidth:   pageWidth,
+		pageHeight:  pageHeight,
+		leftX:       leftX,
+		rightMargin: rightMargin,
+		topMargin:   topMargin,
+		lineHeight:  lineHeight,
+		maxLines:    maxLines,
+		pageNo:      1,
+	}
+}
+
+func (w *pdfLinearPageWriter) lineY(lineIdx int) float64 {
+	return w.pageHeight - w.topMargin - float64(lineIdx)*w.lineHeight
+}
+
+func (w *pdfLinearPageWriter) flushPage() {
+	if len(w.curPage.runs) == 0 {
+		return
+	}
+	w.pages = append(w.pages, w.curPage)
+	w.curPage = pdfPage{}
+	w.curLine = 0
+	w.pageNo++
+	numStr := fmt.Sprintf("%d.", w.pageNo)
+	numW := float64(utf8.RuneCountInString(numStr)) * 7.2
+	w.curPage.runs = append(w.curPage.runs, pdfTextRun{
+		x:    w.pageWidth - w.rightMargin - numW,
+		y:    w.pageHeight - 36.0,
+		bold: false,
+		size: 11.0,
+		text: numStr,
+	})
+}
+
+func (w *pdfLinearPageWriter) ensureLines(n int) {
+	if w.curLine+n > w.maxLines {
+		w.flushPage()
+	}
+}
+
+func (w *pdfLinearPageWriter) blankLine() {
+	if w.curLine > 0 {
+		w.curLine++
+		if w.curLine >= w.maxLines {
+			w.flushPage()
+		}
+	}
+}
+
+func (w *pdfLinearPageWriter) writeWrapped(text string, x float64, maxChars int, bold bool, size float64) {
+	for _, ln := range WrapCourierText(text, maxChars) {
+		w.ensureLines(1)
+		w.curPage.runs = append(w.curPage.runs, pdfTextRun{
+			x:    x,
+			y:    w.lineY(w.curLine),
+			bold: bold,
+			size: size,
+			text: ln,
+		})
+		w.curLine++
+	}
+}
+
+func (w *pdfLinearPageWriter) bytes() []byte {
+	if len(w.curPage.runs) > 0 {
+		w.pages = append(w.pages, w.curPage)
+		w.curPage = pdfPage{}
+	}
+	if len(w.pages) == 0 {
+		w.pages = append(w.pages, pdfPage{})
+	}
+	return serializePDFDocument(w.pages, w.pageWidth, w.pageHeight)
+}
+
+// ExportScreenplayTreatmentPDF generates a PISF/production-ready A4/Letter Treatment & Scene Outline PDF.
+func ExportScreenplayTreatmentPDF(b *Book) ([]byte, error) {
+	if b == nil {
+		return nil, fmt.Errorf("brak aktywnego projektu")
+	}
+	normStd := b.NormalizedStandard()
+	isPL := normStd == "pl"
+	pageW, pageH, maxLines := 595.28, 841.89, CourierLinesPerPageA4
+	if normStd == "us" {
+		pageW, pageH, maxLines = 612.0, 792.0, CourierLinesPerPageLetter
+	}
+	w := newPDFLinearPageWriter(pageW, pageH, 72.0, 72.0, 64.0, 13.0, maxLines)
+
+	title := strings.ToUpper(strings.TrimSpace(b.Title))
+	if title == "" {
+		title = "BEZ TYTUŁU"
+	}
+	sub := "TREATMENT / DRABINKA SCENARIUSZOWA"
+	if !isPL {
+		sub = "TREATMENT / SCENE OUTLINE"
+	}
+	w.writeWrapped(title, 72.0, 60, true, 14.0)
+	w.writeWrapped(sub+" — "+strings.TrimSpace(b.Author), 72.0, 62, false, 11.0)
+	if desc := strings.TrimSpace(b.Description); desc != "" {
+		w.blankLine()
+		w.writeWrapped(desc, 72.0, 62, false, 11.0)
+	}
+	w.blankLine()
+
+	scenes := LinearizeScreenplayScenes(b)
+	lastAct := ""
+	for i, sc := range scenes {
+		actName := strings.TrimSpace(sc.Chapter)
+		if actName != "" && !strings.EqualFold(actName, lastAct) {
+			w.blankLine()
+			w.ensureLines(3)
+			w.writeWrapped(strings.ToUpper(actName), 72.0, 60, true, 12.0)
+			lastAct = actName
+		}
+		w.ensureLines(3)
+		slug := strings.ToUpper(strings.TrimSpace(sc.Slugline))
+		if slug == "" {
+			slug = strings.ToUpper(sc.DisplayName())
+		}
+		metrics := ComputeSceneScriptMetrics(sc, i+1, normStd)
+		hdr := fmt.Sprintf("%d. %s (%s)", i+1, slug, metrics.FormattedLength)
+		w.writeWrapped(hdr, 72.0, 62, true, 11.0)
+
+		syn := strings.TrimSpace(sc.Synopsis)
+		if syn == "" {
+			syn = strings.Join(strings.Fields(sc.Text), " ")
+			runes := []rune(syn)
+			if len(runes) > 320 {
+				syn = string(runes[:320]) + "..."
+			}
+		}
+		if syn != "" {
+			w.writeWrapped(syn, 86.0, 58, false, 11.0)
+		}
+		w.blankLine()
+	}
+	return w.bytes(), nil
+}

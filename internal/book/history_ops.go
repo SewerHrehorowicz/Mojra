@@ -132,7 +132,7 @@ func normalizeCoalesceGroup(kind, coalesceKey, selectedSceneID string) string {
 }
 
 func isProseStructuralLine(trimmed string) bool {
-	if trimmed == "" || trimmed == "---" || strings.EqualFold(trimmed, ":end") {
+	if trimmed == "" || trimmed == "---" {
 		return true
 	}
 	if strings.Contains(trimmed, "->") && !strings.Contains(trimmed, `\->`) {
@@ -142,10 +142,10 @@ func isProseStructuralLine(trimmed string) bool {
 	if colonIdx > 0 && colonIdx <= 16 {
 		key := strings.ToLower(strings.TrimSpace(trimmed[:colonIdx]))
 		switch key {
-		case "chapter", "scene", "id", "exit", "next", "label", "if", "if?", "else", "endif", "set", "then", "end", "image", "voice",
+		case "chapter", "act", "scene", "id", "exit", "next", "label", "if", "elif", "else", "endif", "set", "end", "image", "voice", "voice_trim",
 			"location", "characters", "slugline", "synopsis", "text",
-			"title", "author", "description", "narrated", "imageless",
-			"start", "cover", "export_dir", "mode", "language", "standard":
+			"title", "author", "license", "description", "narrated", "imageless",
+			"start", "cover", "export_dir", "mode", "language", "standard", "enum", "var":
 			return true
 		}
 	}

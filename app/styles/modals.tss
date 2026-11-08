@@ -1119,7 +1119,7 @@ body[data-ui-scale="large"]
   .test-var-bool-btn, .test-var-int-input, .test-var-enum-select .custom-select-trigger, .test-var-enum-select .custom-select-option
     font-size 13px
 
-body[data-ui-scale="zen"]
+body[data-zen="true"]
   .scene-text-editor-feed .reader-global-meta
     display flex !important
 

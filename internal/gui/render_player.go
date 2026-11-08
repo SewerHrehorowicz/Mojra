@@ -46,20 +46,29 @@ func buildPlayerScreenplayBlocks(sc *book.Scene, state map[string]string, b *boo
 	return out
 }
 
-func resolvePlayerSceneAudio(b *book.Book, sc *book.Scene) (string, string, string, string) {
-	if b == nil || !b.Narrated || sc == nil || sc.AudioURL == "" {
-		return "", "0:00", "0.0000", "1.0000"
+func resolvePlayerSceneAudio(b *book.Book, sc *book.Scene, state map[string]string) (string, string, string, string, string) {
+	if b == nil || !b.Narrated || sc == nil {
+		return "", "0:00", "0.0000", "1.0000", ""
+	}
+	queue := book.EvaluateSceneAudioQueue(sc, state, b)
+	queueSpec, _, totalDurLbl := book.EncodeSceneAudioQueue(queue)
+	if len(queue) > 0 {
+		ts, te := book.NormalizedVoiceTrimValues(queue[0].TrimStart, queue[0].TrimEnd)
+		return queue[0].AudioURL, totalDurLbl, fmt.Sprintf("%.4f", ts), fmt.Sprintf("%.4f", te), queueSpec
+	}
+	if sc.AudioURL == "" {
+		return "", "0:00", "0.0000", "1.0000", ""
 	}
 	durLbl, stamp := book.ReadSceneAudioDurationAndStamp(b, sc)
 	if durLbl == "" {
 		durLbl = "0:00"
 	}
 	urlStr := sc.AudioURL
-	if stamp > 0 {
+	if stamp > 0 && !strings.Contains(urlStr, "?v=") {
 		urlStr = fmt.Sprintf("%s?v=%d", urlStr, stamp)
 	}
 	ts, te := sc.NormalizedVoiceTrim()
-	return urlStr, durLbl, fmt.Sprintf("%.4f", ts), fmt.Sprintf("%.4f", te)
+	return urlStr, durLbl, fmt.Sprintf("%.4f", ts), fmt.Sprintf("%.4f", te), ""
 }
 
 func (s *Server) populatePlayerContext(vars map[string]any) {
@@ -132,7 +141,7 @@ func (s *Server) populatePlayerContext(vars map[string]any) {
 				pastBlocks = buildPlayerScreenplayBlocks(pastScene, pastVars, s.PlayerBook, pastScene.OrderIndex+1, normStd)
 			}
 			pastProse := book.EvaluateSceneProseText(pastScene, pastVars, s.PlayerBook)
-			pastAudioURL, pastAudioDur, pastTrimStart, pastTrimEnd := resolvePlayerSceneAudio(s.PlayerBook, pastScene)
+			pastAudioURL, pastAudioDur, pastTrimStart, pastTrimEnd, pastAudioQueue := resolvePlayerSceneAudio(s.PlayerBook, pastScene, pastVars)
 			histList = append(histList, map[string]any{
 				"idx":                  idx,
 				"header_meta":          pastHeaderMeta,
@@ -146,6 +155,7 @@ func (s *Server) populatePlayerContext(vars map[string]any) {
 				"image_url":            pastImgURL,
 				"bg_image_url":         lastImageURL,
 				"audio_url":            pastAudioURL,
+				"audio_queue":          pastAudioQueue,
 				"audio_duration_label": pastAudioDur,
 				"audio_trim_start":     pastTrimStart,
 				"audio_trim_end":       pastTrimEnd,
@@ -195,7 +205,7 @@ func (s *Server) populatePlayerContext(vars map[string]any) {
 		curBlocks = buildPlayerScreenplayBlocks(curScene, curVars, s.PlayerBook, curScene.OrderIndex+1, normStd)
 	}
 	curProse := book.EvaluateSceneProseText(curScene, curVars, s.PlayerBook)
-	curAudioURL, curAudioDur, curTrimStart, curTrimEnd := resolvePlayerSceneAudio(s.PlayerBook, curScene)
+	curAudioURL, curAudioDur, curTrimStart, curTrimEnd, curAudioQueue := resolvePlayerSceneAudio(s.PlayerBook, curScene, curVars)
 
 	vars["current_scene"] = map[string]any{
 		"name":                 curScene.Name,
@@ -210,6 +220,7 @@ func (s *Server) populatePlayerContext(vars map[string]any) {
 		"has_bg_image":         !imageless && lastImageURL != "",
 		"bg_image_url":         lastImageURL,
 		"audio_url":            curAudioURL,
+		"audio_queue":          curAudioQueue,
 		"audio_duration_label": curAudioDur,
 		"audio_trim_start":     curTrimStart,
 		"audio_trim_end":       curTrimEnd,

@@ -117,6 +117,8 @@ const studioGraphState = {
   editingNodeTitle: null,
   editingChoice: null,
   selectedChapterKey: "",
+  searchQuery: "",
+  searchMatchSet: null,
   themeColors: null,
   shapedTextCache: new Map(),
   viewW: 1200,

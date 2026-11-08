@@ -59,6 +59,7 @@ var actionSpecs = map[string]ActionSpec{
 	"SetLanguage":      {KeepScroll: true, FlushFormScene: true, Target: targetAppShell, Handler: (*Server).setLanguage},
 	"SetUIScale":       {KeepScroll: true, Target: targetThemeOrScale, Handler: (*Server).toggleUIScale},
 	"ToggleUIScale":    {KeepScroll: true, Target: targetThemeOrScale, Handler: (*Server).toggleUIScale},
+	"ToggleZenMode":    {KeepScroll: true, Target: targetThemeOrScale, Handler: (*Server).toggleZenMode},
 	"SetDeviceMode":    {StandaloneForbidden: true, KeepScroll: true, Target: targetThemeOrScale, Handler: (*Server).setDeviceMode},
 	"ToggleImageless":  {KeepScroll: true, Target: targetImageless, Handler: (*Server).toggleImageless},
 	"ToggleFullscreen": {KeepScroll: true, Target: targetNone, NativeCmd: "toggle-fullscreen", Handler: (*Server).toggleFullscreen},
@@ -156,7 +157,7 @@ var actionSpecs = map[string]ActionSpec{
 	"RenameChapter":              {StandaloneForbidden: true, Target: targetActiveWorkspace, Handler: (*Server).renameActiveBookChapter},
 	"AssignChapterToScenes":      {StandaloneForbidden: true, Target: targetActiveWorkspace, Handler: (*Server).assignChapterToScenes},
 	"CreateChapterGroup":         {StandaloneForbidden: true, FlushFormScene: true, Target: targetActiveWorkspace, Handler: (*Server).createChapterGroup},
-	"UndoEditor":                 {StandaloneForbidden: true, FlushFormScene: true, Target: targetUndoRedoWorkspaceOrAppShell, Handler: (*Server).undoEditor},
+	"UndoEditor":                 {StandaloneForbidden: true, Target: targetUndoRedoWorkspaceOrAppShell, Handler: (*Server).undoEditor},
 	"RedoEditor":                 {StandaloneForbidden: true, Target: targetUndoRedoWorkspaceOrAppShell, Handler: (*Server).redoEditor},
 	"PreviewHistoryRevision":     {StandaloneForbidden: true, FlushFormScene: true, Target: targetUndoRedoWorkspaceOrAppShell, Handler: (*Server).previewHistoryRevision},
 	"ExitHistoryPreview":         {StandaloneForbidden: true, Target: targetUndoRedoWorkspaceOrAppShell, Handler: (*Server).exitHistoryPreviewAction},
@@ -194,6 +195,7 @@ var actionSpecs = map[string]ActionSpec{
 	"ToggleSceneTestVarsPopover": {StandaloneForbidden: true, KeepScroll: true, FlushFormScene: true, Target: targetModals, Handler: (*Server).toggleSceneTestVarsPopoverAction},
 	"UpdateSceneTextTestVar":     {StandaloneForbidden: true, KeepScroll: true, FlushFormScene: true, Target: targetModals, Handler: (*Server).updateSceneTextTestVarAction},
 	"ToggleSceneVoiceRecorder":   {StandaloneForbidden: true, KeepScroll: true, Target: targetActiveWorkspaceOrModalsWhenSceneTextOpen, Handler: (*Server).toggleSceneVoiceRecorderAction},
+	"SelectSceneVoiceSection":    {StandaloneForbidden: true, KeepScroll: true, Target: targetActiveWorkspaceOrModalsWhenSceneTextOpen, Handler: (*Server).selectSceneVoiceSectionAction},
 	"StartSceneVoiceCapture":     {StandaloneForbidden: true, KeepScroll: true, Target: targetNone, Handler: (*Server).startSceneVoiceCaptureAction},
 	"PollSceneVoiceCapture":      {StandaloneForbidden: true, KeepScroll: true, Target: targetNone, Handler: (*Server).pollSceneVoiceCaptureAction},
 	"StopSceneVoiceCapture":      {StandaloneForbidden: true, KeepScroll: true, Target: targetActiveWorkspaceOrModalsWhenSceneTextOpen, Handler: (*Server).stopSceneVoiceCaptureAction},
@@ -365,6 +367,7 @@ func isRemoteLANAllowedAction(action, pendingConfirm string) bool {
 		"SetLanguage",
 		"SetUIScale",
 		"ToggleUIScale",
+		"ToggleZenMode",
 		"ToggleImageless",
 		"PromptRewindStep",
 		"PromptResetProgress",
@@ -379,8 +382,19 @@ func isRemoteLANAllowedAction(action, pendingConfirm string) bool {
 
 func (s *Server) switchView(r *http.Request) string {
 	view := strings.TrimSpace(r.FormValue("view"))
-	if view == "library" && s.isHistoryPreview() {
+	if (view == "library" || view == "studio") && s.isHistoryPreview() {
 		s.exitHistoryPreview()
+	}
+	if view == "studio" {
+		s.StudioHome = true
+		s.ZenMode = false
+		s.Settings.ActiveView = "editor"
+		s.closeAllModals()
+		s.persistSettings()
+		return ""
+	}
+	if view == "editor" {
+		s.StudioHome = false
 	}
 	if view == "player" && s.PlayerBook == nil {
 		if s.ActiveBook != nil {
@@ -390,6 +404,9 @@ func (s *Server) switchView(r *http.Request) string {
 		}
 	}
 	if view == "library" || view == "player" || view == "editor" {
+		if view != "player" {
+			s.ZenMode = false
+		}
 		s.Settings.ActiveView = view
 		s.closeAllModals()
 		s.persistSettings()
@@ -440,19 +457,34 @@ func (s *Server) toggleUIScale(r *http.Request) string {
 			reqScale = "small"
 		}
 	}
-	if reqScale == "large" || reqScale == "small" || reqScale == "zen" {
+	if reqScale == "large" || reqScale == "small" {
 		s.Settings.UIScale = reqScale
+	} else if s.Settings.UIScale == "large" {
+		s.Settings.UIScale = "small"
 	} else {
-		switch s.Settings.UIScale {
-		case "large":
-			s.Settings.UIScale = "zen"
-		case "zen":
-			s.Settings.UIScale = "small"
-		default:
-			s.Settings.UIScale = "large"
-		}
+		s.Settings.UIScale = "large"
 	}
 	s.persistSettings()
+	return ""
+}
+
+func (s *Server) isEffectiveZenMode() bool {
+	return s.ZenMode && s.activeWorkspaceView() == "player" && s.PlayerBook != nil && !s.PlayerBook.IsScreenplay()
+}
+
+func (s *Server) toggleZenMode(r *http.Request) string {
+	if s.activeWorkspaceView() != "player" || s.PlayerBook == nil || s.PlayerBook.IsScreenplay() {
+		s.ZenMode = false
+		return ""
+	}
+	switch strings.ToLower(strings.TrimSpace(r.FormValue("zen"))) {
+	case "true", "1", "on":
+		s.ZenMode = true
+	case "false", "0", "off":
+		s.ZenMode = false
+	default:
+		s.ZenMode = !s.ZenMode
+	}
 	return ""
 }
 
@@ -549,7 +581,7 @@ func (s *Server) toggleExportFormat(r *http.Request) string {
 		fmtID = "playbook"
 	}
 	switch fmtID {
-	case "playbook", "wasm", "pdf", "fountain", "playtxt":
+	case "playbook", "wasm", "pdf", "fountain", "fdx", "treatment", "book_pdf", "vo_csv", "actor_pdf", "playtxt":
 		if s.ExportModalFormats == nil {
 			s.ExportModalFormats = make(map[string]bool)
 		}
@@ -583,13 +615,17 @@ func (s *Server) setExportModalStandard(r *http.Request) string {
 	return ""
 }
 
-func (s *Server) openNewBookModal(_ *http.Request) string {
+func (s *Server) openNewBookModal(r *http.Request) string {
 	s.QRModalOpen = false
 	s.AddBookModalOpen = false
 	s.ExportModalOpen = false
 	s.resetNewBookModalState()
 	s.NewBookModalOpen = true
-	s.NewBookDraftMode = "book"
+	if r != nil && strings.EqualFold(strings.TrimSpace(r.FormValue("mode")), "screenplay") {
+		s.NewBookDraftMode = "screenplay"
+	} else {
+		s.NewBookDraftMode = "book"
+	}
 	s.NewBookDraftStandard = "pl"
 	s.NewBookDraftDir = s.defaultNewBookDir()
 	return ""
@@ -811,7 +847,7 @@ func (s *Server) handleAction(w http.ResponseWriter, r *http.Request) {
 
 	var books []*book.Book
 	view := s.activeWorkspaceView()
-	if targetTpl == "library_view" || (targetTpl == "app_shell" && view == "library") {
+	if targetTpl == "library_view" || (targetTpl == "app_shell" && view == "library") || ((targetTpl == "editor_view" || (targetTpl == "app_shell" && view == "editor")) && !s.hasActiveStudioEditor()) {
 		books, _ = s.loadBooks()
 	}
 
@@ -837,13 +873,15 @@ func (s *Server) writeActionResponseHeaders(w http.ResponseWriter, action, targe
 	} else {
 		w.Header().Set("X-Imageless-Locked", "false")
 	}
-	switch s.Settings.UIScale {
-	case "large":
+	if s.Settings.UIScale == "large" {
 		w.Header().Set("X-UI-Scale", "large")
-	case "zen":
-		w.Header().Set("X-UI-Scale", "zen")
-	default:
+	} else {
 		w.Header().Set("X-UI-Scale", "small")
+	}
+	if s.isEffectiveZenMode() {
+		w.Header().Set("X-Zen-Mode", "true")
+	} else {
+		w.Header().Set("X-Zen-Mode", "false")
 	}
 	if s.Settings.PlaybackSpeed > 0 {
 		w.Header().Set("X-Audio-Speed", fmt.Sprintf("%.2g", s.Settings.PlaybackSpeed))

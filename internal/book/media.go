@@ -131,6 +131,17 @@ func matchBookMedia(b *Book, audioFiles []string, imageFiles []string) {
 			sc.ExplicitVoice = ""
 			sc.VoiceTrimStart = 0
 			sc.VoiceTrimEnd = 0
+			sc.SectionVoices = nil
+			ExtractSceneVoiceSections(sc, b)
+		} else if HasConditionalVoiceDirectives(sc.Text) {
+			secs := ExtractSceneVoiceSections(sc, b)
+			for _, sec := range secs {
+				if sec.HasAudio && sc.AudioFile == "" {
+					sc.AudioFile = sec.AudioFile
+					sc.AudioURL = encodeMediaURL(b.ID, sec.AudioFile)
+				}
+			}
+			appendSceneVoiceSectionWarnings(b, sc)
 		} else {
 			if sc.ExplicitVoice != "" {
 				if matched, ok := findMediaFile(audioFiles, sc.ExplicitVoice, "", ""); ok {
@@ -152,6 +163,7 @@ func matchBookMedia(b *Book, audioFiles []string, imageFiles []string) {
 				sc.Warnings = append(sc.Warnings, warn)
 				b.Warnings = append(b.Warnings, warn)
 			}
+			ExtractSceneVoiceSections(sc, b)
 		}
 
 		// 2. Match Image (optional for scenes!)

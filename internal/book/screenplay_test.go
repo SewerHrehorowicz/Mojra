@@ -2,8 +2,12 @@ package book
 
 import (
 	"bytes"
+	"crypto/ed25519"
+	"crypto/rand"
+	"encoding/hex"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestScreenplayParserAndRoundTrip(t *testing.T) {
@@ -417,5 +421,89 @@ func TestScreenplayPDFAndFountainExport(t *testing.T) {
 	fountain2 := ExportScreenplayFountain(b)
 	if !strings.Contains(fountain2, "DACH WIEŻOWCA") || strings.Contains(fountain2, "PIWNICA") {
 		t.Fatalf("expected promoted altSc included and orphanSc still excluded after promotion, got:\n%s", fountain2)
+	}
+}
+
+func TestFountainFDXImportExportAndMVPExports(t *testing.T) {
+	tmpDir := t.TempDir()
+	b, err := CreateNewBookWithMode(tmpDir, "Nocna Szpica", "Tytus Czyżewski", "screenplay", "pl", false, false)
+	if err != nil {
+		t.Fatalf("CreateNewBookWithMode: %v", err)
+	}
+	b.Scenes[0].Slugline = "WN. BARKA SZPITALNA - NOC"
+	b.Scenes[0].Synopsis = "Niedźwiedź przeszukuje kajutę."
+	b.Scenes[0].Text = "NIEDŹWIEDŹ\n(szeptem)\nZgaście latarnie. Ktoś jest na pokładzie."
+	FinalizeBook(b)
+
+	// 1. Export & Import .fountain roundtrip
+	fountainRaw := ExportScreenplayFountain(b)
+	importedFountain, err := ImportScreenplayFountain(fountainRaw, "Fallback", t.TempDir())
+	if err != nil {
+		t.Fatalf("ImportScreenplayFountain failed: %v", err)
+	}
+	if importedFountain.Title != "Nocna Szpica" || len(importedFountain.Scenes) != 3 {
+		t.Fatalf("unexpected imported fountain book: title=%q scenes=%d", importedFountain.Title, len(importedFountain.Scenes))
+	}
+	if importedFountain.Scenes[0].Slugline != "WN. BARKA SZPITALNA - NOC" || importedFountain.Scenes[0].Synopsis != "Niedźwiedź przeszukuje kajutę." {
+		t.Fatalf("unexpected scene[0] in imported fountain: %+v", importedFountain.Scenes[0])
+	}
+
+	// 2. Export & Import .fdx (Final Draft XML) roundtrip
+	fdxRaw := ExportScreenplayFDX(b)
+	if !strings.Contains(fdxRaw, `<FinalDraft DocumentType="Script"`) || !strings.Contains(fdxRaw, `Type="Scene Heading"`) {
+		t.Fatalf("invalid FDX export:\n%s", fdxRaw)
+	}
+	importedFDX, err := ImportScreenplayFDX(fdxRaw, "Fallback", t.TempDir())
+	if err != nil {
+		t.Fatalf("ImportScreenplayFDX failed: %v", err)
+	}
+	if importedFDX.Title != "Nocna Szpica" || len(importedFDX.Scenes) != 3 {
+		t.Fatalf("unexpected imported FDX book: title=%q scenes=%d", importedFDX.Title, len(importedFDX.Scenes))
+	}
+	if !strings.Contains(importedFDX.Scenes[0].Text, "NIEDŹWIEDŹ") || !strings.Contains(importedFDX.Scenes[0].Text, "Zgaście latarnie") {
+		t.Fatalf("unexpected scene[0] text in imported FDX: %q", importedFDX.Scenes[0].Text)
+	}
+
+	// 3. Treatment PDF, Book PDF, VO CSV, Actor Scripts PDF
+	treatPDF, err := ExportScreenplayTreatmentPDF(b)
+	if err != nil || !bytes.HasPrefix(treatPDF, []byte("%PDF-1.4\n")) {
+		t.Fatalf("ExportScreenplayTreatmentPDF failed: %v", err)
+	}
+	bookPDF, err := ExportBookPDF(b)
+	if err != nil || !bytes.HasPrefix(bookPDF, []byte("%PDF-1.4\n")) {
+		t.Fatalf("ExportBookPDF failed: %v", err)
+	}
+	voCSV := ExportVOTableCSV(b)
+	if !strings.Contains(voCSV, "NIEDŹWIEDŹ;(szeptem);Zgaście latarnie. Ktoś jest na pokładzie.") {
+		t.Fatalf("unexpected VO CSV output:\n%s", voCSV)
+	}
+	actorPDF, err := ExportActorScriptsPDF(b)
+	if err != nil || !bytes.HasPrefix(actorPDF, []byte("%PDF-1.4\n")) {
+		t.Fatalf("ExportActorScriptsPDF failed: %v", err)
+	}
+
+	// 4. Closed Beta Ed25519 token & build expiry gate
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("ed25519.GenerateKey: %v", err)
+	}
+	now := time.Date(2026, 11, 7, 12, 0, 0, 0, time.UTC)
+	tok, err := SignBetaAccessToken(BetaTokenClaims{
+		Holder:        "tester@mojra.pl",
+		ExpiresAtUnix: now.Add(48 * time.Hour).Unix(),
+		Edition:       "closed-beta",
+	}, priv)
+	if err != nil {
+		t.Fatalf("SignBetaAccessToken: %v", err)
+	}
+	claims, err := VerifyBetaAccessToken(tok, pub, now)
+	if err != nil || claims.Holder != "tester@mojra.pl" {
+		t.Fatalf("VerifyBetaAccessToken failed: claims=%+v err=%v", claims, err)
+	}
+	if err := CheckBetaBuildExpiry("2026-11-10", tok, hex.EncodeToString(pub), now); err != nil {
+		t.Fatalf("CheckBetaBuildExpiry valid failed: %v", err)
+	}
+	if err := CheckBetaBuildExpiry("2026-11-01", "", "", now); err == nil {
+		t.Fatalf("expected CheckBetaBuildExpiry to fail on expired build date")
 	}
 }

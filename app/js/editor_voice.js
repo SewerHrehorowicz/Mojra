@@ -2,6 +2,7 @@
 
 const voiceAudioState = {
   sceneId: "",
+  voiceSection: "01",
   voiceUrl: "",
   sampleRate: 24000,
   durationSec: 0,
@@ -367,6 +368,7 @@ function syncAllVoiceStrips() {
 async function loadVoiceStripAudio(stripEl) {
   if (!stripEl || voiceAudioState.isRecording) return;
   const sceneId = (stripEl.getAttribute("data-scene") || "").trim();
+  const voiceSection = (stripEl.getAttribute("data-voice-section") || "01").trim() || "01";
   const voiceUrl = (stripEl.getAttribute("data-voice-url") || "").trim();
   const attrStart = parseFloat(stripEl.getAttribute("data-trim-start") || "0");
   const attrEnd = parseFloat(stripEl.getAttribute("data-trim-end") || "1");
@@ -377,9 +379,14 @@ async function loadVoiceStripAudio(stripEl) {
     normEnd = 1;
   }
 
-  if (sceneId !== voiceAudioState.sceneId || voiceUrl !== voiceAudioState.voiceUrl) {
+  if (
+    sceneId !== voiceAudioState.sceneId ||
+    voiceSection !== voiceAudioState.voiceSection ||
+    voiceUrl !== voiceAudioState.voiceUrl
+  ) {
     stopVoicePlayback();
     voiceAudioState.sceneId = sceneId;
+    voiceAudioState.voiceSection = voiceSection;
     voiceAudioState.voiceUrl = voiceUrl;
     voiceAudioState.startRatio = normStart;
     voiceAudioState.endRatio = normEnd;
@@ -637,8 +644,13 @@ async function startVoiceRecording(stripEl) {
     (stripEl && (stripEl.getAttribute("data-scene") || "").trim()) ||
     voiceAudioState.sceneId;
   if (!sceneId) return;
+  const voiceSection =
+    (stripEl && (stripEl.getAttribute("data-voice-section") || "").trim()) ||
+    voiceAudioState.voiceSection ||
+    "01";
 
   voiceAudioState.sceneId = sceneId;
+  voiceAudioState.voiceSection = voiceSection;
   voiceAudioState.isRecording = true;
   voiceAudioState.recStartTime = Date.now();
   voiceAudioState.recChunks = [];
@@ -752,7 +764,10 @@ function stopVoiceRecordingAndSave() {
     voiceDecodedCache.clear();
     syncAllVoiceStrips();
     if (voiceAudioState.sceneId) {
-      sendServerAction("StopSceneVoiceCapture", { scene: voiceAudioState.sceneId });
+      sendServerAction("StopSceneVoiceCapture", {
+        scene: voiceAudioState.sceneId,
+        voice_section: voiceAudioState.voiceSection || "01"
+      });
     }
     return;
   }
@@ -807,6 +822,7 @@ function stopVoiceRecordingAndSave() {
   if (b64 && voiceAudioState.sceneId) {
     sendServerAction("SaveSceneVoiceRecording", {
       scene: voiceAudioState.sceneId,
+      voice_section: voiceAudioState.voiceSection || "01",
       pcm_b64: b64,
       sample_rate: String(sr),
       start_ratio: "0",
@@ -820,6 +836,10 @@ function commitVoiceTrimAutoSave(stripEl) {
     (stripEl && (stripEl.getAttribute("data-scene") || "").trim()) ||
     voiceAudioState.sceneId;
   if (!sceneId) return;
+  const voiceSection =
+    (stripEl && (stripEl.getAttribute("data-voice-section") || "").trim()) ||
+    voiceAudioState.voiceSection ||
+    "01";
   if (stripEl) {
     stripEl.setAttribute("data-trim-start", voiceAudioState.startRatio.toFixed(4));
     stripEl.setAttribute("data-trim-end", voiceAudioState.endRatio.toFixed(4));
@@ -827,6 +847,7 @@ function commitVoiceTrimAutoSave(stripEl) {
   }
   sendServerAction("TrimSceneVoice", {
     scene: sceneId,
+    voice_section: voiceSection,
     start_ratio: voiceAudioState.startRatio.toFixed(4),
     end_ratio: voiceAudioState.endRatio.toFixed(4),
     destructive: "false"
@@ -841,9 +862,14 @@ function commitVoiceTrimDestructive(stripEl) {
   if (voiceAudioState.startRatio <= 0.002 && voiceAudioState.endRatio >= 0.998) {
     return;
   }
+  const voiceSection =
+    (stripEl && (stripEl.getAttribute("data-voice-section") || "").trim()) ||
+    voiceAudioState.voiceSection ||
+    "01";
   stopVoicePlayback();
   const params = {
     scene: sceneId,
+    voice_section: voiceSection,
     start_ratio: voiceAudioState.startRatio.toFixed(4),
     end_ratio: voiceAudioState.endRatio.toFixed(4),
     destructive: "true"
@@ -885,6 +911,16 @@ function bindVoiceRecorderEvents() {
 
   document.addEventListener("click", (e) => {
     if (!e.target || !e.target.closest) return;
+
+    const secSelectBtn = e.target.closest('.voice-rec-section-btn[action="SelectSceneVoiceSection"]');
+    if (secSelectBtn) {
+      if (voiceAudioState.isRecording) {
+        stopVoiceRecordingAndSave();
+      } else {
+        stopVoicePlayback();
+      }
+      return;
+    }
 
     const toggleRecBtn = e.target.closest('.voice-rec-toggle-btn[action="ToggleSceneVoiceRecorder"]');
     if (toggleRecBtn) {

@@ -18,29 +18,25 @@
                                     span.form-radio-sq
                     .node-meta-row
                         span.node-meta-key {t_theme_key}
-                        button.book-setting-toggle-btn.form-toggle-btn .active?: {is_dark}
+                        button.book-setting-toggle-btn.form-toggle-btn#btn-toggle-theme .active?: {is_dark}
                             type: button
                             action: ToggleTheme
                             span.custom-select-label {theme_toggle_label}
                             span.toggle-right
-                                {if is_dark}
-                                    svg.action-icon src: /icons/theme.svg
-                                {else}
-                                    svg.action-icon src: /icons/sun.svg
+                                svg.action-icon#icon-theme-moon .hidden?: {!is_dark} src: /icons/theme.svg
+                                svg.action-icon#icon-theme-sun .hidden?: {is_dark} src: /icons/sun.svg
                                 span.toggle-switch
                                     span.toggle-thumb
                     .node-meta-row
                         span.node-meta-key {t_images_key}
-                        button.book-setting-toggle-btn.form-toggle-btn .active?: {!imageless} .is-disabled?: {imageless_locked}
+                        button.book-setting-toggle-btn.form-toggle-btn#btn-toggle-imageless .active?: {!imageless} .is-disabled?: {imageless_locked}
                             type: button
                             action: ToggleImageless
                             disabled?: {imageless_locked}
                             span.custom-select-label {imageless_toggle_label}
                             span.toggle-right
-                                {if imageless}
-                                    svg.action-icon src: /icons/image-off.svg
-                                {else}
-                                    svg.action-icon src: /icons/image.svg
+                                svg.action-icon#icon-imageless-on .hidden?: {!imageless} src: /icons/image-off.svg
+                                svg.action-icon#icon-imageless-off .hidden?: {imageless} src: /icons/image.svg
                                 span.toggle-switch
                                     span.toggle-thumb
                     .node-meta-row
@@ -57,12 +53,6 @@
                                 action: SetUIScale
                                 data-scale: large
                                 span.form-radio-label {t_scale_large}
-                                span.form-radio-sq
-                            button.form-radio-option .active?: {is_zen_ui}
-                                type: button
-                                action: SetUIScale
-                                data-scale: zen
-                                span.form-radio-label "Zen"
                                 span.form-radio-sq
                     .node-meta-row
                         span.node-meta-key {t_scroll_sensitivity_key}
@@ -711,8 +701,22 @@
                                                 svg.media-plus-icon src: /icons/mic.svg
                             {if scene_text_modal_book_narrated}
                                 {if not is_history_preview}
+                                    {if scene_text_modal_has_voice_sections}
+                                        .voice-rec-sections.modal-voice-rec-sections#modal-voice-rec-sections .hidden?: {!voice_recorder_open}
+                                            .voice-rec-sections-tabs
+                                                {for vsec in scene_text_modal_voice_sections}
+                                                    button.voice-rec-section-btn .active?: {vsec.is_active} .is-recorded?: {vsec.has_audio}
+                                                        type: button
+                                                        action: SelectSceneVoiceSection
+                                                        data-scene: "{scene_text_modal_id}"
+                                                        data-voice-section: "{vsec.key}"
+                                                        span.voice-rec-section-dot .is-recorded?: {vsec.has_audio}
+                                                        span.voice-rec-section-label {vsec.label}
+                                                        span.voice-rec-section-time {vsec.duration_label}
+                                            span.voice-rec-section-file {scene_text_modal_active_voice_section_file}
                                     .voice-rec-strip.modal-voice-rec-strip#modal-voice-rec-strip .hidden?: {!voice_recorder_open}
                                         data-scene: "{scene_text_modal_id}"
+                                        data-voice-section: "{scene_text_modal_active_voice_section_key}"
                                         data-voice-url: "{scene_text_modal_voice_url}"
                                         data-voice-file: "{scene_text_modal_current_voice}"
                                         data-trim-start: "{scene_text_modal_voice_trim_start}"
@@ -742,6 +746,7 @@
                                             type: button
                                             data-voice-trim-destructive: "true"
                                             data-scene: "{scene_text_modal_id}"
+                                            data-voice-section: "{scene_text_modal_active_voice_section_key}"
                                             data-hint: "{t_voice_trim_destructive_hint}"
                                             svg.voice-rec-btn-icon src: /icons/scissors.svg
                                         button.voice-rec-action-btn.voice-rec-rerecord-btn .hidden?: {!scene_text_modal_has_voice}
@@ -752,6 +757,7 @@
                                             type: button
                                             action: DeleteSceneVoice
                                             data-scene: "{scene_text_modal_id}"
+                                            data-voice-section: "{scene_text_modal_active_voice_section_key}"
                                             svg.voice-rec-btn-icon src: /icons/trash.svg
                         {if scene_text_modal_has_image}
                             .scene-illustration-spacer
@@ -823,6 +829,13 @@
                                                             data-scene: "{scene_text_modal_id}"
                                                             data-hint: "{cp.hint}"
                                                             {cp.label}
+                            {if is_voice_section_isolated}
+                                input
+                                    type: hidden
+                                    name: isolated_voice_section
+                                    value: "{isolated_voice_section_key}"
+                                .voice-section-isolation-bar#voice-section-isolation-bar
+                                    span.voice-section-isolation-title {isolated_voice_section_header}
                             .scene-prose-edit-wrap .hidden?: {!is_scene_preview_normal}
                                 .scene-prose.modal-scene-prose-hl#modal-scene-prose-hl .is-screenplay?: {is_screenplay_mode}
                                     aria-hidden: "true"
