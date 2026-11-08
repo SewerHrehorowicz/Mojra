@@ -195,19 +195,13 @@ func (s *Server) buildSceneVoiceSectionsView(sc *book.Scene) (hasMultiple bool, 
 			inspLabel = sec.Label
 		}
 		sectionItems[i] = map[string]any{
-			"index":           sec.Index,
 			"key":             sec.Key,
 			"kind":            sec.Kind,
 			"label":           sec.Label,
-			"short_label":     sec.ShortLabel,
 			"inspector_label": inspLabel,
-			"header_title":    sec.HeaderTitle,
-			"target_file":     sec.TargetFile,
-			"audio_file":      sec.AudioFile,
 			"audio_url":       sec.AudioURL,
 			"duration_label":  sec.DurationLabel,
 			"has_audio":       sec.HasAudio,
-			"has_trim":        sec.HasTrim,
 			"is_active":       isActive,
 		}
 	}
@@ -319,14 +313,12 @@ func (s *Server) buildEditorNodeMap(sc *book.Scene, isSelected bool) map[string]
 	hasVoiceTrim := hasVoiceFile && sc.HasVoiceTrim()
 	hasVoiceSections := false
 	activeVoiceSecKey := "01"
-	activeVoiceSecTarget := ""
 	var voiceSectionItems []map[string]any
 
 	if isSelected {
 		hasMultiSec, activeSec, secItems := s.buildSceneVoiceSectionsView(sc)
 		hasVoiceSections = hasMultiSec
 		activeVoiceSecKey = activeSec.Key
-		activeVoiceSecTarget = activeSec.TargetFile
 		voiceSectionItems = secItems
 		if hasMultiSec {
 			curVoice = activeSec.AudioFile
@@ -376,10 +368,9 @@ func (s *Server) buildEditorNodeMap(sc *book.Scene, isSelected bool) map[string]
 		"has_voice_file":            hasVoiceFile,
 		"has_voice_trim":            hasVoiceTrim,
 		"voice_options":             voiceOptions,
-		"has_voice_sections":        hasVoiceSections,
-		"active_voice_section_key":  activeVoiceSecKey,
-		"active_voice_section_file": activeVoiceSecTarget,
-		"voice_sections":            voiceSectionItems,
+		"has_voice_sections":       hasVoiceSections,
+		"active_voice_section_key": activeVoiceSecKey,
+		"voice_sections":           voiceSectionItems,
 		"name":                 sc.Name,
 		"slugline":             sc.Slugline,
 		"synopsis":             sc.Synopsis,

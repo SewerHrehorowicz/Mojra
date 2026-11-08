@@ -75,8 +75,6 @@ var jsI18nKeys = [...]string{
 	"fullscreen_enter_hint",
 	"scale_zen_hint",
 	"scale_exit_zen_hint",
-	"scale_enlarge_hint",
-	"scale_shrink_hint",
 	"imageless_locked_hint",
 	"imageless_enable_hint",
 	"imageless_disable_hint",

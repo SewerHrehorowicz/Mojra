@@ -476,7 +476,9 @@ func BuildWWW(rootDir string) error {
 		appJSPath := filepath.Join(outDir, "app.js")
 		if rawJS, jErr := os.ReadFile(appJSPath); jErr == nil {
 			jsStr := string(rawJS) + "\nwindow.__wasmBase64 = \"" + base64.StdEncoding.EncodeToString(wasmBytes) + "\";\n"
-			_ = os.WriteFile(appJSPath, []byte(jsStr), 0644)
+			if err := os.WriteFile(appJSPath, []byte(jsStr), 0644); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -500,7 +502,9 @@ func BuildWWW(rootDir string) error {
 		}
 	}
 	if rawCover, cErr := os.ReadFile(filepath.Join(rootDir, "books", "nie-boj-sie-policji-rzecznej", "images", "cover.jpg")); cErr == nil && len(rawCover) > 0 {
-		_ = os.WriteFile(filepath.Join(outDir, "cover.jpg"), rawCover, 0644)
+		if err := os.WriteFile(filepath.Join(outDir, "cover.jpg"), rawCover, 0644); err != nil {
+			return err
+		}
 	}
 	return nil
 }

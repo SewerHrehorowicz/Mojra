@@ -153,14 +153,10 @@ function showToast(message) {
 
 function syncTopbarToggleIcons() {
   const isLarge = document.body.getAttribute("data-ui-scale") === "large";
-  const scaleBtn = qs("#btn-toggle-ui-scale");
-  if (scaleBtn) {
-    scaleBtn.classList.toggle("active", isLarge);
-    setElementHint(
-      scaleBtn,
-      isLarge ? tr("scale_shrink_hint") : tr("scale_enlarge_hint")
-    );
-  }
+  qsa('button[action="SetUIScale"]').forEach((btn) => {
+    const sc = btn.getAttribute("data-scale");
+    btn.classList.toggle("active", sc === "large" ? isLarge : !isLarge);
+  });
 
   const isZen = document.body.getAttribute("data-zen") === "true";
   const zenBtn = qs("#btn-toggle-zen");
@@ -572,7 +568,7 @@ async function bootWasmPlayer(playBtn) {
     let wasmBuf = null;
     let wasmBytes = null;
     const isFileProtocol = typeof location !== "undefined" && location && location.protocol === "file:";
-    if (!isFileProtocol && typeof fetch === "function") {
+    if (!isFileProtocol && typeof fetch !== "undefined") {
       try {
         const resp = await fetch(wasmSrc);
         if (resp && resp.ok) {
@@ -1445,9 +1441,7 @@ function bindDeclarativeActionBridge() {
         return;
       }
       const topbarMenu = qs("#topbar-actions-menu");
-      const topbarToggle = qs("#btn-topbar-menu");
       if (topbarMenu) topbarMenu.classList.remove("open");
-      if (topbarToggle) topbarToggle.classList.remove("active");
       if (typeof closeCanvasContextMenu === "function") {
         closeCanvasContextMenu();
       }
@@ -1501,9 +1495,7 @@ function bindDeclarativeActionBridge() {
     }
     if (!e.target.closest("#topbar-right")) {
       const menu = qs("#topbar-actions-menu");
-      const toggleBtn = qs("#btn-topbar-menu");
       if (menu) menu.classList.remove("open");
-      if (toggleBtn) toggleBtn.classList.remove("active");
     }
 
     if (typeof isEditorTouchClickSuppressed === "function" && isEditorTouchClickSuppressed(e)) {
@@ -1712,9 +1704,7 @@ function bindDeclarativeActionBridge() {
       params.scenes = Array.from(selectedNodeIds).join(",");
     }
     const topbarMenu = qs("#topbar-actions-menu");
-    const topbarToggle = qs("#btn-topbar-menu");
     if (topbarMenu) topbarMenu.classList.remove("open");
-    if (topbarToggle) topbarToggle.classList.remove("active");
     sendServerAction(actionName, params);
   });
 

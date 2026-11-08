@@ -131,11 +131,6 @@ func resolveBaseWasmAndExecJS(rootDir string, embeddedFS fs.FS) ([]byte, string,
 	return nil, "", fmt.Errorf("brak szablonu runtime mojra.wasm")
 }
 
-// RenderWasmSplashHTML renders the minimalist Splash Screen with play.svg, title, author, description, and optional cover image (no #topbar).
-func RenderWasmSplashHTML(b *Book, wasmSrc string, playSVG string) string {
-	return renderWasmSplashHTMLWithCover(b, "", wasmSrc, playSVG)
-}
-
 func renderWasmSplashHTMLWithCover(b *Book, coverSrc string, wasmSrc string, playSVG string) string {
 	title := "Mojra"
 	author := ""
@@ -209,7 +204,9 @@ func ExportWebWASMApp(b *Book, exportDir string, rootDir string, embeddedFS fs.F
 				ext = ".jpg"
 			}
 			coverFilename = "cover" + ext
-			_ = os.WriteFile(filepath.Join(outDir, coverFilename), rawCover, 0644)
+			if err := os.WriteFile(filepath.Join(outDir, coverFilename), rawCover, 0644); err != nil {
+				return "", err
+			}
 		}
 	}
 

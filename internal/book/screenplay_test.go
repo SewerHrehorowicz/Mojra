@@ -4,11 +4,30 @@ import (
 	"bytes"
 	"crypto/ed25519"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
 )
+
+func signBetaAccessTokenForTest(claims BetaTokenClaims, privKey ed25519.PrivateKey) (string, error) {
+	if len(privKey) != ed25519.PrivateKeySize {
+		return "", fmt.Errorf("nieprawidłowy klucz prywatny Ed25519")
+	}
+	holder := strings.ReplaceAll(strings.ReplaceAll(strings.TrimSpace(claims.Holder), "\r", ""), "\n", "")
+	edition := strings.TrimSpace(claims.Edition)
+	if edition == "" {
+		edition = "closed-beta"
+	}
+	payload := fmt.Sprintf("holder=%s\nexpires=%d\nedition=%s", holder, claims.ExpiresAtUnix, edition)
+	payloadBytes := []byte(payload)
+	sig := ed25519.Sign(privKey, payloadBytes)
+	return betaTokenPrefix +
+		base64.RawURLEncoding.EncodeToString(payloadBytes) + "." +
+		base64.RawURLEncoding.EncodeToString(sig), nil
+}
 
 func TestScreenplayParserAndRoundTrip(t *testing.T) {
 	b := &Book{ID: "test-script"}
@@ -488,13 +507,13 @@ func TestFountainFDXImportExportAndMVPExports(t *testing.T) {
 		t.Fatalf("ed25519.GenerateKey: %v", err)
 	}
 	now := time.Date(2026, 11, 7, 12, 0, 0, 0, time.UTC)
-	tok, err := SignBetaAccessToken(BetaTokenClaims{
+	tok, err := signBetaAccessTokenForTest(BetaTokenClaims{
 		Holder:        "tester@mojra.pl",
 		ExpiresAtUnix: now.Add(48 * time.Hour).Unix(),
 		Edition:       "closed-beta",
 	}, priv)
 	if err != nil {
-		t.Fatalf("SignBetaAccessToken: %v", err)
+		t.Fatalf("signBetaAccessTokenForTest: %v", err)
 	}
 	claims, err := VerifyBetaAccessToken(tok, pub, now)
 	if err != nil || claims.Holder != "tester@mojra.pl" {

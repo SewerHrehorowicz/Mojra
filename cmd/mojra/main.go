@@ -3,7 +3,6 @@ package main
 import (
 	"archive/zip"
 	"bytes"
-	"context"
 	"encoding/binary"
 	"flag"
 	"fmt"
@@ -207,131 +206,6 @@ func resolveRepoRootDir() string {
 		}
 	}
 	return cwd
-}
-
-func findHeadlessPDFBrowser() string {
-	var candidates []string
-	switch runtime.GOOS {
-	case "darwin":
-		candidates = []string{
-			"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-			"/Applications/Chromium.app/Contents/MacOS/Chromium",
-			"/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
-			"/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
-		}
-	case "windows":
-		for _, base := range []string{os.Getenv("ProgramFiles"), os.Getenv("ProgramFiles(x86)"), os.Getenv("LocalAppData")} {
-			if base == "" {
-				continue
-			}
-			candidates = append(candidates,
-				filepath.Join(base, "Google", "Chrome", "Application", "chrome.exe"),
-				filepath.Join(base, "Microsoft", "Edge", "Application", "msedge.exe"),
-				filepath.Join(base, "BraveSoftware", "Brave-Browser", "Application", "brave.exe"),
-			)
-		}
-	default:
-		for _, bin := range []string{"google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "brave-browser", "microsoft-edge"} {
-			if p, err := exec.LookPath(bin); err == nil && p != "" {
-				return p
-			}
-		}
-	}
-	for _, c := range candidates {
-		if info, err := os.Stat(c); err == nil && !info.IsDir() {
-			return c
-		}
-	}
-	return ""
-}
-
-func renderHTMLFileToPDF(browserBin, htmlPath, outPDFPath string) error {
-	absHTML, err := filepath.Abs(htmlPath)
-	if err != nil {
-		return err
-	}
-	if _, err := os.Stat(absHTML); err != nil {
-		return fmt.Errorf("brak skompilowanego pliku %s: %w", absHTML, err)
-	}
-	absOutPDF, err := filepath.Abs(outPDFPath)
-	if err != nil {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Dir(absOutPDF), 0755); err != nil {
-		return err
-	}
-	tmpProfileDir, err := os.MkdirTemp("", "mojra-deck-pdf-*")
-	if err != nil {
-		return err
-	}
-	defer os.RemoveAll(tmpProfileDir)
-
-	fileURL := "file://" + filepath.ToSlash(absHTML)
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(
-		ctx,
-		browserBin,
-		"--headless=new",
-		"--disable-gpu",
-		"--disable-extensions",
-		"--disable-background-networking",
-		"--no-first-run",
-		"--no-default-browser-check",
-		"--user-data-dir="+tmpProfileDir,
-		"--no-pdf-header-footer",
-		"--print-to-pdf-no-header",
-		"--print-to-pdf="+absOutPDF,
-		fileURL,
-	)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("błąd generowania PDF (%v): %s", err, strings.TrimSpace(string(out)))
-	}
-	return nil
-}
-
-func buildDeckPDF(rootDir, customOutPath string) (string, error) {
-	browserBin := findHeadlessPDFBrowser()
-	if browserBin == "" {
-		return "", fmt.Errorf("nie znaleziono przeglądarki Chromium/Chrome/Edge/Brave do wygenerowania PDF")
-	}
-	docsDir := filepath.Join(rootDir, "docs")
-	_ = os.MkdirAll(docsDir, 0755)
-
-	outPDF := filepath.Join(docsDir, "mojra-deck-finansowy.pdf")
-	if strings.TrimSpace(customOutPath) != "" {
-		outPDF = customOutPath
-	}
-	absOutPDF, err := filepath.Abs(outPDF)
-	if err != nil {
-		return "", err
-	}
-	deckHTMLPath := filepath.Join(rootDir, "dist", "www", "deck.html")
-	if err := renderHTMLFileToPDF(browserBin, deckHTMLPath, absOutPDF); err != nil {
-		return "", err
-	}
-	if raw, rErr := os.ReadFile(absOutPDF); rErr == nil {
-		_ = os.WriteFile(filepath.Join(rootDir, "dist", "www", "mojra-deck-finansowy.pdf"), raw, 0644)
-	}
-	planHTMLPath := filepath.Join(rootDir, "dist", "www", "plan.html")
-	if _, err := os.Stat(planHTMLPath); err == nil {
-		docsPlanPDF := filepath.Join(docsDir, "mojra-plan.pdf")
-		if err := renderHTMLFileToPDF(browserBin, planHTMLPath, docsPlanPDF); err == nil {
-			if raw, rErr := os.ReadFile(docsPlanPDF); rErr == nil {
-				_ = os.WriteFile(filepath.Join(rootDir, "dist", "www", "mojra-plan.pdf"), raw, 0644)
-			}
-		}
-	}
-	przegladHTMLPath := filepath.Join(rootDir, "dist", "www", "przeglad.html")
-	if _, err := os.Stat(przegladHTMLPath); err == nil {
-		docsPrzegladPDF := filepath.Join(docsDir, "mojra-przeglad-zalozyciela.pdf")
-		if err := renderHTMLFileToPDF(browserBin, przegladHTMLPath, docsPrzegladPDF); err == nil {
-			if raw, rErr := os.ReadFile(docsPrzegladPDF); rErr == nil {
-				_ = os.WriteFile(filepath.Join(rootDir, "dist", "www", "mojra-przeglad-zalozyciela.pdf"), raw, 0644)
-			}
-		}
-	}
-	return absOutPDF, nil
 }
 
 func resolveRootDir() string {
@@ -699,8 +573,8 @@ func prepareBuildAssets(rootDir string) error {
 	fmt.Println("✓ Połączono moduły JS -> build/app/app.js")
 	fmt.Println("✓ Skompilowano bazowy runtime WASM -> build/wasm/mojra.wasm")
 	fmt.Println("✓ Zbudowano statyczną stronę WWW z zaszytym STBC w mojra.wasm -> dist/www/")
-	if findHeadlessPDFBrowser() != "" {
-		if pdfPath, pdfErr := buildDeckPDF(rootDir, ""); pdfErr == nil {
+	if tpl.FindHeadlessPDFBrowser() != "" {
+		if pdfPath, pdfErr := tpl.BuildDeckPDF(rootDir, ""); pdfErr == nil {
 			fmt.Printf("✓ Wygenerowano deck finansowy PDF -> %s\n", pdfPath)
 		}
 	}
@@ -905,8 +779,8 @@ func buildCmd(args []string) {
 			}
 			_ = book.EmbedDemoBookIntoWWW(rootDir, nil)
 		}
-		if opts.DeckOnly || findHeadlessPDFBrowser() != "" {
-			pdfPath, err := buildDeckPDF(rootDir, opts.OutPath)
+		if opts.DeckOnly || tpl.FindHeadlessPDFBrowser() != "" {
+			pdfPath, err := tpl.BuildDeckPDF(rootDir, opts.OutPath)
 			if err != nil {
 				if opts.DeckOnly {
 					fmt.Fprintf(os.Stderr, "błąd generowania decku PDF: %v\n", err)

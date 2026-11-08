@@ -19,24 +19,6 @@ type BetaTokenClaims struct {
 	Edition       string
 }
 
-// SignBetaAccessToken signs a Closed Beta access token using Ed25519 over plain key=value lines.
-func SignBetaAccessToken(claims BetaTokenClaims, privKey ed25519.PrivateKey) (string, error) {
-	if len(privKey) != ed25519.PrivateKeySize {
-		return "", fmt.Errorf("nieprawidłowy klucz prywatny Ed25519")
-	}
-	holder := strings.ReplaceAll(strings.ReplaceAll(strings.TrimSpace(claims.Holder), "\r", ""), "\n", "")
-	edition := strings.TrimSpace(claims.Edition)
-	if edition == "" {
-		edition = "closed-beta"
-	}
-	payload := fmt.Sprintf("holder=%s\nexpires=%d\nedition=%s", holder, claims.ExpiresAtUnix, edition)
-	payloadBytes := []byte(payload)
-	sig := ed25519.Sign(privKey, payloadBytes)
-	return betaTokenPrefix +
-		base64.RawURLEncoding.EncodeToString(payloadBytes) + "." +
-		base64.RawURLEncoding.EncodeToString(sig), nil
-}
-
 // VerifyBetaAccessToken verifies an Ed25519-signed Closed Beta token and checks expiration against now.
 func VerifyBetaAccessToken(token string, pubKey ed25519.PublicKey, now time.Time) (BetaTokenClaims, error) {
 	var claims BetaTokenClaims

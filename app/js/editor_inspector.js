@@ -21,12 +21,9 @@ function isEditorHistoryPreview() {
 function syncBookTitleDOM(newTitle) {
   const clean = (newTitle || "").trim();
   if (!clean) return;
-  const playerTab = qs("#tab-player");
-  if (playerTab) {
-    const lbl = qs(".tab-label", playerTab);
-    if (lbl) {
-      lbl.textContent = clean;
-    }
+  const playerTitle = qs("#topbar-book-title");
+  if (playerTitle) {
+    playerTitle.textContent = clean;
   }
   const toolbarTitle = qs("#editor-book-title");
   if (toolbarTitle) {

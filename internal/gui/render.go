@@ -41,15 +41,12 @@ func (s *Server) BuildTargetedRenderContext(targetTpl string, books []*book.Book
 		vars["imageless_attr"] = "true"
 		if imagelessLocked {
 			vars["imageless_toggle_label"] = s.tr(TrImagelessLockedLabel)
-			vars["imageless_toggle_title"] = s.tr(TrImagelessLockedHint)
 		} else {
 			vars["imageless_toggle_label"] = s.tr(TrImagelessOffLabel)
-			vars["imageless_toggle_title"] = s.tr(TrImagelessEnableHint)
 		}
 	} else {
 		vars["imageless_attr"] = "false"
 		vars["imageless_toggle_label"] = s.tr(TrImagelessOnLabel)
-		vars["imageless_toggle_title"] = s.tr(TrImagelessDisableHint)
 	}
 
 	uiScale := s.Settings.UIScale
@@ -59,12 +56,6 @@ func (s *Server) BuildTargetedRenderContext(targetTpl string, books []*book.Book
 	vars["ui_scale"] = uiScale
 	vars["is_small_ui"] = uiScale == "small"
 	vars["is_large_ui"] = uiScale == "large"
-	vars["is_non_small_ui"] = uiScale != "small"
-	if uiScale == "large" {
-		vars["ui_scale_toggle_title"] = s.tr(TrScaleShrinkHint)
-	} else {
-		vars["ui_scale_toggle_title"] = s.tr(TrScaleEnlargeHint)
-	}
 
 	autoDelay := book.NormalizeAutoChoiceDelay(s.Settings.AutoChoiceDelay)
 	vars["auto_choice_delay"] = autoDelay
@@ -82,7 +73,6 @@ func (s *Server) BuildTargetedRenderContext(targetTpl string, books []*book.Book
 
 	hasEditorBook := s.hasActiveStudioEditor()
 	vars["standalone_mode"] = s.StandaloneMode
-	vars["has_active_book"] = s.PlayerBook != nil
 	vars["has_editor_book"] = hasEditorBook
 	vars["dev_mode"] = s.DevMode
 	if s.DevMode {
@@ -146,7 +136,6 @@ func (s *Server) BuildTargetedRenderContext(targetTpl string, books []*book.Book
 		vars["editor_settings_hint"] = s.tr(TrEditorBookSettingsHint)
 	}
 
-	vars["show_reset_progress"] = view == "player" && s.PlayerBook != nil
 	showZenMode := view == "player" && s.PlayerBook != nil && !s.PlayerBook.IsScreenplay()
 	zenMode := showZenMode && s.ZenMode
 	vars["show_zen_mode"] = showZenMode
@@ -299,7 +288,6 @@ func (s *Server) populateStudioHomeContext(vars map[string]any, books []*book.Bo
 			"author":    b.Author,
 			"meta_line": formatStudioProjectMetaLine(b, lang),
 			"path_line": formatStudioProjectPathLine(b),
-			"is_packed": b.IsPacked,
 		})
 	}
 	vars["has_studio_home_projects"] = len(items) > 0

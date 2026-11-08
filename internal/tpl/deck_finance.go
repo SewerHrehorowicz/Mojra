@@ -746,7 +746,9 @@ func writeCalculatedFinanceCSV(
 	writeCSVRow(&sb, "ZYSK OPERACYJNY SPÓŁKI (EBITDA)", fmtPolishInt(int64(y1.ebitdaCompany))+" zł", fmtPolishInt(int64(y2.ebitdaCompany))+" zł", fmtPolishInt(int64(y3.ebitdaCompany))+" zł", fmtPolishInt(int64(ebitda3Y))+" zł łącznie w 3 lata")
 	writeCSVRow(&sb, "ZYSK NETTO PO PODATKU CIT (DO PODZIAŁU DYWIDENDOWEGO)", fmtPolishInt(int64(y1.netProfit))+" zł", fmtPolishInt(int64(y2.netProfit))+" zł", fmtPolishInt(int64(y3.netProfit))+" zł", fmt.Sprintf("%s zł (podział: %d%% Architekt, %d%% Biznes/BD, %d%% Inwestorzy)", fmtPolishInt(int64(netProfit3Y)), int(archEquityPct), int(bdEquityPct), int(invEquityPct)))
 
-	_ = os.WriteFile(filepath.Join(docsDir, "kalkulator-finansowy.csv"), []byte(sb.String()), 0644)
+	if err := os.WriteFile(filepath.Join(docsDir, "kalkulator-finansowy.csv"), []byte(sb.String()), 0644); err != nil {
+		return
+	}
 }
 
 func write36MonthSimulationCSV(
@@ -849,7 +851,9 @@ func write36MonthSimulationCSV(
 		fmtPolishInt(int64(invDividend3Y)),
 	)
 
-	_ = os.WriteFile(filepath.Join(docsDir, "symulacja-36-miesiecy.csv"), []byte(sb.String()), 0644)
+	if err := os.WriteFile(filepath.Join(docsDir, "symulacja-36-miesiecy.csv"), []byte(sb.String()), 0644); err != nil {
+		return
+	}
 }
 
 func fmtPolishInt(n int64) string {
@@ -994,14 +998,18 @@ func BuildDeckPDF(rootDir, customOutPath string) (string, error) {
 		return "", err
 	}
 	if raw, rErr := os.ReadFile(absOutPDF); rErr == nil {
-		_ = os.WriteFile(filepath.Join(rootDir, "dist", "www", "mojra-deck-finansowy.pdf"), raw, 0644)
+		if err := os.WriteFile(filepath.Join(rootDir, "dist", "www", "mojra-deck-finansowy.pdf"), raw, 0644); err != nil {
+			return "", err
+		}
 	}
 	planHTMLPath := filepath.Join(rootDir, "dist", "www", "plan.html")
 	if _, err := os.Stat(planHTMLPath); err == nil {
 		docsPlanPDF := filepath.Join(docsDir, "mojra-plan.pdf")
 		if err := renderHTMLFileToPDF(browserBin, planHTMLPath, docsPlanPDF); err == nil {
 			if raw, rErr := os.ReadFile(docsPlanPDF); rErr == nil {
-				_ = os.WriteFile(filepath.Join(rootDir, "dist", "www", "mojra-plan.pdf"), raw, 0644)
+				if err := os.WriteFile(filepath.Join(rootDir, "dist", "www", "mojra-plan.pdf"), raw, 0644); err != nil {
+					return "", err
+				}
 			}
 		}
 	}
@@ -1010,7 +1018,9 @@ func BuildDeckPDF(rootDir, customOutPath string) (string, error) {
 		docsPrzegladPDF := filepath.Join(docsDir, "mojra-przeglad-zalozyciela.pdf")
 		if err := renderHTMLFileToPDF(browserBin, przegladHTMLPath, docsPrzegladPDF); err == nil {
 			if raw, rErr := os.ReadFile(docsPrzegladPDF); rErr == nil {
-				_ = os.WriteFile(filepath.Join(rootDir, "dist", "www", "mojra-przeglad-zalozyciela.pdf"), raw, 0644)
+				if err := os.WriteFile(filepath.Join(rootDir, "dist", "www", "mojra-przeglad-zalozyciela.pdf"), raw, 0644); err != nil {
+					return "", err
+				}
 			}
 		}
 	}

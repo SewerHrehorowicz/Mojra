@@ -178,17 +178,6 @@ func (s *Scene) HasVoiceTrim() bool {
 	return HasVoiceTrimValues(s.VoiceTrimStart, s.VoiceTrimEnd)
 }
 
-// HasConditionalVoiceSections reports whether the scene has more than one voice section.
-func (s *Scene) HasConditionalVoiceSections() bool {
-	if s == nil {
-		return false
-	}
-	if len(s.VoiceSections) > 1 {
-		return true
-	}
-	return HasConditionalVoiceDirectives(s.Text)
-}
-
 // FindVoiceSection returns a pointer to the VoiceSection matching key, or the first section as fallback.
 func (s *Scene) FindVoiceSection(key string) *VoiceSection {
 	if s == nil || len(s.VoiceSections) == 0 {

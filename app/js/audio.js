@@ -19,7 +19,6 @@ let autoAdvanceFallbackTimer = null;
 let pendingSceneAutoPlay = false;
 let sceneAudioEndedHandled = false;
 let activePrefetchController = null;
-let nextAudioPreload = null;
 const prefetchedMediaCache = new Set();
 
 function parseSceneAudioQueue(queueAttr, fallbackUrl, fallbackTrimStart, fallbackTrimEnd) {
@@ -171,47 +170,47 @@ function mapQueueGlobalTimeToSegment(segments, currentIdx, audio, globalTimeSec)
   };
 }
 
-function preloadNextQueueSegment(segments, nextIdx) {
-  if (!segments || nextIdx < 0 || nextIdx >= segments.length) {
+function preloadNextQueueSegment(audio, segments, nextIdx) {
+  if (!audio || !segments || nextIdx < 0 || nextIdx >= segments.length) {
     return;
   }
   const nextSeg = segments[nextIdx];
   if (!nextSeg || !nextSeg.url) return;
-  if (!nextAudioPreload && typeof Audio !== "undefined") {
+  if (!audio._nextAudioPreload && typeof Audio !== "undefined") {
     try {
-      nextAudioPreload = new Audio();
+      audio._nextAudioPreload = new Audio();
     } catch (_) {
-      nextAudioPreload = null;
+      audio._nextAudioPreload = null;
     }
   }
-  if (!nextAudioPreload) return;
-  nextAudioPreload.preload = "auto";
+  if (!audio._nextAudioPreload) return;
+  audio._nextAudioPreload.preload = "auto";
   const prevPreloaded =
-    (nextAudioPreload.getAttribute && nextAudioPreload.getAttribute("data-preload-url")) || "";
+    (audio._nextAudioPreload.getAttribute && audio._nextAudioPreload.getAttribute("data-preload-url")) || "";
   if (prevPreloaded === nextSeg.url) {
     return;
   }
-  if (nextAudioPreload.setAttribute) {
-    nextAudioPreload.setAttribute("data-preload-url", nextSeg.url);
+  if (audio._nextAudioPreload.setAttribute) {
+    audio._nextAudioPreload.setAttribute("data-preload-url", nextSeg.url);
   }
-  nextAudioPreload.src = nextSeg.url;
+  audio._nextAudioPreload.src = nextSeg.url;
   const applyPreloadTrim = () => {
-    if (Number.isFinite(nextAudioPreload.duration) && nextAudioPreload.duration > 0) {
-      nextSeg.rawDurationSec = nextAudioPreload.duration;
-      nextSeg.durationSec = nextAudioPreload.duration * (nextSeg.trimEnd - nextSeg.trimStart);
+    if (Number.isFinite(audio._nextAudioPreload.duration) && audio._nextAudioPreload.duration > 0) {
+      nextSeg.rawDurationSec = audio._nextAudioPreload.duration;
+      nextSeg.durationSec = audio._nextAudioPreload.duration * (nextSeg.trimEnd - nextSeg.trimStart);
       if (nextSeg.trimStart > 0) {
         try {
-          nextAudioPreload.currentTime = nextAudioPreload.duration * nextSeg.trimStart;
+          audio._nextAudioPreload.currentTime = audio._nextAudioPreload.duration * nextSeg.trimStart;
         } catch (_) {}
       }
     }
   };
-  if (typeof nextAudioPreload.addEventListener === "function") {
-    nextAudioPreload.addEventListener("loadedmetadata", applyPreloadTrim, { once: true });
+  if (typeof audio._nextAudioPreload.addEventListener === "function") {
+    audio._nextAudioPreload.addEventListener("loadedmetadata", applyPreloadTrim, { once: true });
   }
-  if (typeof nextAudioPreload.load === "function") {
+  if (typeof audio._nextAudioPreload.load === "function") {
     try {
-      nextAudioPreload.load();
+      audio._nextAudioPreload.load();
     } catch (_) {}
   }
 }
@@ -396,15 +395,8 @@ function initAudioController(shouldAutoPlay, preservedTime) {
     audio.getAttribute("data-trim-start"),
     audio.getAttribute("data-trim-end")
   );
-  let currentSegmentIdx = 0;
+  audio._currentSegmentIndex = 0;
   let initialPositionApplied = false;
-
-  const syncAudioQueueInspectionProps = () => {
-    audio._queueSegments = queueSegments;
-    audio._currentSegmentIndex = currentSegmentIdx;
-    audio._nextAudioPreload = nextAudioPreload;
-  };
-  syncAudioQueueInspectionProps();
 
   const setBufferingState = (buffering) => {
     if (playBtn) {
@@ -413,7 +405,8 @@ function initAudioController(shouldAutoPlay, preservedTime) {
   };
 
   const updateProgressDeckUI = (globalElapsedOverride) => {
-    const totalDur = getQueueTotalDuration(queueSegments, currentSegmentIdx, audio);
+    const curSegIdx = audio._currentSegmentIndex || 0;
+    const totalDur = getQueueTotalDuration(queueSegments, curSegIdx, audio);
     const tot = qs("#audio-time-total");
     if (tot && totalDur > 0) {
       tot.textContent = formatSeconds(totalDur);
@@ -421,7 +414,7 @@ function initAudioController(shouldAutoPlay, preservedTime) {
     const globalCur =
       globalElapsedOverride !== undefined
         ? Math.max(0, Math.min(totalDur || globalElapsedOverride, globalElapsedOverride))
-        : getQueueCurrentElapsed(queueSegments, currentSegmentIdx, audio);
+        : getQueueCurrentElapsed(queueSegments, curSegIdx, audio);
     const curEl = qs("#audio-time-current");
     if (curEl) {
       curEl.textContent = formatSeconds(globalCur);
@@ -437,8 +430,8 @@ function initAudioController(shouldAutoPlay, preservedTime) {
     if (!queueSegments || targetIdx < 0 || targetIdx >= queueSegments.length) {
       return false;
     }
-    currentSegmentIdx = targetIdx;
-    const seg = queueSegments[currentSegmentIdx];
+    audio._currentSegmentIndex = targetIdx;
+    const seg = queueSegments[targetIdx];
     audio.setAttribute("data-audio-url", seg.url);
     audio.setAttribute("data-trim-start", seg.trimStart.toFixed(4));
     audio.setAttribute("data-trim-end", seg.trimEnd.toFixed(4));
@@ -453,7 +446,8 @@ function initAudioController(shouldAutoPlay, preservedTime) {
       }
     }
     const applySegmentSeek = () => {
-      const b = getQueueSegmentEffectiveBounds(queueSegments, currentSegmentIdx, audio, currentSegmentIdx);
+      const idx = audio._currentSegmentIndex || 0;
+      const b = getQueueSegmentEffectiveBounds(queueSegments, idx, audio, idx);
       const targetRaw = b.startSec + (Number(localOffsetSec) || 0);
       try {
         audio.currentTime = targetRaw;
@@ -464,8 +458,7 @@ function initAudioController(shouldAutoPlay, preservedTime) {
     if (srcChanged && !(audio.duration > 0)) {
       audio.addEventListener("loadedmetadata", applySegmentSeek, { once: true });
     }
-    preloadNextQueueSegment(queueSegments, currentSegmentIdx + 1);
-    syncAudioQueueInspectionProps();
+    preloadNextQueueSegment(audio, queueSegments, targetIdx + 1);
     if (autoPlayAfterSwitch) {
       pendingSceneAutoPlay = true;
       setPlayButtonVisual(true);
@@ -493,7 +486,7 @@ function initAudioController(shouldAutoPlay, preservedTime) {
       audio.getAttribute("data-trim-start"),
       audio.getAttribute("data-trim-end")
     );
-    currentSegmentIdx = 0;
+    audio._currentSegmentIndex = 0;
     sceneAudioEndedHandled = false;
     const curEl = qs("#audio-time-current");
     const totEl = qs("#audio-time-total");
@@ -507,12 +500,12 @@ function initAudioController(shouldAutoPlay, preservedTime) {
       switchQueueSegment(0, 0, false);
     } else {
       audio.removeAttribute("src");
-      syncAudioQueueInspectionProps();
     }
   };
 
   const applyInitialPositionAndTotal = () => {
-    const totalDur = getQueueTotalDuration(queueSegments, currentSegmentIdx, audio);
+    const curSegIdx = audio._currentSegmentIndex || 0;
+    const totalDur = getQueueTotalDuration(queueSegments, curSegIdx, audio);
     const tot = qs("#audio-time-total");
     if (tot && totalDur > 0) {
       tot.textContent = formatSeconds(totalDur);
@@ -526,8 +519,8 @@ function initAudioController(shouldAutoPlay, preservedTime) {
             ? resumeTime
             : 0;
       if (targetResume > 0.2 && targetResume < totalDur - 0.1) {
-        const mapped = mapQueueGlobalTimeToSegment(queueSegments, currentSegmentIdx, audio, targetResume);
-        if (mapped.index !== currentSegmentIdx) {
+        const mapped = mapQueueGlobalTimeToSegment(queueSegments, curSegIdx, audio, targetResume);
+        if (mapped.index !== curSegIdx) {
           switchQueueSegment(mapped.index, mapped.localOffset, shouldAutoPlay);
           return;
         }
@@ -535,7 +528,7 @@ function initAudioController(shouldAutoPlay, preservedTime) {
           audio.currentTime = mapped.rawAudioTime;
         } catch (_) {}
       } else {
-        const b = getQueueSegmentEffectiveBounds(queueSegments, currentSegmentIdx, audio, currentSegmentIdx);
+        const b = getQueueSegmentEffectiveBounds(queueSegments, curSegIdx, audio, curSegIdx);
         if (b.startSec > 0 && audio.currentTime < b.startSec) {
           try {
             audio.currentTime = b.startSec;
@@ -556,8 +549,7 @@ function initAudioController(shouldAutoPlay, preservedTime) {
     audio.preload = "auto";
     audio.src = url;
     audio.playbackRate = speed;
-    preloadNextQueueSegment(queueSegments, 1);
-    syncAudioQueueInspectionProps();
+    preloadNextQueueSegment(audio, queueSegments, 1);
     if (audio.readyState < 4) {
       setBufferingState(true);
       const clearBuffering = () => setBufferingState(false);
@@ -567,7 +559,7 @@ function initAudioController(shouldAutoPlay, preservedTime) {
     }
     audio.addEventListener("loadedmetadata", applyInitialPositionAndTotal, { once: true });
     audio.load();
-    if (audio.duration > 0 || getQueueTotalDuration(queueSegments, currentSegmentIdx, audio) > 0) {
+    if (audio.duration > 0 || getQueueTotalDuration(queueSegments, audio._currentSegmentIndex || 0, audio) > 0) {
       applyInitialPositionAndTotal();
     }
     if (shouldAutoPlay) {
@@ -579,7 +571,8 @@ function initAudioController(shouldAutoPlay, preservedTime) {
         autoPlayStarted = true;
         setBufferingState(false);
         audio.playbackRate = speed;
-        const bounds = getQueueSegmentEffectiveBounds(queueSegments, currentSegmentIdx, audio, currentSegmentIdx);
+        const idx = audio._currentSegmentIndex || 0;
+        const bounds = getQueueSegmentEffectiveBounds(queueSegments, idx, audio, idx);
         if (bounds.startSec > 0 && audio.currentTime < bounds.startSec) {
           try {
             audio.currentTime = bounds.startSec;
@@ -619,9 +612,10 @@ function initAudioController(shouldAutoPlay, preservedTime) {
   scheduleCurrentSceneMediaPrefetch(audio);
 
   const handleSegmentOrQueueReachedEnd = () => {
-    if (currentSegmentIdx + 1 < queueSegments.length) {
+    const curSegIdx = audio._currentSegmentIndex || 0;
+    if (curSegIdx + 1 < queueSegments.length) {
       sceneAudioEndedHandled = false;
-      switchQueueSegment(currentSegmentIdx + 1, 0, true);
+      switchQueueSegment(curSegIdx + 1, 0, true);
       return;
     }
     if (sceneAudioEndedHandled) return;
@@ -631,7 +625,7 @@ function initAudioController(shouldAutoPlay, preservedTime) {
       audio.pause();
     }
     setPlayButtonVisual(false);
-    const totalDur = getQueueTotalDuration(queueSegments, currentSegmentIdx, audio);
+    const totalDur = getQueueTotalDuration(queueSegments, curSegIdx, audio);
     const cur = qs("#audio-time-current");
     if (cur && totalDur > 0) {
       cur.textContent = formatSeconds(totalDur);
@@ -646,8 +640,9 @@ function initAudioController(shouldAutoPlay, preservedTime) {
 
   if (playBtn) {
     playBtn.addEventListener("click", () => {
+      const curSegIdx = audio._currentSegmentIndex || 0;
       const currentUrl =
-        (queueSegments.length > 0 && queueSegments[currentSegmentIdx] && queueSegments[currentSegmentIdx].url) ||
+        (queueSegments.length > 0 && queueSegments[curSegIdx] && queueSegments[curSegIdx].url) ||
         audio.getAttribute("data-audio-url") ||
         "";
       if (!currentUrl) {
@@ -680,7 +675,7 @@ function initAudioController(shouldAutoPlay, preservedTime) {
           audio.src = currentUrl;
           audio.load();
         }
-        const bounds = getQueueSegmentEffectiveBounds(queueSegments, currentSegmentIdx, audio, currentSegmentIdx);
+        const bounds = getQueueSegmentEffectiveBounds(queueSegments, curSegIdx, audio, curSegIdx);
         if (
           wasAtQueueEnd ||
           audio.ended ||
@@ -712,19 +707,20 @@ function initAudioController(shouldAutoPlay, preservedTime) {
     if (pendingSceneAutoPlay) return;
     setPlayButtonVisual(false);
     if (!audio.ended && !sceneAudioEndedHandled && audio.currentTime > 0) {
-      const globalElapsed = getQueueCurrentElapsed(queueSegments, currentSegmentIdx, audio);
+      const globalElapsed = getQueueCurrentElapsed(queueSegments, audio._currentSegmentIndex || 0, audio);
       sendServerAction("SaveAudioTime", { time: Math.floor(globalElapsed * 10) / 10 });
     }
   });
   audio.addEventListener("loadedmetadata", applyInitialPositionAndTotal);
 
   audio.addEventListener("timeupdate", () => {
-    const bounds = getQueueSegmentEffectiveBounds(queueSegments, currentSegmentIdx, audio, currentSegmentIdx);
+    const curSegIdx = audio._currentSegmentIndex || 0;
+    const bounds = getQueueSegmentEffectiveBounds(queueSegments, curSegIdx, audio, curSegIdx);
     if (bounds.endRatio < 0.999 && bounds.endSec > 0 && audio.currentTime >= bounds.endSec) {
       handleSegmentOrQueueReachedEnd();
       return;
     }
-    const globalElapsed = getQueueCurrentElapsed(queueSegments, currentSegmentIdx, audio);
+    const globalElapsed = getQueueCurrentElapsed(queueSegments, curSegIdx, audio);
     updateProgressDeckUI(globalElapsed);
     const now = Date.now();
     if (now - lastAudioSaveAt > 2000 && !sceneAudioEndedHandled) {
@@ -744,11 +740,12 @@ function initAudioController(shouldAutoPlay, preservedTime) {
       sceneAudioEndedHandled = false;
       const val = parseFloat(slider.value) || 0;
       slider.style.setProperty("--seek-pct", (val / 10).toFixed(1) + "%");
-      const totalDur = getQueueTotalDuration(queueSegments, currentSegmentIdx, audio);
+      const curSegIdx = audio._currentSegmentIndex || 0;
+      const totalDur = getQueueTotalDuration(queueSegments, curSegIdx, audio);
       if (totalDur > 0) {
         const targetGlobalSec = (val / 1000) * totalDur;
-        const mapped = mapQueueGlobalTimeToSegment(queueSegments, currentSegmentIdx, audio, targetGlobalSec);
-        if (mapped.index !== currentSegmentIdx) {
+        const mapped = mapQueueGlobalTimeToSegment(queueSegments, curSegIdx, audio, targetGlobalSec);
+        if (mapped.index !== curSegIdx) {
           const wasPlaying = !audio.paused || pendingSceneAutoPlay;
           switchQueueSegment(mapped.index, mapped.localOffset, wasPlaying);
         } else {
@@ -761,9 +758,10 @@ function initAudioController(shouldAutoPlay, preservedTime) {
       }
     });
     slider.addEventListener("change", () => {
-      const totalDur = getQueueTotalDuration(queueSegments, currentSegmentIdx, audio);
+      const curSegIdx = audio._currentSegmentIndex || 0;
+      const totalDur = getQueueTotalDuration(queueSegments, curSegIdx, audio);
       if (totalDur > 0) {
-        const globalElapsed = getQueueCurrentElapsed(queueSegments, currentSegmentIdx, audio);
+        const globalElapsed = getQueueCurrentElapsed(queueSegments, curSegIdx, audio);
         sendServerAction("SaveAudioTime", { time: Math.floor(globalElapsed * 10) / 10 });
       }
     });
