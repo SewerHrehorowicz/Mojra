@@ -329,6 +329,9 @@ func TestAndroidToolchainAndAPKPackagingInvariants(t *testing.T) {
 	for _, want := range []string{
 		`android.permission.INTERNET`,
 		`android.permission.RECORD_AUDIO`,
+		`android.permission.MODIFY_AUDIO_SETTINGS`,
+		`android:icon="@mipmap/ic_launcher"`,
+		`android:roundIcon="@mipmap/ic_launcher_round"`,
 		`android:extractNativeLibs="true"`,
 		`android:targetSdkVersion="35"`,
 	} {
@@ -337,10 +340,48 @@ func TestAndroidToolchainAndAPKPackagingInvariants(t *testing.T) {
 		}
 	}
 
+	resTmp := filepath.Join(t.TempDir(), "res")
+	if err := writeAndroidLauncherResources(resTmp); err != nil {
+		t.Fatalf("writeAndroidLauncherResources failed: %v", err)
+	}
+	for _, relPath := range []string{
+		filepath.Join("mipmap-anydpi-v26", "ic_launcher.xml"),
+		filepath.Join("mipmap-anydpi-v26", "ic_launcher_round.xml"),
+		filepath.Join("mipmap-xxxhdpi", "ic_launcher_background.png"),
+		filepath.Join("mipmap-xxxhdpi", "ic_launcher_foreground.png"),
+		filepath.Join("mipmap-xxxhdpi", "ic_launcher.png"),
+		filepath.Join("mipmap-xxxhdpi", "ic_launcher_round.png"),
+	} {
+		if info, err := os.Stat(filepath.Join(resTmp, relPath)); err != nil || info.Size() == 0 {
+			t.Fatalf("expected non-empty Android launcher resource %s: err=%v", relPath, err)
+		}
+	}
+	fgFile, err := os.Open(filepath.Join(resTmp, "mipmap-xxxhdpi", "ic_launcher_foreground.png"))
+	if err != nil {
+		t.Fatalf("Open ic_launcher_foreground.png failed: %v", err)
+	}
+	defer fgFile.Close()
+	fgImg, err := png.Decode(fgFile)
+	if err != nil {
+		t.Fatalf("png.Decode ic_launcher_foreground.png failed: %v", err)
+	}
+	if fgImg.Bounds().Dx() != 432 || fgImg.Bounds().Dy() != 432 {
+		t.Fatalf("expected 432x432 adaptive foreground icon, got %v", fgImg.Bounds())
+	}
+	_, _, _, cornerA := fgImg.At(2, 2).RGBA()
+	if cornerA != 0xffff {
+		t.Fatalf("expected full-bleed opaque adaptive icon corner (no inset tile margin), got alpha=%d", cornerA)
+	}
+
 	javaSrc := buildAndroidMainActivityJava()
 	for _, want := range []string{
 		`pb.environment().put("MOJRA_DATA_DIR", filesDir.getAbsolutePath());`,
+		`pb.environment().put("MOJRA_ANDROID_APK", "1");`,
 		`pb.environment().put("HOME", filesDir.getAbsolutePath());`,
+		`webView.addJavascriptInterface(new MojraAndroidBridge(), "mojraAndroid");`,
+		`startAudioCapture()`,
+		`pollAudioPeak()`,
+		`stopAudioCaptureBase64()`,
 		`onPermissionRequest`,
 		`PermissionRequest.RESOURCE_AUDIO_CAPTURE`,
 		`onShowFileChooser`,

@@ -1453,9 +1453,11 @@ func buildAndroidManifestXML() string {
     <uses-sdk android:minSdkVersion="24" android:targetSdkVersion="35" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <application
         android:label="Mojra"
         android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:usesCleartextTraffic="true"
         android:hardwareAccelerated="true"
         android:extractNativeLibs="true"
@@ -1481,10 +1483,15 @@ import android.Manifest;
 import android.app.Activity;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.media.AudioFormat;
+import android.media.AudioRecord;
+import android.media.MediaRecorder;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.util.Base64;
+import android.webkit.JavascriptInterface;
 import android.webkit.PermissionRequest;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
@@ -1495,6 +1502,8 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.net.Socket;
+import java.util.Arrays;
+import java.util.Locale;
 
 public class MainActivity extends Activity {
     private static Process serverProcess;
@@ -1505,6 +1514,17 @@ public class MainActivity extends Activity {
     private static final int REQ_FILE_CHOOSER = 1001;
     private static final int REQ_RECORD_AUDIO = 1002;
 
+    private final Object audioLock = new Object();
+    private AudioRecord audioRecord;
+    private Thread audioRecordThread;
+    private volatile boolean isAudioCapturing = false;
+    private volatile boolean audioPermissionPending = false;
+    private volatile boolean audioPermissionDenied = false;
+    private volatile float lastAudioPeak = 0.0f;
+    private volatile int activeAudioSampleRate = 24000;
+    private short[] audioPCMBuf = new short[0];
+    private int audioPCMLen = 0;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -1514,6 +1534,7 @@ public class MainActivity extends Activity {
         ws.setDomStorageEnabled(true);
         ws.setAllowFileAccess(true);
         ws.setMediaPlaybackRequiresUserGesture(false);
+        webView.addJavascriptInterface(new MojraAndroidBridge(), "mojraAndroid");
         webView.setWebViewClient(new WebViewClient());
         webView.setWebChromeClient(new WebChromeClient() {
             @Override
@@ -1558,16 +1579,211 @@ public class MainActivity extends Activity {
         }).start();
     }
 
+    private boolean startAndroidAudioRecordLocked() {
+        stopAndroidAudioRecordLocked();
+        int[] candidateRates = new int[]{24000, 16000, 44100, 48000};
+        int[] sources = new int[]{MediaRecorder.AudioSource.MIC, MediaRecorder.AudioSource.DEFAULT};
+        AudioRecord rec = null;
+        int chosenRate = 24000;
+        int chosenBufBytes = 0;
+
+        outer:
+        for (int src : sources) {
+            for (int sr : candidateRates) {
+                int minBuf = AudioRecord.getMinBufferSize(sr, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT);
+                if (minBuf <= 0) {
+                    continue;
+                }
+                int bufBytes = Math.max(minBuf * 2, (sr / 5) * 2);
+                try {
+                    AudioRecord candidate = new AudioRecord(src, sr, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, bufBytes);
+                    if (candidate.getState() == AudioRecord.STATE_INITIALIZED) {
+                        candidate.startRecording();
+                        if (candidate.getRecordingState() == AudioRecord.RECORDSTATE_RECORDING) {
+                            rec = candidate;
+                            chosenRate = sr;
+                            chosenBufBytes = bufBytes;
+                            break outer;
+                        }
+                    }
+                    candidate.release();
+                } catch (Exception ignored) {
+                }
+            }
+        }
+        if (rec == null) {
+            return false;
+        }
+        activeAudioSampleRate = chosenRate;
+        lastAudioPeak = 0.0f;
+        audioPCMLen = 0;
+        int minCap = chosenRate * 60;
+        if (audioPCMBuf.length < minCap) {
+            audioPCMBuf = new short[minCap];
+        }
+        audioRecord = rec;
+        isAudioCapturing = true;
+        final AudioRecord activeRec = rec;
+        final int readSamples = Math.max(512, Math.min(2048, chosenBufBytes / 4));
+        final int maxSamples = chosenRate * 1800;
+        final int rateCap = chosenRate;
+        audioRecordThread = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                short[] temp = new short[readSamples];
+                while (isAudioCapturing) {
+                    int n = activeRec.read(temp, 0, temp.length);
+                    if (n <= 0) {
+                        continue;
+                    }
+                    float maxAbs = 0.0f;
+                    for (int i = 0; i < n; i++) {
+                        float a = Math.abs((float) temp[i] / 32768.0f);
+                        if (a > maxAbs) {
+                            maxAbs = a;
+                        }
+                    }
+                    float scaled = maxAbs * 1.8f;
+                    if (scaled > 1.0f) {
+                        scaled = 1.0f;
+                    }
+                    synchronized (audioLock) {
+                        if (!isAudioCapturing || audioRecord != activeRec) {
+                            break;
+                        }
+                        lastAudioPeak = scaled;
+                        if (audioPCMLen + n <= maxSamples) {
+                            if (audioPCMLen + n > audioPCMBuf.length) {
+                                int newCap = Math.max(rateCap * 60, audioPCMBuf.length * 2);
+                                while (newCap < audioPCMLen + n) {
+                                    newCap *= 2;
+                                }
+                                audioPCMBuf = Arrays.copyOf(audioPCMBuf, newCap);
+                            }
+                            System.arraycopy(temp, 0, audioPCMBuf, audioPCMLen, n);
+                            audioPCMLen += n;
+                        }
+                    }
+                }
+            }
+        }, "MojraAudioRecord");
+        audioRecordThread.start();
+        return true;
+    }
+
+    private void stopAndroidAudioRecordLocked() {
+        isAudioCapturing = false;
+        AudioRecord rec = audioRecord;
+        audioRecord = null;
+        if (rec != null) {
+            try {
+                rec.stop();
+            } catch (Exception ignored) {
+            }
+            try {
+                rec.release();
+            } catch (Exception ignored) {
+            }
+        }
+    }
+
+    private class MojraAndroidBridge {
+        @JavascriptInterface
+        public int startAudioCapture() {
+            synchronized (audioLock) {
+                audioPermissionDenied = false;
+                if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                    audioPermissionPending = true;
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, REQ_RECORD_AUDIO);
+                        }
+                    });
+                    return 2;
+                }
+                audioPermissionPending = false;
+                return startAndroidAudioRecordLocked() ? 1 : -1;
+            }
+        }
+
+        @JavascriptInterface
+        public String pollAudioPeak() {
+            if (audioPermissionPending) {
+                return "pending";
+            }
+            if (audioPermissionDenied) {
+                return "denied";
+            }
+            if (!isAudioCapturing) {
+                return "stopped";
+            }
+            return String.format(Locale.US, "%.3f", lastAudioPeak);
+        }
+
+        @JavascriptInterface
+        public int getAudioSampleRate() {
+            return activeAudioSampleRate;
+        }
+
+        @JavascriptInterface
+        public String stopAudioCaptureBase64() {
+            Thread t;
+            synchronized (audioLock) {
+                audioPermissionPending = false;
+                t = audioRecordThread;
+                audioRecordThread = null;
+                stopAndroidAudioRecordLocked();
+            }
+            if (t != null) {
+                try {
+                    t.join(400);
+                } catch (Exception ignored) {
+                }
+            }
+            synchronized (audioLock) {
+                int count = audioPCMLen;
+                audioPCMLen = 0;
+                lastAudioPeak = 0.0f;
+                if (count <= 0) {
+                    return "";
+                }
+                byte[] bytes = new byte[count * 2];
+                for (int i = 0; i < count; i++) {
+                    short v = audioPCMBuf[i];
+                    bytes[i * 2] = (byte) (v & 0xff);
+                    bytes[i * 2 + 1] = (byte) ((v >> 8) & 0xff);
+                }
+                return Base64.encodeToString(bytes, Base64.NO_WRAP);
+            }
+        }
+    }
+
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        if (requestCode == REQ_RECORD_AUDIO && pendingWebPermissionRequest != null) {
-            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                pendingWebPermissionRequest.grant(new String[]{PermissionRequest.RESOURCE_AUDIO_CAPTURE});
-            } else {
-                pendingWebPermissionRequest.deny();
+        if (requestCode == REQ_RECORD_AUDIO) {
+            boolean granted = grantResults != null && grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED;
+            if (pendingWebPermissionRequest != null) {
+                if (granted) {
+                    pendingWebPermissionRequest.grant(new String[]{PermissionRequest.RESOURCE_AUDIO_CAPTURE});
+                } else {
+                    pendingWebPermissionRequest.deny();
+                }
+                pendingWebPermissionRequest = null;
             }
-            pendingWebPermissionRequest = null;
+            synchronized (audioLock) {
+                if (audioPermissionPending) {
+                    audioPermissionPending = false;
+                    if (granted) {
+                        if (!startAndroidAudioRecordLocked()) {
+                            audioPermissionDenied = true;
+                        }
+                    } else {
+                        audioPermissionDenied = true;
+                    }
+                }
+            }
         }
     }
 
@@ -1621,6 +1837,7 @@ public class MainActivity extends Activity {
                 );
                 pb.directory(filesDir);
                 pb.environment().put("ST_NO_WINDOW", "1");
+                pb.environment().put("MOJRA_ANDROID_APK", "1");
                 pb.environment().put("MOJRA_DATA_DIR", filesDir.getAbsolutePath());
                 pb.environment().put("HOME", filesDir.getAbsolutePath());
                 serverProcess = pb.start();
@@ -1649,6 +1866,9 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        synchronized (audioLock) {
+            stopAndroidAudioRecordLocked();
+        }
         if (isFinishing() && serverProcess != null) {
             serverProcess.destroy();
             serverProcess = null;
@@ -1673,17 +1893,13 @@ func packageAndroidBundle(rootDir string, archBins map[string]string) error {
 
 	srcDir := filepath.Join(workDir, "src", "pl", "mojra", "app")
 	classesDir := filepath.Join(workDir, "classes")
-	resDir := filepath.Join(workDir, "res", "mipmap-xxxhdpi")
 	assetsBooksDir := filepath.Join(workDir, "assets", "books")
 	_ = os.MkdirAll(srcDir, 0755)
 	_ = os.MkdirAll(classesDir, 0755)
-	_ = os.MkdirAll(resDir, 0755)
 	_ = os.MkdirAll(assetsBooksDir, 0755)
 
-	if pngIcon, err := encodeIconPNG(192); err == nil {
-		if wErr := os.WriteFile(filepath.Join(resDir, "ic_launcher.png"), pngIcon, 0644); wErr != nil {
-			return wErr
-		}
+	if err := writeAndroidLauncherResources(filepath.Join(workDir, "res")); err != nil {
+		return err
 	}
 	if err := packageBooksForDist(filepath.Join(rootDir, "books"), assetsBooksDir); err != nil {
 		return err
@@ -2006,6 +2222,192 @@ func encodeIconPNG(size int) ([]byte, error) {
 		return nil, err
 	}
 	return pngBuf.Bytes(), nil
+}
+
+func buildAndroidAdaptiveIconXML() string {
+	return `<?xml version="1.0" encoding="utf-8"?>
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@mipmap/ic_launcher_background" />
+    <foreground android:drawable="@mipmap/ic_launcher_foreground" />
+</adaptive-icon>
+`
+}
+
+// renderAndroidIcon renders a full-bleed Android launcher icon without the desktop squircle tile border,
+// so Android's circular/adaptive launcher mask fills 100% of the icon instead of shrinking a tile inside a circle.
+func renderAndroidIcon(size int, symbolZoom float64, drawSymbol bool, circularMask bool) *image.RGBA {
+	img := image.NewRGBA(image.Rect(0, 0, size, size))
+	scale := 512.0 / float64(size)
+	if symbolZoom <= 0 {
+		symbolZoom = 1.0
+	}
+	invZoom := 1.0 / symbolZoom
+	aa := 0.45 * scale * invZoom
+	mainHalf := math.Max(6.0, 0.75*scale*invZoom)
+	midHalf := math.Max(4.8, 0.65*scale*invZoom)
+
+	smoothAlpha := func(dist float64) float64 {
+		if dist >= aa {
+			return 0.0
+		}
+		if dist <= -aa {
+			return 1.0
+		}
+		return 0.5 - dist/(2.0*aa)
+	}
+
+	fgWhite := color.RGBA{R: 255, G: 255, B: 255, A: 255}
+
+	sampleAt := func(fx, fy float64) (float64, float64, float64, float64) {
+		bgAlpha := 1.0
+		if circularMask {
+			distCircle := math.Hypot(fx-256.0, fy-256.0) - 248.0
+			bgAlpha = smoothAlpha(distCircle)
+			if bgAlpha <= 0 {
+				return 0, 0, 0, 0
+			}
+		}
+
+		tGrad := math.Max(0.0, math.Min(1.0, fy/512.0))
+		bgCol := color.RGBA{
+			R: uint8(14.0 - 8.0*tGrad),
+			G: uint8(14.0 - 8.0*tGrad),
+			B: uint8(16.0 - 8.0*tGrad),
+			A: 255,
+		}
+		col := bgCol
+
+		if drawSymbol {
+			sx := 256.0 + (fx-256.0)*invZoom
+			sy := 256.0 + (fy-256.0)*invZoom
+
+			const (
+				xL   = 141.0
+				xM   = 256.0
+				xR   = 371.0
+				yTop = 135.0
+				yMid = 256.0
+				yBot = 377.0
+				rOut = 23.0
+			)
+
+			distLines := sdCapsule(sx, sy, xL, yTop, xL, yBot, mainHalf)
+			distLines = math.Min(distLines, sdCapsule(sx, sy, xR, yTop, xR, yBot, mainHalf))
+			distLines = math.Min(distLines, sdCapsule(sx, sy, xL, yTop, xM, yMid, mainHalf))
+			distLines = math.Min(distLines, sdCapsule(sx, sy, xR, yTop, xM, yMid, mainHalf))
+			distLines = math.Min(distLines, sdCapsule(sx, sy, xM, yMid, xM, yBot, midHalf))
+
+			distBalls := math.Hypot(sx-xL, sy-yTop) - rOut
+			distBalls = math.Min(distBalls, math.Hypot(sx-xL, sy-yBot)-rOut)
+			distBalls = math.Min(distBalls, math.Hypot(sx-xR, sy-yBot)-rOut)
+
+			col = blendRGBA(col, fgWhite, smoothAlpha(math.Min(distLines, distBalls)))
+
+			dTopRight := math.Hypot(sx-xR, sy-yTop)
+			col = blendRGBA(col, bgCol, smoothAlpha(dTopRight-rOut))
+			ringHalfTR := math.Max(5.4, 0.65*scale*invZoom)
+			dRingTR := math.Abs(dTopRight-(rOut-ringHalfTR)) - ringHalfTR
+			col = blendRGBA(col, fgWhite, smoothAlpha(dRingTR))
+
+			const rCenterOut = 35.5
+			dCenter := math.Hypot(sx-xM, sy-yMid)
+			col = blendRGBA(col, bgCol, smoothAlpha(dCenter-rCenterOut))
+			ringHalfC := math.Max(5.8, 0.70*scale*invZoom)
+			dRingC := math.Abs(dCenter-(rCenterOut-ringHalfC)) - ringHalfC
+			dDotC := dCenter - 13.6
+			col = blendRGBA(col, fgWhite, smoothAlpha(math.Min(dRingC, dDotC)))
+		}
+
+		return float64(col.R) * bgAlpha, float64(col.G) * bgAlpha, float64(col.B) * bgAlpha, bgAlpha
+	}
+
+	offsets := [2]float64{0.25, 0.75}
+	for y := 0; y < size; y++ {
+		for x := 0; x < size; x++ {
+			var rSum, gSum, bSum, aSum float64
+			for _, oy := range offsets {
+				for _, ox := range offsets {
+					r, g, b, a := sampleAt((float64(x)+ox)*scale, (float64(y)+oy)*scale)
+					rSum += r
+					gSum += g
+					bSum += b
+					aSum += a
+				}
+			}
+			aAvg := aSum / 4.0
+			if aAvg <= 0 {
+				continue
+			}
+			img.SetRGBA(x, y, color.RGBA{
+				R: uint8(math.Min(255, math.Round(rSum/(4.0*aAvg)))),
+				G: uint8(math.Min(255, math.Round(gSum/(4.0*aAvg)))),
+				B: uint8(math.Min(255, math.Round(bSum/(4.0*aAvg)))),
+				A: uint8(math.Min(255, math.Round(255.0*aAvg))),
+			})
+		}
+	}
+	return img
+}
+
+func encodeAndroidIconPNG(size int, symbolZoom float64, drawSymbol bool, circularMask bool) ([]byte, error) {
+	img := renderAndroidIcon(size, symbolZoom, drawSymbol, circularMask)
+	var pngBuf bytes.Buffer
+	if err := png.Encode(&pngBuf, img); err != nil {
+		return nil, err
+	}
+	return pngBuf.Bytes(), nil
+}
+
+func writeAndroidLauncherResources(resRootDir string) error {
+	xxxhdpiDir := filepath.Join(resRootDir, "mipmap-xxxhdpi")
+	anydpiDir := filepath.Join(resRootDir, "mipmap-anydpi-v26")
+	if err := os.MkdirAll(xxxhdpiDir, 0755); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(anydpiDir, 0755); err != nil {
+		return err
+	}
+
+	bgPNG, err := encodeAndroidIconPNG(432, 1.0, false, false)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(xxxhdpiDir, "ic_launcher_background.png"), bgPNG, 0644); err != nil {
+		return err
+	}
+
+	fgPNG, err := encodeAndroidIconPNG(432, 0.72, true, false)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(xxxhdpiDir, "ic_launcher_foreground.png"), fgPNG, 0644); err != nil {
+		return err
+	}
+
+	legacyPNG, err := encodeAndroidIconPNG(192, 0.92, true, false)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(xxxhdpiDir, "ic_launcher.png"), legacyPNG, 0644); err != nil {
+		return err
+	}
+
+	roundPNG, err := encodeAndroidIconPNG(192, 0.88, true, true)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(xxxhdpiDir, "ic_launcher_round.png"), roundPNG, 0644); err != nil {
+		return err
+	}
+
+	xmlBytes := []byte(buildAndroidAdaptiveIconXML())
+	if err := os.WriteFile(filepath.Join(anydpiDir, "ic_launcher.xml"), xmlBytes, 0644); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(anydpiDir, "ic_launcher_round.xml"), xmlBytes, 0644); err != nil {
+		return err
+	}
+	return nil
 }
 
 func writeMacOSAppIconICNS(outPath string) error {

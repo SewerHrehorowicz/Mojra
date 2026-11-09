@@ -1160,13 +1160,16 @@ function makeEvent(type, props) {
     throw new Error("Expected Enter on #canvas-node-title-input to update node name on canvas");
   }
 
-  // 6. Click add-choice icon button (branch-plus) directly on WebGL canvas node card footer
+  // 6. Touch-tap add-choice icon button (branch-plus) directly on WebGL canvas node card footer (with synthesized mousedown/mouseup/click)
+  canvas.dispatchEvent(makeEvent("touchstart", { touches: [{ clientX: nodeScreenPt.addX, clientY: nodeScreenPt.addY }], target: canvas }));
+  canvas.dispatchEvent(makeEvent("touchend", { touches: [], changedTouches: [{ clientX: nodeScreenPt.addX, clientY: nodeScreenPt.addY }], target: canvas }));
   canvas.dispatchEvent(makeEvent("mousedown", { button: 0, clientX: nodeScreenPt.addX, clientY: nodeScreenPt.addY, target: canvas }));
   canvas.dispatchEvent(makeEvent("mouseup", { button: 0, clientX: nodeScreenPt.addX, clientY: nodeScreenPt.addY, target: canvas }));
+  canvas.dispatchEvent(makeEvent("click", { button: 0, clientX: nodeScreenPt.addX, clientY: nodeScreenPt.addY, target: canvas }));
   await waitForActions();
   const portCountAfterAdd = vm.runInContext("studioGraphState.nodes[0].ports.length", win);
-  if (portCountAfterAdd < 2) {
-    throw new Error("Expected canvas add-choice icon click to add choices (ports >= 2), got " + portCountAfterAdd);
+  if (portCountAfterAdd !== 2) {
+    throw new Error("Expected touch tap on canvas add-choice icon to result in exactly 2 choices (not duplicate to 3), got " + portCountAfterAdd);
   }
 
   // 6b. Click choice row label on WebGL canvas node card to edit choice inline via #canvas-choice-input
@@ -1488,6 +1491,36 @@ function makeEvent(type, props) {
   if (!cutBtnAfter || cutBtnAfter.classList.contains("hidden") || !cutBtnAfter.disabled || !cutBtnAfter.classList.contains("is-disabled")) {
     throw new Error("Expected destructive trim button to remain visible and become disabled/grayed out after destructive trim resets bounds to [0, 1]");
   }
+
+  // Verify Android native host bridge (window.mojraAndroid) recording lifecycle (pending permission -> live peak -> stop -> SaveSceneVoiceRecording)
+  let androidCaptureCalls = 0;
+  let androidStopCalls = 0;
+  win.mojraAndroid = {
+    startAudioCapture: () => {
+      androidCaptureCalls++;
+      return 2; // permission pending initially
+    },
+    pollAudioPeak: () => "0.450",
+    getAudioSampleRate: () => 24000,
+    stopAudioCaptureBase64: () => {
+      androidStopCalls++;
+      const fakeSamples = new Int16Array(2400);
+      for (let i = 0; i < fakeSamples.length; i++) fakeSamples[i] = (i % 64) * 120;
+      const bytes = new Uint8Array(fakeSamples.buffer);
+      let bin = "";
+      for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+      return win.btoa(bin);
+    }
+  };
+  await clickEl('#inspector-voice-rec-strip [data-voice-record-start="true"]');
+  if (androidCaptureCalls !== 1 || !doc.querySelector("#inspector-voice-rec-strip").classList.contains("is-recording")) {
+    throw new Error("Expected clicking re-record with window.mojraAndroid to invoke startAudioCapture() and enter recording state");
+  }
+  await clickEl('#inspector-voice-rec-strip [data-voice-transport="true"]');
+  if (androidStopCalls !== 1) {
+    throw new Error("Expected stopping recording with window.mojraAndroid to invoke stopAudioCaptureBase64()");
+  }
+  delete win.mojraAndroid;
 
   // 10b. Settings modal toggles (Theme, UI Scale) & Studio Home <-> Reader Home navigation
   if (doc.querySelector("#btn-toggle-zen")) {

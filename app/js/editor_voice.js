@@ -690,7 +690,13 @@ async function startVoiceRecording(stripEl) {
   voiceAudioState.playheadRatio = 0;
   syncAllVoiceStrips();
 
+  const hasAndroidBridge = Boolean(
+    typeof window !== "undefined" &&
+      window.mojraAndroid &&
+      typeof window.mojraAndroid.startAudioCapture === "function"
+  );
   const useNativeBackend =
+    hasAndroidBridge ||
     Boolean(
       typeof window !== "undefined" &&
         window.webkit &&
@@ -713,10 +719,23 @@ async function startVoiceRecording(stripEl) {
       (typeof window !== "undefined" && (window.AudioContext || window.webkitAudioContext)) ||
       null;
     if (AC) {
-      const ctx = new AC({ sampleRate: 24000 });
+      let ctx = null;
+      let source = null;
+      try {
+        ctx = new AC({ sampleRate: 24000 });
+        source = ctx.createMediaStreamSource(stream);
+      } catch (_) {
+        if (ctx && typeof ctx.close === "function") {
+          ctx.close().catch(() => {});
+        }
+        ctx = new AC();
+        source = ctx.createMediaStreamSource(stream);
+      }
+      if (ctx.state === "suspended" && typeof ctx.resume === "function") {
+        ctx.resume().catch(() => {});
+      }
       voiceAudioState.audioCtx = ctx;
       voiceAudioState.sampleRate = Math.min(65535, Math.max(8000, Math.round(ctx.sampleRate || 24000)));
-      const source = ctx.createMediaStreamSource(stream);
       const proc = ctx.createScriptProcessor(2048, 1, 1);
       voiceAudioState.sourceNode = source;
       voiceAudioState.scriptNode = proc;
@@ -740,6 +759,16 @@ async function startVoiceRecording(stripEl) {
       proc.connect(ctx.destination);
     }
   } catch (_) {
+    if (voiceAudioState.audioCtx && typeof voiceAudioState.audioCtx.close === "function") {
+      voiceAudioState.audioCtx.close().catch(() => {});
+      voiceAudioState.audioCtx = null;
+    }
+    if (voiceAudioState.mediaStream) {
+      try {
+        voiceAudioState.mediaStream.getTracks().forEach((t) => t.stop());
+      } catch (_) {}
+      voiceAudioState.mediaStream = null;
+    }
     await startNativeBackendVoiceCapture(sceneId);
   }
 }
@@ -748,15 +777,35 @@ async function startNativeBackendVoiceCapture(sceneId) {
   voiceAudioState.isNativeCapture = true;
   voiceAudioState.nativePollInFlight = false;
   if (voiceAudioState.nativePollTimer) {
-    clearInterval(voiceAudioState.nativePollTimer);
+    clearTimeout(voiceAudioState.nativePollTimer);
     voiceAudioState.nativePollTimer = null;
   }
-  await sendServerAction("StartSceneVoiceCapture", { scene: sceneId });
+  const androidBridge =
+    typeof window !== "undefined" &&
+    window.mojraAndroid &&
+    typeof window.mojraAndroid.startAudioCapture === "function"
+      ? window.mojraAndroid
+      : null;
+  let useAndroidBridge = false;
+  if (androidBridge) {
+    const rc = Number(androidBridge.startAudioCapture()) || 0;
+    if (rc > 0) {
+      useAndroidBridge = true;
+    }
+  }
+  if (!useAndroidBridge) {
+    await sendServerAction("StartSceneVoiceCapture", { scene: sceneId });
+  }
   if (!voiceAudioState.isRecording || !voiceAudioState.isNativeCapture) return;
+  const scheduleNextPoll = () => {
+    if (voiceAudioState.isRecording && voiceAudioState.isNativeCapture) {
+      voiceAudioState.nativePollTimer = setTimeout(pollOnce, 90);
+    }
+  };
   const pollOnce = () => {
     if (!voiceAudioState.isRecording || !voiceAudioState.isNativeCapture) {
       if (voiceAudioState.nativePollTimer) {
-        clearInterval(voiceAudioState.nativePollTimer);
+        clearTimeout(voiceAudioState.nativePollTimer);
         voiceAudioState.nativePollTimer = null;
       }
       return;
@@ -765,7 +814,27 @@ async function startNativeBackendVoiceCapture(sceneId) {
       stopVoiceRecordingAndSave();
       return;
     }
-    if (voiceAudioState.nativePollInFlight) return;
+    if (useAndroidBridge && androidBridge && typeof androidBridge.pollAudioPeak === "function") {
+      const peakStr = String(androidBridge.pollAudioPeak());
+      if (peakStr === "pending") {
+        voiceAudioState.recStartTime = Date.now();
+        syncAllVoiceStrips();
+        scheduleNextPoll();
+        return;
+      }
+      if (peakStr === "denied") {
+        handleNativeVoicePeakHeader("stopped");
+        sendServerAction("StartSceneVoiceCapture", { scene: sceneId });
+        return;
+      }
+      handleNativeVoicePeakHeader(peakStr);
+      scheduleNextPoll();
+      return;
+    }
+    if (voiceAudioState.nativePollInFlight) {
+      scheduleNextPoll();
+      return;
+    }
     voiceAudioState.nativePollInFlight = true;
     const p = postServerActionSilent("PollSceneVoiceCapture", {});
     if (p && typeof p.finally === "function") {
@@ -775,9 +844,9 @@ async function startNativeBackendVoiceCapture(sceneId) {
     } else {
       voiceAudioState.nativePollInFlight = false;
     }
+    scheduleNextPoll();
   };
   pollOnce();
-  voiceAudioState.nativePollTimer = setInterval(pollOnce, 90);
 }
 
 function handleNativeVoicePeakHeader(peakVal) {
@@ -786,7 +855,7 @@ function handleNativeVoicePeakHeader(peakVal) {
     voiceAudioState.isRecording = false;
     voiceAudioState.isNativeCapture = false;
     if (voiceAudioState.nativePollTimer) {
-      clearInterval(voiceAudioState.nativePollTimer);
+      clearTimeout(voiceAudioState.nativePollTimer);
       voiceAudioState.nativePollTimer = null;
     }
     syncAllVoiceStrips();
@@ -803,12 +872,36 @@ function stopVoiceRecordingAndSave() {
   voiceAudioState.isRecording = false;
   voiceAudioState.isNativeCapture = false;
   if (voiceAudioState.nativePollTimer) {
-    clearInterval(voiceAudioState.nativePollTimer);
+    clearTimeout(voiceAudioState.nativePollTimer);
     voiceAudioState.nativePollTimer = null;
   }
   if (wasNative) {
     voiceDecodedCache.clear();
     syncAllVoiceStrips();
+    const androidBridge =
+      typeof window !== "undefined" &&
+      window.mojraAndroid &&
+      typeof window.mojraAndroid.stopAudioCaptureBase64 === "function"
+        ? window.mojraAndroid
+        : null;
+    if (androidBridge) {
+      const b64 = String(androidBridge.stopAudioCaptureBase64() || "");
+      const sr =
+        (typeof androidBridge.getAudioSampleRate === "function" &&
+          Number(androidBridge.getAudioSampleRate())) ||
+        24000;
+      if (b64 && voiceAudioState.sceneId) {
+        sendServerAction("SaveSceneVoiceRecording", {
+          scene: voiceAudioState.sceneId,
+          voice_section: voiceAudioState.voiceSection || "01",
+          pcm_b64: b64,
+          sample_rate: String(sr),
+          start_ratio: "0",
+          end_ratio: "1"
+        });
+      }
+      return;
+    }
     if (voiceAudioState.sceneId) {
       sendServerAction("StopSceneVoiceCapture", {
         scene: voiceAudioState.sceneId,

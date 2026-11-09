@@ -1801,6 +1801,9 @@ function bindDeclarativeActionBridge() {
     if (typeof autoResizeAllInspectorTextareas === "function") {
       autoResizeAllInspectorTextareas(document);
     }
+    if (typeof syncEditorViewportVisibility === "function") {
+      syncEditorViewportVisibility();
+    }
   });
 
   if (typeof bindEditorCanvasEvents === "function") {
@@ -1811,6 +1814,9 @@ function bindDeclarativeActionBridge() {
   syncBreakdownActBar(document);
   if (typeof autoResizeAllInspectorTextareas === "function") {
     autoResizeAllInspectorTextareas(document);
+  }
+  if (typeof syncEditorViewportVisibility === "function") {
+    syncEditorViewportVisibility();
   }
   if (typeof initPlayerScrollAndAudio === "function") {
     initPlayerScrollAndAudio(null, Boolean(qs("#story-audio")), null, null);

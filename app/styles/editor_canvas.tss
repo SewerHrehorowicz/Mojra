@@ -491,21 +491,29 @@ body[data-ui-scale="large"]
       flex-wrap wrap
       align-items center
       justify-content space-between
+      height auto
+      max-height none
       padding 4px 8px
       gap 4px
     tablet, landscape
       padding 4px 8px
       gap 6px
 
+body[data-ui-scale="large"] .canvas-toolbar
+  @switch preview
+    portrait
+      height auto
+      max-height none
+      padding 6px 8px
+      gap 4px
+
 .canvas-toolbar-left
   @switch preview
     portrait
-      width 100%
-      flex 0 0 100%
+      width auto
+      flex 0 1 auto
       justify-content flex-start
       gap 4px
-      padding-bottom 3px
-      border-bottom 1px solid --border-subtle
 
 .canvas-toolbar-left .canvas-legend
   @switch preview
@@ -516,9 +524,9 @@ body[data-ui-scale="large"]
   @switch preview
     portrait
       width auto
-      flex 0 0 auto
+      flex 1 0 auto
       justify-content flex-end
-      flex-wrap nowrap
+      flex-wrap wrap
       gap 4px
     tablet, landscape
       gap 4px
@@ -542,25 +550,25 @@ body[data-ui-scale="large"]
     flex-wrap wrap
     align-items center
     justify-content space-between
+    height auto
+    max-height none
     padding 4px 8px
     gap 4px
 
   .canvas-toolbar-left
-    width 100%
-    flex 0 0 100%
+    width auto
+    flex 0 1 auto
     justify-content flex-start
     gap 4px
-    padding-bottom 3px
-    border-bottom 1px solid --border-subtle
 
   .canvas-toolbar-left .canvas-legend
     margin-right auto
 
   .canvas-toolbar-right
     width auto
-    flex 0 0 auto
+    flex 1 0 auto
     justify-content flex-end
-    flex-wrap nowrap
+    flex-wrap wrap
     gap 4px
 
   .canvas-zoom-controls
@@ -573,11 +581,13 @@ body[data-ui-scale="large"]
 
   body[data-ui-scale="large"]
     .canvas-toolbar
+      height auto
+      max-height none
       padding 6px 8px
       gap 4px
 
     .canvas-toolbar-right
-      gap 6px
+      gap 4px
 
     .canvas-zoom-controls
       gap 2px

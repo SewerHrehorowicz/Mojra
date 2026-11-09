@@ -419,6 +419,10 @@ aside.editor-context-panel#editor-context-panel .hidden?: {is_context_panel_hidd
                     span.history-panel-title {t_act_settings_title}
                 {else}
                     span.history-panel-title {t_chapter_settings_title}
+                button.node-close-btn
+                    type: button
+                    action: CloseBookSettings
+                    svg.node-close-icon src: /icons/close.svg
             .history-panel-body
                 .context-panel-section
                     input.node-inline-title.chapter-group-title-input

@@ -73,7 +73,7 @@ func ParseActionRequest(r *http.Request) {
 	}
 	buf := AcquireWFPBuffer()
 	defer ReleaseWFPBuffer(buf)
-	_, _ = buf.ReadFrom(io.LimitReader(r.Body, 4<<20))
+	_, _ = buf.ReadFrom(io.LimitReader(r.Body, 64<<20))
 	raw := buf.Bytes()
 	if len(raw) == 0 {
 		r.PostForm = r.Form
@@ -1035,5 +1035,7 @@ func (s *Server) writeActionResponseHeaders(w http.ResponseWriter, action, targe
 		} else {
 			w.Header().Set("X-Voice-Peak", "stopped")
 		}
+	} else if action == "StartSceneVoiceCapture" && toast != "" {
+		w.Header().Set("X-Voice-Peak", "stopped")
 	}
 }

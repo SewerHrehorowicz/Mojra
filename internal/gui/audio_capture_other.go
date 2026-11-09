@@ -1,4 +1,4 @@
-//go:build (!darwin || !cgo) && !(js && wasm)
+//go:build ((!darwin && !android) || !cgo) && !(js && wasm)
 
 package gui
 

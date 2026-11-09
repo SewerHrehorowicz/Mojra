@@ -426,12 +426,21 @@
     right 0
     border-right none
 
+@media (max-width: 760px) and (orientation: portrait)
+  .modal-backdrop.scene-text-fullscreen-backdrop.has-right-panel,
+  .workspace:has(#editor-workspace-body > aside:not(.hidden)) + .modals-root .modal-backdrop.scene-text-fullscreen-backdrop
+    display none !important
+
 /* @dev-only-start */
 .device-stage[data-preview="portrait"] .modal-backdrop.scene-text-fullscreen-backdrop.mode-half,
 .device-stage[data-preview="portrait"] .modal-backdrop.scene-text-fullscreen-backdrop.mode-half.has-right-panel,
 .device-stage[data-preview="portrait"] .workspace:has(#editor-workspace-body > aside:not(.hidden)) + .modals-root .modal-backdrop.scene-text-fullscreen-backdrop.mode-half
   right 0
   border-right none
+
+.device-stage[data-preview="portrait"] .modal-backdrop.scene-text-fullscreen-backdrop.has-right-panel,
+.device-stage[data-preview="portrait"] .workspace:has(#editor-workspace-body > aside:not(.hidden)) + .modals-root .modal-backdrop.scene-text-fullscreen-backdrop
+  display none !important
 /* @dev-only-end */
 
 .scene-text-book-layout

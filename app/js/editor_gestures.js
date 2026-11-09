@@ -138,13 +138,27 @@ function syncChoiceTargetToCanvas(form, inputEl) {
   if (typeof renderStudioCanvas === "function") renderStudioCanvas();
 }
 
+let lastTouchGestureEndPos = { x: null, y: null };
+let suppressAnyTouchClick = false;
+
 function isEditorTouchClickSuppressed(e) {
-  return (
-    Date.now() < suppressNextTouchClickUntil &&
-    e.target &&
-    e.target.closest &&
-    Boolean(e.target.closest("#timeline-scroll-viewport"))
-  );
+  if (Date.now() >= suppressNextTouchClickUntil) return false;
+  if (!e || !e.target || !e.target.closest || !e.target.closest("#timeline-scroll-viewport")) return false;
+  if (
+    !suppressAnyTouchClick &&
+    typeof e.clientX === "number" &&
+    typeof e.clientY === "number" &&
+    lastTouchGestureEndPos.x !== null &&
+    lastTouchGestureEndPos.y !== null
+  ) {
+    if (Math.hypot(e.clientX - lastTouchGestureEndPos.x, e.clientY - lastTouchGestureEndPos.y) > 24) {
+      return false;
+    }
+  }
+  if (e.type === "click") {
+    suppressNextTouchClickUntil = 0;
+  }
+  return true;
 }
 
 function formToParams(form, extra) {
@@ -435,8 +449,13 @@ function getMatchingContextForm(sceneId) {
   return cf;
 }
 
+let lastCanvasAddChoiceAt = 0;
+
 function triggerCanvasAddChoiceForNode(nd) {
   if (!nd || !nd.id || (typeof isEditorHistoryPreview === "function" && isEditorHistoryPreview())) return;
+  const now = Date.now();
+  if (now - lastCanvasAddChoiceAt < 320) return;
+  lastCanvasAddChoiceAt = now;
   sendServerAction("AddChoice", formToParams(getMatchingContextForm(nd.id), { scene: nd.id }));
 }
 
@@ -1907,6 +1926,13 @@ function bindEditorCanvasEvents() {
       vp.classList.remove("is-panning");
     }
 
+    if (g.isTouch) {
+      suppressNextTouchClickUntil = Date.now() + 450;
+      suppressAnyTouchClick = Boolean(g.moved);
+      lastTouchGestureEndPos.x = typeof lastPointerClientPos.x === "number" ? lastPointerClientPos.x : g.startClientX;
+      lastTouchGestureEndPos.y = typeof lastPointerClientPos.y === "number" ? lastPointerClientPos.y : g.startClientY;
+    }
+
     if (g.type === "pan") {
       scheduleSaveEditorViewport();
       return;
@@ -1914,7 +1940,6 @@ function bindEditorCanvasEvents() {
 
     if (g.type === "touch-pan" || g.type === "touch-pinch-pan") {
       if (g.moved) {
-        suppressNextTouchClickUntil = Date.now() + 360;
         scheduleSaveEditorViewport();
       } else if (g.startedAddChoiceNode) {
         triggerCanvasAddChoiceForNode(g.startedAddChoiceNode);
@@ -1925,6 +1950,34 @@ function bindEditorCanvasEvents() {
             parent: g.startedBranchRadioNode.branchParentId || ""
           });
         }
+      } else if (g.startedHit && g.startedHit.type === "edit-scene-btn" && g.startedHit.node) {
+        editorSelectionCleared = false;
+        selectedNodeIds.clear();
+        if (g.startedHit.node.id) selectedNodeIds.add(g.startedHit.node.id);
+        syncNodeSelectionDOM();
+        renderStudioCanvas();
+        sendServerAction("OpenSceneTextModal", { scene: g.startedHit.node.id });
+      } else if (g.startedHit && g.startedHit.type === "delete-scene-btn" && g.startedHit.node) {
+        sendServerAction("PromptDeleteScene", { scene: g.startedHit.node.id });
+      } else if (g.startedHit && g.startedHit.type === "choice-trash-btn" && g.startedHit.node) {
+        sendServerAction("PromptRemoveChoice", {
+          scene: g.startedHit.node.id,
+          choice_idx: String(g.startedHit.choiceIdx)
+        });
+      } else if (
+        g.startedHit &&
+        (g.startedHit.type === "choice-label" || g.startedHit.type === "node-title") &&
+        g.startedHit.node
+      ) {
+        editorSelectionCleared = false;
+        selectedNodeIds.clear();
+        if (g.startedHit.node.id) selectedNodeIds.add(g.startedHit.node.id);
+        syncNodeSelectionDOM();
+        if (qs("#modal-scene-text") && g.startedHit.node.id) {
+          selectNodeForContextPanel(g.startedHit.node.id);
+        }
+        if (g.startedHit.type === "choice-label") openFloatingChoiceInput(g.startedHit.node, g.startedHit.choiceIdx);
+        else openFloatingNodeTitleInput(g.startedHit.node);
       } else if (g.startedNodeId && !g.startedInteractive) {
         editorSelectionCleared = false;
         selectedNodeIds.clear();
@@ -2216,7 +2269,7 @@ function bindEditorCanvasEvents() {
       lastPointerClientPos.x = t.clientX;
       lastPointerClientPos.y = t.clientY;
 
-      if (e.target.closest("#canvas-context-menu, .custom-select-menu, #canvas-chapter-input, #canvas-node-title-input, #canvas-choice-input, #editor-empty-state, #btn-expand-scene-text")) {
+      if (e.target.closest("#canvas-context-menu, .custom-select-menu, #canvas-chapter-input, #canvas-node-title-input, #canvas-choice-input, #editor-empty-state, #btn-expand-scene-text, #studio-search-palette, #editor-status-bar")) {
         return;
       }
       closeCanvasContextMenu();
@@ -2241,7 +2294,15 @@ function bindEditorCanvasEvents() {
         startPanX: editorCanvasState.panX,
         startPanY: editorCanvasState.panY,
         moved: false,
-        startedInteractive: hit.type === "add-choice-btn" || hit.type === "branch-radio",
+        startedHit: hit,
+        startedInteractive:
+          hit.type === "add-choice-btn" ||
+          hit.type === "branch-radio" ||
+          hit.type === "edit-scene-btn" ||
+          hit.type === "delete-scene-btn" ||
+          hit.type === "choice-trash-btn" ||
+          hit.type === "choice-label" ||
+          hit.type === "node-title",
         startedAddChoiceNode: hit.type === "add-choice-btn" ? hit.node : null,
         startedBranchRadioNode: hit.type === "branch-radio" ? hit.node : null,
         startedNodeId: hit.type === "node-card" ? hit.node.id : "",
@@ -2328,9 +2389,9 @@ function bindEditorCanvasEvents() {
 
     if (e.touches && e.touches.length > 0) return;
 
-    const wasMoved = Boolean(activeCanvasGesture.moved);
+    const shouldPreventMouse = Boolean(activeCanvasGesture.moved || activeCanvasGesture.startedInteractive);
     finishActiveCanvasGesture();
-    if (wasMoved && e.cancelable) {
+    if (shouldPreventMouse && e.cancelable) {
       e.preventDefault();
     }
   }
@@ -2388,7 +2449,13 @@ function bindEditorCanvasEvents() {
       return;
     }
 
-    if (e.target.closest("#canvas-context-menu, #canvas-chapter-input, #canvas-node-title-input, #canvas-choice-input, #editor-empty-state, #btn-expand-scene-text")) {
+    if (isEditorTouchClickSuppressed(e)) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+
+    if (e.target.closest("#canvas-context-menu, .custom-select-menu, #canvas-chapter-input, #canvas-node-title-input, #canvas-choice-input, #editor-empty-state, #btn-expand-scene-text, #studio-search-palette, #editor-status-bar")) {
       return;
     }
     closeCanvasContextMenu();

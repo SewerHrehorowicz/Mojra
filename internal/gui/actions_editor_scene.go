@@ -187,25 +187,6 @@ func (s *Server) hasSceneTextModalChanges(curSc *book.Scene, r *http.Request) bo
 	return false
 }
 
-func isPlaceholderSceneName(name string) bool {
-	lower := strings.ToLower(strings.TrimSpace(name))
-	return strings.HasPrefix(lower, "nowa scena") || strings.HasPrefix(lower, "new scene")
-}
-
-func isSlugDerivedFromTitle(slug, title string) bool {
-	if slug == "" || title == "" {
-		return false
-	}
-	base := book.SanitizeChapterID(title)
-	if base == "" {
-		base = book.SanitizeSceneID(title)
-	}
-	if base == "" {
-		return false
-	}
-	return strings.EqualFold(slug, base) || strings.HasPrefix(strings.ToLower(slug), strings.ToLower(base)+"_")
-}
-
 func (s *Server) applySceneFormFields(target *book.Scene, r *http.Request) {
 	if target == nil || s.ActiveBook == nil {
 		return
