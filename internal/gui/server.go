@@ -602,11 +602,6 @@ func findSceneInBook(b *book.Book, sceneID string) *book.Scene {
 			return sc
 		}
 	}
-	for i, sc := range b.Scenes {
-		if fmt.Sprintf("s%d", i+1) == sceneID {
-			return sc
-		}
-	}
 	return nil
 }
 

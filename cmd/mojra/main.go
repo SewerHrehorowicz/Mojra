@@ -149,6 +149,7 @@ Architektura i wyjście (Architecture & Output):
       --binaries-only        Buduj wyłącznie pliki wykonywalne (pomiń paczki .app / .zip)
       --no-zip               Alias dla --binaries-only
       --assets-only          Kompiluj tylko szablony .tpl, CSS/JS oraz przykładową książkę
+      --chaos [opcje]        Uruchom inżynierię chaosu UI, crawler DOM i wygeneruj raport (./build.sh --chaos --help)
   -y, --yes                  Automatycznie zaakceptuj instalację brakujących zależności w build.sh / build.bat
   -h, --help, /?             Wyświetl tę pomoc i zakończ (Show this help message)
 

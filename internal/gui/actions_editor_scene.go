@@ -185,6 +185,25 @@ func (s *Server) hasSceneTextModalChanges(curSc *book.Scene, r *http.Request) bo
 	return false
 }
 
+func isPlaceholderSceneName(name string) bool {
+	lower := strings.ToLower(strings.TrimSpace(name))
+	return strings.HasPrefix(lower, "nowa scena") || strings.HasPrefix(lower, "new scene")
+}
+
+func isSlugDerivedFromTitle(slug, title string) bool {
+	if slug == "" || title == "" {
+		return false
+	}
+	base := book.SanitizeChapterID(title)
+	if base == "" {
+		base = book.SanitizeSceneID(title)
+	}
+	if base == "" {
+		return false
+	}
+	return strings.EqualFold(slug, base) || strings.HasPrefix(strings.ToLower(slug), strings.ToLower(base)+"_")
+}
+
 func (s *Server) applySceneFormFields(target *book.Scene, r *http.Request) {
 	if target == nil || s.ActiveBook == nil {
 		return
@@ -192,16 +211,32 @@ func (s *Server) applySceneFormFields(target *book.Scene, r *http.Request) {
 	if formSceneID := strings.TrimSpace(r.FormValue("scene_id")); formSceneID != "" && !strings.EqualFold(formSceneID, target.ID) && !strings.EqualFold(s.SceneTextModalID, target.ID) {
 		return
 	}
+	oldID := target.ID
 	oldName := target.Name
 	oldExplicitID := target.ExplicitID
+	customExplicitID := false
 	if _, hasID := r.Form["explicit_id"]; hasID {
-		target.ExplicitID = book.SanitizeSceneID(r.FormValue("explicit_id"))
+		rawExp := strings.TrimSpace(r.FormValue("explicit_id"))
+		if rawExp != "" {
+			cleanExp := book.SanitizeSceneID(rawExp)
+			if cleanExp != "" && !strings.EqualFold(cleanExp, oldExplicitID) {
+				cleanExp = book.NextUniqueSceneSlug(s.ActiveBook, cleanExp, target)
+				customExplicitID = true
+			}
+			target.ExplicitID = cleanExp
+		} else {
+			target.ExplicitID = ""
+		}
 	}
 	if _, hasName := r.Form["name"]; hasName {
 		newName := book.SanitizePlainText(r.FormValue("name"))
 		if newName != "" || target.ExplicitID != "" {
 			target.Name = newName
 		}
+	}
+	wasAutoDerived := oldExplicitID == "" || isSlugDerivedFromTitle(oldExplicitID, oldName)
+	if !customExplicitID && wasAutoDerived && target.Name != "" && !strings.EqualFold(target.Name, oldName) && !isPlaceholderSceneName(target.Name) {
+		target.ExplicitID = book.NextUniqueSceneSlug(s.ActiveBook, target.Name, target)
 	}
 	if _, hasSlug := r.Form["slugline"]; hasSlug {
 		target.Slugline = strings.ToUpper(strings.TrimSpace(book.SanitizePlainText(r.FormValue("slugline"))))
@@ -284,11 +319,14 @@ func (s *Server) applySceneFormFields(target *book.Scene, r *http.Request) {
 	if chapterChanged && s.ActiveBook != nil {
 		if chMeta := s.ActiveBook.FindChapter(target.Chapter); chMeta != nil {
 			target.ChapterID = chMeta.ExplicitID
+			if target.ChapterID == "" {
+				target.ChapterID = chMeta.ID
+			}
 			if chMeta.SourceFile != "" {
 				target.SourceFile = chMeta.SourceFile
 			}
 		} else {
-			target.ChapterID = book.SanitizeSceneID(target.Chapter)
+			target.ChapterID = book.NextUniqueChapterSlug(s.ActiveBook, target.Chapter, "")
 			target.SourceFile = s.ActiveBook.ChapterFileNameFor(target.Chapter, target.ChapterID)
 		}
 	}
@@ -460,54 +498,102 @@ func (s *Server) applySceneFormFields(target *book.Scene, r *http.Request) {
 		}
 	}
 
-	if !strings.EqualFold(oldName, target.Name) || (oldExplicitID != "" && !strings.EqualFold(oldExplicitID, target.ExplicitID)) {
+	if !strings.EqualFold(oldName, target.Name) || !strings.EqualFold(oldExplicitID, target.ExplicitID) {
+		if target.ExplicitID != "" {
+			target.ID = target.ExplicitID
+		}
+		newID := target.ID
 		newRef := target.ReferenceKey()
-		if s.ActiveBook.Layout != nil && oldName != "" && !strings.EqualFold(oldName, target.Name) && target.Name != "" {
-			if pos, ok := s.ActiveBook.Layout[oldName]; ok {
-				s.ActiveBook.Layout[target.Name] = pos
-				s.ActiveBook.Layout[book.NormalizeLookupKey(target.Name)] = pos
-			} else if pos, ok := s.ActiveBook.Layout[book.NormalizeLookupKey(oldName)]; ok {
-				s.ActiveBook.Layout[target.Name] = pos
-				s.ActiveBook.Layout[book.NormalizeLookupKey(target.Name)] = pos
+		oldNorm := book.NormalizeLookupKey(oldName)
+		matchesOldRef := func(val string) bool {
+			v := strings.TrimSpace(val)
+			if v == "" {
+				return false
 			}
-			if s.ActiveBook.HasEditorView {
-				if err := book.SaveBookEditorStateToDisk(s.ActiveBook); err != nil {
-					s.ActiveBook.Warnings = append(s.ActiveBook.Warnings, err.Error())
-				}
+			if oldID != "" && strings.EqualFold(v, oldID) {
+				return true
 			}
+			if oldExplicitID != "" && strings.EqualFold(v, oldExplicitID) {
+				return true
+			}
+			if oldName != "" && (strings.EqualFold(v, oldName) || (oldNorm != "" && book.NormalizeLookupKey(v) == oldNorm)) {
+				return true
+			}
+			return false
 		}
-		if strings.EqualFold(s.ActiveBook.StartSceneID, target.ID) ||
-			(oldName != "" && strings.EqualFold(s.ActiveBook.RawStart, oldName)) ||
-			(oldExplicitID != "" && strings.EqualFold(s.ActiveBook.RawStart, oldExplicitID)) {
-			s.ActiveBook.RawStart = newRef
-			s.ActiveBook.StartSceneID = target.ID
-		}
-		for i := range s.ActiveBook.Chapters {
-			ch := &s.ActiveBook.Chapters[i]
-			if strings.EqualFold(ch.StartSceneID, target.ID) ||
-				(oldName != "" && strings.EqualFold(ch.ExplicitStart, oldName)) ||
-				(oldExplicitID != "" && strings.EqualFold(ch.ExplicitStart, oldExplicitID)) {
-				if ch.ExplicitStart != "" {
-					ch.ExplicitStart = newRef
-				}
-				ch.StartSceneID = target.ID
-			}
-		}
-		for _, other := range s.ActiveBook.Scenes {
-			if oldName != "" && !strings.EqualFold(oldName, target.Name) && strings.EqualFold(other.ExplicitNext, oldName) {
-				other.ExplicitNext = newRef
-			} else if oldExplicitID != "" && !strings.EqualFold(oldExplicitID, target.ExplicitID) && strings.EqualFold(other.ExplicitNext, oldExplicitID) {
-				other.ExplicitNext = newRef
-			}
-			for i := range other.Choices {
-				if !strings.EqualFold(other.Choices[i].Target, "Next") {
-					if oldName != "" && !strings.EqualFold(oldName, target.Name) && strings.EqualFold(other.Choices[i].Target, oldName) {
-						other.Choices[i].Target = newRef
-					} else if oldExplicitID != "" && !strings.EqualFold(oldExplicitID, target.ExplicitID) && strings.EqualFold(other.Choices[i].Target, oldExplicitID) {
-						other.Choices[i].Target = newRef
+		if s.ActiveBook.Layout != nil {
+			var pos book.NodePosition
+			foundPos := false
+			for _, k := range []string{oldExplicitID, strings.ToLower(oldExplicitID), oldName, oldNorm, oldID, strings.ToLower(oldID)} {
+				if k != "" {
+					if found, ok := s.ActiveBook.Layout[k]; ok {
+						pos = found
+						foundPos = true
+						break
 					}
 				}
 			}
+			if foundPos {
+				for _, k := range []string{oldExplicitID, strings.ToLower(oldExplicitID), oldName, oldNorm, oldID, strings.ToLower(oldID)} {
+					if k != "" {
+						delete(s.ActiveBook.Layout, k)
+					}
+				}
+				book.StoreSceneNodePosition(s.ActiveBook, target, pos)
+			}
+		}
+		if s.ActiveBook.WirePins != nil && oldID != "" && newID != "" && !strings.EqualFold(oldID, newID) {
+			remappedPins := make(map[string][]book.WirePin, len(s.ActiveBook.WirePins))
+			for wk, pins := range s.ActiveBook.WirePins {
+				parts := strings.Split(wk, "|")
+				if len(parts) == 3 {
+					if matchesOldRef(parts[0]) {
+						parts[0] = newID
+					}
+					if matchesOldRef(parts[2]) {
+						parts[2] = newID
+					}
+					wk = strings.Join(parts, "|")
+				}
+				remappedPins[wk] = pins
+			}
+			s.ActiveBook.WirePins = remappedPins
+		}
+		if s.ActiveBook.HasEditorView {
+			if err := book.SaveBookEditorStateToDisk(s.ActiveBook); err != nil {
+				s.ActiveBook.Warnings = append(s.ActiveBook.Warnings, err.Error())
+			}
+		}
+		if matchesOldRef(s.ActiveBook.StartSceneID) || matchesOldRef(s.ActiveBook.RawStart) {
+			s.ActiveBook.RawStart = newRef
+			s.ActiveBook.StartSceneID = newID
+		}
+		for i := range s.ActiveBook.Chapters {
+			ch := &s.ActiveBook.Chapters[i]
+			if matchesOldRef(ch.StartSceneID) || matchesOldRef(ch.ExplicitStart) {
+				if ch.ExplicitStart != "" {
+					ch.ExplicitStart = newRef
+				}
+				ch.StartSceneID = newID
+			}
+		}
+		for _, other := range s.ActiveBook.Scenes {
+			if matchesOldRef(other.ExplicitNext) {
+				other.ExplicitNext = newRef
+			}
+			for i := range other.Choices {
+				if !other.Choices[i].IsChapterLink && !strings.EqualFold(other.Choices[i].Target, "Next") && !strings.EqualFold(other.Choices[i].Target, "END") {
+					if matchesOldRef(other.Choices[i].Target) || matchesOldRef(other.Choices[i].TargetSceneID) {
+						other.Choices[i].Target = newRef
+						other.Choices[i].TargetSceneID = newID
+					}
+				} else if other.Choices[i].IsImplicit && matchesOldRef(other.Choices[i].TargetSceneID) {
+					other.Choices[i].TargetSceneID = newID
+				}
+			}
+		}
+		if s.Save != nil && matchesOldRef(s.Save.CurrentSceneID) {
+			s.Save.CurrentSceneID = newID
 		}
 	}
 	if r.FormValue("is_start_scene") == "true" {
@@ -910,9 +996,15 @@ func (s *Server) saveSceneFromFormWithMode(r *http.Request, isAutoSave bool) str
 		return ""
 	}
 	scID := strings.TrimSpace(r.FormValue("scene_id"))
-	target := s.findScene(scID)
-	if target == nil && s.SceneTextModalID != "" {
+	var target *book.Scene
+	if s.SceneTextModalID != "" {
 		target = s.findScene(s.SceneTextModalID)
+	}
+	if target == nil {
+		target = s.findScene(scID)
+	}
+	if target == nil && s.SelectedSceneID != "" {
+		target = s.findScene(s.SelectedSceneID)
 	}
 	if target == nil {
 		return "Nie znaleziono sceny"

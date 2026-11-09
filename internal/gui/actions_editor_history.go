@@ -2,6 +2,7 @@ package gui
 
 import (
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -220,6 +221,20 @@ func (s *Server) reloadActiveBookAfterHistoryRestore(selSceneID string) {
 }
 
 func (s *Server) writeEditorHistoryHeaders(w http.ResponseWriter) {
+	if s.ActiveBook != nil {
+		if s.SelectedSceneID != "" {
+			w.Header().Set("X-Scene-ID", s.SelectedSceneID)
+			if sc := s.findScene(s.SelectedSceneID); sc != nil {
+				w.Header().Set("X-Scene-Explicit-ID", sc.ExplicitID)
+				w.Header().Set("X-Scene-Ref", url.QueryEscape(sc.ReferenceKey()))
+				w.Header().Set("X-Scene-Title", url.QueryEscape(sc.DisplayName()))
+				w.Header().Set("X-Scene-Chapter", url.QueryEscape(sc.Chapter))
+			}
+		}
+		if s.ActiveBook.StartSceneID != "" {
+			w.Header().Set("X-Start-Scene-ID", s.ActiveBook.StartSceneID)
+		}
+	}
 	if s.isHistoryPreview() {
 		w.Header().Set("X-History-Preview", "true")
 	} else {

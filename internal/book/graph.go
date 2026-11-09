@@ -8,13 +8,16 @@ import (
 
 func (b *Book) ensureChapterWithMeta(name, fallbackID, explicitID, sourceFile string) {
 	cleanName := strings.TrimSpace(name)
-	cleanExp := SanitizeSceneID(explicitID)
+	cleanExp := SanitizeChapterID(explicitID)
+	if cleanExp == "" {
+		cleanExp = SanitizeSceneID(explicitID)
+	}
 	cleanID := cleanExp
 	if cleanID == "" {
-		cleanID = SanitizeSceneID(fallbackID)
+		cleanID = SanitizeChapterID(fallbackID)
 	}
 	if cleanID == "" {
-		cleanID = SanitizeSceneID(cleanName)
+		cleanID = SanitizeChapterID(cleanName)
 	}
 	for i := range b.Chapters {
 		ch := &b.Chapters[i]
@@ -45,18 +48,21 @@ func (b *Book) ensureChapterWithMeta(name, fallbackID, explicitID, sourceFile st
 
 func (b *Book) addSceneToChapterWithMeta(chapterName, explicitID, sourceFile, sceneID string) {
 	cleanName := strings.TrimSpace(chapterName)
-	cleanExp := SanitizeSceneID(explicitID)
+	cleanExp := SanitizeChapterID(explicitID)
+	if cleanExp == "" {
+		cleanExp = SanitizeSceneID(explicitID)
+	}
 	fallbackID := ""
 	if sourceFile != "" && !strings.EqualFold(filepath.Base(sourceFile), DefaultStoryFile) && !strings.EqualFold(filepath.Base(sourceFile), BookDataFileName) {
 		stem := strings.TrimSuffix(filepath.Base(sourceFile), filepath.Ext(sourceFile))
-		fallbackID = SanitizeSceneID(stem)
+		fallbackID = SanitizeChapterID(stem)
 	}
 	cleanID := cleanExp
 	if cleanID == "" {
 		cleanID = fallbackID
 	}
 	if cleanID == "" {
-		cleanID = SanitizeSceneID(cleanName)
+		cleanID = SanitizeChapterID(cleanName)
 	}
 
 	for i := range b.Chapters {
@@ -297,6 +303,15 @@ func FinalizeBook(b *Book) {
 				lowerID := strings.ToLower(cleanID)
 				if usedIDs[lowerID] {
 					b.Warnings = append(b.Warnings, fmt.Sprintf("Duplikat id sceny „%s” w scenie „%s”", cleanID, sc.DisplayName()))
+					for suffix := 2; ; suffix++ {
+						cand := fmt.Sprintf("%s_%d", cleanID, suffix)
+						if !usedIDs[strings.ToLower(cand)] {
+							cleanID = cand
+							lowerID = strings.ToLower(cand)
+							sc.ExplicitID = cleanID
+							break
+						}
+					}
 				}
 				usedIDs[lowerID] = true
 				sc.ID = cleanID

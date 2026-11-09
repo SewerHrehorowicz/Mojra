@@ -177,4 +177,89 @@ if [ "${1:-}" = "deck" ] || [ "${1:-}" = "--deck" ]; then
     exec go test -v ./internal/tpl -run TestBuildDeckPDF
 fi
 
+if [ "${1:-}" = "chaos" ] || [ "${1:-}" = "--chaos" ]; then
+    shift
+    CHAOS_STEPS="${MOJRA_CHAOS_STEPS:-300}"
+    CHAOS_SEED="${MOJRA_CHAOS_SEED:-1731051025}"
+    CHAOS_LOG="${MOJRA_CHAOS_LOG:-$ROOT_DIR/build/ui-chaos-trace.log}"
+    CHAOS_RACE=0
+
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -h|--help|help)
+                cat <<'EOF'
+Mojra — Inżynieria Chaosu UI, Crawler DOM & Fuzzer Protokołu WFP
+
+Użycie / Usage:
+  ./build.sh --chaos [opcje]
+
+Opcje (Options):
+  -s, --steps <N>       Liczba losowych kroków inżynierii chaosu (domyślnie: 300)
+      --seed <N>        Ziarno generatora PRNG do deterministycznego odtworzenia (domyślnie: 1731051025)
+  -o, --out <ścieżka>   Ścieżka pliku raportu tekstowego (domyślnie: build/ui-chaos-trace.log)
+      --race            Uruchom z detektorem wyścigów pamięci Go (-race)
+  -h, --help            Wyświetl tę pomoc i zakończ
+
+Co testuje przebieg:
+  1. Pełna piaskownica bezpieczeństwa (t.TempDir(), ST_NO_WINDOW=1, strażnik AppData i repozytorium).
+  2. Crawler DOM w Node VM + 100% pokrycia wszystkich akcji serwera (actionSpecs).
+  3. 4 wektory chaosu: DOM Monkey + Stale-DOM Replay, Mutator WFP, Wyścigi (-race), Fuzzing Mediów/ZIP.
+  4. Wyrocznie po każdym kroku: widoczność #topbar, kontrakt X-Target, unikalność ID scen i spójność .playtxt/.sav.
+
+Przykłady (Examples):
+  ./build.sh --chaos                          # Szybki obchód 100% UI + 300 kroków chaosu + raport
+  ./build.sh --chaos --steps 2000 --race      # Głęboki test z detektorem wyścigów (-race)
+  ./build.sh --chaos --seed 1731051025        # Odtworzenie konkretnego przebiegu z raportu
+  ./build.sh --chaos -o build/raport.log      # Zapis raportu do wybranego pliku
+EOF
+                exit 0
+                ;;
+            -s|--steps)
+                shift
+                CHAOS_STEPS="${1:-300}"
+                ;;
+            --steps=*)
+                CHAOS_STEPS="${1#*=}"
+                ;;
+            --seed)
+                shift
+                CHAOS_SEED="${1:-1731051025}"
+                ;;
+            --seed=*)
+                CHAOS_SEED="${1#*=}"
+                ;;
+            -o|--out)
+                shift
+                CHAOS_LOG="${1:-$ROOT_DIR/build/ui-chaos-trace.log}"
+                ;;
+            --out=*)
+                CHAOS_LOG="${1#*=}"
+                ;;
+            --race)
+                CHAOS_RACE=1
+                ;;
+        esac
+        shift || true
+    done
+
+    case "$CHAOS_LOG" in
+        /*) ;;
+        *) CHAOS_LOG="$ROOT_DIR/$CHAOS_LOG" ;;
+    esac
+
+    mkdir -p "$(dirname "$CHAOS_LOG")"
+    export MOJRA_CHAOS_LOG="$CHAOS_LOG"
+    export MOJRA_CHAOS_SEED="$CHAOS_SEED"
+    export MOJRA_CHAOS_STEPS="$CHAOS_STEPS"
+
+    echo "[CHAOS] Uruchamianie inżynierii chaosu UI (seed=$CHAOS_SEED, steps=$CHAOS_STEPS)..."
+    if [ "$CHAOS_RACE" -eq 1 ]; then
+        go test -race -v ./internal/gui -run "TestAuthoringSceneIDGenerationAndReroutingInvariants|TestUIChaosAndStaticCrawler" -args -chaos-seed="$CHAOS_SEED" -chaos-steps="$CHAOS_STEPS"
+    else
+        go test -v ./internal/gui -run "TestAuthoringSceneIDGenerationAndReroutingInvariants|TestUIChaosAndStaticCrawler" -args -chaos-seed="$CHAOS_SEED" -chaos-steps="$CHAOS_STEPS"
+    fi
+    echo "[CHAOS] Raport zapisany w: $CHAOS_LOG"
+    exit 0
+fi
+
 exec go run ./cmd/mojra build "$@"

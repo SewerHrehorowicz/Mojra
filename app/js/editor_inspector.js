@@ -36,6 +36,316 @@ function syncBookTitleDOM(newTitle) {
   }
 }
 
+function syncSceneTitleAcrossForms(sceneId, newTitle, sourceEl) {
+  if (!sceneId) return;
+  const cleanTitle = (newTitle || "").trim();
+  ["#form-scene-text", "#editor-context-form"].forEach((sel) => {
+    const f = qs(sel);
+    if (!f) return;
+    const scInp = qs('input[name="scene_id"]', f);
+    const fId = f.getAttribute("data-context-scene-id") || (scInp ? scInp.value : "") || "";
+    if (fId === sceneId) {
+      const nameInp = qs('input[name="name"]', f);
+      if (nameInp && nameInp !== sourceEl && document.activeElement !== nameInp) {
+        nameInp.value = cleanTitle;
+      }
+    }
+  });
+  const displayTitle = cleanTitle || sceneId;
+  const bookForm = qs("#editor-book-form");
+  if (bookForm) {
+    qsa('[data-select-name="start_scene"] .custom-select-option', bookForm).forEach((opt) => {
+      if ((opt.getAttribute("data-select-value") || "") === sceneId) {
+        opt.setAttribute("data-select-label", displayTitle);
+        opt.textContent = displayTitle;
+      }
+    });
+    const startInp = qs('input[name="start_scene"]', bookForm);
+    if (startInp && startInp.value === sceneId) {
+      const lbl = qs('[data-select-name="start_scene"] .custom-select-label', bookForm);
+      if (lbl) lbl.textContent = displayTitle;
+    }
+  }
+  qsa('.studio-search-row[data-search-scene="' + CSS.escape(sceneId) + '"] .studio-search-row-title').forEach((el) => {
+    el.textContent = displayTitle;
+  });
+}
+
+function resolveCanvasSceneTargetId(rawTgt) {
+  const clean = (typeof stripOuterBracesClient === "function" ? stripOuterBracesClient(rawTgt || "") : (rawTgt || ""))
+    .replace(/\?/g, "")
+    .trim();
+  if (!clean || typeof studioGraphState === "undefined" || !studioGraphState.nodeById) return "";
+  const direct = studioGraphState.nodeById.get(clean);
+  if (direct) return direct.id;
+  const lower = clean.toLowerCase();
+  if (studioGraphState.nodes) {
+    for (let i = 0; i < studioGraphState.nodes.length; i++) {
+      const cand = studioGraphState.nodes[i];
+      if (cand.id.toLowerCase() === lower || (cand.name || "").trim().toLowerCase() === lower) {
+        return cand.id;
+      }
+    }
+  }
+  return clean;
+}
+
+let sceneIdRedirects = new Map();
+
+function resolveCurrentClientSceneId(id) {
+  let cur = (id || "").trim();
+  let guard = 0;
+  while (cur && sceneIdRedirects.has(cur) && guard < 16) {
+    const next = sceneIdRedirects.get(cur);
+    if (!next || next === cur) break;
+    cur = next;
+    guard++;
+  }
+  return cur;
+}
+
+function syncSceneIdentityAndMetaFromHeaders(oldId, newId, newExplicitId, newRef, newTitle, newChapter, startSceneId) {
+  const curId = (newId || oldId || "").trim();
+  if (!curId) return;
+  const rawOldId = (oldId || curId).trim();
+  let prevId = resolveCurrentClientSceneId(rawOldId);
+  if (
+    typeof studioGraphState !== "undefined" &&
+    studioGraphState.nodeById &&
+    !studioGraphState.nodeById.has(prevId)
+  ) {
+    const modalScInp = qs('#form-scene-text input[name="scene_id"]');
+    const modalCurId = modalScInp ? (modalScInp.value || "").trim() : "";
+    if (modalCurId && studioGraphState.nodeById.has(modalCurId)) {
+      prevId = modalCurId;
+    }
+  }
+  const idChanged = Boolean(prevId && curId && prevId !== curId);
+  if (rawOldId && rawOldId !== curId) {
+    sceneIdRedirects.set(rawOldId, curId);
+  }
+  if (prevId && prevId !== curId) {
+    sceneIdRedirects.set(prevId, curId);
+  }
+  sceneIdRedirects.delete(curId);
+  const displayTitle = (newTitle || newRef || curId).trim();
+  const cleanChapter = (newChapter || "").trim();
+
+  if (idChanged && typeof studioGraphState !== "undefined" && studioGraphState.nodeById) {
+    const nd = studioGraphState.nodeById.get(prevId);
+    if (nd) {
+      studioGraphState.nodeById.delete(prevId);
+      nd.id = curId;
+      if (displayTitle) nd.name = displayTitle;
+      if (cleanChapter) {
+        nd.chapter = cleanChapter;
+        nd.chapterLower = cleanChapter.toLowerCase();
+      }
+      studioGraphState.nodeById.set(curId, nd);
+    }
+    for (let i = 0; i < studioGraphState.nodes.length; i++) {
+      const n = studioGraphState.nodes[i];
+      if (n.ports) {
+        for (let j = 0; j < n.ports.length; j++) {
+          if (n.ports[j].targetId === prevId) {
+            n.ports[j].targetId = curId;
+            if (newRef) n.ports[j].target = newRef;
+          }
+        }
+      }
+      if (n.implicitPort && n.implicitPort.targetId === prevId) {
+        n.implicitPort.targetId = curId;
+        if (newRef) n.implicitPort.target = newRef;
+      }
+    }
+    if (studioGraphState.chapters) {
+      for (let i = 0; i < studioGraphState.chapters.length; i++) {
+        if (studioGraphState.chapters[i].startSceneId === prevId) {
+          studioGraphState.chapters[i].startSceneId = curId;
+        }
+      }
+    }
+    if (typeof selectedNodeIds !== "undefined" && selectedNodeIds.has(prevId)) {
+      selectedNodeIds.delete(prevId);
+      selectedNodeIds.add(curId);
+    }
+    if (typeof drawStudioWires === "function") drawStudioWires();
+    studioGraphState.staticBatchDirty = true;
+    studioGraphState.overlayBatchDirty = true;
+    if (typeof renderStudioCanvas === "function") renderStudioCanvas();
+  } else if (typeof studioGraphState !== "undefined" && studioGraphState.nodeById) {
+    const nd = studioGraphState.nodeById.get(curId);
+    if (nd) {
+      let nodeChanged = false;
+      if (displayTitle && nd.name !== displayTitle) {
+        nd.name = displayTitle;
+        nodeChanged = true;
+      }
+      if (cleanChapter && nd.chapter !== cleanChapter) {
+        nd.chapter = cleanChapter;
+        nd.chapterLower = cleanChapter.toLowerCase();
+        nodeChanged = true;
+      }
+      if (nodeChanged) {
+        studioGraphState.staticBatchDirty = true;
+        if (typeof renderStudioCanvas === "function") renderStudioCanvas();
+      }
+    }
+  }
+
+  ["#form-scene-text", "#editor-context-form"].forEach((sel) => {
+    const f = qs(sel);
+    if (!f) return;
+    const scInp = qs('input[name="scene_id"]', f);
+    const fId = f.getAttribute("data-context-scene-id") || (scInp ? scInp.value : "") || "";
+    if (fId === prevId || fId === curId) {
+      if (f.hasAttribute("data-context-scene-id")) {
+        f.setAttribute("data-context-scene-id", curId);
+      }
+      if (scInp) scInp.value = curId;
+      const expInp = qs('input[name="explicit_id"]', f);
+      if (expInp && document.activeElement !== expInp && newExplicitId !== undefined) {
+        expInp.value = newExplicitId;
+      }
+      const chInp = qs('input[name="chapter"]', f);
+      if (chInp && document.activeElement !== chInp && cleanChapter) {
+        chInp.value = cleanChapter;
+      }
+      if (idChanged) {
+        qsa('[data-scene="' + CSS.escape(prevId) + '"]', f).forEach((el) => {
+          el.setAttribute("data-scene", curId);
+        });
+      }
+    }
+  });
+
+  const expandBtn = qs("#btn-expand-scene-text");
+  if (expandBtn && expandBtn.getAttribute("data-scene") === prevId) {
+    expandBtn.setAttribute("data-scene", curId);
+  }
+
+  const bookForm = qs("#editor-book-form");
+  if (bookForm) {
+    qsa('[data-select-name="start_scene"] .custom-select-option', bookForm).forEach((opt) => {
+      const v = opt.getAttribute("data-select-value") || "";
+      if (v === prevId || v === curId) {
+        opt.setAttribute("data-select-value", curId);
+        if (displayTitle) {
+          opt.setAttribute("data-select-label", displayTitle);
+          opt.textContent = displayTitle;
+        }
+      }
+    });
+    const startInp = qs('input[name="start_scene"]', bookForm);
+    if (startInp && (startInp.value === prevId || startInp.value === curId || (startSceneId && startSceneId === curId))) {
+      startInp.value = curId;
+      if (displayTitle) {
+        const lbl = qs('[data-select-name="start_scene"] .custom-select-label', bookForm);
+        if (lbl) lbl.textContent = displayTitle;
+      }
+    }
+  }
+
+  qsa('.syn-dropdown-item[data-syn-kind="target"]').forEach((item) => {
+    const sId = item.getAttribute("data-syn-scene-id") || "";
+    const vName = item.getAttribute("data-syn-var-name") || "";
+    if (sId === prevId || sId === curId || vName === prevId) {
+      item.setAttribute("data-syn-scene-id", curId);
+      if (newRef) item.setAttribute("data-syn-var-name", newRef);
+    }
+  });
+}
+
+function syncCanvasNodeFromSceneTextModal(modalsRoot) {
+  if (!modalsRoot || typeof studioGraphState === "undefined" || !studioGraphState.nodeById) return;
+  const modalForm = qs("#form-scene-text", modalsRoot);
+  if (!modalForm) return;
+  const scInp = qs('input[name="scene_id"]', modalForm);
+  const sceneId = scInp ? (scInp.value || "").trim() : "";
+  if (!sceneId) return;
+  const nd = studioGraphState.nodeById.get(sceneId);
+  if (!nd) return;
+
+  const nameInp = qs('input[name="name"]', modalForm);
+  const expInp = qs('input[name="explicit_id"]', modalForm);
+  const chInp = qs('input[name="chapter"]', modalForm);
+  const displayTitle =
+    (nameInp && (nameInp.value || "").trim()) ||
+    (expInp && (expInp.value || "").trim()) ||
+    sceneId;
+  nd.name = displayTitle;
+  if (chInp && (chInp.value || "").trim()) {
+    nd.chapter = chInp.value.trim();
+    nd.chapterLower = nd.chapter.toLowerCase();
+  }
+  syncSceneTitleAcrossForms(sceneId, nameInp ? nameInp.value : displayTitle, nameInp);
+
+  const rows = qsa(".modal-choice-row", modalForm);
+  if (rows.length >= 2) {
+    nd.hasChoices = true;
+    nd.implicitPort = null;
+    nd.ports = rows.map((rowEl, idx) => {
+      const lblEl = qs('[name="choice_label_' + idx + '"]', rowEl);
+      const tgtEl = qs('[name="choice_target_' + idx + '"]', rowEl);
+      const condEl = qs('[name="choice_cond_' + idx + '"]', rowEl);
+      const pIcon = qs(".choice-port-icon", rowEl);
+      const rawTgt = tgtEl ? (tgtEl.value || "").trim() : "";
+      let resolvedId = "";
+      let isCh = false;
+      if (rawTgt && rawTgt.toUpperCase() !== "END") {
+        if (rawTgt.toLowerCase().indexOf("chapter:") === 0) {
+          isCh = true;
+          resolvedId = rawTgt;
+        } else {
+          resolvedId = resolveCanvasSceneTargetId(rawTgt) || rawTgt;
+        }
+      }
+      return {
+        idx: idx,
+        label: (lblEl && (lblEl.value || "").trim()) || tr("choice_prefix") + (idx + 1),
+        target: rawTgt || "END",
+        targetId: resolvedId,
+        isChapterLink: isCh,
+        isConditional: Boolean((condEl && (condEl.value || "").trim()) || (pIcon && pIcon.classList.contains("port-diamond"))),
+        x: 0,
+        y: 0
+      };
+    });
+  } else if (rows.length === 1) {
+    nd.hasChoices = false;
+    nd.ports = [];
+    const tgtEl = qs('[name="choice_target_0"]', rows[0]);
+    const condEl = qs('[name="choice_cond_0"]', rows[0]);
+    const pIcon = qs(".choice-port-icon", rows[0]);
+    const rawTgt = tgtEl ? (tgtEl.value || "").trim() : "";
+    let resolvedId = "";
+    let isCh = false;
+    if (rawTgt && rawTgt.toUpperCase() !== "END") {
+      if (rawTgt.toLowerCase().indexOf("chapter:") === 0) {
+        isCh = true;
+        resolvedId = rawTgt;
+      } else {
+        resolvedId = resolveCanvasSceneTargetId(rawTgt) || rawTgt;
+      }
+    }
+    nd.implicitPort = {
+      idx: 0,
+      label: "Dalej",
+      target: rawTgt || "END",
+      targetId: resolvedId,
+      isChapterLink: isCh,
+      isConditional: Boolean((condEl && (condEl.value || "").trim()) || (pIcon && pIcon.classList.contains("port-diamond"))),
+      x: 0,
+      y: 0
+    };
+  }
+  if (typeof recomputeNodeMetrics === "function") recomputeNodeMetrics(nd);
+  if (typeof updateChapterGroupFrames === "function") updateChapterGroupFrames();
+  if (typeof drawStudioWires === "function") drawStudioWires();
+  studioGraphState.staticBatchDirty = true;
+  if (typeof renderStudioCanvas === "function") renderStudioCanvas();
+}
+
 function commitBookTitleInput(inputEl) {
   if (!inputEl || isEditorHistoryPreview()) return;
   if (bookTitleSaveTimer) {
@@ -122,13 +432,14 @@ function syncChapterGroupRenameDOM(inputEl, targetChapterName) {
     if (chInp) chInp.value = nextGroup;
   }
 
-  const contextForm = qs("#editor-context-form");
-  if (contextForm) {
-    const chInput = qs('input[name="chapter"]', contextForm);
-    if (chInput && (chInput.value || "").trim().toLowerCase() === prevLower) {
+  ["#editor-context-form", "#form-scene-text"].forEach((sel) => {
+    const form = qs(sel);
+    if (!form) return;
+    const chInput = qs('input[name="chapter"]', form);
+    if (chInput && chInput !== inputEl && (chInput.value || "").trim().toLowerCase() === prevLower) {
       chInput.value = nextGroup;
     }
-    qsa(".node-chapter-select .custom-select-option", contextForm).forEach((opt) => {
+    qsa(".node-chapter-select .custom-select-option", form).forEach((opt) => {
       const optVal = (opt.getAttribute("data-select-value") || "").trim();
       if (optVal.toLowerCase() === prevLower) {
         opt.setAttribute("data-select-value", nextGroup);
@@ -136,7 +447,7 @@ function syncChapterGroupRenameDOM(inputEl, targetChapterName) {
         opt.textContent = nextGroup;
       }
     });
-  }
+  });
 
   const multiPanel = qs("#editor-multi-panel");
   if (multiPanel) {
@@ -182,15 +493,6 @@ function scheduleChapterLiveSave(inputEl) {
     syncChapterGroupRenameDOM(inputEl, newCh);
   }
   dirtyChapterInputs.add(inputEl);
-  const existing = chapterLiveSaveTimers.get(inputEl);
-  if (existing) {
-    clearTimeout(existing);
-  }
-  const timer = setTimeout(() => {
-    chapterLiveSaveTimers.delete(inputEl);
-    commitChapterTitleInput(inputEl);
-  }, 250);
-  chapterLiveSaveTimers.set(inputEl, timer);
 }
 
 function cancelPendingInspectorTimers() {

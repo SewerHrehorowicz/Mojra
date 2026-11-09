@@ -887,6 +887,21 @@ async function sendServerAction(actionName, params) {
       const contextForm = qs("#editor-context-form");
       if (contextForm) {
         contextForm.setAttribute("data-context-scene-id", syncedCanvasSceneId);
+        const scInp = qs('input[name="scene_id"]', contextForm);
+        if (scInp) scInp.value = syncedCanvasSceneId;
+      }
+      if (
+        prevModalSceneId &&
+        nextModalSceneId &&
+        prevModalSceneId !== nextModalSceneId &&
+        actionName !== "NavigateSceneTextModal" &&
+        actionName !== "OpenSceneTextModal" &&
+        typeof syncSceneIdentityAndMetaFromHeaders === "function"
+      ) {
+        syncSceneIdentityAndMetaFromHeaders(prevModalSceneId, nextModalSceneId);
+      }
+      if (typeof syncCanvasNodeFromSceneTextModal === "function") {
+        syncCanvasNodeFromSceneTextModal(modalsRoot);
       }
       const expandBtn = qs("#btn-expand-scene-text");
       if (expandBtn) {
@@ -1222,6 +1237,15 @@ function syncBreakdownActBar(root) {
   });
 }
 
+function decodeHeaderComponentSafe(val) {
+  if (!val) return "";
+  try {
+    return decodeURIComponent(String(val).replace(/\+/g, " "));
+  } catch (_e) {
+    return String(val);
+  }
+}
+
 function postServerActionSilent(actionName, paramsOrFormData) {
   const wfpPayload = { action: actionName };
   if (paramsOrFormData) {
@@ -1239,11 +1263,12 @@ function postServerActionSilent(actionName, paramsOrFormData) {
       });
     }
   }
+  const sentSceneId = (wfpPayload.scene_id || wfpPayload.scene || "").trim();
   if (typeof window.__wasmAction === "function") {
     parseWasmActionResponse(window.__wasmAction(encodeWFP(wfpPayload)));
     return;
   }
-  fetch("/api/action", {
+  return fetch("/api/action", {
     method: "POST",
     headers: {
       "Content-Type": "text/x-wfp;charset=UTF-8",
@@ -1254,6 +1279,16 @@ function postServerActionSilent(actionName, paramsOrFormData) {
     .then((resp) => {
       if (resp) {
         syncEditorHistoryHeaders(resp);
+        if (actionName === "AutoSaveScene" && typeof syncSceneIdentityAndMetaFromHeaders === "function") {
+          const newId = (resp.headers.get("X-Scene-ID") || "").trim();
+          const newExpRaw = resp.headers.get("X-Scene-Explicit-ID");
+          const newExp = newExpRaw !== null ? newExpRaw.trim() : undefined;
+          const newRef = decodeHeaderComponentSafe(resp.headers.get("X-Scene-Ref"));
+          const newTitle = decodeHeaderComponentSafe(resp.headers.get("X-Scene-Title"));
+          const newChapter = decodeHeaderComponentSafe(resp.headers.get("X-Scene-Chapter"));
+          const startScId = (resp.headers.get("X-Start-Scene-ID") || "").trim();
+          syncSceneIdentityAndMetaFromHeaders(sentSceneId, newId, newExp, newRef, newTitle, newChapter, startScId);
+        }
         const voicePeak = resp.headers.get("X-Voice-Peak");
         if (voicePeak && typeof handleNativeVoicePeakHeader === "function") {
           handleNativeVoicePeakHeader(voicePeak);
@@ -1688,8 +1723,13 @@ function bindDeclarativeActionBridge() {
         params[key] = val;
       });
     } else if (!isModalOnlyAction && target.dataset && target.dataset.scene) {
-      const contextForm = qs("#editor-context-form");
-      if (contextForm && contextForm.getAttribute("data-context-scene-id") === target.dataset.scene) {
+      const contextForm = typeof getMatchingContextForm === "function" ? getMatchingContextForm(target.dataset.scene) : null;
+      if (contextForm) {
+        if (typeof dirtyInspectorForms !== "undefined") dirtyInspectorForms.delete(contextForm);
+        if (typeof liveSaveTimers !== "undefined" && liveSaveTimers.has(contextForm)) {
+          clearTimeout(liveSaveTimers.get(contextForm));
+          liveSaveTimers.delete(contextForm);
+        }
         const fd = new FormData(contextForm);
         fd.forEach((val, key) => {
           params[key] = val;

@@ -1399,6 +1399,21 @@ function makeEvent(type, props) {
   if (doc.querySelector("#editor-context-form").getAttribute("data-context-scene-id") !== openModalScId) {
     throw new Error("Expected canvas context selection to be synced with open #modal-scene-text scene_id: " + openModalScId);
   }
+  const modalNameInp = doc.querySelector('#modal-scene-text input[name="name"]');
+  const modalExpIdInp = doc.querySelector('#modal-scene-text input[name="explicit_id"]');
+  if (modalNameInp && modalExpIdInp) {
+    modalNameInp.value = "Scena Zsynchronizowana";
+    modalNameInp.dispatchEvent(makeEvent("input", { target: modalNameInp }));
+    if (vm.runInContext("studioGraphState.nodeById.get('" + openModalScId + "').name", win) !== "Scena Zsynchronizowana") {
+      throw new Error("Expected editing name in #modal-scene-text to live-sync canvas node title");
+    }
+    const bookStartOpt = doc.querySelector('#editor-book-form [data-select-name="start_scene"] .custom-select-option[data-select-value="' + openModalScId + '"]');
+    if (bookStartOpt && bookStartOpt.textContent !== "Scena Zsynchronizowana") {
+      throw new Error("Expected editing name in #modal-scene-text to live-sync #editor-book-form start_scene option label, got: " + bookStartOpt.textContent);
+    }
+    modalNameInp.dispatchEvent(makeEvent("change", { target: modalNameInp }));
+    await waitForActions();
+  }
   const navNextBtn = doc.querySelector('#modal-scene-text button[action="NavigateSceneTextModal"]');
   if (navNextBtn) {
     await clickEl('#modal-scene-text button[action="NavigateSceneTextModal"]');

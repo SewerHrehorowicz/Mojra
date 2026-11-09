@@ -126,11 +126,14 @@ func SerializeScenesForFile(b *Book, sourceFile string) string {
 		if (ch != "" || chID != "") && !strings.EqualFold(ch, lastChapter) {
 			if chID != "" {
 				fmt.Fprintf(&out, "chapter: %s\n", chID)
-				if ch != "" && !strings.EqualFold(ch, chID) {
+				if ch != "" && ch != chID {
 					fmt.Fprintf(&out, "title: %s\n", ch)
 				}
 			} else if ch != "" {
 				fmt.Fprintf(&out, "chapter: %s\n", ch)
+				if SanitizeSceneID(ch) == ch {
+					fmt.Fprintf(&out, "title: %s\n", ch)
+				}
 			} else {
 				out.WriteString("chapter:\n")
 			}
@@ -145,11 +148,14 @@ func SerializeScenesForFile(b *Book, sourceFile string) string {
 		scTitle := strings.TrimSpace(sc.Name)
 		if scID != "" {
 			fmt.Fprintf(&out, "scene: %s\n", scID)
-			if scTitle != "" && !strings.EqualFold(scTitle, scID) {
+			if scTitle != "" {
 				fmt.Fprintf(&out, "title: %s\n", scTitle)
 			}
 		} else if scTitle != "" {
 			fmt.Fprintf(&out, "scene: %s\n", scTitle)
+			if SanitizeSceneID(scTitle) == scTitle {
+				fmt.Fprintf(&out, "title: %s\n", scTitle)
+			}
 		} else {
 			fmt.Fprintf(&out, "scene: Scena %d\n", i+1)
 		}

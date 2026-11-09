@@ -32,6 +32,77 @@ func SaveBookMetadataToDisk(b *Book) error {
 	return writeFileIfChanged(dataPath, []byte(SerializeDataFile(b)), 0644)
 }
 
+// NextUniqueSceneSlug returns a unique, human-readable scene ID slug for self within b.
+func NextUniqueSceneSlug(b *Book, raw string, self *Scene) string {
+	base := strings.ToLower(SanitizeSceneID(raw))
+	if base == "" {
+		base = SanitizeChapterID(raw)
+	}
+	lowerBase := strings.ToLower(base)
+	if base == "" || lowerBase == "end" || lowerBase == "koniec" || lowerBase == "next" || lowerBase == "dalej" {
+		base = "scena"
+	}
+	isTaken := func(cand string) bool {
+		if b == nil {
+			return false
+		}
+		for _, sc := range b.Scenes {
+			if sc == nil || sc == self {
+				continue
+			}
+			if strings.EqualFold(sc.ID, cand) || (sc.ExplicitID != "" && strings.EqualFold(sc.ExplicitID, cand)) {
+				return true
+			}
+		}
+		return false
+	}
+	if !isTaken(base) {
+		return base
+	}
+	for seq := 2; seq <= len(b.Scenes)+100; seq++ {
+		cand := fmt.Sprintf("%s_%d", base, seq)
+		if !isTaken(cand) {
+			return cand
+		}
+	}
+	return base
+}
+
+// NextUniqueChapterSlug returns a unique lowercase ASCII chapter ID slug for raw within b.
+func NextUniqueChapterSlug(b *Book, raw string, ignoreChapter string) string {
+	base := SanitizeChapterID(raw)
+	if base == "" || base == "book" {
+		base = "rozdzial"
+	}
+	ignoreTrim := strings.TrimSpace(ignoreChapter)
+	ignoreSlug := SanitizeChapterID(ignoreTrim)
+	isTaken := func(cand string) bool {
+		if b == nil {
+			return false
+		}
+		for i := range b.Chapters {
+			ch := &b.Chapters[i]
+			if ignoreTrim != "" && (strings.EqualFold(ch.Name, ignoreTrim) || strings.EqualFold(ch.ID, ignoreTrim) || strings.EqualFold(ch.ExplicitID, ignoreTrim) || (ignoreSlug != "" && strings.EqualFold(ch.ID, ignoreSlug))) {
+				continue
+			}
+			if strings.EqualFold(ch.ID, cand) || strings.EqualFold(ch.ExplicitID, cand) {
+				return true
+			}
+		}
+		return false
+	}
+	if !isTaken(base) {
+		return base
+	}
+	for seq := 2; seq <= len(b.Chapters)+100; seq++ {
+		cand := fmt.Sprintf("%s_%d", base, seq)
+		if !isTaken(cand) {
+			return cand
+		}
+	}
+	return base
+}
+
 // SaveBookScenesToDisk writes all modified source .playtxt files, book.playtxt, and .editor.cfg back to the book directory.
 func SaveBookScenesToDisk(b *Book) error {
 	if b.IsPacked {

@@ -428,7 +428,11 @@ function updateCanvasHoverCursor(viewport, hit) {
 
 function getMatchingContextForm(sceneId) {
   const cf = qs("#editor-context-form");
-  return cf && cf.getAttribute("data-context-scene-id") === sceneId ? cf : null;
+  if (!cf || cf.getAttribute("data-context-scene-id") !== sceneId) return null;
+  const scInp = qs('input[name="scene_id"]', cf);
+  if (!scInp || scInp.value !== sceneId) return null;
+  if (typeof dirtyInspectorForms === "undefined" || !dirtyInspectorForms.has(cf)) return null;
+  return cf;
 }
 
 function triggerCanvasAddChoiceForNode(nd) {
@@ -1382,6 +1386,15 @@ function bindEditorCanvasEvents() {
         e.target.blur();
         return;
       }
+      if (
+        (e.target.name === "name" || e.target.name === "explicit_id" || e.target.name === "chapter") &&
+        e.target.closest("form.editor-context-form, form#form-scene-text")
+      ) {
+        e.preventDefault();
+        if (typeof flushInspectorFormIfDirty === "function") flushInspectorFormIfDirty();
+        e.target.blur();
+        return;
+      }
     }
     if (
       (e.ctrlKey || e.metaKey) &&
@@ -2099,8 +2112,9 @@ function bindEditorCanvasEvents() {
           choice_idx: g.choiceIdx,
           to_scene: g.hoveredTargetId
         };
-        const contextForm = qs("#editor-context-form");
-        if (contextForm && contextForm.getAttribute("data-context-scene-id") === g.fromSceneId) {
+        const contextForm = getMatchingContextForm(g.fromSceneId);
+        if (contextForm) {
+          params["flush_form"] = "true";
           const fd = new FormData(contextForm);
           fd.forEach((val, key) => {
             params[key] = val;
@@ -2119,8 +2133,9 @@ function bindEditorCanvasEvents() {
           choice_idx: "0",
           to_scene: "END"
         };
-        const contextForm = qs("#editor-context-form");
-        if (contextForm && contextForm.getAttribute("data-context-scene-id") === g.fromSceneId) {
+        const contextForm = getMatchingContextForm(g.fromSceneId);
+        if (contextForm) {
+          params["flush_form"] = "true";
           const fd = new FormData(contextForm);
           fd.forEach((val, key) => {
             params[key] = val;
@@ -2757,6 +2772,15 @@ function bindEditorCanvasEvents() {
       nd.name = displayTitle;
       studioGraphState.staticBatchDirty = true;
       renderStudioCanvas();
+      if (typeof syncSceneTitleAcrossForms === "function") {
+        syncSceneTitleAcrossForms(sceneId, nameInput ? nameInput.value : displayTitle, e.target);
+      }
+    }
+    if (e.target && (e.target.name === "explicit_id" || e.target.name === "name" || e.target.name === "chapter")) {
+      if (typeof dirtyInspectorForms !== "undefined") {
+        dirtyInspectorForms.add(form);
+      }
+      return;
     }
     if (e.target && e.target.name && e.target.name.indexOf("choice_label_") === 0 && nd) {
       const idx = Number(e.target.getAttribute("data-choice-idx") || e.target.name.replace("choice_label_", ""));
@@ -2861,6 +2885,13 @@ function bindEditorCanvasEvents() {
       commitVariablePanelInput(e.target);
     } else if (e.target && e.target.getAttribute && e.target.getAttribute("data-test-var-input")) {
       commitTestVarInput(e.target);
+    } else if (
+      e.target &&
+      (e.target.name === "name" || e.target.name === "explicit_id" || e.target.name === "chapter") &&
+      e.target.closest &&
+      e.target.closest("form.editor-context-form, form#form-scene-text")
+    ) {
+      if (typeof flushInspectorFormIfDirty === "function") flushInspectorFormIfDirty();
     }
   });
 
@@ -2881,6 +2912,13 @@ function bindEditorCanvasEvents() {
         commitBookTitleInput(e.target);
       } else if (e.target && e.target.classList && e.target.classList.contains("breakdown-name-input")) {
         commitBreakdownRenameInput(e.target);
+      } else if (
+        e.target &&
+        (e.target.name === "name" || e.target.name === "explicit_id" || e.target.name === "chapter") &&
+        e.target.closest &&
+        e.target.closest("form.editor-context-form, form#form-scene-text")
+      ) {
+        if (typeof flushInspectorFormIfDirty === "function") flushInspectorFormIfDirty();
       }
     },
     true

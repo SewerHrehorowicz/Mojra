@@ -63,17 +63,49 @@ func SanitizeSceneID(raw string) string {
 	if cleaned == "" {
 		return ""
 	}
-	cleaned = strings.ReplaceAll(cleaned, " ", "_")
-	if !safeIDRe.MatchString(cleaned) {
-		var b strings.Builder
-		for _, r := range cleaned {
-			if unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_' || r == '-' {
-				b.WriteRune(r)
+	replacer := strings.NewReplacer(
+		"ą", "a",
+		"ć", "c",
+		"ę", "e",
+		"ł", "l",
+		"ń", "n",
+		"ó", "o",
+		"ś", "s",
+		"ź", "z",
+		"ż", "z",
+		"Ą", "A",
+		"Ć", "C",
+		"Ę", "E",
+		"Ł", "L",
+		"Ń", "N",
+		"Ó", "O",
+		"Ś", "S",
+		"Ź", "Z",
+		"Ż", "Z",
+		" ", "_",
+	)
+	cleaned = replacer.Replace(cleaned)
+	var b strings.Builder
+	lastUnderscore := false
+	for _, r := range cleaned {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' {
+			b.WriteRune(r)
+			lastUnderscore = false
+		} else if r == '_' {
+			if !lastUnderscore && b.Len() > 0 {
+				b.WriteByte('_')
+				lastUnderscore = true
 			}
+		} else if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			b.WriteRune(r)
+			lastUnderscore = false
 		}
-		cleaned = strings.Trim(b.String(), "_-")
 	}
-	return cleaned
+	res := strings.Trim(b.String(), "_-")
+	if len(res) > 80 {
+		res = res[:80]
+	}
+	return res
 }
 
 // SanitizeRelativeMediaPath normalizes a relative path (supporting subdirectories like "images/scene.png" or "voice/ch1/s1.ogg")

@@ -1177,6 +1177,9 @@ function commitNodeTitleInput(inp) {
   nd.name = newName;
   studioGraphState.staticBatchDirty = true;
   renderStudioCanvas();
+  if (typeof syncSceneTitleAcrossForms === "function") {
+    syncSceneTitleAcrossForms(nd.id, newName, inp);
+  }
   postServerActionSilent("AutoSaveScene", { scene_id: nd.id, name: newName });
 }
 
@@ -1222,6 +1225,15 @@ function commitChoiceInput(inp) {
   pt.label = newLabel;
   studioGraphState.staticBatchDirty = true;
   renderStudioCanvas();
+  ["#form-scene-text", "#editor-context-form"].forEach((sel) => {
+    const f = qs(sel);
+    if (!f) return;
+    const fScId = f.getAttribute("data-context-scene-id") || (qs('input[name="scene_id"]', f) && qs('input[name="scene_id"]', f).value) || "";
+    if (fScId === nd.id) {
+      const chInp = qs('[name="choice_label_' + idx + '"]', f);
+      if (chInp && chInp !== inp) chInp.value = newLabel;
+    }
+  });
   const payload = { scene_id: nd.id };
   payload["choice_label_" + idx] = newLabel;
   postServerActionSilent("AutoSaveScene", payload);

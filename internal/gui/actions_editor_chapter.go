@@ -22,16 +22,31 @@ func (s *Server) renameActiveBookChapter(r *http.Request) string {
 		return ""
 	}
 	return s.withBookMutation(r, false, func(b *book.Book) (string, string, string, bool) {
-		oldRef := book.SanitizeSceneID(oldCh)
-		newRef := book.SanitizeSceneID(newCh)
+		oldRef := book.SanitizeChapterID(oldCh)
+		if oldRef == "" {
+			oldRef = book.SanitizeSceneID(oldCh)
+		}
+		newRef := book.NextUniqueChapterSlug(b, newCh, oldCh)
 		for i := range b.Chapters {
-			if strings.EqualFold(strings.TrimSpace(b.Chapters[i].Name), oldCh) {
-				oldRef = b.Chapters[i].ReferenceKey()
+			if strings.EqualFold(strings.TrimSpace(b.Chapters[i].Name), oldCh) ||
+				strings.EqualFold(b.Chapters[i].ID, oldCh) ||
+				strings.EqualFold(b.Chapters[i].ExplicitID, oldCh) {
+				prevRef := b.Chapters[i].ReferenceKey()
+				if prevRef != "" {
+					oldRef = prevRef
+				}
+				oldSlug := book.SanitizeChapterID(b.Chapters[i].Name)
+				oldScSlug := book.SanitizeSceneID(b.Chapters[i].Name)
 				b.Chapters[i].Name = newCh
-				if b.Chapters[i].ExplicitID != "" {
-					newRef = b.Chapters[i].ExplicitID
-				} else if newRef != "" {
+				if b.Chapters[i].ExplicitID == "" ||
+					strings.EqualFold(b.Chapters[i].ExplicitID, oldSlug) ||
+					strings.EqualFold(b.Chapters[i].ExplicitID, oldScSlug) ||
+					strings.EqualFold(b.Chapters[i].ExplicitID, oldRef) {
+					b.Chapters[i].ExplicitID = newRef
 					b.Chapters[i].ID = newRef
+					b.Chapters[i].SourceFile = b.ChapterFileNameFor(newCh, newRef)
+				} else {
+					newRef = b.Chapters[i].ExplicitID
 				}
 			}
 		}
@@ -41,20 +56,18 @@ func (s *Server) renameActiveBookChapter(r *http.Request) string {
 			if scCh == "" {
 				scCh = b.DefaultChapterName()
 			}
-			if strings.EqualFold(scCh, oldCh) {
+			if strings.EqualFold(scCh, oldCh) || (oldRef != "" && strings.EqualFold(sc.ChapterID, oldRef)) {
 				sc.Chapter = newCh
-				if sc.ChapterID == "" || strings.EqualFold(sc.ChapterID, oldRef) {
-					sc.ChapterID = newRef
-				}
+				sc.ChapterID = newRef
 				sc.SourceFile = b.ChapterFileNameFor(sc.Chapter, sc.ChapterID)
 				updated++
 			}
 			if oldRef != "" && newRef != "" && !strings.EqualFold(oldRef, newRef) {
-				if chRef, ok := book.ParseChapterTarget(sc.ExplicitNext); ok && (strings.EqualFold(chRef, oldRef) || strings.EqualFold(chRef, oldCh)) {
+				if chRef, ok := book.ParseChapterTarget(sc.ExplicitNext); ok && (strings.EqualFold(chRef, oldRef) || strings.EqualFold(chRef, oldCh) || strings.EqualFold(book.SanitizeChapterID(chRef), book.SanitizeChapterID(oldCh))) {
 					sc.ExplicitNext = "chapter:" + newRef
 				}
 				for j := range sc.Choices {
-					if chRef, ok := book.ParseChapterTarget(sc.Choices[j].Target); ok && (strings.EqualFold(chRef, oldRef) || strings.EqualFold(chRef, oldCh)) {
+					if chRef, ok := book.ParseChapterTarget(sc.Choices[j].Target); ok && (strings.EqualFold(chRef, oldRef) || strings.EqualFold(chRef, oldCh) || strings.EqualFold(book.SanitizeChapterID(chRef), book.SanitizeChapterID(oldCh))) {
 						sc.Choices[j].Target = "chapter:" + newRef
 						sc.Choices[j].TargetChapterID = newRef
 					}
@@ -233,6 +246,13 @@ func (s *Server) createChapterGroup(r *http.Request) string {
 func applyChapterLinkToScene(fromSc *book.Scene, idx int, targetCh *book.Chapter) (changed bool, toast string) {
 	targetRef := "chapter:" + targetCh.ReferenceKey()
 	if len(fromSc.Choices) <= 1 {
+		var prevCond, prevEff string
+		var prevLocked bool
+		if len(fromSc.Choices) == 1 {
+			prevCond = fromSc.Choices[0].Condition
+			prevLocked = fromSc.Choices[0].ShowWhenLocked
+			prevEff = fromSc.Choices[0].Effects
+		}
 		fromSc.ExplicitEnd = false
 		fromSc.ExplicitNext = targetRef
 		fromSc.Choices = []book.Choice{
@@ -243,6 +263,9 @@ func applyChapterLinkToScene(fromSc *book.Scene, idx int, targetCh *book.Chapter
 				TargetChapterID: targetCh.ReferenceKey(),
 				IsChapterLink:   true,
 				IsImplicit:      true,
+				Condition:       prevCond,
+				ShowWhenLocked:  prevLocked,
+				Effects:         prevEff,
 			},
 		}
 		return true, "Połączono z rozdziałem: " + targetCh.DisplayName()
@@ -278,14 +301,22 @@ func (s *Server) connectChoiceOnScene(r *http.Request) string {
 	if toChParam := strings.TrimSpace(r.FormValue("to_chapter")); toChParam != "" && toID == "" {
 		toID = "chapter:" + toChParam
 	}
-	idx, errIdx := strconv.Atoi(strings.TrimSpace(r.FormValue("choice_idx")))
+	rawIdx := strings.TrimSpace(r.FormValue("choice_idx"))
+	if rawIdx == "" {
+		rawIdx = strings.TrimSpace(r.FormValue("from_choice"))
+	}
+	idx, errIdx := strconv.Atoi(rawIdx)
+	if errIdx != nil && rawIdx == "" {
+		idx = 0
+		errIdx = nil
+	}
 	fromSc := s.findScene(fromID)
 	if errIdx != nil || fromSc == nil {
 		return ""
 	}
 
 	s.ensureHistoryBaselineBeforeMutation()
-	if r.FormValue("scene_id") != "" {
+	if r.FormValue("flush_form") == "true" && r.FormValue("scene_id") != "" {
 		s.applySceneFormFields(fromSc, r)
 	}
 	changed := false
@@ -340,14 +371,24 @@ func (s *Server) connectChoiceOnScene(r *http.Request) string {
 		} else {
 			targetRef := toSc.ReferenceKey()
 			if len(fromSc.Choices) <= 1 {
+				var prevCond, prevEff string
+				var prevLocked bool
+				if len(fromSc.Choices) == 1 {
+					prevCond = fromSc.Choices[0].Condition
+					prevLocked = fromSc.Choices[0].ShowWhenLocked
+					prevEff = fromSc.Choices[0].Effects
+				}
 				fromSc.ExplicitEnd = false
 				fromSc.ExplicitNext = targetRef
 				fromSc.Choices = []book.Choice{
 					{
-						Label:         "Dalej",
-						Target:        targetRef,
-						TargetSceneID: toSc.ID,
-						IsImplicit:    true,
+						Label:          "Dalej",
+						Target:         targetRef,
+						TargetSceneID:  toSc.ID,
+						IsImplicit:     true,
+						Condition:      prevCond,
+						ShowWhenLocked: prevLocked,
+						Effects:        prevEff,
 					},
 				}
 				changed = true

@@ -1778,6 +1778,103 @@ func TestSceneVoiceSectionsRecorderAndTextIsolation(t *testing.T) {
 	}
 }
 
+func TestNewSceneIDAndTitleEditsNeverOverwriteFirstSceneAndSyncChapterSlugs(t *testing.T) {
+	rootDir := t.TempDir()
+	srv := NewServer(rootDir, mojra.AppFS)
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	postForm := func(action string, vals url.Values) *http.Response {
+		t.Helper()
+		vals.Set("action", action)
+		resp, err := http.PostForm(ts.URL+"/api/action", vals)
+		if err != nil {
+			t.Fatalf("POST %s failed: %v", action, err)
+		}
+		_, _ = io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		return resp
+	}
+
+	customDir := filepath.Join(t.TempDir(), "NowaKsiazka")
+	postForm("CreateNewBook", url.Values{
+		"title":     {"Nowa Książka"},
+		"author":    {"Autor"},
+		"mode":      {"book"},
+		"save_path": {customDir},
+	})
+
+	// 1. Add a 3rd scene ("Nowa scena 3") -> gets initial auto-ID "s1" while scenes 0 and 1 are "poczatek" and "rozdroze"
+	postForm("CreateSceneAt", url.Values{
+		"x": {"480"},
+		"y": {"480"},
+	})
+	if len(srv.ActiveBook.Scenes) != 3 {
+		t.Fatalf("expected 3 scenes after CreateSceneAt, got %d", len(srv.ActiveBook.Scenes))
+	}
+	newSc := srv.ActiveBook.Scenes[2]
+	if newSc.ID != "s1" {
+		t.Fatalf("expected new scene initial auto-ID s1, got %q", newSc.ID)
+	}
+
+	// 2. Open modal on new scene ("s1"), then simulate sequential AutoSaveScene calls where explicit_id changes
+	postForm("OpenSceneTextModal", url.Values{"scene": {"s1"}})
+	resp1 := postForm("AutoSaveScene", url.Values{
+		"scene_id":    {"s1"},
+		"name":        {"Zatopiona śluza"},
+		"explicit_id": {"zatopiona_sluza"},
+		"text":        {"Treść nowej sceny przy śluzie."},
+	})
+	if gotID := resp1.Header.Get("X-Scene-ID"); gotID != "zatopiona_sluza" {
+		t.Fatalf("expected X-Scene-ID=zatopiona_sluza after first AutoSaveScene, got %q", gotID)
+	}
+	// Even if a stale request still sends scene_id="s1", it must NEVER overwrite scenes[0] ("poczatek")
+	postForm("AutoSaveScene", url.Values{
+		"scene_id":    {"s1"},
+		"name":        {"Zatopiona śluza"},
+		"explicit_id": {"zatopiona_sluza"},
+		"text":        {"Treść nowej sceny przy śluzie po drugim zapisie."},
+	})
+	if srv.ActiveBook.Scenes[0].ID != "poczatek" || srv.ActiveBook.Scenes[0].Name != "Początek drogi" {
+		t.Fatalf("expected first scene poczatek to remain untouched, got ID=%q Name=%q", srv.ActiveBook.Scenes[0].ID, srv.ActiveBook.Scenes[0].Name)
+	}
+	renamedSc := srv.findScene("zatopiona_sluza")
+	if renamedSc == nil || renamedSc.Name != "Zatopiona śluza" || !strings.Contains(renamedSc.Text, "po drugim zapisie") {
+		t.Fatalf("expected zatopiona_sluza to preserve both ExplicitID and Name, got %+v", renamedSc)
+	}
+
+	// 3. Single-word title ("Korytarz") on another new scene must auto-generate slug "korytarz" and preserve Name="Korytarz"
+	postForm("CreateSceneAt", url.Values{"x": {"720"}, "y": {"480"}})
+	postForm("AutoSaveScene", url.Values{
+		"scene_id": {"s1"},
+		"name":     {"Korytarz"},
+	})
+	korytarzSc := srv.findScene("korytarz")
+	if korytarzSc == nil || korytarzSc.ExplicitID != "korytarz" || korytarzSc.Name != "Korytarz" {
+		t.Fatalf("expected single-word title Korytarz to auto-slug ExplicitID=korytarz and preserve Name=Korytarz, got %+v", korytarzSc)
+	}
+
+	// 4. Renaming start scene explicit_id ("poczatek" -> "brama_startowa") must update StartSceneID and book.playtxt
+	postForm("SaveScene", url.Values{
+		"scene_id":    {"poczatek"},
+		"name":        {"Brama startowa"},
+		"explicit_id": {"brama_startowa"},
+	})
+	if srv.ActiveBook.StartSceneID != "brama_startowa" {
+		t.Fatalf("expected StartSceneID to update to brama_startowa, got %q", srv.ActiveBook.StartSceneID)
+	}
+
+	// 5. Renaming chapter ("Rozdział 1" -> "Wioskowe dziwadło") updates Chapter.ExplicitID and .playtxt file
+	postForm("RenameChapter", url.Values{
+		"old_chapter": {"Rozdział 1"},
+		"new_chapter": {"Wioskowe dziwadło"},
+	})
+	ch := srv.ActiveBook.FindChapter("Wioskowe dziwadło")
+	if ch == nil || ch.ExplicitID != "wioskowe_dziwadlo" || ch.SourceFile != "wioskowe_dziwadlo.playtxt" {
+		t.Fatalf("expected chapter rename to update ExplicitID=wioskowe_dziwadlo and SourceFile=wioskowe_dziwadlo.playtxt, got %+v", ch)
+	}
+}
+
 func BenchmarkParseActionRequestWFP(b *testing.B) {
 	payload := EncodeWFPForm(url.Values{
 		"action":    {"SaveEditorState"},
