@@ -1,3 +1,5 @@
+//go:build !(js && wasm)
+
 package gui
 
 import (
@@ -241,7 +243,15 @@ func (s *Server) BuildTargetedRenderContext(targetTpl string, books []*book.Book
 
 func (s *Server) populateLibraryContext(vars map[string]any, books []*book.Book) {
 	bookItems := make([]map[string]any, 0, len(books))
+	seenTitleKeys := make(map[string]bool, len(books))
 	for _, b := range books {
+		titleKey := book.SanitizeBookID(b.Title)
+		if titleKey != "" {
+			if seenTitleKeys[titleKey] {
+				continue
+			}
+			seenTitleKeys[titleKey] = true
+		}
 		save := book.LoadSaveState(s.SavesDir, b.ID, b.StartSceneID)
 		if !s.isHistoryPreview() && s.PlayerBook != nil && s.PlayerBook.ID == b.ID && s.Save != nil && s.Save.UpdatedAtUnix >= save.UpdatedAtUnix {
 			save = s.Save
@@ -281,7 +291,21 @@ func (s *Server) populateLibraryContext(vars map[string]any, books []*book.Book)
 func (s *Server) populateStudioHomeContext(vars map[string]any, books []*book.Book) {
 	lang := s.lang()
 	items := make([]map[string]any, 0, len(books))
+	unpackedByID := make(map[string]bool, len(books))
+	unpackedByTitle := make(map[string]bool, len(books))
+
 	for _, b := range books {
+		if b.IsPacked {
+			continue
+		}
+		titleKey := book.SanitizeBookID(b.Title)
+		if titleKey != "" && unpackedByTitle[titleKey] {
+			continue
+		}
+		unpackedByID[b.ID] = true
+		if titleKey != "" {
+			unpackedByTitle[titleKey] = true
+		}
 		items = append(items, map[string]any{
 			"id":        b.ID,
 			"title":     b.Title,
@@ -290,8 +314,41 @@ func (s *Server) populateStudioHomeContext(vars map[string]any, books []*book.Bo
 			"path_line": formatStudioProjectPathLine(b),
 		})
 	}
+
+	var extPaths []string
+	if s.Settings != nil {
+		extPaths = s.Settings.ExternalBooks
+	}
+	packedBooks := book.LoadPackedBooks(s.BooksDir, extPaths)
+	seenPackedRoots := make(map[string]bool, len(packedBooks))
+	for _, pb := range packedBooks {
+		seenPackedRoots[filepath.Clean(pb.RootPath)] = true
+	}
+	for _, b := range books {
+		if b.IsPacked && !seenPackedRoots[filepath.Clean(b.RootPath)] {
+			seenPackedRoots[filepath.Clean(b.RootPath)] = true
+			packedBooks = append(packedBooks, b)
+		}
+	}
+
+	packedItems := make([]map[string]any, 0, len(packedBooks))
+	for _, pb := range packedBooks {
+		titleKey := book.SanitizeBookID(pb.Title)
+		isUnpacked := unpackedByID[pb.ID] || (titleKey != "" && unpackedByTitle[titleKey])
+		packedItems = append(packedItems, map[string]any{
+			"id":          pb.ID,
+			"title":       pb.Title,
+			"author":      pb.Author,
+			"meta_line":   formatStudioProjectMetaLine(pb, lang),
+			"path_line":   formatStudioProjectPathLine(pb),
+			"is_unpacked": isUnpacked,
+		})
+	}
+
 	vars["has_studio_home_projects"] = len(items) > 0
 	vars["studio_home_projects"] = items
+	vars["has_studio_packed_books"] = len(packedItems) > 0
+	vars["studio_packed_books"] = packedItems
 }
 
 func formatStudioProjectMetaLine(b *book.Book, lang Lang) string {

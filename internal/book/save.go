@@ -69,8 +69,48 @@ func DefaultAppSettings() *AppSettings {
 		AutoChoice:         false,
 		AutoChoiceStrategy: "first",
 		AutoChoiceDelay:    DefaultAutoChoiceDelay,
+		EditorBookStates:   make(map[string]EditorBookUIState),
 		BookExportDirs:     make(map[string]string),
 	}
+}
+
+// SetEditorBookUIState stores the Studio UI state for a specific book ID in settings.ini.
+func (cfg *AppSettings) SetEditorBookUIState(bookID string, st EditorBookUIState) {
+	if cfg == nil {
+		return
+	}
+	safeID := SanitizeBookID(bookID)
+	if safeID == "" {
+		return
+	}
+	if cfg.EditorBookStates == nil {
+		cfg.EditorBookStates = make(map[string]EditorBookUIState)
+	}
+	st.SelectedSceneID = strings.TrimSpace(st.SelectedSceneID)
+	st.SceneTextModalID = strings.TrimSpace(st.SceneTextModalID)
+	if st.SceneTextWidthMode == "full" {
+		st.SceneTextWidthMode = "full"
+	} else if st.SceneTextWidthMode == "half" {
+		st.SceneTextWidthMode = "half"
+	} else {
+		st.SceneTextWidthMode = ""
+	}
+	st.RightPanel = strings.TrimSpace(st.RightPanel)
+	st.SelectedChapter = strings.TrimSpace(st.SelectedChapter)
+	cfg.EditorBookStates[safeID] = st
+}
+
+// GetEditorBookUIState returns the remembered Studio UI state for a specific book ID.
+func (cfg *AppSettings) GetEditorBookUIState(bookID string) (EditorBookUIState, bool) {
+	if cfg == nil || len(cfg.EditorBookStates) == 0 {
+		return EditorBookUIState{}, false
+	}
+	safeID := SanitizeBookID(bookID)
+	if safeID == "" {
+		return EditorBookUIState{}, false
+	}
+	st, ok := cfg.EditorBookStates[safeID]
+	return st, ok
 }
 
 // SetBookExportDir stores or clears the remembered export directory for a specific book ID in settings.ini.
@@ -151,6 +191,24 @@ func LoadAppSettings(savesDir string) *AppSettings {
 			cfg.ActiveBookID = SanitizeBookID(val)
 		case "display.editor_book", ".editor_book":
 			cfg.EditorBookID = SanitizeBookID(val)
+		case "display.editor_studio_home", ".editor_studio_home":
+			cfg.EditorStudioHome = strings.EqualFold(val, "true") || val == "1" || strings.EqualFold(val, "yes")
+		case "display.editor_selected_scene", ".editor_selected_scene":
+			cfg.EditorSelectedSceneID = strings.TrimSpace(val)
+		case "display.editor_scene_text_modal", ".editor_scene_text_modal":
+			cfg.EditorSceneTextModalID = strings.TrimSpace(val)
+		case "display.editor_scene_text_width", ".editor_scene_text_width":
+			if strings.EqualFold(val, "full") {
+				cfg.EditorSceneTextWidth = "full"
+			} else if strings.EqualFold(val, "half") {
+				cfg.EditorSceneTextWidth = "half"
+			}
+		case "display.editor_scene_text_settings", ".editor_scene_text_settings":
+			cfg.EditorSceneSettings = strings.EqualFold(val, "true") || val == "1" || strings.EqualFold(val, "yes")
+		case "display.editor_right_panel", ".editor_right_panel":
+			cfg.EditorRightPanel = strings.ToLower(strings.TrimSpace(val))
+		case "display.editor_selected_chapter", ".editor_selected_chapter":
+			cfg.EditorSelectedChapter = strings.TrimSpace(val)
 		case "display.active_view", ".active_view":
 			if val == "library" || val == "player" || val == "editor" {
 				cfg.ActiveView = val
@@ -199,6 +257,30 @@ func LoadAppSettings(savesDir string) *AppSettings {
 			if strings.HasPrefix(key, "book_export.") {
 				bID := strings.TrimPrefix(key, "book_export.")
 				cfg.SetBookExportDir(bID, val)
+			} else if strings.HasPrefix(key, "editor_state.") {
+				rest := strings.TrimPrefix(key, "editor_state.")
+				if dotIdx := strings.LastIndexByte(rest, '.'); dotIdx > 0 {
+					bID := SanitizeBookID(rest[:dotIdx])
+					prop := rest[dotIdx+1:]
+					if bID != "" {
+						st, _ := cfg.GetEditorBookUIState(bID)
+						switch prop {
+						case "selected_scene":
+							st.SelectedSceneID = val
+						case "scene_text_modal":
+							st.SceneTextModalID = val
+						case "scene_text_width":
+							st.SceneTextWidthMode = strings.ToLower(val)
+						case "scene_text_settings":
+							st.SceneTextSettingsOpen = strings.EqualFold(val, "true") || val == "1" || strings.EqualFold(val, "yes")
+						case "right_panel":
+							st.RightPanel = strings.ToLower(val)
+						case "selected_chapter":
+							st.SelectedChapter = val
+						}
+						cfg.SetEditorBookUIState(bID, st)
+					}
+				}
 			}
 		}
 	}
@@ -284,6 +366,57 @@ func SaveAppSettings(savesDir string, cfg *AppSettings) error {
 	fmt.Fprintf(&sb, "active_book = %s\n", cfg.ActiveBookID)
 	if cfg.EditorBookID != "" {
 		fmt.Fprintf(&sb, "editor_book = %s\n", cfg.EditorBookID)
+	}
+	if cfg.EditorStudioHome {
+		fmt.Fprintf(&sb, "editor_studio_home = %t\n", cfg.EditorStudioHome)
+	}
+	if cfg.EditorSelectedSceneID != "" {
+		fmt.Fprintf(&sb, "editor_selected_scene = %s\n", cfg.EditorSelectedSceneID)
+	}
+	if cfg.EditorSceneTextModalID != "" {
+		fmt.Fprintf(&sb, "editor_scene_text_modal = %s\n", cfg.EditorSceneTextModalID)
+	}
+	if cfg.EditorSceneTextWidth == "full" || cfg.EditorSceneTextWidth == "half" {
+		fmt.Fprintf(&sb, "editor_scene_text_width = %s\n", cfg.EditorSceneTextWidth)
+	}
+	if cfg.EditorSceneSettings {
+		fmt.Fprintf(&sb, "editor_scene_text_settings = %t\n", cfg.EditorSceneSettings)
+	}
+	if cfg.EditorRightPanel != "" {
+		fmt.Fprintf(&sb, "editor_right_panel = %s\n", cfg.EditorRightPanel)
+	}
+	if cfg.EditorSelectedChapter != "" {
+		fmt.Fprintf(&sb, "editor_selected_chapter = %s\n", cfg.EditorSelectedChapter)
+	}
+	if len(cfg.EditorBookStates) > 0 {
+		stateKeys := make([]string, 0, len(cfg.EditorBookStates))
+		for k := range cfg.EditorBookStates {
+			if cleanK := SanitizeBookID(k); cleanK != "" {
+				stateKeys = append(stateKeys, cleanK)
+			}
+		}
+		sort.Strings(stateKeys)
+		for _, k := range stateKeys {
+			st := cfg.EditorBookStates[k]
+			if st.SelectedSceneID != "" {
+				fmt.Fprintf(&sb, "editor_state.%s.selected_scene = %s\n", k, st.SelectedSceneID)
+			}
+			if st.SceneTextModalID != "" {
+				fmt.Fprintf(&sb, "editor_state.%s.scene_text_modal = %s\n", k, st.SceneTextModalID)
+			}
+			if st.SceneTextWidthMode == "full" || st.SceneTextWidthMode == "half" {
+				fmt.Fprintf(&sb, "editor_state.%s.scene_text_width = %s\n", k, st.SceneTextWidthMode)
+			}
+			if st.SceneTextSettingsOpen {
+				fmt.Fprintf(&sb, "editor_state.%s.scene_text_settings = %t\n", k, st.SceneTextSettingsOpen)
+			}
+			if st.RightPanel != "" {
+				fmt.Fprintf(&sb, "editor_state.%s.right_panel = %s\n", k, st.RightPanel)
+			}
+			if st.SelectedChapter != "" {
+				fmt.Fprintf(&sb, "editor_state.%s.selected_chapter = %s\n", k, st.SelectedChapter)
+			}
+		}
 	}
 	fmt.Fprintf(&sb, "active_view = %s\n\n", cfg.ActiveView)
 

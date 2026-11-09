@@ -1,3 +1,5 @@
+//go:build !(js && wasm)
+
 package book
 
 import (
@@ -370,16 +372,6 @@ func ExplainEffectsExprErrorLang(expr string, b *Book, lang string) string {
 	return ""
 }
 
-
-func findCompoundAssignOp(clause string) (string, int) {
-	if idx := strings.Index(clause, "+="); idx > 0 {
-		return "+=", idx
-	}
-	if idx := strings.Index(clause, "-="); idx > 0 {
-		return "-=", idx
-	}
-	return "", -1
-}
 
 // ExplainExitTargetErrorLang returns a localized syntax/target error explanation for an invalid exit: target on sc, or "" when valid.
 func ExplainExitTargetErrorLang(sc *Scene, rawTarget string, b *Book, lang string) string {

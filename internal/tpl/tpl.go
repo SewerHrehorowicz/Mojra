@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 )
@@ -1082,4 +1083,31 @@ func countLeadingIndent(s string) int {
 		}
 	}
 	return n
+}
+
+// discoverComponentFiles returns sorted paths matching appDir/components/*/*<ext>.
+func discoverComponentFiles(appDir, ext string) []string {
+	compRoot := filepath.Join(appDir, "components")
+	entries, err := os.ReadDir(compRoot)
+	if err != nil {
+		return nil
+	}
+	var found []string
+	for _, d := range entries {
+		if !d.IsDir() {
+			continue
+		}
+		subDir := filepath.Join(compRoot, d.Name())
+		subEntries, err := os.ReadDir(subDir)
+		if err != nil {
+			continue
+		}
+		for _, f := range subEntries {
+			if !f.IsDir() && strings.HasSuffix(strings.ToLower(f.Name()), ext) {
+				found = append(found, filepath.Join(subDir, f.Name()))
+			}
+		}
+	}
+	sort.Strings(found)
+	return found
 }

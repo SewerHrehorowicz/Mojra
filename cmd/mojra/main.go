@@ -112,6 +112,9 @@ Użycie / Usage:
   mojra bundle-linux
       Buduje samodzielną paczkę wykonywalną dla systemu Linux (dist/Mojra-linux/ + .zip).
 
+  mojra bundle-android
+      Buduje podpisany pakiet instalacyjny Android APK (dist/Mojra-android.apk) z binariami arm64/amd64.
+
   mojra pack <id-książki>
       Pakuje folder książki z katalogu books/<id> do archiwum dist/<id>.playbook.
 
@@ -138,6 +141,7 @@ Platformy (Platforms):
   -m, --macos, --darwin      Buduj dla systemu macOS (.app, .zip oraz binaria arm64/amd64)
   -w, --windows, --win       Buduj dla systemu Windows (.exe z ikoną, .zip, amd64/arm64)
   -l, --linux                Buduj dla systemu Linux (binarium, .desktop, ikona .png, .zip)
+      --android, --apk       Buduj pakiet instalacyjny Android APK (dist/Mojra-android.apk, arm64/amd64)
       --local, --host        Buduj wyłącznie pojedyncze binarium dla bieżącego systemu i architektury
   -p, --platform <lista>     Lista platform lub celów os/arch oddzielona przecinkami
                              (np. macos,windows lub darwin/arm64,windows/amd64,linux/amd64)
@@ -671,7 +675,7 @@ func buildPlatformBinary(rootDir string, target platformTarget, outPath string, 
 			_ = os.Remove(sysoPath)
 		}()
 
-		cmd := exec.Command("go", "build", "-tags=prod_embed", "-trimpath", "-ldflags=-H=windowsgui "+modeFlags, "-o", outPath, "./cmd/mojra")
+		cmd := exec.Command("go", "build", "-tags=prod_embed", "-trimpath", "-ldflags=-s -w -H=windowsgui "+modeFlags, "-o", outPath, "./cmd/mojra")
 		cmd.Dir = rootDir
 		cmd.Env = append(os.Environ(), "GOOS=windows", "GOARCH="+target.Arch, "CGO_ENABLED=0")
 		cmd.Stdout = os.Stdout
@@ -684,7 +688,7 @@ func buildPlatformBinary(rootDir string, target platformTarget, outPath string, 
 	case "darwin":
 		// On macOS host, prefer CGO_ENABLED=1 so native Cocoa/WKWebView window support is compiled in.
 		if runtime.GOOS == "darwin" {
-			cmd := exec.Command("go", "build", "-tags=prod_embed", "-trimpath", "-ldflags="+modeFlags, "-o", outPath, "./cmd/mojra")
+			cmd := exec.Command("go", "build", "-tags=prod_embed", "-trimpath", "-ldflags=-s -w "+modeFlags, "-o", outPath, "./cmd/mojra")
 			cmd.Dir = rootDir
 			cmd.Env = append(os.Environ(), "GOOS=darwin", "GOARCH="+target.Arch, "CGO_ENABLED=1")
 			var stderr bytes.Buffer
@@ -711,7 +715,13 @@ func buildPlatformBinary(rootDir string, target platformTarget, outPath string, 
 		}
 		cmd := exec.Command("go", "build", "-tags=prod_embed", "-trimpath", "-ldflags=-s -w "+modeFlags, "-o", outPath, "./cmd/mojra")
 		cmd.Dir = rootDir
-		cmd.Env = append(os.Environ(), "GOOS=android", "GOARCH="+target.Arch, "CGO_ENABLED=1", "CC="+ndkClang)
+		cmd.Env = append(os.Environ(),
+			"GOOS=android",
+			"GOARCH="+target.Arch,
+			"CGO_ENABLED=1",
+			"CC="+ndkClang,
+			"CGO_LDFLAGS=-Wl,-z,max-page-size=16384",
+		)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		if err := cmd.Run(); err != nil {
@@ -846,6 +856,11 @@ func buildCmd(args []string) {
 		"saves",
 	} {
 		_ = os.RemoveAll(filepath.Join(distDir, stale))
+	}
+	if legacyMatches, err := filepath.Glob(filepath.Join(distDir, "StoryTeller-*")); err == nil {
+		for _, m := range legacyMatches {
+			_ = os.RemoveAll(m)
+		}
 	}
 
 	builtByOS := map[string]map[string]string{}
@@ -996,34 +1011,21 @@ func packageMacOSBundle(rootDir string, archBins map[string]string) error {
 	arm64Bin := archBins["arm64"]
 	amd64Bin := archBins["amd64"]
 
-	createdUniversal := false
-	if arm64Bin != "" && amd64Bin != "" && runtime.GOOS == "darwin" {
-		if lipoPath, err := exec.LookPath("lipo"); err == nil && lipoPath != "" {
-			cmd := exec.Command(lipoPath, "-create", "-output", binPath, arm64Bin, amd64Bin)
-			if err := cmd.Run(); err == nil {
-				_ = os.Chmod(binPath, 0755)
-				createdUniversal = true
-			}
+	chosen := archBins[runtime.GOARCH]
+	if chosen == "" {
+		if arm64Bin != "" {
+			chosen = arm64Bin
+		} else {
+			chosen = amd64Bin
 		}
 	}
-
-	if !createdUniversal {
-		chosen := archBins[runtime.GOARCH]
-		if chosen == "" {
-			if arm64Bin != "" {
-				chosen = arm64Bin
-			} else {
-				chosen = amd64Bin
-			}
+	if chosen == "" {
+		if err := buildPlatformBinary(rootDir, platformTarget{OS: "darwin", Arch: "arm64"}, binPath); err != nil {
+			return err
 		}
-		if chosen == "" {
-			if err := buildPlatformBinary(rootDir, platformTarget{OS: "darwin", Arch: "arm64"}, binPath); err != nil {
-				return err
-			}
-		} else {
-			if err := copyFileWithMode(chosen, binPath, 0755); err != nil {
-				return err
-			}
+	} else {
+		if err := copyFileWithMode(chosen, binPath, 0755); err != nil {
+			return err
 		}
 	}
 
@@ -1111,10 +1113,6 @@ func packageWindowsBundle(rootDir string, archBins map[string]string) error {
 		}
 	}
 
-	if arm64Bin := archBins["arm64"]; arm64Bin != "" && archBins["amd64"] != "" {
-		_ = copyFileWithMode(arm64Bin, filepath.Join(outDir, "Mojra-arm64.exe"), 0755)
-	}
-
 	if runtime.GOOS == "windows" {
 		_ = copyFileWithMode(exePath, filepath.Join(rootDir, "Mojra.exe"), 0755)
 		_ = copyFileWithMode(icoPath, filepath.Join(rootDir, "Mojra.ico"), 0644)
@@ -1174,10 +1172,6 @@ func packageLinuxBundle(rootDir string, archBins map[string]string) error {
 		}
 	}
 
-	if arm64Bin := archBins["arm64"]; arm64Bin != "" && archBins["amd64"] != "" {
-		_ = copyFileWithMode(arm64Bin, filepath.Join(outDir, "mojra-arm64"), 0755)
-	}
-
 	if runtime.GOOS == "linux" {
 		hostBin := archBins[runtime.GOARCH]
 		if hostBin == "" {
@@ -1235,64 +1229,441 @@ func bundleAndroidCmd(args []string) {
 	buildCmd(append([]string{"--android"}, args...))
 }
 
+type androidToolchain struct {
+	SDKDir     string
+	JDKDir     string
+	AndroidJar string
+	Aapt       string
+	D8         string
+	Zipalign   string
+	Apksigner  string
+	Javac      string
+	Keytool    string
+}
+
+func candidateUnityAndroidPlayerDirs() []string {
+	patterns := []string{
+		"/Applications/Unity/Hub/Editor/*/PlaybackEngines/AndroidPlayer",
+	}
+	if pf := os.Getenv("ProgramFiles"); pf != "" {
+		patterns = append(patterns, filepath.Join(pf, "Unity", "Hub", "Editor", "*", "Editor", "Data", "PlaybackEngines", "AndroidPlayer"))
+	}
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		patterns = append(patterns,
+			filepath.Join(home, "Unity", "Hub", "Editor", "*", "Editor", "Data", "PlaybackEngines", "AndroidPlayer"),
+			filepath.Join(home, "Applications", "Unity", "Hub", "Editor", "*", "PlaybackEngines", "AndroidPlayer"),
+		)
+	}
+	var out []string
+	seen := make(map[string]bool)
+	for _, pat := range patterns {
+		if matches, err := filepath.Glob(pat); err == nil {
+			for i := len(matches) - 1; i >= 0; i-- {
+				clean := filepath.Clean(matches[i])
+				if !seen[clean] {
+					seen[clean] = true
+					out = append(out, clean)
+				}
+			}
+		}
+	}
+	return out
+}
+
+func candidateAndroidSDKDirs() []string {
+	var dirs []string
+	addDir := func(p string) {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			dirs = append(dirs, filepath.Clean(p))
+		}
+	}
+	addDir(os.Getenv("ANDROID_HOME"))
+	addDir(os.Getenv("ANDROID_SDK_ROOT"))
+	if localAppData := os.Getenv("LOCALAPPDATA"); localAppData != "" {
+		addDir(filepath.Join(localAppData, "Android", "Sdk"))
+	}
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		addDir(filepath.Join(home, "Library", "Android", "sdk"))
+		addDir(filepath.Join(home, "AppData", "Local", "Android", "Sdk"))
+		addDir(filepath.Join(home, "Android", "Sdk"))
+		addDir(filepath.Join(home, "Android", "sdk"))
+	}
+	addDir("/opt/android-sdk")
+	addDir("/usr/lib/android-sdk")
+	for _, ap := range candidateUnityAndroidPlayerDirs() {
+		addDir(filepath.Join(ap, "SDK"))
+	}
+	return dirs
+}
+
 func findAndroidNDKClang(arch string) (string, error) {
 	prefix := "aarch64-linux-android24-clang"
 	if arch == "amd64" {
 		prefix = "x86_64-linux-android24-clang"
 	}
-	var candidates []string
-	if ndkHome := os.Getenv("ANDROID_NDK_HOME"); ndkHome != "" {
-		if m, err := filepath.Glob(filepath.Join(ndkHome, "toolchains", "llvm", "prebuilt", "*", "bin", prefix)); err == nil {
-			candidates = append(candidates, m...)
+	binNames := []string{prefix}
+	if runtime.GOOS == "windows" {
+		binNames = []string{prefix + ".cmd", prefix + ".exe", prefix}
+	}
+
+	var ndkRoots []string
+	addNDK := func(p string) {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			ndkRoots = append(ndkRoots, filepath.Clean(p))
 		}
 	}
-	if m, err := filepath.Glob("/Applications/Unity/Hub/Editor/*/PlaybackEngines/AndroidPlayer/NDK/toolchains/llvm/prebuilt/*/bin/" + prefix); err == nil {
-		candidates = append(candidates, m...)
+	addNDK(os.Getenv("ANDROID_NDK_HOME"))
+	addNDK(os.Getenv("ANDROID_NDK_ROOT"))
+	addNDK(os.Getenv("NDK_HOME"))
+
+	for _, sdkDir := range candidateAndroidSDKDirs() {
+		if m, err := filepath.Glob(filepath.Join(sdkDir, "ndk", "*")); err == nil {
+			for i := len(m) - 1; i >= 0; i-- {
+				addNDK(m[i])
+			}
+		}
+		addNDK(filepath.Join(sdkDir, "ndk-bundle"))
 	}
-	if home, err := os.UserHomeDir(); err == nil {
-		if m, err := filepath.Glob(filepath.Join(home, "Library", "Android", "sdk", "ndk", "*", "toolchains", "llvm", "prebuilt", "*", "bin", prefix)); err == nil {
-			candidates = append(candidates, m...)
+	for _, ap := range candidateUnityAndroidPlayerDirs() {
+		addNDK(filepath.Join(ap, "NDK"))
+	}
+
+	for _, root := range ndkRoots {
+		for _, binName := range binNames {
+			if m, err := filepath.Glob(filepath.Join(root, "toolchains", "llvm", "prebuilt", "*", "bin", binName)); err == nil {
+				for i := len(m) - 1; i >= 0; i-- {
+					if info, err := os.Stat(m[i]); err == nil && !info.IsDir() {
+						return m[i], nil
+					}
+				}
+			}
 		}
 	}
-	for i := len(candidates) - 1; i >= 0; i-- {
-		if info, err := os.Stat(candidates[i]); err == nil && !info.IsDir() {
-			return candidates[i], nil
-		}
-	}
-	return "", fmt.Errorf("nie znaleziono kompilatora Android NDK (%s)", prefix)
+	return "", fmt.Errorf("nie znaleziono kompilatora Android NDK (%s) — ustaw ANDROID_NDK_HOME lub zainstaluj NDK w Android SDK", prefix)
 }
 
-func findUnityAndroidPlayerDir() string {
-	matches, _ := filepath.Glob("/Applications/Unity/Hub/Editor/*/PlaybackEngines/AndroidPlayer")
-	for i := len(matches) - 1; i >= 0; i-- {
-		if info, err := os.Stat(filepath.Join(matches[i], "SDK")); err == nil && info.IsDir() {
-			return matches[i]
+func resolveAndroidToolBinary(dir, name string, exts ...string) string {
+	for _, ext := range exts {
+		p := filepath.Join(dir, name+ext)
+		if info, err := os.Stat(p); err == nil && !info.IsDir() {
+			return p
 		}
 	}
 	return ""
 }
 
-func packageAndroidBundle(rootDir string, archBins map[string]string) error {
-	apDir := findUnityAndroidPlayerDir()
-	if apDir == "" {
-		return nil
+func resolveAndroidToolchain() (androidToolchain, error) {
+	var tc androidToolchain
+	exeExts := []string{""}
+	scriptExts := []string{"", ".bat", ".cmd"}
+	if runtime.GOOS == "windows" {
+		exeExts = []string{".exe", ".cmd", ".bat", ""}
+		scriptExts = []string{".bat", ".cmd", ".exe", ""}
 	}
-	sdkDir := filepath.Join(apDir, "SDK")
-	jdkDir := filepath.Join(apDir, "OpenJDK")
 
-	btMatches, _ := filepath.Glob(filepath.Join(sdkDir, "build-tools", "*"))
-	platMatches, _ := filepath.Glob(filepath.Join(sdkDir, "platforms", "android-*"))
-	if len(btMatches) == 0 || len(platMatches) == 0 {
-		return nil
+	sdkCandidates := candidateAndroidSDKDirs()
+	for i := len(sdkCandidates) - 1; i >= 0; i-- {
+		// Prefer explicit env vars at index 0..1 first, so scan forward:
+		_ = i
 	}
-	btDir := btMatches[len(btMatches)-1]
-	androidJar := filepath.Join(platMatches[len(platMatches)-1], "android.jar")
-	aapt := filepath.Join(btDir, "aapt")
-	d8 := filepath.Join(btDir, "d8")
-	zipalign := filepath.Join(btDir, "zipalign")
-	apksigner := filepath.Join(btDir, "apksigner")
-	javac := filepath.Join(jdkDir, "bin", "javac")
-	keytool := filepath.Join(jdkDir, "bin", "keytool")
+	for _, sdkDir := range sdkCandidates {
+		btMatches, _ := filepath.Glob(filepath.Join(sdkDir, "build-tools", "*"))
+		platMatches, _ := filepath.Glob(filepath.Join(sdkDir, "platforms", "android-*"))
+		if len(btMatches) == 0 || len(platMatches) == 0 {
+			continue
+		}
+		btDir := btMatches[len(btMatches)-1]
+		androidJar := filepath.Join(platMatches[len(platMatches)-1], "android.jar")
+		if info, err := os.Stat(androidJar); err != nil || info.IsDir() {
+			continue
+		}
+		aapt := resolveAndroidToolBinary(btDir, "aapt", exeExts...)
+		d8 := resolveAndroidToolBinary(btDir, "d8", scriptExts...)
+		if d8 == "" {
+			d8 = resolveAndroidToolBinary(filepath.Join(btDir, "lib"), "d8", scriptExts...)
+		}
+		zipalign := resolveAndroidToolBinary(btDir, "zipalign", exeExts...)
+		apksigner := resolveAndroidToolBinary(btDir, "apksigner", scriptExts...)
+		if aapt != "" && d8 != "" && zipalign != "" && apksigner != "" {
+			tc.SDKDir = sdkDir
+			tc.AndroidJar = androidJar
+			tc.Aapt = aapt
+			tc.D8 = d8
+			tc.Zipalign = zipalign
+			tc.Apksigner = apksigner
+			break
+		}
+	}
+	if tc.SDKDir == "" {
+		return tc, fmt.Errorf("nie znaleziono Android SDK (build-tools + platforms/android-*) — ustaw ANDROID_HOME lub zainstaluj Android SDK")
+	}
+
+	var jdkCandidates []string
+	if javaHome := strings.TrimSpace(os.Getenv("JAVA_HOME")); javaHome != "" {
+		jdkCandidates = append(jdkCandidates, filepath.Clean(javaHome))
+	}
+	for _, ap := range candidateUnityAndroidPlayerDirs() {
+		jdkCandidates = append(jdkCandidates, filepath.Join(ap, "OpenJDK"))
+	}
+	if pf := os.Getenv("ProgramFiles"); pf != "" {
+		jdkCandidates = append(jdkCandidates,
+			filepath.Join(pf, "Android", "Android Studio", "jbr"),
+			filepath.Join(pf, "Android", "Android Studio", "jre"),
+		)
+	}
+	jdkCandidates = append(jdkCandidates,
+		"/Applications/Android Studio.app/Contents/jbr/Contents/Home",
+		"/Applications/Android Studio.app/Contents/jre/Contents/Home",
+		"/opt/android-studio/jbr",
+	)
+	for _, jdkDir := range jdkCandidates {
+		binDir := filepath.Join(jdkDir, "bin")
+		javac := resolveAndroidToolBinary(binDir, "javac", exeExts...)
+		keytool := resolveAndroidToolBinary(binDir, "keytool", exeExts...)
+		if javac != "" && keytool != "" {
+			tc.JDKDir = jdkDir
+			tc.Javac = javac
+			tc.Keytool = keytool
+			break
+		}
+	}
+	if tc.Javac == "" {
+		if javacPath, err := exec.LookPath("javac"); err == nil {
+			if keytoolPath, kErr := exec.LookPath("keytool"); kErr == nil {
+				tc.Javac = javacPath
+				tc.Keytool = keytoolPath
+				tc.JDKDir = filepath.Dir(filepath.Dir(javacPath))
+			}
+		}
+	}
+	if tc.Javac == "" || tc.Keytool == "" {
+		return tc, fmt.Errorf("nie znaleziono narzędzi JDK (javac / keytool) — ustaw JAVA_HOME lub zainstaluj OpenJDK")
+	}
+	return tc, nil
+}
+
+func buildAndroidManifestXML() string {
+	return `<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="pl.mojra.app"
+    android:versionCode="1"
+    android:versionName="1.0.0">
+    <uses-sdk android:minSdkVersion="24" android:targetSdkVersion="35" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <application
+        android:label="Mojra"
+        android:icon="@mipmap/ic_launcher"
+        android:usesCleartextTraffic="true"
+        android:hardwareAccelerated="true"
+        android:extractNativeLibs="true"
+        android:theme="@android:style/Theme.NoTitleBar.Fullscreen">
+        <activity
+            android:name="pl.mojra.app.MainActivity"
+            android:exported="true"
+            android:configChanges="orientation|screenSize|keyboardHidden">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>
+`
+}
+
+func buildAndroidMainActivityJava() string {
+	return `package pl.mojra.app;
+
+import android.Manifest;
+import android.app.Activity;
+import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.net.Uri;
+import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.webkit.PermissionRequest;
+import android.webkit.ValueCallback;
+import android.webkit.WebChromeClient;
+import android.webkit.WebSettings;
+import android.webkit.WebView;
+import android.webkit.WebViewClient;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.net.Socket;
+
+public class MainActivity extends Activity {
+    private static Process serverProcess;
+    private WebView webView;
+    private ValueCallback<Uri[]> filePathCallback;
+    private PermissionRequest pendingWebPermissionRequest;
+    private static final int PORT = 18484;
+    private static final int REQ_FILE_CHOOSER = 1001;
+    private static final int REQ_RECORD_AUDIO = 1002;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        webView = new WebView(this);
+        WebSettings ws = webView.getSettings();
+        ws.setJavaScriptEnabled(true);
+        ws.setDomStorageEnabled(true);
+        ws.setAllowFileAccess(true);
+        ws.setMediaPlaybackRequiresUserGesture(false);
+        webView.setWebViewClient(new WebViewClient());
+        webView.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public void onPermissionRequest(final PermissionRequest request) {
+                for (String res : request.getResources()) {
+                    if (PermissionRequest.RESOURCE_AUDIO_CAPTURE.equals(res)) {
+                        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                            request.grant(new String[]{PermissionRequest.RESOURCE_AUDIO_CAPTURE});
+                        } else {
+                            pendingWebPermissionRequest = request;
+                            requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, REQ_RECORD_AUDIO);
+                        }
+                        return;
+                    }
+                }
+                request.deny();
+            }
+
+            @Override
+            public boolean onShowFileChooser(WebView wv, ValueCallback<Uri[]> filePathCb, FileChooserParams params) {
+                if (filePathCallback != null) {
+                    filePathCallback.onReceiveValue(null);
+                }
+                filePathCallback = filePathCb;
+                try {
+                    Intent intent = params.createIntent();
+                    startActivityForResult(intent, REQ_FILE_CHOOSER);
+                    return true;
+                } catch (Exception e) {
+                    filePathCallback = null;
+                    return false;
+                }
+            }
+        });
+        setContentView(webView);
+
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                startEmbeddedServer();
+            }
+        }).start();
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == REQ_RECORD_AUDIO && pendingWebPermissionRequest != null) {
+            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                pendingWebPermissionRequest.grant(new String[]{PermissionRequest.RESOURCE_AUDIO_CAPTURE});
+            } else {
+                pendingWebPermissionRequest.deny();
+            }
+            pendingWebPermissionRequest = null;
+        }
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQ_FILE_CHOOSER && filePathCallback != null) {
+            Uri[] results = WebChromeClient.FileChooserParams.parseResult(resultCode, data);
+            filePathCallback.onReceiveValue(results);
+            filePathCallback = null;
+        }
+    }
+
+    @Override
+    public void onBackPressed() {
+        if (webView != null && webView.canGoBack()) {
+            webView.goBack();
+            return;
+        }
+        super.onBackPressed();
+    }
+
+    private synchronized void startEmbeddedServer() {
+        try {
+            File filesDir = getFilesDir();
+            File booksDir = new File(filesDir, "books");
+            if (!booksDir.exists()) {
+                booksDir.mkdirs();
+            }
+            String[] assetBooks = getAssets().list("books");
+            if (assetBooks != null) {
+                for (String name : assetBooks) {
+                    File dst = new File(booksDir, name);
+                    if (!dst.exists()) {
+                        try (InputStream in = getAssets().open("books/" + name);
+                             FileOutputStream out = new FileOutputStream(dst)) {
+                            byte[] buf = new byte[16384];
+                            int n;
+                            while ((n = in.read(buf)) > 0) {
+                                out.write(buf, 0, n);
+                            }
+                        }
+                    }
+                }
+            }
+            if (serverProcess == null) {
+                String libDir = getApplicationInfo().nativeLibraryDir;
+                File binFile = new File(libDir, "libmojra.so");
+                ProcessBuilder pb = new ProcessBuilder(
+                    binFile.getAbsolutePath(), "run", "--headless", "--port", String.valueOf(PORT)
+                );
+                pb.directory(filesDir);
+                pb.environment().put("ST_NO_WINDOW", "1");
+                pb.environment().put("MOJRA_DATA_DIR", filesDir.getAbsolutePath());
+                pb.environment().put("HOME", filesDir.getAbsolutePath());
+                serverProcess = pb.start();
+            }
+
+            for (int i = 0; i < 60; i++) {
+                try (Socket s = new Socket("127.0.0.1", PORT)) {
+                    break;
+                } catch (Exception ignored) {
+                    Thread.sleep(60);
+                }
+            }
+
+            new Handler(Looper.getMainLooper()).post(new Runnable() {
+                @Override
+                public void run() {
+                    if (webView != null) {
+                        webView.loadUrl("http://127.0.0.1:" + PORT + "/");
+                    }
+                }
+            });
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (isFinishing() && serverProcess != null) {
+            serverProcess.destroy();
+            serverProcess = null;
+        }
+        super.onDestroy();
+    }
+}
+`
+}
+
+func packageAndroidBundle(rootDir string, archBins map[string]string) error {
+	tc, err := resolveAndroidToolchain()
+	if err != nil {
+		return err
+	}
 
 	workDir, err := os.MkdirTemp("", "mojra-apk-*")
 	if err != nil {
@@ -1318,144 +1689,21 @@ func packageAndroidBundle(rootDir string, archBins map[string]string) error {
 		return err
 	}
 
-	manifestXML := `<?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="pl.mojra.app"
-    android:versionCode="1"
-    android:versionName="1.0.0">
-    <uses-sdk android:minSdkVersion="24" android:targetSdkVersion="35" />
-    <uses-permission android:name="android.permission.INTERNET" />
-    <application
-        android:label="Mojra"
-        android:icon="@mipmap/ic_launcher"
-        android:usesCleartextTraffic="true"
-        android:hardwareAccelerated="true"
-        android:extractNativeLibs="true"
-        android:theme="@android:style/Theme.NoTitleBar.Fullscreen">
-        <activity
-            android:name="pl.mojra.app.MainActivity"
-            android:exported="true"
-            android:configChanges="orientation|screenSize|keyboardHidden">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity>
-    </application>
-</manifest>
-`
 	manifestPath := filepath.Join(workDir, "AndroidManifest.xml")
-	if err := os.WriteFile(manifestPath, []byte(manifestXML), 0644); err != nil {
+	if err := os.WriteFile(manifestPath, []byte(buildAndroidManifestXML()), 0644); err != nil {
 		return err
 	}
 
-	mainActivityJava := `package pl.mojra.app;
-
-import android.app.Activity;
-import android.os.Bundle;
-import android.os.Handler;
-import android.os.Looper;
-import android.webkit.WebSettings;
-import android.webkit.WebView;
-import android.webkit.WebViewClient;
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.InputStream;
-import java.net.Socket;
-
-public class MainActivity extends Activity {
-    private Process serverProcess;
-    private WebView webView;
-    private static final int PORT = 18484;
-
-    @Override
-    protected void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
-        webView = new WebView(this);
-        WebSettings ws = webView.getSettings();
-        ws.setJavaScriptEnabled(true);
-        ws.setDomStorageEnabled(true);
-        ws.setMediaPlaybackRequiresUserGesture(false);
-        webView.setWebViewClient(new WebViewClient());
-        setContentView(webView);
-
-        new Thread(new Runnable() {
-            @Override
-            public void run() {
-                startEmbeddedServer();
-            }
-        }).start();
-    }
-
-    private void startEmbeddedServer() {
-        try {
-            File filesDir = getFilesDir();
-            File booksDir = new File(filesDir, "books");
-            if (!booksDir.exists()) {
-                booksDir.mkdirs();
-            }
-            String[] assetBooks = getAssets().list("books");
-            if (assetBooks != null) {
-                for (String name : assetBooks) {
-                    File dst = new File(booksDir, name);
-                    if (!dst.exists()) {
-                        try (InputStream in = getAssets().open("books/" + name);
-                             FileOutputStream out = new FileOutputStream(dst)) {
-                            byte[] buf = new byte[16384];
-                            int n;
-                            while ((n = in.read(buf)) > 0) {
-                                out.write(buf, 0, n);
-                            }
-                        }
-                    }
-                }
-            }
-            String libDir = getApplicationInfo().nativeLibraryDir;
-            File binFile = new File(libDir, "libmojra.so");
-            ProcessBuilder pb = new ProcessBuilder(
-                binFile.getAbsolutePath(), "run", "--headless", "--port", String.valueOf(PORT)
-            );
-            pb.directory(filesDir);
-            pb.environment().put("ST_NO_WINDOW", "1");
-            serverProcess = pb.start();
-
-            for (int i = 0; i < 60; i++) {
-                try (Socket s = new Socket("127.0.0.1", PORT)) {
-                    break;
-                } catch (Exception ignored) {
-                    Thread.sleep(60);
-                }
-            }
-
-            new Handler(Looper.getMainLooper()).post(new Runnable() {
-                @Override
-                public void run() {
-                    if (webView != null) {
-                        webView.loadUrl("http://127.0.0.1:" + PORT + "/");
-                    }
-                }
-            });
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-    }
-
-    @Override
-    protected void onDestroy() {
-        if (serverProcess != null) {
-            serverProcess.destroy();
-            serverProcess = null;
-        }
-        super.onDestroy();
-    }
-}
-`
 	javaPath := filepath.Join(srcDir, "MainActivity.java")
-	if err := os.WriteFile(javaPath, []byte(mainActivityJava), 0644); err != nil {
+	if err := os.WriteFile(javaPath, []byte(buildAndroidMainActivityJava()), 0644); err != nil {
 		return err
 	}
 
-	envWithJava := append(os.Environ(), "JAVA_HOME="+jdkDir, "PATH="+filepath.Join(jdkDir, "bin")+":"+os.Getenv("PATH"))
+	pathSep := string(os.PathListSeparator)
+	envWithJava := append(os.Environ(),
+		"JAVA_HOME="+tc.JDKDir,
+		"PATH="+filepath.Join(tc.JDKDir, "bin")+pathSep+os.Getenv("PATH"),
+	)
 	runTool := func(bin string, toolArgs ...string) error {
 		c := exec.Command(bin, toolArgs...)
 		c.Dir = workDir
@@ -1467,46 +1715,67 @@ public class MainActivity extends Activity {
 		return nil
 	}
 
-	if err := runTool(aapt, "package", "-f", "-m", "-J", filepath.Join(workDir, "src"), "-M", manifestPath, "-S", filepath.Join(workDir, "res"), "-I", androidJar); err != nil {
+	if err := runTool(tc.Aapt, "package", "-f", "-m", "-J", filepath.Join(workDir, "src"), "-M", manifestPath, "-S", filepath.Join(workDir, "res"), "-I", tc.AndroidJar); err != nil {
 		return err
 	}
 	rJavaPath := filepath.Join(srcDir, "R.java")
-	javacArgs := []string{"-source", "1.8", "-target", "1.8", "-bootclasspath", androidJar, "-d", classesDir, javaPath}
+	javacArgs := []string{"-source", "1.8", "-target", "1.8", "-bootclasspath", tc.AndroidJar, "-d", classesDir, javaPath}
 	if _, err := os.Stat(rJavaPath); err == nil {
 		javacArgs = append(javacArgs, rJavaPath)
 	}
-	if err := runTool(javac, javacArgs...); err != nil {
+	if err := runTool(tc.Javac, javacArgs...); err != nil {
 		return err
 	}
 
 	classFiles, _ := filepath.Glob(filepath.Join(classesDir, "pl", "mojra", "app", "*.class"))
-	d8Args := append([]string{"--lib", androidJar, "--output", workDir}, classFiles...)
-	if err := runTool(d8, d8Args...); err != nil {
+	d8Args := append([]string{"--lib", tc.AndroidJar, "--output", workDir}, classFiles...)
+	if err := runTool(tc.D8, d8Args...); err != nil {
 		return err
 	}
 
 	unalignedAPK := filepath.Join(workDir, "unaligned.apk")
-	if err := runTool(aapt, "package", "-f", "-M", manifestPath, "-S", filepath.Join(workDir, "res"), "-A", filepath.Join(workDir, "assets"), "-I", androidJar, "-F", unalignedAPK); err != nil {
+	if err := runTool(tc.Aapt, "package", "-f", "-M", manifestPath, "-S", filepath.Join(workDir, "res"), "-A", filepath.Join(workDir, "assets"), "-I", tc.AndroidJar, "-F", unalignedAPK); err != nil {
 		return err
 	}
 
-	// Inject classes.dex and native lib/<abi>/libmojra.so into unaligned.apk
+	// Inject classes.dex and uncompressed native lib/<abi>/libmojra.so into unaligned.apk
 	if err := appendAndroidNativeAndDexToAPK(unalignedAPK, filepath.Join(workDir, "classes.dex"), archBins); err != nil {
 		return err
 	}
 
 	alignedAPK := filepath.Join(workDir, "aligned.apk")
-	if err := runTool(zipalign, "-f", "-p", "4", unalignedAPK, alignedAPK); err != nil {
+	if err := runTool(tc.Zipalign, "-f", "-p", "4", unalignedAPK, alignedAPK); err != nil {
 		return err
 	}
 
-	ksPath := filepath.Join(workDir, "debug.keystore")
-	if err := runTool(keytool, "-genkeypair", "-v", "-keystore", ksPath, "-storepass", "android", "-alias", "androiddebugkey", "-keypass", "android", "-keyalg", "RSA", "-keysize", "2048", "-validity", "10000", "-dname", "CN=Android Debug,O=Android,C=US"); err != nil {
-		return err
+	ksPath := strings.TrimSpace(os.Getenv("MOJRA_KEYSTORE"))
+	ksPass := strings.TrimSpace(os.Getenv("MOJRA_KEYSTORE_PASS"))
+	keyAlias := strings.TrimSpace(os.Getenv("MOJRA_KEY_ALIAS"))
+	keyPass := strings.TrimSpace(os.Getenv("MOJRA_KEY_PASS"))
+	if ksPath == "" {
+		ksPath = filepath.Join(workDir, "debug.keystore")
+		ksPass = "android"
+		keyAlias = "androiddebugkey"
+		keyPass = "android"
+		if err := runTool(tc.Keytool, "-genkeypair", "-v", "-keystore", ksPath, "-storepass", ksPass, "-alias", keyAlias, "-keypass", keyPass, "-keyalg", "RSA", "-keysize", "2048", "-validity", "10000", "-dname", "CN=Android Debug,O=Android,C=US"); err != nil {
+			return err
+		}
+	} else {
+		if ksPass == "" {
+			return fmt.Errorf("ustawiono MOJRA_KEYSTORE, ale brakuje MOJRA_KEYSTORE_PASS")
+		}
+		if keyPass == "" {
+			keyPass = ksPass
+		}
 	}
 
 	outAPK := filepath.Join(rootDir, "dist", "Mojra-android.apk")
-	if err := runTool(apksigner, "sign", "--ks", ksPath, "--ks-pass", "pass:android", "--key-pass", "pass:android", "--out", outAPK, alignedAPK); err != nil {
+	signArgs := []string{"sign", "--ks", ksPath, "--ks-pass", "pass:" + ksPass, "--key-pass", "pass:" + keyPass}
+	if keyAlias != "" {
+		signArgs = append(signArgs, "--ks-key-alias", keyAlias)
+	}
+	signArgs = append(signArgs, "--out", outAPK, alignedAPK)
+	if err := runTool(tc.Apksigner, signArgs...); err != nil {
 		return err
 	}
 
@@ -1553,25 +1822,24 @@ func appendAndroidNativeAndDexToAPK(apkPath, dexPath string, archBins map[string
 		"arm64": "arm64-v8a",
 		"amd64": "x86_64",
 	}
-	for arch, binPath := range archBins {
-		abi, ok := abiMap[arch]
-		if !ok || binPath == "" {
-			continue
+	selectedAndroidArch := "arm64"
+	if archBins["arm64"] == "" && archBins["amd64"] != "" {
+		selectedAndroidArch = "amd64"
+	}
+	if binPath := archBins[selectedAndroidArch]; binPath != "" {
+		abi := abiMap[selectedAndroidArch]
+		if binBytes, err := os.ReadFile(binPath); err == nil {
+			hdr := &zip.FileHeader{
+				Name:   "lib/" + abi + "/libmojra.so",
+				Method: zip.Store,
+			}
+			hdr.SetMode(0755)
+			w, err := zw.CreateHeader(hdr)
+			if err != nil {
+				return err
+			}
+			_, _ = w.Write(binBytes)
 		}
-		binBytes, err := os.ReadFile(binPath)
-		if err != nil {
-			continue
-		}
-		hdr := &zip.FileHeader{
-			Name:   "lib/" + abi + "/libmojra.so",
-			Method: zip.Deflate,
-		}
-		hdr.SetMode(0755)
-		w, err := zw.CreateHeader(hdr)
-		if err != nil {
-			return err
-		}
-		_, _ = w.Write(binBytes)
 	}
 
 	if err := zw.Close(); err != nil {

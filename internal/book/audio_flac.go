@@ -1,3 +1,5 @@
+//go:build !(js && wasm)
+
 package book
 
 import (
@@ -23,6 +25,7 @@ var (
 )
 
 func init() {
+	readUnpackedAudioDurationHook = readUnpackedAudioDurationFromDisk
 	for i := 0; i < 256; i++ {
 		c8 := uint8(i)
 		for b := 0; b < 8; b++ {
@@ -586,31 +589,7 @@ func TrimSceneVoiceFile(b *Book, sceneID string, currentRelVoice string, startRa
 	return writeVoiceFLACFileAtomically(b, sceneID, flacBytes)
 }
 
-// ReadAudioDurationSecondsAndStamp returns the raw duration in seconds and modtime stamp for a scene's audio file.
-func ReadAudioDurationSecondsAndStamp(b *Book, relVoice string) (float64, int64) {
-	if b == nil || strings.TrimSpace(relVoice) == "" {
-		return 0, 0
-	}
-	cleanRel := SanitizeRelativeMediaPath(relVoice)
-	if cleanRel == "" {
-		return 0, 0
-	}
-	if b.IsPacked {
-		if b.PackedMedia != nil {
-			if entry, ok := b.PackedMedia[strings.ToLower(cleanRel)]; ok && entry.HeaderLen >= 26 {
-				hdr := entry.Header512[:entry.HeaderLen]
-				if string(hdr[:4]) == "fLaC" && (hdr[4]&0x7F) == 0 {
-					packed64 := binary.BigEndian.Uint64(hdr[18:26])
-					sr := (packed64 >> 44) & 0xFFFFF
-					tot := packed64 & 0xFFFFFFFFF
-					if sr > 0 && tot > 0 {
-						return float64(tot) / float64(sr), entry.ModTime.UnixNano()
-					}
-				}
-			}
-		}
-		return 0, 0
-	}
+func readUnpackedAudioDurationFromDisk(b *Book, cleanRel string) (float64, int64) {
 	if strings.TrimSpace(b.RootPath) == "" {
 		return 0, 0
 	}

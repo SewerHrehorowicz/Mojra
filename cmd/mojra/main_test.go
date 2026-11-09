@@ -1,6 +1,7 @@
 package main
 
 import (
+	"archive/zip"
 	"bytes"
 	"debug/pe"
 	"image/png"
@@ -312,6 +313,148 @@ func TestResolveDistRuntimeDirNeverReturnsRepoRoot(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(resolved, "books", "nie-boj-sie-policji-rzecznej.stbook")); err != nil {
 		t.Fatalf("expected packed .stbook in resolved runtime books dir: %v", err)
+	}
+}
+
+func TestAndroidToolchainAndAPKPackagingInvariants(t *testing.T) {
+	optsAndroid, err := parseBuildArgs([]string{"--android"})
+	if err != nil {
+		t.Fatalf("parseBuildArgs(--android) failed: %v", err)
+	}
+	if len(optsAndroid.Platforms) != 1 || optsAndroid.Platforms[0] != "android" || optsAndroid.BinariesOnly {
+		t.Fatalf("unexpected options for --android: %+v", optsAndroid)
+	}
+
+	manifestXML := buildAndroidManifestXML()
+	for _, want := range []string{
+		`android.permission.INTERNET`,
+		`android.permission.RECORD_AUDIO`,
+		`android:extractNativeLibs="true"`,
+		`android:targetSdkVersion="35"`,
+	} {
+		if !strings.Contains(manifestXML, want) {
+			t.Fatalf("expected AndroidManifest.xml to contain %q", want)
+		}
+	}
+
+	javaSrc := buildAndroidMainActivityJava()
+	for _, want := range []string{
+		`pb.environment().put("MOJRA_DATA_DIR", filesDir.getAbsolutePath());`,
+		`pb.environment().put("HOME", filesDir.getAbsolutePath());`,
+		`onPermissionRequest`,
+		`PermissionRequest.RESOURCE_AUDIO_CAPTURE`,
+		`onShowFileChooser`,
+		`onBackPressed()`,
+	} {
+		if !strings.Contains(javaSrc, want) {
+			t.Fatalf("expected MainActivity.java to contain %q", want)
+		}
+	}
+
+	// Verify appendAndroidNativeAndDexToAPK stores native libraries with zip.Store (uncompressed for 16 KB alignment)
+	tmp := t.TempDir()
+	apkPath := filepath.Join(tmp, "test.apk")
+	var baseZip bytes.Buffer
+	zw := zip.NewWriter(&baseZip)
+	w, err := zw.Create("AndroidManifest.xml")
+	if err != nil {
+		t.Fatalf("zw.Create failed: %v", err)
+	}
+	_, _ = w.Write([]byte("manifest"))
+	if err := zw.Close(); err != nil {
+		t.Fatalf("zw.Close failed: %v", err)
+	}
+	if err := os.WriteFile(apkPath, baseZip.Bytes(), 0644); err != nil {
+		t.Fatalf("WriteFile apk failed: %v", err)
+	}
+	dexPath := filepath.Join(tmp, "classes.dex")
+	if err := os.WriteFile(dexPath, []byte("dex\n035\x00"), 0644); err != nil {
+		t.Fatalf("WriteFile dex failed: %v", err)
+	}
+	arm64Bin := filepath.Join(tmp, "Mojra-android-arm64")
+	if err := os.WriteFile(arm64Bin, []byte("\x7fELF-mock-arm64"), 0755); err != nil {
+		t.Fatalf("WriteFile arm64Bin failed: %v", err)
+	}
+	if err := appendAndroidNativeAndDexToAPK(apkPath, dexPath, map[string]string{"arm64": arm64Bin}); err != nil {
+		t.Fatalf("appendAndroidNativeAndDexToAPK failed: %v", err)
+	}
+
+	zr, err := zip.OpenReader(apkPath)
+	if err != nil {
+		t.Fatalf("zip.OpenReader failed: %v", err)
+	}
+	defer zr.Close()
+	foundLib := false
+	foundDex := false
+	for _, f := range zr.File {
+		switch f.Name {
+		case "classes.dex":
+			foundDex = true
+		case "lib/arm64-v8a/libmojra.so":
+			foundLib = true
+			if f.Method != zip.Store {
+				t.Fatalf("expected lib/arm64-v8a/libmojra.so to use zip.Store (0), got method=%d", f.Method)
+			}
+		}
+	}
+	if !foundLib || !foundDex {
+		t.Fatalf("expected classes.dex (%v) and lib/arm64-v8a/libmojra.so (%v) in APK", foundDex, foundLib)
+	}
+
+	// Verify resolveAndroidToolchain and findAndroidNDKClang discover ANDROID_HOME / ANDROID_NDK_HOME / JAVA_HOME across Unix & Windows layouts
+	fakeSDK := filepath.Join(tmp, "sdk")
+	btDir := filepath.Join(fakeSDK, "build-tools", "35.0.0")
+	platDir := filepath.Join(fakeSDK, "platforms", "android-35")
+	ndkBinDir := filepath.Join(fakeSDK, "ndk", "27.0.0", "toolchains", "llvm", "prebuilt", "host-x86_64", "bin")
+	jdkBinDir := filepath.Join(tmp, "jdk", "bin")
+	for _, d := range []string{btDir, platDir, ndkBinDir, jdkBinDir} {
+		if err := os.MkdirAll(d, 0755); err != nil {
+			t.Fatalf("MkdirAll(%s) failed: %v", d, err)
+		}
+	}
+	_ = os.WriteFile(filepath.Join(platDir, "android.jar"), []byte("jar"), 0644)
+	for _, tool := range []string{"aapt", "aapt.exe", "d8", "d8.bat", "zipalign", "zipalign.exe", "apksigner", "apksigner.bat"} {
+		_ = os.WriteFile(filepath.Join(btDir, tool), []byte("bin"), 0755)
+	}
+	for _, tool := range []string{"javac", "javac.exe", "keytool", "keytool.exe"} {
+		_ = os.WriteFile(filepath.Join(jdkBinDir, tool), []byte("bin"), 0755)
+	}
+	for _, cc := range []string{"aarch64-linux-android24-clang", "aarch64-linux-android24-clang.cmd"} {
+		_ = os.WriteFile(filepath.Join(ndkBinDir, cc), []byte("bin"), 0755)
+	}
+
+	t.Setenv("ANDROID_HOME", fakeSDK)
+	t.Setenv("ANDROID_NDK_HOME", filepath.Join(fakeSDK, "ndk", "27.0.0"))
+	t.Setenv("JAVA_HOME", filepath.Join(tmp, "jdk"))
+
+	tc, err := resolveAndroidToolchain()
+	if err != nil {
+		t.Fatalf("resolveAndroidToolchain failed with mock SDK/JDK: %v", err)
+	}
+	if !strings.HasPrefix(tc.SDKDir, fakeSDK) || tc.Javac == "" || tc.Apksigner == "" {
+		t.Fatalf("unexpected resolved toolchain: %+v", tc)
+	}
+	ccPath, err := findAndroidNDKClang("arm64")
+	if err != nil || !strings.HasPrefix(ccPath, ndkBinDir) {
+		t.Fatalf("findAndroidNDKClang(arm64) failed: path=%q err=%v", ccPath, err)
+	}
+}
+
+func TestProdEmbedUsesCompressedWasmAndNoDuplicateBook(t *testing.T) {
+	rootDir, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatalf("filepath.Abs failed: %v", err)
+	}
+	raw, err := os.ReadFile(filepath.Join(rootDir, "embed_prod.go"))
+	if err != nil {
+		t.Fatalf("failed to read embed_prod.go: %v", err)
+	}
+	src := string(raw)
+	if !strings.Contains(src, "build/wasm/mojra.wasm.gz") {
+		t.Fatalf("expected embed_prod.go to embed compressed build/wasm/mojra.wasm.gz")
+	}
+	if strings.Contains(src, "build/wasm/mojra.wasm ") || strings.Contains(src, "all:books/") {
+		t.Fatalf("expected embed_prod.go not to embed uncompressed mojra.wasm or duplicate books/: %s", src)
 	}
 }
 

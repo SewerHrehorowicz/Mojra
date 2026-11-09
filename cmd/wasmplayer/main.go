@@ -122,7 +122,7 @@ func wasmBoot(_ js.Value, args []js.Value) any {
 	}
 
 	playerHTML := rt.renderTemplate("player_view")
-	modalsHTML := rt.renderTemplate("modals")
+	modalsHTML := rt.renderTemplate("confirm_modal")
 
 	respVals := url.Values{}
 	respVals.Set("X-Book-ID", b.ID)
@@ -183,7 +183,7 @@ func wasmAction(_ js.Value, args []js.Value) any {
 		}
 		if rt.confirmPendingAction != "" {
 			target = "#modals-root"
-			tplName = "modals"
+			tplName = "confirm_modal"
 			keepScroll = true
 		}
 
@@ -194,7 +194,7 @@ func wasmAction(_ js.Value, args []js.Value) any {
 		}
 		if rt.confirmPendingAction != "" {
 			target = "#modals-root"
-			tplName = "modals"
+			tplName = "confirm_modal"
 			keepScroll = true
 		}
 
@@ -229,7 +229,7 @@ func wasmAction(_ js.Value, args []js.Value) any {
 		}
 		if rt.confirmPendingAction != "" {
 			target = "#modals-root"
-			tplName = "modals"
+			tplName = "confirm_modal"
 			keepScroll = true
 		}
 
@@ -280,7 +280,7 @@ func wasmAction(_ js.Value, args []js.Value) any {
 			rt.confirmPendingParam = strconv.Itoa(stepIdx)
 		}
 		target = "#modals-root"
-		tplName = "modals"
+		tplName = "confirm_modal"
 		keepScroll = true
 
 	case "PromptResetProgress":
@@ -289,14 +289,14 @@ func wasmAction(_ js.Value, args []js.Value) any {
 		rt.confirmPendingAction = "ResetProgress"
 		rt.confirmPendingParam = rt.book.ID
 		target = "#modals-root"
-		tplName = "modals"
+		tplName = "confirm_modal"
 		keepScroll = true
 
 	case "ConfirmModalClose":
 		rt.confirmPendingAction = ""
 		rt.confirmPendingParam = ""
 		target = "#modals-root"
-		tplName = "modals"
+		tplName = "confirm_modal"
 		keepScroll = true
 
 	case "ConfirmModalAccept":

@@ -493,6 +493,7 @@ func TestServerActionLifecycleAndSecurity(t *testing.T) {
 	}
 
 	// 4. Verify PNG cover and subdirectory image are served and SVG media is forbidden
+	_ = os.WriteFile(filepath.Join(rootDir, "books", "tajemnica-zamku", "cover.png"), []byte("\x89PNG\r\n\x1a\nfake"), 0644)
 	coverResp, err := http.Get(ts.URL + "/api/books/tajemnica-zamku/media/cover.png")
 	if err != nil {
 		t.Fatalf("GET cover.png failed: %v", err)
@@ -1244,7 +1245,8 @@ func TestStandaloneBookModeSecurity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateNewBook failed: %v", err)
 	}
-	// Add an image to the second scene ("rozdroze") so we can test unvisited scene media protection
+	// Add a cover and an image to the second scene ("rozdroze") so we can test unvisited scene media protection
+	_ = os.WriteFile(filepath.Join(createdBook.RootPath, "cover.png"), []byte("\x89PNG\r\n\x1a\nfake"), 0644)
 	rozdrozeImgPath := filepath.Join(createdBook.RootPath, "images", "rozdroze.png")
 	_ = os.WriteFile(rozdrozeImgPath, []byte("\x89PNG\r\n\x1a\nfake"), 0644)
 	createdBook.Scenes[1].ExplicitImage = "images/rozdroze.png"
@@ -2382,6 +2384,99 @@ func TestMultilingualUISwitchAndI18nTableCompleteness(t *testing.T) {
 	}
 	if !strings.Contains(setHTML, `+ Dodaj książkę`) || !strings.Contains(setHTML, `Przełącz na środowisko autorskie`) {
 		t.Fatalf("expected Polish UI labels after SetLanguage(pl), got:\n%s", setHTML)
+	}
+}
+
+func TestEditorUIStatePersistenceAcrossSessionsAndRotatedExpandTitle(t *testing.T) {
+	rootDir := t.TempDir()
+	srv1 := NewServer(rootDir, mojra.AppFS)
+	ts1 := httptest.NewServer(srv1.Handler())
+	defer ts1.Close()
+
+	// Create a new book and add a second scene
+	_, err := http.PostForm(ts1.URL+"/api/action", url.Values{
+		"action": {"CreateNewBook"},
+		"title":  {"Walizka Forsy"},
+		"author": {"Tester"},
+		"mode":   {"book"},
+	})
+	if err != nil {
+		t.Fatalf("CreateNewBook failed: %v", err)
+	}
+	_, err = http.PostForm(ts1.URL+"/api/action", url.Values{
+		"action": {"CreateSceneAt"},
+		"x":      {"480"},
+		"y":      {"240"},
+	})
+	if err != nil {
+		t.Fatalf("CreateSceneAt failed: %v", err)
+	}
+
+	// Rename the new scene to "Costam" and open #modal-scene-text on it in half-width mode + open Variables panel
+	_, err = http.PostForm(ts1.URL+"/api/action", url.Values{
+		"action": {"OpenSceneTextModal"},
+		"scene":  {"s1"},
+	})
+	if err != nil {
+		t.Fatalf("OpenSceneTextModal failed: %v", err)
+	}
+	_, err = http.PostForm(ts1.URL+"/api/action", url.Values{
+		"action":   {"AutoSaveScene"},
+		"scene_id": {"s1"},
+		"name":     {"Costam"},
+		"text":     {"Nowy fragment opowieści..."},
+	})
+	if err != nil {
+		t.Fatalf("AutoSaveScene failed: %v", err)
+	}
+	_, _ = http.PostForm(ts1.URL+"/api/action", url.Values{
+		"action": {"ToggleEditorVariablesPanel"},
+	})
+	_, _ = http.PostForm(ts1.URL+"/api/action", url.Values{
+		"action": {"SetSceneTextWidthMode"},
+		"mode":   {"full"},
+	})
+	_, _ = http.PostForm(ts1.URL+"/api/action", url.Values{
+		"action": {"ToggleSceneTextSettings"},
+	})
+
+	// Simulate starting a brand new session on the same rootDir/savesDir
+	srv2 := NewServer(rootDir, mojra.AppFS)
+	ts2 := httptest.NewServer(srv2.Handler())
+	defer ts2.Close()
+
+	if srv2.SelectedSceneID != "costam" {
+		t.Fatalf("expected restored SelectedSceneID='costam' across sessions, got %q", srv2.SelectedSceneID)
+	}
+	if srv2.SceneTextModalID != "costam" {
+		t.Fatalf("expected restored SceneTextModalID='costam' across sessions when window was open, got %q", srv2.SceneTextModalID)
+	}
+	if srv2.SceneTextModalWidthMode != "full" || !srv2.SceneTextModalSettingsOpen || !srv2.EditorVariablesPanelOpen {
+		t.Fatalf("expected restored widthMode='full', settingsOpen=true, variablesPanel=true, got width=%q settings=%v vars=%v",
+			srv2.SceneTextModalWidthMode, srv2.SceneTextModalSettingsOpen, srv2.EditorVariablesPanelOpen)
+	}
+
+	resp2, err := http.Get(ts2.URL + "/")
+	if err != nil {
+		t.Fatalf("GET / on srv2 failed: %v", err)
+	}
+	body2, _ := io.ReadAll(resp2.Body)
+	_ = resp2.Body.Close()
+	html2 := string(body2)
+	if !strings.Contains(html2, `id="modal-scene-text"`) || !strings.Contains(html2, `value="Costam"`) {
+		t.Fatalf("expected #modal-scene-text to be open on 'Costam' on initial GET / in new session")
+	}
+	if !strings.Contains(html2, `id="scene-text-expand-title"`) || !strings.Contains(html2, `<span class="scene-text-expand-title" id="scene-text-expand-title">Costam</span>`) {
+		t.Fatalf("expected rotated #scene-text-expand-title with 'Costam' inside #btn-expand-scene-text")
+	}
+
+	// Now collapse #modal-scene-text on srv2 and verify a 3rd session starts with #modal-scene-text closed but node 'costam' selected
+	_, _ = http.PostForm(ts2.URL+"/api/action", url.Values{
+		"action": {"CloseSceneTextModal"},
+	})
+	srv3 := NewServer(rootDir, mojra.AppFS)
+	if srv3.SelectedSceneID != "costam" || srv3.SceneTextModalID != "" {
+		t.Fatalf("expected srv3 to restore SelectedSceneID='costam' and closed SceneTextModalID='', got sel=%q modal=%q", srv3.SelectedSceneID, srv3.SceneTextModalID)
 	}
 }
 

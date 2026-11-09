@@ -1,3 +1,5 @@
+//go:build !(js && wasm)
+
 package gui
 
 import (
@@ -20,6 +22,7 @@ import (
 // ModalState groups all active modal/overlay state for the Server while keeping promoted fields accessible.
 type ModalState struct {
 	SceneTextModalID           string
+	SceneTextModalInitialID    string
 	SceneTextModalWidthMode    string
 	SceneTextModalSettingsOpen bool
 	VoiceRecorderOpen          bool
@@ -292,6 +295,12 @@ func NewServerWithOptions(rootDir string, embeddedFS fs.FS, devMode bool) *Serve
 	if settings.EditorBookID != "" {
 		if b, err := s.findBookByID(settings.EditorBookID); err == nil && b != nil && !b.IsPacked {
 			s.setActiveBook(b)
+			if settings.EditorStudioHome {
+				s.StudioHome = true
+				s.SceneTextModalID = ""
+			} else {
+				s.restoreBookEditorUIState(settings.ActiveView == "editor")
+			}
 		}
 	}
 
@@ -490,7 +499,184 @@ func (s *Server) hasActiveStudioEditor() bool {
 	return s.ActiveBook != nil && !s.StudioHome
 }
 
+func (s *Server) currentStudioRightPanel() string {
+	switch {
+	case s.BookSettingsOpen:
+		return "book"
+	case s.SelectedChapter != "":
+		return "chapter"
+	case s.EditorVariablesPanelOpen:
+		return "variables"
+	case s.EditorBreakdownPanelOpen:
+		return "breakdown"
+	case s.EditorHistoryPanelOpen:
+		return "history"
+	case s.EditorHelpModalOpen:
+		return "help"
+	default:
+		return ""
+	}
+}
+
+func (s *Server) saveCurrentBookEditorUIState() {
+	if s.Settings == nil || s.ActiveBook == nil || s.StandaloneMode || s.isHistoryPreview() {
+		return
+	}
+	st := book.EditorBookUIState{
+		SelectedSceneID:       s.SelectedSceneID,
+		SceneTextModalID:      s.SceneTextModalID,
+		SceneTextWidthMode:    s.SceneTextModalWidthMode,
+		SceneTextSettingsOpen: s.SceneTextModalSettingsOpen,
+		RightPanel:            s.currentStudioRightPanel(),
+		SelectedChapter:       s.SelectedChapter,
+	}
+	s.Settings.SetEditorBookUIState(s.ActiveBook.ID, st)
+}
+
+func (s *Server) restoreBookEditorUIState(openModalIfSaved bool) {
+	if s.Settings == nil || s.ActiveBook == nil {
+		return
+	}
+	st, ok := s.Settings.GetEditorBookUIState(s.ActiveBook.ID)
+	if !ok && strings.EqualFold(s.Settings.EditorBookID, s.ActiveBook.ID) {
+		st = book.EditorBookUIState{
+			SelectedSceneID:       s.Settings.EditorSelectedSceneID,
+			SceneTextModalID:      s.Settings.EditorSceneTextModalID,
+			SceneTextWidthMode:    s.Settings.EditorSceneTextWidth,
+			SceneTextSettingsOpen: s.Settings.EditorSceneSettings,
+			RightPanel:            s.Settings.EditorRightPanel,
+			SelectedChapter:       s.Settings.EditorSelectedChapter,
+		}
+		ok = st.SelectedSceneID != "" || st.SceneTextModalID != "" || st.SceneTextWidthMode != "" || st.RightPanel != ""
+	}
+	if !ok {
+		return
+	}
+	if st.SelectedSceneID != "" {
+		if sc := s.findScene(st.SelectedSceneID); sc != nil {
+			s.SelectedSceneID = sc.ID
+		}
+	}
+	if st.SceneTextWidthMode == "full" || st.SceneTextWidthMode == "half" {
+		s.SceneTextModalWidthMode = st.SceneTextWidthMode
+	}
+	s.SceneTextModalSettingsOpen = st.SceneTextSettingsOpen
+
+	s.BookSettingsOpen = false
+	s.SelectedChapter = ""
+	s.EditorVariablesPanelOpen = false
+	s.EditorBreakdownPanelOpen = false
+	s.EditorHistoryPanelOpen = false
+	s.EditorHelpModalOpen = false
+	switch st.RightPanel {
+	case "book":
+		s.BookSettingsOpen = true
+	case "chapter":
+		if st.SelectedChapter != "" && s.ActiveBook.FindChapter(st.SelectedChapter) != nil {
+			s.SelectedChapter = st.SelectedChapter
+		}
+	case "variables":
+		s.EditorVariablesPanelOpen = true
+	case "breakdown":
+		s.EditorBreakdownPanelOpen = true
+	case "history":
+		s.EditorHistoryPanelOpen = true
+	case "help":
+		s.EditorHelpModalOpen = true
+	}
+
+	if openModalIfSaved && st.SceneTextModalID != "" && !s.StudioHome {
+		if modalSc := s.findScene(st.SceneTextModalID); modalSc != nil {
+			s.SceneTextModalID = modalSc.ID
+			s.SelectedSceneID = modalSc.ID
+		}
+	}
+}
+
+func (s *Server) syncAndPersistEditorUIState() {
+	if s.Settings == nil || s.StandaloneMode || s.isHistoryPreview() {
+		return
+	}
+	changed := false
+	if s.Settings.EditorStudioHome != s.StudioHome {
+		s.Settings.EditorStudioHome = s.StudioHome
+		changed = true
+	}
+	if s.ActiveBook == nil {
+		if s.Settings.EditorBookID != "" {
+			s.Settings.EditorBookID = ""
+			changed = true
+		}
+		if changed {
+			s.persistSettings()
+		}
+		return
+	}
+
+	bookID := book.SanitizeBookID(s.ActiveBook.ID)
+	if s.Settings.EditorBookID != bookID {
+		s.Settings.EditorBookID = bookID
+		changed = true
+	}
+
+	inActiveEditor := s.Settings.ActiveView == "editor" && !s.StudioHome
+	prevSt, _ := s.Settings.GetEditorBookUIState(bookID)
+	modalID := s.SceneTextModalID
+	if !inActiveEditor && modalID == "" {
+		modalID = prevSt.SceneTextModalID
+	}
+	widthMode := s.SceneTextModalWidthMode
+	if widthMode != "full" && widthMode != "half" {
+		widthMode = prevSt.SceneTextWidthMode
+	}
+	rightPanel := s.currentStudioRightPanel()
+	selChapter := s.SelectedChapter
+
+	nextSt := book.EditorBookUIState{
+		SelectedSceneID:       s.SelectedSceneID,
+		SceneTextModalID:      modalID,
+		SceneTextWidthMode:    widthMode,
+		SceneTextSettingsOpen: s.SceneTextModalSettingsOpen,
+		RightPanel:            rightPanel,
+		SelectedChapter:       selChapter,
+	}
+	if prevSt != nextSt {
+		s.Settings.SetEditorBookUIState(bookID, nextSt)
+		changed = true
+	}
+	if s.Settings.EditorSelectedSceneID != nextSt.SelectedSceneID {
+		s.Settings.EditorSelectedSceneID = nextSt.SelectedSceneID
+		changed = true
+	}
+	if s.Settings.EditorSceneTextModalID != nextSt.SceneTextModalID {
+		s.Settings.EditorSceneTextModalID = nextSt.SceneTextModalID
+		changed = true
+	}
+	if s.Settings.EditorSceneTextWidth != nextSt.SceneTextWidthMode {
+		s.Settings.EditorSceneTextWidth = nextSt.SceneTextWidthMode
+		changed = true
+	}
+	if s.Settings.EditorSceneSettings != nextSt.SceneTextSettingsOpen {
+		s.Settings.EditorSceneSettings = nextSt.SceneTextSettingsOpen
+		changed = true
+	}
+	if s.Settings.EditorRightPanel != nextSt.RightPanel {
+		s.Settings.EditorRightPanel = nextSt.RightPanel
+		changed = true
+	}
+	if s.Settings.EditorSelectedChapter != nextSt.SelectedChapter {
+		s.Settings.EditorSelectedChapter = nextSt.SelectedChapter
+		changed = true
+	}
+	if changed {
+		s.persistSettings()
+	}
+}
+
 func (s *Server) setActiveBook(b *book.Book) {
+	if s.ActiveBook != nil && (b == nil || s.ActiveBook.ID != b.ID) && s.Settings != nil && s.Settings.ActiveView == "editor" && !s.StudioHome {
+		s.saveCurrentBookEditorUIState()
+	}
 	s.PreviewRevisionID = ""
 	s.PreviewRevisionLabel = ""
 	s.LiveBook = nil
@@ -509,6 +695,8 @@ func (s *Server) setActiveBook(b *book.Book) {
 		}
 		s.EditorHistoryPanelOpen = false
 		s.EditorBreakdownPanelOpen = false
+		s.EditorVariablesPanelOpen = false
+		s.EditorHelpModalOpen = false
 		s.BookSettingsOpen = false
 		s.SelectedChapter = ""
 		s.SelectedSceneID = ""
@@ -519,6 +707,8 @@ func (s *Server) setActiveBook(b *book.Book) {
 	}
 	s.EditorHistoryPanelOpen = false
 	s.EditorBreakdownPanelOpen = false
+	s.EditorVariablesPanelOpen = false
+	s.EditorHelpModalOpen = false
 	s.BookSettingsOpen = false
 	s.SelectedChapter = ""
 	if len(b.Scenes) > 0 {
@@ -529,10 +719,9 @@ func (s *Server) setActiveBook(b *book.Book) {
 	} else {
 		s.SelectedSceneID = ""
 	}
+	s.restoreBookEditorUIState(false)
 	if s.StandaloneMode || s.PlayerBook == nil {
 		s.setPlayerBook(b)
-	} else if s.PlayerBook.ID == b.ID {
-		s.PlayerBook = b
 	}
 }
 
@@ -1102,4 +1291,19 @@ func DetectLANIP() string {
 		}
 	}
 	return "127.0.0.1"
+}
+
+func (s *Server) lang() Lang {
+	if s == nil || s.Settings == nil {
+		return LangPL
+	}
+	return tpl.ParseLang(s.Settings.Language)
+}
+
+func (s *Server) tr(k TrKey) string {
+	return i18nTable[k][s.lang()]
+}
+
+func (s *Server) trf(k TrKey, args ...any) string {
+	return fmt.Sprintf(s.tr(k), args...)
 }

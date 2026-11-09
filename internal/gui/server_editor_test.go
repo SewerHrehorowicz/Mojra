@@ -1506,6 +1506,21 @@ func TestSeparatePlayerAndStudioBooksAndPlaybookUnpackWarning(t *testing.T) {
 	if srv.PlayerBook == nil || srv.PlayerBook.ID != bookA.ID {
 		t.Fatalf("expected PlayerBook to still be Book A (%q), got %+v", bookA.ID, srv.PlayerBook)
 	}
+
+	// 8. Return to Studio Home -> verify unpacked project is in #studio-projects-grid and packed book is greyed out (.is-unpacked) in #studio-packed-books-grid
+	rHome, err := http.PostForm(ts.URL+"/api/action", url.Values{
+		"action": {"SwitchView"},
+		"view":   {"studio"},
+	})
+	if err != nil {
+		t.Fatalf("SwitchView studio failed: %v", err)
+	}
+	homeBytes, _ := io.ReadAll(rHome.Body)
+	_ = rHome.Body.Close()
+	homeHTML := string(homeBytes)
+	if !strings.Contains(homeHTML, `id="studio-packed-books-grid"`) || !strings.Contains(homeHTML, "studio-packed-card is-unpacked") {
+		t.Fatalf("expected packed book tile in #studio-packed-books-grid to be greyed out (.is-unpacked) after unpacking, got:\n%s", homeHTML)
+	}
 }
 
 func TestSceneTextSlideOutPanelUnifiedChoicesAndSyntaxHoverTooltip(t *testing.T) {

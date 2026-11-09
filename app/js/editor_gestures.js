@@ -2711,6 +2711,34 @@ function bindEditorCanvasEvents() {
     if (typeof isEditorHistoryPreview === "function" && isEditorHistoryPreview()) {
       return;
     }
+    if (e.target && e.target.id === "canvas-node-title-input") {
+      const nd = studioGraphState.editingNodeTitle;
+      if (nd) {
+        const rawVal = e.target.value || "";
+        const displayTitle = rawVal.trim() || nd.id;
+        nd.name = displayTitle;
+        studioGraphState.staticBatchDirty = true;
+        renderStudioCanvas();
+        if (typeof syncSceneTitleAcrossForms === "function") {
+          syncSceneTitleAcrossForms(nd.id, rawVal, e.target);
+        }
+      }
+      return;
+    }
+    if (e.target && e.target.id === "canvas-choice-input") {
+      const ec = studioGraphState.editingChoice;
+      if (ec && ec.node && ec.node.ports && ec.node.ports[ec.idx]) {
+        const rawVal = e.target.value || "";
+        const displayLabel = rawVal.trim() || tr("choice_prefix") + (ec.idx + 1);
+        ec.node.ports[ec.idx].label = displayLabel;
+        studioGraphState.staticBatchDirty = true;
+        renderStudioCanvas();
+        if (typeof syncSceneChoiceLabelAcrossForms === "function") {
+          syncSceneChoiceLabelAcrossForms(ec.node.id, ec.idx, rawVal, e.target);
+        }
+      }
+      return;
+    }
     if (e.target && e.target.classList && e.target.classList.contains("chapter-group-title-input")) {
       scheduleChapterLiveSave(e.target);
       return;
@@ -2751,10 +2779,11 @@ function bindEditorCanvasEvents() {
       validateRuleInputElement(e.target, form);
     }
     const sceneIdInput = qs('input[name="scene_id"]', form);
-    const sceneId =
+    const rawSceneId =
       form.getAttribute("data-context-scene-id") ||
       (sceneIdInput ? sceneIdInput.value : "") ||
       "";
+    const sceneId = typeof resolveCurrentClientSceneId === "function" ? resolveCurrentClientSceneId(rawSceneId) : rawSceneId;
     const nd = sceneId ? studioGraphState.nodeById.get(sceneId) : null;
     if (e.target && e.target.name === "chapter" && nd) {
       nd.chapter = e.target.value || tr("default_chapter");
@@ -2782,12 +2811,16 @@ function bindEditorCanvasEvents() {
       }
       return;
     }
-    if (e.target && e.target.name && e.target.name.indexOf("choice_label_") === 0 && nd) {
+    if (e.target && e.target.name && e.target.name.indexOf("choice_label_") === 0) {
       const idx = Number(e.target.getAttribute("data-choice-idx") || e.target.name.replace("choice_label_", ""));
-      if (nd.ports && nd.ports[idx]) {
-        nd.ports[idx].label = e.target.value || "Dalej";
+      const displayLabel = (e.target.value || "").trim() || tr("choice_prefix") + (idx + 1);
+      if (nd && nd.ports && nd.ports[idx]) {
+        nd.ports[idx].label = displayLabel;
         studioGraphState.staticBatchDirty = true;
         renderStudioCanvas();
+      }
+      if (sceneId && typeof syncSceneChoiceLabelAcrossForms === "function") {
+        syncSceneChoiceLabelAcrossForms(sceneId, idx, e.target.value || "", e.target);
       }
     }
     if (e.target && e.target.name && e.target.name.indexOf("choice_cond_") === 0) {

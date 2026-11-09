@@ -36,39 +36,113 @@ function syncBookTitleDOM(newTitle) {
   }
 }
 
+function syncExpandSceneTextButton(sceneId, titleText) {
+  const expandBtn = qs("#btn-expand-scene-text");
+  if (!expandBtn) return;
+  if (sceneId) {
+    expandBtn.setAttribute("data-scene", sceneId);
+  }
+  const curId = sceneId || expandBtn.getAttribute("data-scene") || "";
+  let resolvedTitle = (titleText || "").trim();
+  if (!resolvedTitle && curId && typeof studioGraphState !== "undefined" && studioGraphState.nodeById) {
+    const nd = studioGraphState.nodeById.get(curId);
+    if (nd) resolvedTitle = (nd.name || nd.id || "").trim();
+  }
+  const titleEl = qs("#scene-text-expand-title", expandBtn);
+  if (titleEl && (resolvedTitle || curId)) {
+    titleEl.textContent = resolvedTitle || curId;
+  }
+}
+
 function syncSceneTitleAcrossForms(sceneId, newTitle, sourceEl) {
   if (!sceneId) return;
-  const cleanTitle = (newTitle || "").trim();
+  const curId = typeof resolveCurrentClientSceneId === "function" ? resolveCurrentClientSceneId(sceneId) : sceneId;
+  const rawTitle = newTitle !== undefined && newTitle !== null ? String(newTitle) : "";
+  const cleanTitle = rawTitle.trim();
   ["#form-scene-text", "#editor-context-form"].forEach((sel) => {
     const f = qs(sel);
     if (!f) return;
     const scInp = qs('input[name="scene_id"]', f);
     const fId = f.getAttribute("data-context-scene-id") || (scInp ? scInp.value : "") || "";
-    if (fId === sceneId) {
+    if (fId === sceneId || fId === curId) {
       const nameInp = qs('input[name="name"]', f);
       if (nameInp && nameInp !== sourceEl && document.activeElement !== nameInp) {
-        nameInp.value = cleanTitle;
+        nameInp.value = sourceEl && sourceEl.id === "canvas-node-title-input" ? rawTitle : cleanTitle;
       }
     }
+    qsa('.incoming-choice-btn[data-scene="' + CSS.escape(sceneId) + '"] .incoming-scene-name, .incoming-choice-btn[data-scene="' + CSS.escape(curId) + '"] .incoming-scene-name', f).forEach((el) => {
+      el.textContent = cleanTitle || curId;
+    });
   });
-  const displayTitle = cleanTitle || sceneId;
+  const canvasTitleInp = qs("#canvas-node-title-input");
+  if (
+    canvasTitleInp &&
+    canvasTitleInp !== sourceEl &&
+    document.activeElement !== canvasTitleInp &&
+    !canvasTitleInp.classList.contains("hidden")
+  ) {
+    const cSceneId = canvasTitleInp.getAttribute("data-scene-id") || "";
+    if (cSceneId === sceneId || cSceneId === curId) {
+      canvasTitleInp.value = rawTitle;
+    }
+  }
+  const displayTitle = cleanTitle || curId;
+  const expandBtn = qs("#btn-expand-scene-text");
+  if (expandBtn) {
+    const expSc = expandBtn.getAttribute("data-scene") || "";
+    if (expSc === sceneId || expSc === curId) {
+      syncExpandSceneTextButton(curId, displayTitle);
+    }
+  }
   const bookForm = qs("#editor-book-form");
   if (bookForm) {
     qsa('[data-select-name="start_scene"] .custom-select-option', bookForm).forEach((opt) => {
-      if ((opt.getAttribute("data-select-value") || "") === sceneId) {
+      const v = opt.getAttribute("data-select-value") || "";
+      if (v === sceneId || v === curId) {
         opt.setAttribute("data-select-label", displayTitle);
         opt.textContent = displayTitle;
       }
     });
     const startInp = qs('input[name="start_scene"]', bookForm);
-    if (startInp && startInp.value === sceneId) {
+    if (startInp && (startInp.value === sceneId || startInp.value === curId)) {
       const lbl = qs('[data-select-name="start_scene"] .custom-select-label', bookForm);
       if (lbl) lbl.textContent = displayTitle;
     }
   }
-  qsa('.studio-search-row[data-search-scene="' + CSS.escape(sceneId) + '"] .studio-search-row-title').forEach((el) => {
+  qsa('.studio-search-row[data-search-scene="' + CSS.escape(sceneId) + '"] .studio-search-row-title, .studio-search-row[data-search-scene="' + CSS.escape(curId) + '"] .studio-search-row-title').forEach((el) => {
     el.textContent = displayTitle;
   });
+}
+
+function syncSceneChoiceLabelAcrossForms(sceneId, choiceIdx, newLabel, sourceEl) {
+  if (!sceneId || choiceIdx === undefined || choiceIdx === null) return;
+  const curId = typeof resolveCurrentClientSceneId === "function" ? resolveCurrentClientSceneId(sceneId) : sceneId;
+  const rawLabel = newLabel !== undefined && newLabel !== null ? String(newLabel) : "";
+  ["#form-scene-text", "#editor-context-form"].forEach((sel) => {
+    const f = qs(sel);
+    if (!f) return;
+    const scInp = qs('input[name="scene_id"]', f);
+    const fId = f.getAttribute("data-context-scene-id") || (scInp ? scInp.value : "") || "";
+    if (fId === sceneId || fId === curId) {
+      const chInp = qs('[name="choice_label_' + choiceIdx + '"]', f);
+      if (chInp && chInp !== sourceEl && document.activeElement !== chInp) {
+        chInp.value = rawLabel;
+      }
+    }
+  });
+  const canvasChInp = qs("#canvas-choice-input");
+  if (
+    canvasChInp &&
+    canvasChInp !== sourceEl &&
+    document.activeElement !== canvasChInp &&
+    !canvasChInp.classList.contains("hidden")
+  ) {
+    const cSceneId = canvasChInp.getAttribute("data-scene-id") || "";
+    const cIdx = Number(canvasChInp.getAttribute("data-choice-idx"));
+    if ((cSceneId === sceneId || cSceneId === curId) && cIdx === Number(choiceIdx)) {
+      canvasChInp.value = rawLabel;
+    }
+  }
 }
 
 function resolveCanvasSceneTargetId(rawTgt) {
@@ -203,6 +277,10 @@ function syncSceneIdentityAndMetaFromHeaders(oldId, newId, newExplicitId, newRef
         f.setAttribute("data-context-scene-id", curId);
       }
       if (scInp) scInp.value = curId;
+      const nameInp = qs('input[name="name"]', f);
+      if (nameInp && document.activeElement !== nameInp && newTitle !== undefined && newTitle !== "") {
+        nameInp.value = newTitle;
+      }
       const expInp = qs('input[name="explicit_id"]', f);
       if (expInp && document.activeElement !== expInp && newExplicitId !== undefined) {
         expInp.value = newExplicitId;
@@ -217,11 +295,40 @@ function syncSceneIdentityAndMetaFromHeaders(oldId, newId, newExplicitId, newRef
         });
       }
     }
+    if (idChanged) {
+      qsa('.incoming-choice-btn[data-scene="' + CSS.escape(prevId) + '"]', f).forEach((el) => {
+        el.setAttribute("data-scene", curId);
+      });
+      qsa('input[name^="choice_target_"]', f).forEach((tgtInp) => {
+        if (document.activeElement === tgtInp) return;
+        const curVal = (tgtInp.value || "").trim();
+        if (curVal === prevId || curVal === rawOldId) {
+          tgtInp.value = newRef || curId;
+        }
+      });
+    }
+    if (displayTitle) {
+      qsa('.incoming-choice-btn[data-scene="' + CSS.escape(curId) + '"] .incoming-scene-name', f).forEach((el) => {
+        el.textContent = displayTitle;
+      });
+    }
   });
 
+  const canvasTitleInp = qs("#canvas-node-title-input");
+  if (canvasTitleInp && (canvasTitleInp.getAttribute("data-scene-id") === prevId || canvasTitleInp.getAttribute("data-scene-id") === curId)) {
+    canvasTitleInp.setAttribute("data-scene-id", curId);
+    if (displayTitle) {
+      canvasTitleInp.setAttribute("data-old-title", displayTitle);
+    }
+  }
+  const canvasChoiceInp = qs("#canvas-choice-input");
+  if (canvasChoiceInp && canvasChoiceInp.getAttribute("data-scene-id") === prevId) {
+    canvasChoiceInp.setAttribute("data-scene-id", curId);
+  }
+
   const expandBtn = qs("#btn-expand-scene-text");
-  if (expandBtn && expandBtn.getAttribute("data-scene") === prevId) {
-    expandBtn.setAttribute("data-scene", curId);
+  if (expandBtn && (expandBtn.getAttribute("data-scene") === prevId || expandBtn.getAttribute("data-scene") === curId)) {
+    syncExpandSceneTextButton(curId, displayTitle);
   }
 
   const bookForm = qs("#editor-book-form");
@@ -524,6 +631,8 @@ function flushPendingDirtyFormsInternal(intoParamsObj) {
     cancelPendingInspectorTimers();
     return;
   }
+  if (typeof hideFloatingNodeTitleInput === "function") hideFloatingNodeTitleInput(true);
+  if (typeof hideFloatingChoiceInput === "function") hideFloatingChoiceInput(true);
   if (dirtyBookTitleInput) commitBookTitleInput(dirtyBookTitleInput);
   if (dirtyChapterInputs.size > 0) {
     Array.from(dirtyChapterInputs).forEach(commitChapterTitleInput);
@@ -646,10 +755,7 @@ function selectNodeForContextPanel(sceneId) {
   if (typeof studioGraphState !== "undefined") {
     studioGraphState.overlayBatchDirty = true;
   }
-  const expandBtn = qs("#btn-expand-scene-text");
-  if (expandBtn) {
-    expandBtn.setAttribute("data-scene", sceneId);
-  }
+  syncExpandSceneTextButton(sceneId);
   const form = qs("#editor-context-form");
   if (form) {
     form.classList.add("hidden");
@@ -848,6 +954,9 @@ function syncNodeSelectionDOM() {
   } else if (selectedNodeIds.size === 1) {
     if (form) form.classList.add("hidden");
     if (multiPanel) multiPanel.classList.add("hidden");
+    if (selectedItems.length === 1) {
+      syncExpandSceneTextButton(selectedItems[0].id, selectedItems[0].title);
+    }
   } else {
     flushInspectorFormIfDirty();
     if (typeof studioGraphState !== "undefined") {

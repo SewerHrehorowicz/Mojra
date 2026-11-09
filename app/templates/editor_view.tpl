@@ -133,6 +133,7 @@ section.view-panel#view-editor .is-history-preview?: {is_history_preview}
                         action: OpenSceneTextModal
                         data-scene: "{selected_scene_id}"
                         svg.btn-icon src: /icons/chevrons-right.svg
+                        span.scene-text-expand-title#scene-text-expand-title {selected_scene_title}
                     .studio-search-palette.hidden#studio-search-palette
                         .studio-search-header
                             svg.studio-search-icon src: /icons/search.svg
@@ -239,7 +240,8 @@ section.view-panel#view-editor .is-history-preview?: {is_history_preview}
                     action: OpenStudioProjectModal
                     "{t_open_project_from_disk_btn}"
             {if not has_studio_home_projects}
-                p.bookshelf-empty {t_no_open_project}
+                {if not has_studio_packed_books}
+                    p.bookshelf-empty {t_no_open_project}
             .bookshelf-grid#studio-projects-grid
                 {for p in studio_home_projects}
                     article.book-card.studio-project-card
@@ -254,6 +256,25 @@ section.view-panel#view-editor .is-history-preview?: {is_history_preview}
                                 span.book-card-author.studio-project-meta {p.meta_line}
                             h3.book-card-title {p.title}
                             p.book-card-desc.studio-project-path {p.path_line}
+            {if has_studio_packed_books}
+                .bookshelf-grid.studio-packed-grid#studio-packed-books-grid
+                    {for p in studio_packed_books}
+                        article.book-card.studio-project-card.studio-packed-card .is-unpacked?: {p.is_unpacked}
+                            button.book-cover-wrap.studio-project-cover-wrap.studio-packed-cover-wrap
+                                type: button
+                                action: OpenStudioProject
+                                data-book: "{p.id}"
+                                disabled?: {p.is_unpacked}
+                                span.book-cover-play-overlay.is-default-cover
+                                    {if p.is_unpacked}
+                                        svg.book-cover-play-icon.studio-project-cover-icon src: /icons/pack-open.svg
+                                    {else}
+                                        svg.book-cover-play-icon.studio-project-cover-icon src: /icons/pack.svg
+                            .book-card-body
+                                .book-card-meta
+                                    span.book-card-author.studio-project-meta {p.meta_line}
+                                h3.book-card-title {p.title}
+                                p.book-card-desc.studio-project-path {p.path_line}
             .home-mode-footer
                 button.home-mode-switch-btn#btn-switch-to-reader
                     type: button

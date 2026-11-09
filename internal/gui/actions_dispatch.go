@@ -1,16 +1,97 @@
+//go:build !(js && wasm)
+
 package gui
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 
 	"mojra/internal/book"
 	"mojra/internal/tpl"
 )
+
+var wfpBufPool = sync.Pool{
+	New: func() any {
+		return bytes.NewBuffer(make([]byte, 0, 1024))
+	},
+}
+
+// AcquireWFPBuffer obtains a pooled bytes.Buffer for zero-allocation WFP request decoding.
+func AcquireWFPBuffer() *bytes.Buffer {
+	b := wfpBufPool.Get().(*bytes.Buffer)
+	b.Reset()
+	return b
+}
+
+// ReleaseWFPBuffer returns a bytes.Buffer to the WFP pool if within size limits.
+func ReleaseWFPBuffer(b *bytes.Buffer) {
+	if b != nil && b.Cap() <= 1<<20 {
+		b.Reset()
+		wfpBufPool.Put(b)
+	}
+}
+
+func isWFPRequestPayload(contentType string, raw []byte) bool {
+	ct := strings.ToLower(contentType)
+	if strings.Contains(ct, "wfp") || strings.HasPrefix(ct, "text/plain") {
+		return true
+	}
+	if bytes.IndexByte(raw, '\n') >= 0 {
+		return true
+	}
+	if bytes.IndexByte(raw, '&') < 0 && bytes.IndexByte(raw, '%') < 0 && bytes.IndexByte(raw, '+') < 0 {
+		return true
+	}
+	return false
+}
+
+// ParseActionRequest populates r.Form and r.PostForm from a WFP wire frame (or URL-encoded fallback) using pooled buffers.
+func ParseActionRequest(r *http.Request) {
+	if r == nil {
+		return
+	}
+	if r.Form == nil {
+		r.Form = make(url.Values, 8)
+	}
+	if r.URL != nil && r.URL.RawQuery != "" {
+		if qVals, err := url.ParseQuery(r.URL.RawQuery); err == nil {
+			for k, v := range qVals {
+				r.Form[k] = v
+			}
+		}
+	}
+	if r.Body == nil {
+		r.PostForm = r.Form
+		return
+	}
+	buf := AcquireWFPBuffer()
+	defer ReleaseWFPBuffer(buf)
+	_, _ = buf.ReadFrom(io.LimitReader(r.Body, 4<<20))
+	raw := buf.Bytes()
+	if len(raw) == 0 {
+		r.PostForm = r.Form
+		return
+	}
+	if isWFPRequestPayload(r.Header.Get("Content-Type"), raw) {
+		if DecodeWFPFormBytes(raw, r.Form) {
+			r.PostForm = r.Form
+			return
+		}
+	}
+	if formVals, err := url.ParseQuery(string(raw)); err == nil {
+		for k, v := range formVals {
+			r.Form[k] = v
+		}
+	}
+	r.PostForm = r.Form
+}
 
 type actionTargetKind uint8
 
@@ -382,15 +463,23 @@ func isRemoteLANAllowedAction(action, pendingConfirm string) bool {
 
 func (s *Server) switchView(r *http.Request) string {
 	view := strings.TrimSpace(r.FormValue("view"))
+	prevView := ""
+	if s.Settings != nil {
+		prevView = s.Settings.ActiveView
+	}
+	wasActiveStudioEditor := prevView == "editor" && !s.StudioHome && s.ActiveBook != nil
 	if (view == "library" || view == "studio") && s.isHistoryPreview() {
 		s.exitHistoryPreview()
 	}
 	if view == "studio" {
+		if wasActiveStudioEditor {
+			s.saveCurrentBookEditorUIState()
+		}
 		s.StudioHome = true
 		s.ZenMode = false
 		s.Settings.ActiveView = "editor"
 		s.closeAllModals()
-		s.persistSettings()
+		s.syncAndPersistEditorUIState()
 		return ""
 	}
 	if view == "editor" {
@@ -404,12 +493,18 @@ func (s *Server) switchView(r *http.Request) string {
 		}
 	}
 	if view == "library" || view == "player" || view == "editor" {
+		if view != "editor" && wasActiveStudioEditor {
+			s.saveCurrentBookEditorUIState()
+		}
 		if view != "player" {
 			s.ZenMode = false
 		}
 		s.Settings.ActiveView = view
 		s.closeAllModals()
-		s.persistSettings()
+		if view == "editor" && !wasActiveStudioEditor {
+			s.restoreBookEditorUIState(true)
+		}
+		s.syncAndPersistEditorUIState()
 	}
 	return ""
 }
@@ -821,6 +916,8 @@ func (s *Server) handleAction(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
+
+	s.syncAndPersistEditorUIState()
 
 	if r.FormValue("silent") == "true" {
 		s.writeEditorHistoryHeaders(w)

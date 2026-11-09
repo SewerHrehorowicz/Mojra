@@ -785,3 +785,13 @@ func evalLogicalComparisonOrVar(s string, state map[string]string, b *Book) bool
 	}
 	return true
 }
+
+func findCompoundAssignOp(clause string) (string, int) {
+	if idx := strings.Index(clause, "+="); idx > 0 {
+		return "+=", idx
+	}
+	if idx := strings.Index(clause, "-="); idx > 0 {
+		return "-=", idx
+	}
+	return "", -1
+}

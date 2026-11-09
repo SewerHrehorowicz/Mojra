@@ -215,3 +215,22 @@ section.view-panel#view-player
                 progress.reader-book-progress
                     value: "{book_progress_pct}"
                     max: 100
+
+{def confirm_modal}
+    {if show_confirm_modal}
+        .modal-backdrop#modal-confirm
+            data-backdrop-action: ConfirmModalClose
+            .modal-card
+                .modal-header
+                    h3.modal-title {confirm_title}
+                .modal-body
+                    p.modal-desc {confirm_message}
+                    .modal-actions
+                        button.btn
+                            type: button
+                            action: ConfirmModalClose
+                            "{t_cancel}"
+                        button.btn .btn-danger?: {confirm_is_danger} .btn-primary?: {!confirm_is_danger}
+                            type: button
+                            action: ConfirmModalAccept
+                            "{t_confirm_btn}"

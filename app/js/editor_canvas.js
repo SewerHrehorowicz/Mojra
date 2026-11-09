@@ -1172,14 +1172,24 @@ function commitNodeTitleInput(inp) {
   const nd = studioGraphState.editingNodeTitle;
   if (!inp || !nd) return;
   const newName = (inp.value || "").trim();
-  const oldName = (nd.name || nd.id || "").trim();
-  if (!newName || newName === oldName) return;
+  const oldName = (inp.getAttribute("data-old-title") || nd.name || nd.id || "").trim();
+  if (!newName) {
+    nd.name = oldName || nd.id;
+    studioGraphState.staticBatchDirty = true;
+    renderStudioCanvas();
+    if (typeof syncSceneTitleAcrossForms === "function") {
+      syncSceneTitleAcrossForms(nd.id, nd.name, inp);
+    }
+    return;
+  }
   nd.name = newName;
+  inp.setAttribute("data-old-title", newName);
   studioGraphState.staticBatchDirty = true;
   renderStudioCanvas();
   if (typeof syncSceneTitleAcrossForms === "function") {
     syncSceneTitleAcrossForms(nd.id, newName, inp);
   }
+  if (newName === oldName) return;
   postServerActionSilent("AutoSaveScene", { scene_id: nd.id, name: newName });
 }
 
@@ -1189,15 +1199,28 @@ function openFloatingNodeTitleInput(nd) {
   hideFloatingChapterInput(true);
   hideFloatingChoiceInput(true);
   studioGraphState.editingNodeTitle = nd;
-  inp.value = nd.name || nd.id || "";
+  const curTitle = nd.name || nd.id || "";
+  inp.value = curTitle;
   inp.setAttribute("data-scene-id", nd.id);
+  inp.setAttribute("data-old-title", curTitle);
   showFloatingCanvasInputEl(inp, positionFloatingNodeTitleInput);
 }
 
 function hideFloatingNodeTitleInput(shouldCommit) {
   const inp = qs("#canvas-node-title-input");
   if (!inp || inp.classList.contains("hidden")) return;
-  if (shouldCommit) commitNodeTitleInput(inp);
+  if (shouldCommit) {
+    commitNodeTitleInput(inp);
+  } else if (studioGraphState.editingNodeTitle) {
+    const nd = studioGraphState.editingNodeTitle;
+    const oldName = (inp.getAttribute("data-old-title") || nd.id || "").trim();
+    if (oldName) {
+      nd.name = oldName;
+      if (typeof syncSceneTitleAcrossForms === "function") {
+        syncSceneTitleAcrossForms(nd.id, oldName, inp);
+      }
+    }
+  }
   studioGraphState.editingNodeTitle = null;
   studioGraphState.staticBatchDirty = true;
   inp.classList.add("hidden");
@@ -1221,19 +1244,15 @@ function commitChoiceInput(inp) {
   const pt = nd.ports && nd.ports[idx];
   if (!pt) return;
   const newLabel = (inp.value || "").trim() || tr("choice_prefix") + (idx + 1);
-  if (newLabel === (pt.label || "")) return;
+  const oldLabel = (inp.getAttribute("data-old-label") || "").trim();
   pt.label = newLabel;
+  inp.setAttribute("data-old-label", newLabel);
   studioGraphState.staticBatchDirty = true;
   renderStudioCanvas();
-  ["#form-scene-text", "#editor-context-form"].forEach((sel) => {
-    const f = qs(sel);
-    if (!f) return;
-    const fScId = f.getAttribute("data-context-scene-id") || (qs('input[name="scene_id"]', f) && qs('input[name="scene_id"]', f).value) || "";
-    if (fScId === nd.id) {
-      const chInp = qs('[name="choice_label_' + idx + '"]', f);
-      if (chInp && chInp !== inp) chInp.value = newLabel;
-    }
-  });
+  if (typeof syncSceneChoiceLabelAcrossForms === "function") {
+    syncSceneChoiceLabelAcrossForms(nd.id, idx, newLabel, inp);
+  }
+  if (newLabel === oldLabel) return;
   const payload = { scene_id: nd.id };
   payload["choice_label_" + idx] = newLabel;
   postServerActionSilent("AutoSaveScene", payload);
@@ -1245,16 +1264,30 @@ function openFloatingChoiceInput(nd, choiceIdx) {
   hideFloatingChapterInput(true);
   hideFloatingNodeTitleInput(true);
   studioGraphState.editingChoice = { node: nd, idx: choiceIdx };
-  inp.value = nd.ports[choiceIdx].label || tr("choice_prefix") + (choiceIdx + 1);
+  const curLabel = nd.ports[choiceIdx].label || tr("choice_prefix") + (choiceIdx + 1);
+  inp.value = curLabel;
   inp.setAttribute("data-scene-id", nd.id);
   inp.setAttribute("data-choice-idx", String(choiceIdx));
+  inp.setAttribute("data-old-label", curLabel);
   showFloatingCanvasInputEl(inp, positionFloatingChoiceInput);
 }
 
 function hideFloatingChoiceInput(shouldCommit) {
   const inp = qs("#canvas-choice-input");
   if (!inp || inp.classList.contains("hidden")) return;
-  if (shouldCommit) commitChoiceInput(inp);
+  if (shouldCommit) {
+    commitChoiceInput(inp);
+  } else if (studioGraphState.editingChoice && studioGraphState.editingChoice.node) {
+    const ec = studioGraphState.editingChoice;
+    const pt = ec.node.ports && ec.node.ports[ec.idx];
+    const oldLabel = (inp.getAttribute("data-old-label") || tr("choice_prefix") + (ec.idx + 1)).trim();
+    if (pt) {
+      pt.label = oldLabel;
+      if (typeof syncSceneChoiceLabelAcrossForms === "function") {
+        syncSceneChoiceLabelAcrossForms(ec.node.id, ec.idx, oldLabel, inp);
+      }
+    }
+  }
   studioGraphState.editingChoice = null;
   studioGraphState.staticBatchDirty = true;
   inp.classList.add("hidden");
@@ -1540,9 +1573,13 @@ function initNodeEditorCanvas() {
     studioGraphState.selectedChapterKey = "";
     const modalSceneInput = qs('#modal-scene-text input[name="scene_id"]');
     const modalSceneId = modalSceneInput ? (modalSceneInput.value || "").trim() : "";
+    const expandBtn = qs("#btn-expand-scene-text");
+    const expandSceneId = expandBtn ? (expandBtn.getAttribute("data-scene") || "").trim() : "";
     const serverSelectedId =
       modalSceneId ||
-      (contextForm ? (contextForm.getAttribute("data-context-scene-id") || "").trim() : "");
+      (contextForm ? (contextForm.getAttribute("data-context-scene-id") || "").trim() : "") ||
+      expandSceneId ||
+      (vpInfo && vpInfo.selected ? vpInfo.selected : "");
     if (
       !editorSelectionCleared &&
       serverSelectedId &&

@@ -2,34 +2,10 @@ package gui
 
 import (
 	"bytes"
-	"io"
-	"net/http"
 	"net/url"
 	"sort"
 	"strings"
-	"sync"
 )
-
-var wfpBufPool = sync.Pool{
-	New: func() any {
-		return bytes.NewBuffer(make([]byte, 0, 1024))
-	},
-}
-
-// AcquireWFPBuffer obtains a pooled bytes.Buffer for zero-allocation WFP request decoding.
-func AcquireWFPBuffer() *bytes.Buffer {
-	b := wfpBufPool.Get().(*bytes.Buffer)
-	b.Reset()
-	return b
-}
-
-// ReleaseWFPBuffer returns a bytes.Buffer to the WFP pool if within size limits.
-func ReleaseWFPBuffer(b *bytes.Buffer) {
-	if b != nil && b.Cap() <= 1<<20 {
-		b.Reset()
-		wfpBufPool.Put(b)
-	}
-}
 
 var (
 	wfpSepLF   = []byte("\n\n")
@@ -201,59 +177,4 @@ func DecodeWFPFormBytes(raw []byte, dst url.Values) bool {
 		}
 	}
 	return true
-}
-
-func isWFPRequestPayload(contentType string, raw []byte) bool {
-	ct := strings.ToLower(contentType)
-	if strings.Contains(ct, "wfp") || strings.HasPrefix(ct, "text/plain") {
-		return true
-	}
-	if bytes.IndexByte(raw, '\n') >= 0 {
-		return true
-	}
-	if bytes.IndexByte(raw, '&') < 0 && bytes.IndexByte(raw, '%') < 0 && bytes.IndexByte(raw, '+') < 0 {
-		return true
-	}
-	return false
-}
-
-// ParseActionRequest populates r.Form and r.PostForm from a WFP wire frame (or URL-encoded fallback) using pooled buffers.
-func ParseActionRequest(r *http.Request) {
-	if r == nil {
-		return
-	}
-	if r.Form == nil {
-		r.Form = make(url.Values, 8)
-	}
-	if r.URL != nil && r.URL.RawQuery != "" {
-		if qVals, err := url.ParseQuery(r.URL.RawQuery); err == nil {
-			for k, v := range qVals {
-				r.Form[k] = v
-			}
-		}
-	}
-	if r.Body == nil {
-		r.PostForm = r.Form
-		return
-	}
-	buf := AcquireWFPBuffer()
-	defer ReleaseWFPBuffer(buf)
-	_, _ = buf.ReadFrom(io.LimitReader(r.Body, 4<<20))
-	raw := buf.Bytes()
-	if len(raw) == 0 {
-		r.PostForm = r.Form
-		return
-	}
-	if isWFPRequestPayload(r.Header.Get("Content-Type"), raw) {
-		if DecodeWFPFormBytes(raw, r.Form) {
-			r.PostForm = r.Form
-			return
-		}
-	}
-	if formVals, err := url.ParseQuery(string(raw)); err == nil {
-		for k, v := range formVals {
-			r.Form[k] = v
-		}
-	}
-	r.PostForm = r.Form
 }

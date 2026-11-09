@@ -1659,6 +1659,33 @@ function makeEvent(type, props) {
     throw new Error("Expected #studio-search-palette to close on #btn-close-studio-search click");
   }
 
+  // Verify live two-way synchronization of node title & choice label between canvas floating inputs and #form-scene-text
+  const expandTitleSpan = doc.querySelector("#scene-text-expand-title");
+  if (!expandTitleSpan || !expandTitleSpan.textContent.trim()) {
+    throw new Error("Expected non-empty #scene-text-expand-title inside collapsed #btn-expand-scene-text");
+  }
+  await clickEl("#btn-expand-scene-text");
+  if (!doc.querySelector("#modal-scene-text")) {
+    throw new Error("Expected clicking #btn-expand-scene-text to open #modal-scene-text");
+  }
+  await vm.runInContext("(() => { const scId = document.querySelector('#form-scene-text input[name=\"scene_id\"]').value; const nd = studioGraphState.nodeById.get(scId); openFloatingNodeTitleInput(nd); })()", win);
+  const canvasTitleInp = doc.querySelector("#canvas-node-title-input");
+  const modalTitleInp = doc.querySelector('#form-scene-text input[name="name"]');
+  if (!canvasTitleInp || canvasTitleInp.classList.contains("hidden") || !modalTitleInp) {
+    throw new Error("Expected #canvas-node-title-input and #form-scene-text input[name=name] to be present");
+  }
+  canvasTitleInp.value = "Costam2";
+  canvasTitleInp.dispatchEvent(makeEvent("input", { target: canvasTitleInp }));
+  if (modalTitleInp.value !== "Costam2") {
+    throw new Error("Expected typing in #canvas-node-title-input to live-sync #form-scene-text input[name=name] to 'Costam2', got: " + modalTitleInp.value);
+  }
+  if (doc.querySelector("#scene-text-expand-title").textContent !== "Costam2") {
+    throw new Error("Expected #scene-text-expand-title to live-sync to 'Costam2', got: " + doc.querySelector("#scene-text-expand-title").textContent);
+  }
+  canvasTitleInp.dispatchEvent(makeEvent("blur", { target: canvasTitleInp }));
+  await waitForActions();
+  await clickEl('#modal-scene-text [action="CloseSceneTextModal"]');
+
   // Verify Export Project Modal multi-select, collapsible ZAAWANSOWANE, and norma dropdown in live DOM
   await clickEl('button[action="OpenExportModal"]');
   if (!doc.querySelector("#modal-export-project")) {
@@ -1900,10 +1927,13 @@ func TestWasmPlayerStaticAnalysisAndRuntimeExecution(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadTemplatesFromDir(\"\", wasmSimFS) failed (missing template or SVG in embed_wasm.go): %v", err)
 	}
-	for _, reqTpl := range []string{"player_view", "scene_choice_arrow", "modals"} {
+	for _, reqTpl := range []string{"player_view", "scene_choice_arrow", "confirm_modal"} {
 		if _, ok := wasmTemplates[reqTpl]; !ok {
 			t.Fatalf("expected template %q to be loaded from WasmAppFS", reqTpl)
 		}
+	}
+	if allowedWasmFiles["app/templates/modals.tpl"] || allowedWasmFiles["app/icons/studio.svg"] {
+		t.Fatalf("expected embed_wasm.go to exclude studio templates and icons, got: %v", embedPatterns)
 	}
 
 	wasmMainRaw, err := os.ReadFile(filepath.Join(rootDir, "cmd", "wasmplayer", "main.go"))
@@ -1937,7 +1967,35 @@ func TestWasmPlayerStaticAnalysisAndRuntimeExecution(t *testing.T) {
 		}
 	}
 
-	// 2. Build exported Web/WASM bundle and verify Wasm binary sections + STBC integrity
+	// 2. Verify WASM dependency graph excludes server/archive/image/exec/base64 bloat, then build exported Web/WASM bundle
+	depsCmd := exec.Command("go", "list", "-deps", "./cmd/wasmplayer")
+	depsCmd.Dir = rootDir
+	depsCmd.Env = append(os.Environ(), "GOOS=js", "GOARCH=wasm")
+	if depsOut, dErr := depsCmd.CombinedOutput(); dErr != nil {
+		t.Fatalf("go list -deps ./cmd/wasmplayer failed: %v\n%s", dErr, string(depsOut))
+	} else {
+		depsSet := make(map[string]bool)
+		for _, ln := range strings.Split(string(depsOut), "\n") {
+			depsSet[strings.TrimSpace(ln)] = true
+		}
+		for _, forbiddenPkg := range []string{
+			"net/http",
+			"crypto/tls",
+			"crypto/x509",
+			"archive/zip",
+			"compress/gzip",
+			"image/png",
+			"encoding/base64",
+			"encoding/xml",
+			"os/exec",
+			"mojra/internal/qr",
+		} {
+			if depsSet[forbiddenPkg] {
+				t.Fatalf("cmd/wasmplayer dependency graph must not include %q", forbiddenPkg)
+			}
+		}
+	}
+
 	sampleBook, err := book.LoadBookFromDir(filepath.Join(rootDir, "books", "nie-boj-sie-policji-rzecznej"))
 	if err != nil || sampleBook == nil {
 		t.Fatalf("LoadBookFromDir failed: %v", err)
@@ -1988,13 +2046,13 @@ func TestWasmPlayerStaticAnalysisAndRuntimeExecution(t *testing.T) {
 			pos, len(wasmBytes), foundSTBCCustomSection)
 	}
 
-	// Also build static showcase website (dist/www) in an isolated temp copy or verify exported app.js + index.html
+	// Verify exported app.js has I18N_TABLE and zero __wasmBase64 bloat
 	exportedAppJS, err := os.ReadFile(filepath.Join(webOutDir, "app.js"))
 	if err != nil {
 		t.Fatalf("read exported app.js failed: %v", err)
 	}
-	if !strings.Contains(string(exportedAppJS), "const I18N_TABLE =") || !strings.Contains(string(exportedAppJS), "window.__wasmBase64 = \"") {
-		t.Fatalf("expected exported app.js to contain I18N_TABLE and window.__wasmBase64 fallback for file:// protocol")
+	if !strings.Contains(string(exportedAppJS), "const I18N_TABLE =") || strings.Contains(string(exportedAppJS), "__wasmBase64") {
+		t.Fatalf("expected exported app.js to contain I18N_TABLE and no __wasmBase64 bloat")
 	}
 
 	// 3. End-to-End WebAssembly Execution in Node VM (testing both file:// fallback and interactive __wasmBoot / __wasmAction)
@@ -2405,10 +2463,8 @@ async function runBundleE2E(bundleDir, protocolMode) {
 
 (async () => {
   await runBundleE2E(webDir, "http:");
-  await runBundleE2E(webDir, "file:");
   if (wwwDir && fs.existsSync(path.join(wwwDir, "mojra.wasm"))) {
     await runBundleE2E(wwwDir, "http:");
-    await runBundleE2E(wwwDir, "file:");
   }
   console.log("WASM_E2E=OK");
 })().catch(err => {

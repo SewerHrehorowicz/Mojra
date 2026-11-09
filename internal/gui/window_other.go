@@ -1,4 +1,4 @@
-//go:build (!darwin || !cgo) && !windows && !linux
+//go:build (!darwin || !cgo) && !windows && !linux && !(js && wasm)
 
 package gui
 

@@ -1,3 +1,5 @@
+//go:build !(js && wasm)
+
 package gui
 
 import (
@@ -457,6 +459,9 @@ func (s *Server) createSceneAt(r *http.Request) string {
 			} else {
 				s.SelectedSceneID = created.ID
 			}
+			if s.SceneTextModalInitialID != "" && strings.EqualFold(s.SceneTextModalInitialID, s.SelectedSceneID) {
+				s.SceneTextModalInitialID = ""
+			}
 			toast = "Dodano nową scenę: " + created.Name
 			s.recordHistoryAfterMutation(toast, "graph", "")
 		} else if err != nil {
@@ -512,6 +517,7 @@ func (s *Server) openSceneTextModal(r *http.Request) string {
 		}
 		s.SelectedSceneID = sc.ID
 		s.SceneTextModalID = sc.ID
+		s.SceneTextModalInitialID = sc.ID
 	}
 	return ""
 }
@@ -545,6 +551,7 @@ func (s *Server) closeSceneTextModal(r *http.Request) string {
 		}
 	}
 	s.SceneTextModalID = ""
+	s.SceneTextModalInitialID = ""
 	s.SceneTestVarsPopoverOpen = false
 	s.SelectedVoiceSectionKey = "01"
 	return toast
@@ -802,10 +809,12 @@ func (s *Server) navigateSceneTextModal(r *http.Request) string {
 		}
 		s.SelectedSceneID = nextSc.ID
 		s.SceneTextModalID = nextSc.ID
+		s.SceneTextModalInitialID = nextSc.ID
 		s.SelectedVoiceSectionKey = "01"
 	} else if s.ActiveBook != nil && len(s.ActiveBook.Scenes) > 0 && targetID == "" {
 		s.SelectedSceneID = s.ActiveBook.Scenes[0].ID
 		s.SceneTextModalID = s.ActiveBook.Scenes[0].ID
+		s.SceneTextModalInitialID = s.ActiveBook.Scenes[0].ID
 		s.SelectedVoiceSectionKey = "01"
 	}
 	return toast

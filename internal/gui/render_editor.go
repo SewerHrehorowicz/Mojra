@@ -1,3 +1,5 @@
+//go:build !(js && wasm)
+
 package gui
 
 import (
@@ -647,6 +649,7 @@ func (s *Server) populateEditorSelectedNodeOnly(vars map[string]any) {
 		s.SelectedSceneID = selected.ID
 	}
 	vars["selected_scene_id"] = selected.ID
+	vars["selected_scene_title"] = selected.DisplayName()
 	selectedNodeMap := s.buildEditorNodeMap(selected, true)
 	vars["selected_node"] = selectedNodeMap
 	vars["has_selected_node"] = selectedNodeMap != nil

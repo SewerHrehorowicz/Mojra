@@ -1,3 +1,5 @@
+//go:build !(js && wasm)
+
 package gui
 
 import (
@@ -24,10 +26,13 @@ func (s *Server) openBook(r *http.Request) string {
 		if targetView == "editor" {
 			return s.openBookInStudio(b)
 		}
+		if s.Settings != nil && s.Settings.ActiveView == "editor" && !s.StudioHome && s.ActiveBook != nil {
+			s.saveCurrentBookEditorUIState()
+		}
 		s.setPlayerBook(b)
 		s.Settings.ActiveView = "player"
 		s.closeAllModals()
-		s.persistSettings()
+		s.syncAndPersistEditorUIState()
 	}
 	return ""
 }
@@ -42,7 +47,8 @@ func (s *Server) openBookInStudio(b *book.Book) string {
 	s.setActiveBook(b)
 	s.Settings.ActiveView = "editor"
 	s.closeAllModals()
-	s.persistSettings()
+	s.restoreBookEditorUIState(true)
+	s.syncAndPersistEditorUIState()
 	if strings.TrimSpace(b.License) != "" {
 		return s.trf(TrOpenedInStudioLicenseFmt, b.Title, b.License)
 	}
@@ -81,7 +87,10 @@ func (s *Server) unpackPlaybookWorkingCopyForStudio(archivePath string) string {
 	if err != nil || packedBook == nil {
 		return "Nie udało się odczytać archiwum .playbook"
 	}
-	projectsDir := s.defaultNewBookDir()
+	projectsDir := book.DefaultProjectsDir()
+	if isRunningUnderGoTestBinary() && book.IsTempDir(s.RootDir) && !book.IsInsideRepoDir(s.RootDir) {
+		projectsDir = filepath.Join(s.RootDir, "projects")
+	}
 	if projectsDir == "" {
 		projectsDir = s.BooksDir
 	}
@@ -91,22 +100,10 @@ func (s *Server) unpackPlaybookWorkingCopyForStudio(archivePath string) string {
 		baseID = "projekt"
 	}
 	targetDir := filepath.Join(projectsDir, baseID)
-	if _, statErr := os.Stat(targetDir); statErr == nil {
-		for seq := 1; seq <= 99; seq++ {
-			candID := fmt.Sprintf("%s-kopia", baseID)
-			if seq > 1 {
-				candID = fmt.Sprintf("%s-kopia-%d", baseID, seq)
-			}
-			candDir := filepath.Join(projectsDir, candID)
-			if _, cErr := os.Stat(candDir); os.IsNotExist(cErr) {
-				baseID = candID
-				targetDir = candDir
-				break
-			}
+	if !book.HasBookFilesInDir(targetDir) {
+		if err := book.UnpackBookZip(cleanArchive, targetDir); err != nil {
+			return "Błąd wypakowywania kopii roboczej: " + err.Error()
 		}
-	}
-	if err := book.UnpackBookZip(cleanArchive, targetDir); err != nil {
-		return "Błąd wypakowywania kopii roboczej: " + err.Error()
 	}
 	unpacked, err := book.LoadBookFromPath(targetDir)
 	if err != nil || unpacked == nil {

@@ -1,14 +1,20 @@
+//go:build !(js && wasm)
+
 package book
 
 import (
 	"archive/zip"
 	"bytes"
 	"fmt"
+	"image"
 	"image/color"
+	"image/png"
 	"io"
 	"io/fs"
+	"math"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 )
@@ -890,7 +896,6 @@ func CreateNewBookWithMode(booksDir, title, author, mode, standard string, narra
 			return nil, err
 		}
 		_ = os.Remove(filepath.Join(bookDir, EditorStateFileName))
-		_ = GenerateAtmosphericPNG(filepath.Join(bookDir, "cover.png"), 400, 560, color.RGBA{24, 30, 44, 255}, color.RGBA{214, 158, 76, 255}, 1)
 		return LoadBookFromDir(bookDir)
 	}
 
@@ -923,7 +928,6 @@ end: true
 		return nil, err
 	}
 
-	_ = GenerateAtmosphericPNG(filepath.Join(bookDir, "cover.png"), 400, 560, color.RGBA{24, 30, 44, 255}, color.RGBA{214, 158, 76, 255}, 1)
 	_ = GenerateAtmosphericPNG(filepath.Join(bookDir, "images", "poczatek.png"), 640, 360, color.RGBA{20, 32, 38, 255}, color.RGBA{120, 180, 165, 255}, 2)
 
 	return LoadBookFromDir(bookDir)
@@ -1500,4 +1504,204 @@ func copyBookDirectoryAll(srcDir, dstDir string) error {
 		}
 		return os.WriteFile(target, raw, mode)
 	})
+}
+
+// GenerateAtmosphericPNG renders a rich raster PNG illustration with warm lantern/moon light, mist, and river/forest silhouettes.
+func GenerateAtmosphericPNG(outPath string, width, height int, baseCol, glowCol color.RGBA, variant int) error {
+	img := image.NewRGBA(image.Rect(0, 0, width, height))
+	cx := float64(width) * (0.32 + float64(variant%5)*0.09)
+	cy := float64(height) * (0.32 + float64(variant%3)*0.06)
+	maxDist := float64(width+height) * 0.52
+	orbRadius := float64(height) * (0.09 + float64(variant%3)*0.015)
+	phase := float64(variant) * 1.15
+
+	for y := 0; y < height; y++ {
+		fy := float64(y) / float64(height)
+		for x := 0; x < width; x++ {
+			fx := float64(x) / float64(width)
+			dx := float64(x) - cx
+			dy := float64(y) - cy
+			distSq := dx*dx + dy*dy
+			dist := math.Sqrt(distSq)
+
+			glow := 1.0 - (dist / maxDist)
+			if glow < 0 {
+				glow = 0
+			}
+			glow = math.Pow(glow, 1.35)
+
+			orb := 0.0
+			if dist < orbRadius*2.2 {
+				t := 1.0 - (dist / (orbRadius * 2.2))
+				orb = math.Pow(t, 2.2) * 0.85
+				if dist < orbRadius {
+					orb = 0.88 + 0.12*(1.0-dist/orbRadius)
+				}
+			}
+
+			mist := 0.18 * (0.5 + 0.5*math.Sin(fx*10.0+phase+fy*4.0)) * math.Exp(-math.Pow((fy-0.54)/0.16, 2))
+			hill1 := 0.58 + 0.045*math.Sin(fx*6.2+phase) + 0.025*math.Cos(fx*15.0-phase)
+			hill2 := 0.68 + 0.035*math.Cos(fx*8.5+phase*1.4) + 0.02*math.Sin(fx*21.0)
+
+			r := float64(baseCol.R)*0.65 + float64(glowCol.R)*(glow*0.95+mist*0.7) + 235.0*orb
+			g := float64(baseCol.G)*0.65 + float64(glowCol.G)*(glow*0.95+mist*0.7) + 225.0*orb
+			bl := float64(baseCol.B)*0.65 + float64(glowCol.B)*(glow*0.95+mist*0.7) + 210.0*orb
+
+			if fy > hill2 {
+				waterDepth := (fy - hill2) / (1.0 - hill2)
+				xDist := math.Abs(float64(x)-cx) / (float64(width) * 0.28)
+				ripple := 0.5 + 0.5*math.Sin(fy*95.0+fx*18.0+phase)
+				refl := math.Max(0, 1.0-xDist) * ripple * 0.65 * (1.0 - waterDepth*0.4)
+				r = float64(baseCol.R)*0.35 + float64(glowCol.R)*(0.22+refl)
+				g = float64(baseCol.G)*0.35 + float64(glowCol.G)*(0.22+refl)
+				bl = float64(baseCol.B)*0.35 + float64(glowCol.B)*(0.22+refl)
+			} else if fy > hill1 {
+				r *= 0.32
+				g *= 0.34
+				bl *= 0.38
+			}
+
+			img.SetRGBA(x, y, color.RGBA{
+				R: uint8(clampFloat(r)),
+				G: uint8(clampFloat(g)),
+				B: uint8(clampFloat(bl)),
+				A: 255,
+			})
+		}
+	}
+
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		return err
+	}
+	return os.WriteFile(outPath, buf.Bytes(), 0644)
+}
+
+func clampFloat(v float64) float64 {
+	if v < 0 {
+		return 0
+	}
+	if v > 255 {
+		return 255
+	}
+	return v
+}
+
+func matchBookMedia(b *Book, audioFiles []string, imageFiles []string) {
+	sort.Strings(audioFiles)
+	sort.Strings(imageFiles)
+	if b.Narrated {
+		b.AudioFiles = audioFiles
+	} else {
+		b.AudioFiles = nil
+	}
+	b.ImageFiles = imageFiles
+
+	if b.CoverFile != "" {
+		if matched, ok := findMediaFile(imageFiles, b.CoverFile, "", ""); ok {
+			b.CoverFile = matched
+		} else {
+			b.Warnings = append(b.Warnings, fmt.Sprintf("book.playtxt: nie znaleziono pliku okładki „%s”", b.CoverFile))
+			b.CoverFile = ""
+		}
+	}
+	if b.CoverFile == "" {
+		for _, img := range imageFiles {
+			stem := NormalizeLookupKey(strings.TrimSuffix(filepath.Base(img), filepath.Ext(img)))
+			if stem == "cover" || stem == "okladka" || stem == "okładka" {
+				if !b.IsPacked && b.RootPath != "" && strings.EqualFold(filepath.ToSlash(img), "cover.png") {
+					fullCoverPath := filepath.Join(b.RootPath, filepath.FromSlash(img))
+					if isLegacyGeneratedCoverPNG(fullCoverPath) {
+						_ = os.Remove(fullCoverPath)
+						continue
+					}
+				}
+				b.CoverFile = filepath.ToSlash(img)
+				break
+			}
+		}
+	}
+	if b.CoverFile != "" {
+		b.CoverURL = encodeMediaURL(b.ID, b.CoverFile)
+	}
+
+	for _, sc := range b.Scenes {
+		sc.AudioFile = ""
+		sc.AudioURL = ""
+		sc.ImageFile = ""
+		sc.ImageURL = ""
+
+		if !b.Narrated {
+			sc.ExplicitVoice = ""
+			sc.VoiceTrimStart = 0
+			sc.VoiceTrimEnd = 0
+			sc.SectionVoices = nil
+			ExtractSceneVoiceSections(sc, b)
+		} else if HasConditionalVoiceDirectives(sc.Text) {
+			secs := ExtractSceneVoiceSections(sc, b)
+			for _, sec := range secs {
+				if sec.HasAudio && sc.AudioFile == "" {
+					sc.AudioFile = sec.AudioFile
+					sc.AudioURL = encodeMediaURL(b.ID, sec.AudioFile)
+				}
+			}
+			appendSceneVoiceSectionWarnings(b, sc)
+		} else {
+			if sc.ExplicitVoice != "" {
+				if matched, ok := findMediaFile(audioFiles, sc.ExplicitVoice, "", ""); ok {
+					if strings.EqualFold(filepath.Ext(sc.ExplicitVoice), ".wav") {
+						sc.ExplicitVoice = matched
+					}
+					sc.AudioFile = matched
+					sc.AudioURL = encodeMediaURL(b.ID, matched)
+				} else {
+					warn := fmt.Sprintf("Scena „%s”: nie znaleziono pliku voice: „%s”", sc.DisplayName(), sc.ExplicitVoice)
+					sc.Warnings = append(sc.Warnings, warn)
+					b.Warnings = append(b.Warnings, warn)
+				}
+			}
+
+			if sc.AudioFile == "" && sc.ExplicitVoice == "" {
+				expectedName := sc.DisplayName()
+				warn := fmt.Sprintf("Scena „%s”: brak nagrania audio (książka ma włączoną narrację — ustaw voice: ścieżka.ogg/.flac/.mp3 lub dodaj plik „%s.ogg”)", sc.DisplayName(), expectedName)
+				sc.Warnings = append(sc.Warnings, warn)
+				b.Warnings = append(b.Warnings, warn)
+			}
+			ExtractSceneVoiceSections(sc, b)
+		}
+
+		if sc.ExplicitImage != "" {
+			if matched, ok := findMediaFile(imageFiles, sc.ExplicitImage, "", ""); ok {
+				sc.ImageFile = matched
+				sc.ImageURL = encodeMediaURL(b.ID, matched)
+			} else {
+				warn := fmt.Sprintf("Scena „%s”: nie znaleziono pliku image: „%s”", sc.DisplayName(), sc.ExplicitImage)
+				sc.Warnings = append(sc.Warnings, warn)
+				b.Warnings = append(b.Warnings, warn)
+			}
+		}
+	}
+}
+
+func isLegacyGeneratedCoverPNG(fullPath string) bool {
+	f, err := os.Open(fullPath)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	cfg, err := png.DecodeConfig(f)
+	if err != nil || cfg.Width != 400 || cfg.Height != 560 {
+		return false
+	}
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		return false
+	}
+	img, err := png.Decode(f)
+	if err != nil {
+		return false
+	}
+	r0, g0, b0, _ := img.At(0, 0).RGBA()
+	rc, gc, bc, _ := img.At(164, 212).RGBA()
+	return uint8(r0>>8) == 104 && uint8(g0>>8) == 88 && uint8(b0>>8) == 59 &&
+		uint8(rc>>8) == 255 && uint8(gc>>8) == 255 && uint8(bc>>8) == 246
 }

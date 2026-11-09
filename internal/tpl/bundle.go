@@ -1,13 +1,13 @@
+//go:build !(js && wasm)
+
 package tpl
 
 import (
-	"encoding/base64"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
 	"strings"
 )
 
@@ -220,33 +220,6 @@ func BundlePlayerCSSFromFS(fsys fs.FS, stripDev bool) (string, error) {
 // BundlePlayerJSFromFS concatenates player-only app/js/*.js modules from fsys.
 func BundlePlayerJSFromFS(fsys fs.FS, stripDev bool) (string, error) {
 	return bundleJSPathsFromFS(fsys, JSPlayerModuleFiles("app"), stripDev, false)
-}
-
-// discoverComponentFiles returns sorted paths matching appDir/components/*/*<ext>.
-func discoverComponentFiles(appDir, ext string) []string {
-	compRoot := filepath.Join(appDir, "components")
-	entries, err := os.ReadDir(compRoot)
-	if err != nil {
-		return nil
-	}
-	var found []string
-	for _, d := range entries {
-		if !d.IsDir() {
-			continue
-		}
-		subDir := filepath.Join(compRoot, d.Name())
-		subEntries, err := os.ReadDir(subDir)
-		if err != nil {
-			continue
-		}
-		for _, f := range subEntries {
-			if !f.IsDir() && strings.HasSuffix(strings.ToLower(f.Name()), ext) {
-				found = append(found, filepath.Join(subDir, f.Name()))
-			}
-		}
-	}
-	sort.Strings(found)
-	return found
 }
 
 // CSSModuleFiles returns the ordered list of TSS stylesheet template files in appDir/styles (plus any appDir/components/*/*.tss).
@@ -471,15 +444,6 @@ func BuildWWW(rootDir string) error {
 		filepath.Join(outDir, "app.js"),
 	); err != nil {
 		return fmt.Errorf("www js bundle error: %w", err)
-	}
-	if wasmBytes, wErr := os.ReadFile(filepath.Join(outDir, "mojra.wasm")); wErr == nil && len(wasmBytes) > 0 {
-		appJSPath := filepath.Join(outDir, "app.js")
-		if rawJS, jErr := os.ReadFile(appJSPath); jErr == nil {
-			jsStr := string(rawJS) + "\nwindow.__wasmBase64 = \"" + base64.StdEncoding.EncodeToString(wasmBytes) + "\";\n"
-			if err := os.WriteFile(appJSPath, []byte(jsStr), 0644); err != nil {
-				return err
-			}
-		}
 	}
 
 	if fontEntries, err := os.ReadDir(filepath.Join(appDir, "fonts")); err == nil {

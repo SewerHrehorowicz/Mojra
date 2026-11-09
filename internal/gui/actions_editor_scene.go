@@ -1,3 +1,5 @@
+//go:build !(js && wasm)
+
 package gui
 
 import (
@@ -234,7 +236,7 @@ func (s *Server) applySceneFormFields(target *book.Scene, r *http.Request) {
 			target.Name = newName
 		}
 	}
-	wasAutoDerived := oldExplicitID == "" || isSlugDerivedFromTitle(oldExplicitID, oldName)
+	wasAutoDerived := oldExplicitID == "" || oldName == "" || isSlugDerivedFromTitle(oldExplicitID, oldName)
 	if !customExplicitID && wasAutoDerived && target.Name != "" && !strings.EqualFold(target.Name, oldName) && !isPlaceholderSceneName(target.Name) {
 		target.ExplicitID = book.NextUniqueSceneSlug(s.ActiveBook, target.Name, target)
 	}
@@ -997,11 +999,14 @@ func (s *Server) saveSceneFromFormWithMode(r *http.Request, isAutoSave bool) str
 	}
 	scID := strings.TrimSpace(r.FormValue("scene_id"))
 	var target *book.Scene
-	if s.SceneTextModalID != "" {
+	if s.SceneTextModalID != "" && (scID == "" || strings.EqualFold(scID, s.SceneTextModalID) || (s.SceneTextModalInitialID != "" && strings.EqualFold(scID, s.SceneTextModalInitialID))) {
 		target = s.findScene(s.SceneTextModalID)
 	}
-	if target == nil {
+	if target == nil && scID != "" {
 		target = s.findScene(scID)
+	}
+	if target == nil && s.SceneTextModalID != "" {
+		target = s.findScene(s.SceneTextModalID)
 	}
 	if target == nil && s.SelectedSceneID != "" {
 		target = s.findScene(s.SelectedSceneID)
@@ -1009,6 +1014,7 @@ func (s *Server) saveSceneFromFormWithMode(r *http.Request, isAutoSave bool) str
 	if target == nil {
 		return "Nie znaleziono sceny"
 	}
+	prevTargetID := target.ID
 
 	s.ensureHistoryBaselineBeforeMutation()
 	s.applySceneFormFields(target, r)
@@ -1022,7 +1028,7 @@ func (s *Server) saveSceneFromFormWithMode(r *http.Request, isAutoSave bool) str
 	s.reloadActiveBook()
 	if newID != "" {
 		s.SelectedSceneID = newID
-		if s.SceneTextModalID != "" {
+		if s.SceneTextModalID != "" && (strings.EqualFold(s.SceneTextModalID, prevTargetID) || strings.EqualFold(s.SceneTextModalID, scID) || (s.SceneTextModalInitialID != "" && strings.EqualFold(s.SceneTextModalInitialID, scID))) {
 			s.SceneTextModalID = newID
 		}
 	}

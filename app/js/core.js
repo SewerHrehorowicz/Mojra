@@ -567,8 +567,7 @@ async function bootWasmPlayer(playBtn) {
 
     let wasmBuf = null;
     let wasmBytes = null;
-    const isFileProtocol = typeof location !== "undefined" && location && location.protocol === "file:";
-    if (!isFileProtocol && typeof fetch !== "undefined") {
+    if (typeof fetch !== "undefined") {
       try {
         const resp = await fetch(wasmSrc);
         if (resp && resp.ok) {
@@ -576,14 +575,6 @@ async function bootWasmPlayer(playBtn) {
           wasmBytes = new Uint8Array(wasmBuf);
         }
       } catch (_) {}
-    }
-    if ((!wasmBytes || wasmBytes.length === 0) && typeof window.__wasmBase64 === "string" && window.__wasmBase64.length > 0) {
-      const binStr = atob(window.__wasmBase64);
-      wasmBytes = new Uint8Array(binStr.length);
-      for (let i = 0; i < binStr.length; i++) {
-        wasmBytes[i] = binStr.charCodeAt(i);
-      }
-      wasmBuf = wasmBytes.buffer;
     }
     if (!wasmBytes || wasmBytes.length === 0) {
       playBtn.classList.remove("is-loading");
@@ -903,9 +894,13 @@ async function sendServerAction(actionName, params) {
       if (typeof syncCanvasNodeFromSceneTextModal === "function") {
         syncCanvasNodeFromSceneTextModal(modalsRoot);
       }
-      const expandBtn = qs("#btn-expand-scene-text");
-      if (expandBtn) {
-        expandBtn.setAttribute("data-scene", syncedCanvasSceneId);
+      if (typeof syncExpandSceneTextButton === "function") {
+        syncExpandSceneTextButton(syncedCanvasSceneId);
+      } else {
+        const expandBtn = qs("#btn-expand-scene-text");
+        if (expandBtn) {
+          expandBtn.setAttribute("data-scene", syncedCanvasSceneId);
+        }
       }
       if (typeof syncNodeSelectionDOM === "function") {
         syncNodeSelectionDOM();
@@ -976,7 +971,12 @@ async function sendServerAction(actionName, params) {
     if (actionName === "OpenSceneTextModal" || actionName === "NavigateSceneTextModal") {
       if (typeof initSceneTextModalFeed === "function") initSceneTextModalFeed(true);
       const modalTa = qs("#modal-scene-textarea");
-      if (modalTa && actionName === "OpenSceneTextModal") modalTa.focus({ preventScroll: true });
+      const floatingInputActive = Boolean(
+        qs("#canvas-node-title-input:not(.hidden), #canvas-choice-input:not(.hidden), #canvas-chapter-input:not(.hidden)")
+      );
+      if (modalTa && actionName === "OpenSceneTextModal" && !floatingInputActive) {
+        modalTa.focus({ preventScroll: true });
+      }
     } else if (ACTIONS_KEEP_MODAL_SCROLL.has(actionName)) {
       const feed = qs(".scene-text-editor-feed", modalsRoot);
       if (feed && prevModalScrollTop !== null) feed.scrollTop = prevModalScrollTop;
@@ -1218,7 +1218,10 @@ async function sendServerAction(actionName, params) {
         initSceneTextModalFeed(true);
       }
       const modalTa = qs("#modal-scene-textarea");
-      if (modalTa) {
+      const floatingInputActive = Boolean(
+        qs("#canvas-node-title-input:not(.hidden), #canvas-choice-input:not(.hidden), #canvas-chapter-input:not(.hidden)")
+      );
+      if (modalTa && !floatingInputActive) {
         modalTa.focus({ preventScroll: true });
       }
       if (typeof applyPendingSceneTextSearchHighlight === "function") {

@@ -5,6 +5,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -505,6 +506,52 @@ func SceneVoiceBaseStem(sc *Scene) string {
 		}
 	}
 	return "scena"
+}
+
+func parseVoiceTrimHeader(val string) (float64, float64, bool) {
+	clean := strings.TrimSpace(val)
+	clean = strings.TrimPrefix(clean, "[")
+	clean = strings.TrimSuffix(clean, "]")
+	clean = strings.ReplaceAll(clean, "..", ",")
+	clean = strings.ReplaceAll(clean, "-", ",")
+	parts := strings.Split(clean, ",")
+	if len(parts) != 2 {
+		parts = strings.Fields(clean)
+	}
+	if len(parts) != 2 {
+		return 0, 1, false
+	}
+	s, err1 := strconv.ParseFloat(strings.TrimSpace(parts[0]), 64)
+	e, err2 := strconv.ParseFloat(strings.TrimSpace(parts[1]), 64)
+	if err1 != nil || err2 != nil {
+		return 0, 1, false
+	}
+	if s < 0 {
+		s = 0
+	}
+	if e > 1 {
+		e = 1
+	}
+	if e <= s+0.001 {
+		return 0, 1, false
+	}
+	return s, e, true
+}
+
+// ParseVoiceHeaderValue parses a voice header value such as "voice/scene__02_if.flac [0.0420..0.9610]"
+// into its relative file path and optional [trimStart, trimEnd] ratios.
+func ParseVoiceHeaderValue(val string) (string, float64, float64) {
+	trimmed := strings.TrimSpace(val)
+	if strings.HasSuffix(trimmed, "]") {
+		if openIdx := strings.LastIndexByte(trimmed, '['); openIdx > 0 {
+			pathPart := strings.TrimSpace(trimmed[:openIdx])
+			bracketPart := strings.TrimSpace(trimmed[openIdx+1 : len(trimmed)-1])
+			if ts, te, ok := parseVoiceTrimHeader(bracketPart); ok {
+				return pathPart, ts, te
+			}
+		}
+	}
+	return trimmed, 0, 0
 }
 
 func parseInlineVoiceSectionLine(trimmed string) (string, float64, float64, bool) {

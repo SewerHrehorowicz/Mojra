@@ -1,9 +1,12 @@
+//go:build !(js && wasm)
+
 package book
 
 import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"encoding/binary"
 	"flag"
 	"fmt"
 	"hash/fnv"
@@ -176,18 +179,7 @@ func LoadLibraryBooks(booksDir string, externalPaths []string) ([]*Book, error) 
 			continue
 		}
 		b.IsExternal = !isPathDirectlyInDir(absPath, booksDir)
-		if existing, exists := byID[b.ID]; exists {
-			if existing.IsPacked && !b.IsPacked {
-				byID[b.ID] = b
-				seenRoots[rootKey] = true
-				for idx := range out {
-					if out[idx] == existing {
-						out[idx] = b
-						break
-					}
-				}
-				continue
-			}
+		if _, exists := byID[b.ID]; exists {
 			candidateID := fmt.Sprintf("%s-%s", b.ID, shortPathHash(absPath))
 			for i := 2; byID[candidateID] != nil; i++ {
 				candidateID = fmt.Sprintf("%s-%s-%d", b.ID, shortPathHash(absPath), i)
@@ -200,6 +192,65 @@ func LoadLibraryBooks(booksDir string, externalPaths []string) ([]*Book, error) 
 	}
 
 	return out, nil
+}
+
+// LoadPackedBooks scans booksDir and externalPaths for packed .playbook, .stbook, and .zip archives,
+// returning all packed archives even when an unpacked working copy exists on disk.
+func LoadPackedBooks(booksDir string, externalPaths []string) []*Book {
+	var out []*Book
+	seenRoots := make(map[string]bool)
+	byID := make(map[string]*Book)
+
+	addArchive := func(zipPath string) {
+		rootKey := canonicalPathKey(zipPath)
+		if seenRoots[rootKey] {
+			return
+		}
+		b, err := LoadBookFromZip(zipPath)
+		if err != nil || b == nil {
+			return
+		}
+		if _, exists := byID[b.ID]; exists {
+			candidateID := fmt.Sprintf("%s-%s", b.ID, shortPathHash(zipPath))
+			for i := 2; byID[candidateID] != nil; i++ {
+				candidateID = fmt.Sprintf("%s-%s-%d", b.ID, shortPathHash(zipPath), i)
+			}
+			RebindBookID(b, candidateID)
+		}
+		seenRoots[rootKey] = true
+		byID[b.ID] = b
+		out = append(out, b)
+	}
+
+	scanDir := func(dir string) {
+		if dir == "" {
+			return
+		}
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			return
+		}
+		for _, e := range entries {
+			if e.IsDir() || strings.HasPrefix(e.Name(), ".") {
+				continue
+			}
+			if isPackedBookArchiveName(strings.ToLower(e.Name())) {
+				addArchive(filepath.Join(dir, e.Name()))
+			}
+		}
+	}
+
+	scanDir(booksDir)
+	for _, rawExt := range externalPaths {
+		absPath, err := ExpandLocalPath(rawExt)
+		if err != nil {
+			continue
+		}
+		if isPackedBookArchiveName(strings.ToLower(filepath.Base(absPath))) {
+			addArchive(absPath)
+		}
+	}
+	return out
 }
 
 // ExpandLocalPath normalizes a user-supplied disk path (stripping quotes, file:// scheme, and expanding ~).
@@ -295,10 +346,8 @@ func IsSafePathInsideRoot(rootDir, targetPath string) bool {
 }
 
 const (
-	MaxZipEntries                = 4096
-	MaxZipTotalUncompressedBytes = 500 * 1024 * 1024
-	MaxZipSingleTextBytes        = 4 * 1024 * 1024
-	MaxZipTotalTextBytes         = 32 * 1024 * 1024
+	MaxZipEntries        = 4096
+	MaxZipTotalTextBytes = 32 * 1024 * 1024
 )
 
 func validateZipArchiveLimits(files []*zip.File) error {
@@ -1344,5 +1393,147 @@ func DefaultExportDir() string {
 // DefaultProjectsDir returns the default directory for user-created projects inside standard application data.
 func DefaultProjectsDir() string {
 	return filepath.Join(DefaultAppDataDir(), "projects")
+}
+
+// ServeBookMedia streams an audio or raster image file from either an unpacked directory or a .stbook archive,
+// supporting safe subdirectory paths (e.g. "images/scene.png" or "voice/scene.ogg").
+func ServeBookMedia(w http.ResponseWriter, r *http.Request, b *Book, rawRelPath string) {
+	decoded, err := url.PathUnescape(rawRelPath)
+	if err != nil {
+		decoded = rawRelPath
+	}
+	cleanRel := SanitizeRelativeMediaPath(decoded)
+	if cleanRel == "" {
+		http.NotFound(w, r)
+		return
+	}
+
+	contentType := mediaContentType(cleanRel)
+	if contentType == "" || (!isAudioFilename(cleanRel) && !isRasterImageFilename(cleanRel)) {
+		http.Error(w, "unsupported media type (SVG is forbidden in book media)", http.StatusForbidden)
+		return
+	}
+	if !b.Narrated && isAudioFilename(cleanRel) {
+		http.Error(w, "voice media is disabled for narrationless books", http.StatusForbidden)
+		return
+	}
+
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Cache-Control", "private, max-age=3600")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; media-src 'self'; img-src 'self'; sandbox")
+
+	if !b.IsPacked {
+		fullPath := filepath.Join(b.RootPath, filepath.FromSlash(cleanRel))
+		if !IsSafePathInsideRoot(b.RootPath, fullPath) {
+			http.NotFound(w, r)
+			return
+		}
+		f, err := os.Open(fullPath)
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		defer f.Close()
+		info, err := f.Stat()
+		if err != nil || info.IsDir() {
+			http.NotFound(w, r)
+			return
+		}
+		var hdr [512]byte
+		n, _ := io.ReadFull(f, hdr[:])
+		if !validateMediaHeader(cleanRel, hdr[:n]) {
+			http.Error(w, "invalid or disguised media header", http.StatusForbidden)
+			return
+		}
+		if n >= 42 && string(hdr[:4]) == "fLaC" && (hdr[4]&0x7F) == 0 &&
+			binary.BigEndian.Uint16(hdr[8:10]) != binary.BigEndian.Uint16(hdr[10:12]) &&
+			info.Size() <= maxMediaEntryBytes {
+			if _, err := f.Seek(0, io.SeekStart); err == nil {
+				if raw, readErr := io.ReadAll(io.LimitReader(f, maxMediaEntryBytes+1)); readErr == nil {
+					fixed, changed := NormalizeFLACForPlayback(raw)
+					if changed {
+						tmpPath := fullPath + ".tmp"
+						if writeErr := os.WriteFile(tmpPath, fixed, 0644); writeErr == nil {
+							if err := os.Rename(tmpPath, fullPath); err != nil {
+								_ = os.Remove(tmpPath)
+							}
+						}
+					}
+					http.ServeContent(w, r, filepath.Base(cleanRel), info.ModTime(), bytes.NewReader(fixed))
+					return
+				}
+			}
+		}
+		if _, err := f.Seek(0, io.SeekStart); err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		http.ServeContent(w, r, filepath.Base(cleanRel), info.ModTime(), f)
+		return
+	}
+
+	if b.PackedMedia != nil {
+		entry, ok := b.PackedMedia[strings.ToLower(cleanRel)]
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		if entry.Size > maxMediaEntryBytes {
+			http.Error(w, "media entry exceeds size limit", http.StatusRequestEntityTooLarge)
+			return
+		}
+		if !entry.ValidHeader {
+			http.Error(w, "invalid or disguised media header", http.StatusForbidden)
+			return
+		}
+		if entry.Method == zip.Store && entry.DataOffset >= 30 {
+			osFile, err := os.Open(b.RootPath)
+			if err != nil {
+				http.NotFound(w, r)
+				return
+			}
+			defer osFile.Close()
+			section := io.NewSectionReader(osFile, entry.DataOffset, entry.Size)
+			http.ServeContent(w, r, filepath.Base(cleanRel), entry.ModTime, section)
+			return
+		}
+	}
+
+	zr, err := zip.OpenReader(b.RootPath)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	defer zr.Close()
+
+	if f := findZipEntryByRelPath(zr.File, cleanRel); f != nil {
+		if f.UncompressedSize64 > maxMediaEntryBytes {
+			http.Error(w, "media entry exceeds size limit", http.StatusRequestEntityTooLarge)
+			return
+		}
+		rc, err := f.Open()
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		defer rc.Close()
+		raw, err := io.ReadAll(io.LimitReader(rc, maxMediaEntryBytes+1))
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		if len(raw) > maxMediaEntryBytes {
+			http.Error(w, "media entry exceeds size limit", http.StatusRequestEntityTooLarge)
+			return
+		}
+		if !validateMediaHeader(cleanRel, raw) {
+			http.Error(w, "invalid or disguised media header", http.StatusForbidden)
+			return
+		}
+		http.ServeContent(w, r, filepath.Base(cleanRel), f.Modified, bytes.NewReader(raw))
+		return
+	}
+	http.NotFound(w, r)
 }
 

@@ -1,13 +1,23 @@
+//go:build !(js && wasm)
+
 package book
 
 import (
+	"archive/zip"
 	"bytes"
-	"encoding/base64"
+	"compress/gzip"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/ed25519"
+	"crypto/rand"
+	"encoding/binary"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 
@@ -56,6 +66,14 @@ func BuildBaseWasmAssets(rootDir string) ([]byte, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
+	var gzBuf bytes.Buffer
+	if gzW, gzErr := gzip.NewWriterLevel(&gzBuf, gzip.BestCompression); gzErr == nil {
+		if _, wErr := gzW.Write(wasmBytes); wErr == nil && gzW.Close() == nil {
+			if err := os.WriteFile(wasmOutPath+".gz", gzBuf.Bytes(), 0644); err != nil {
+				return nil, "", err
+			}
+		}
+	}
 	wasmExecJS, err := FindGoWasmExecJS()
 	if err != nil {
 		return nil, "", err
@@ -80,14 +98,28 @@ func resolveBaseWasmAndExecJS(rootDir string, embeddedFS fs.FS) ([]byte, string,
 	wasmCacheMu.Unlock()
 
 	if embeddedFS != nil {
-		wRaw, wErr := fs.ReadFile(embeddedFS, "build/wasm/mojra.wasm")
 		jRaw, jErr := fs.ReadFile(embeddedFS, "build/wasm/wasm_exec.js")
-		if wErr == nil && jErr == nil && len(wRaw) > 8 && len(jRaw) > 0 {
-			wasmCacheMu.Lock()
-			cachedBaseWasm = wRaw
-			cachedWasmExecJS = string(jRaw)
-			wasmCacheMu.Unlock()
-			return wRaw, string(jRaw), nil
+		if jErr == nil && len(jRaw) > 0 {
+			if gzRaw, gzErr := fs.ReadFile(embeddedFS, "build/wasm/mojra.wasm.gz"); gzErr == nil && len(gzRaw) > 0 {
+				if gr, rErr := gzip.NewReader(bytes.NewReader(gzRaw)); rErr == nil {
+					wRaw, uErr := io.ReadAll(gr)
+					_ = gr.Close()
+					if uErr == nil && len(wRaw) > 8 {
+						wasmCacheMu.Lock()
+						cachedBaseWasm = wRaw
+						cachedWasmExecJS = string(jRaw)
+						wasmCacheMu.Unlock()
+						return wRaw, string(jRaw), nil
+					}
+				}
+			}
+			if wRaw, wErr := fs.ReadFile(embeddedFS, "build/wasm/mojra.wasm"); wErr == nil && len(wRaw) > 8 {
+				wasmCacheMu.Lock()
+				cachedBaseWasm = wRaw
+				cachedWasmExecJS = string(jRaw)
+				wasmCacheMu.Unlock()
+				return wRaw, string(jRaw), nil
+			}
 		}
 	}
 
@@ -186,7 +218,6 @@ func ExportWebWASMApp(b *Book, exportDir string, rootDir string, embeddedFS fs.F
 	if err != nil {
 		return "", err
 	}
-	jsStr += "\n;\nwindow.__wasmBase64 = \"" + base64.StdEncoding.EncodeToString(embeddedWasm) + "\";\n"
 	relCSS := strings.ReplaceAll(cssStr, `url("/fonts/`, `url("fonts/`)
 	if err := os.WriteFile(filepath.Join(outDir, "style.css"), []byte(relCSS), 0644); err != nil {
 		return "", err
@@ -219,8 +250,7 @@ func ExportWebWASMApp(b *Book, exportDir string, rootDir string, embeddedFS fs.F
 	return outDir, nil
 }
 
-// EmbedDemoBookIntoWWW embeds the sample book into dist/www/mojra.wasm and appends window.__wasmBase64 to dist/www/app.js
-// so the static showcase site works both over HTTP/HTTPS (fetch) and directly from disk via file://.
+// EmbedDemoBookIntoWWW embeds the sample book into dist/www/mojra.wasm for the static showcase site.
 func EmbedDemoBookIntoWWW(rootDir string, baseWasm []byte) error {
 	if len(baseWasm) == 0 {
 		var err error
@@ -258,21 +288,7 @@ func EmbedDemoBookIntoWWW(rootDir string, baseWasm []byte) error {
 	if err := os.MkdirAll(wwwOutDir, 0755); err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(wwwOutDir, "mojra.wasm"), embeddedWasm, 0644); err != nil {
-		return err
-	}
-	appJSPath := filepath.Join(wwwOutDir, "app.js")
-	if rawJS, err := os.ReadFile(appJSPath); err == nil {
-		jsStr := string(rawJS)
-		if idx := strings.Index(jsStr, "\nwindow.__wasmBase64 = \""); idx >= 0 {
-			jsStr = jsStr[:idx]
-		}
-		jsStr += "\nwindow.__wasmBase64 = \"" + base64.StdEncoding.EncodeToString(embeddedWasm) + "\";\n"
-		if err := os.WriteFile(appJSPath, []byte(jsStr), 0644); err != nil {
-			return err
-		}
-	}
-	return nil
+	return os.WriteFile(filepath.Join(wwwOutDir, "mojra.wasm"), embeddedWasm, 0644)
 }
 
 func buildPlayerWebBundleAssets(rootDir string, embeddedFS fs.FS, wasmExecJS string) (cssStr, jsStr, playSVG string, err error) {
@@ -353,4 +369,398 @@ func copyWebFontsAndIcons(outDir, rootDir string, embeddedFS fs.FS) {
 			}
 		}
 	}
+}
+
+// CollectBookMediaBytes reads all validated audio and raster image files referenced by or present in b.
+func CollectBookMediaBytes(b *Book) (map[string][]byte, error) {
+	out := make(map[string][]byte)
+	if b == nil {
+		return out, nil
+	}
+	var totalBytes int64
+	addFile := func(rel string) error {
+		clean := SanitizeRelativeMediaPath(rel)
+		if clean == "" {
+			return nil
+		}
+		if _, exists := out[clean]; exists {
+			return nil
+		}
+		if !b.Narrated && isAudioFilename(clean) {
+			return nil
+		}
+		if !isAudioFilename(clean) && !isRasterImageFilename(clean) {
+			return nil
+		}
+		data, err := readBookMediaRawBytes(b, clean)
+		if err != nil {
+			return nil
+		}
+		totalBytes += int64(len(data))
+		if totalBytes > MaxZipTotalUncompressedBytes {
+			return fmt.Errorf("łączny rozmiar multimediów przekracza limit (500 MB)")
+		}
+		out[clean] = data
+		return nil
+	}
+
+	if b.CoverFile != "" {
+		if err := addFile(b.CoverFile); err != nil {
+			return nil, err
+		}
+	}
+	for _, img := range b.ImageFiles {
+		if err := addFile(img); err != nil {
+			return nil, err
+		}
+	}
+	if b.Narrated {
+		for _, aud := range discoverBookAudioFilesForSections(b) {
+			if err := addFile(aud); err != nil {
+				return nil, err
+			}
+		}
+	}
+	for _, sc := range b.Scenes {
+		if sc.ImageFile != "" {
+			if err := addFile(sc.ImageFile); err != nil {
+				return nil, err
+			}
+		}
+		if b.Narrated {
+			if sc.AudioFile != "" {
+				if err := addFile(sc.AudioFile); err != nil {
+					return nil, err
+				}
+			}
+			for _, sec := range ExtractSceneVoiceSections(sc, b) {
+				if sec.AudioFile != "" {
+					if err := addFile(sec.AudioFile); err != nil {
+						return nil, err
+					}
+				}
+			}
+		}
+	}
+	return out, nil
+}
+
+func readBookMediaRawBytes(b *Book, cleanRel string) ([]byte, error) {
+	if b == nil || b.RootPath == "" {
+		return nil, os.ErrNotExist
+	}
+	if !b.IsPacked {
+		full := filepath.Join(b.RootPath, filepath.FromSlash(cleanRel))
+		if !IsSafePathInsideRoot(b.RootPath, full) {
+			return nil, os.ErrPermission
+		}
+		f, err := os.Open(full)
+		if err != nil {
+			return nil, err
+		}
+		defer f.Close()
+		data, err := io.ReadAll(io.LimitReader(f, maxMediaEntryBytes+1))
+		if err != nil {
+			return nil, err
+		}
+		if int64(len(data)) > maxMediaEntryBytes || !validateMediaHeader(cleanRel, data) {
+			return nil, fmt.Errorf("nieprawidłowy plik multimedialny: %s", cleanRel)
+		}
+		return data, nil
+	}
+
+	zr, err := zip.OpenReader(b.RootPath)
+	if err != nil {
+		return nil, err
+	}
+	defer zr.Close()
+	if f := findZipEntryByRelPath(zr.File, cleanRel); f != nil {
+		var dummy int64
+		return readValidatedZipMediaBytes(f, cleanRel, &dummy)
+	}
+	return nil, os.ErrNotExist
+}
+
+// CompileEncryptedSTBC compiles a Book and its media into a polymorphic STBC binary stream,
+// encrypts it with a per-build random AES-256-GCM key, and signs it with Ed25519.
+func CompileEncryptedSTBC(b *Book, media map[string][]byte) (ciphertext []byte, key [32]byte, nonce [12]byte, permSeed [16]byte, sig [64]byte, err error) {
+	if b == nil {
+		return nil, key, nonce, permSeed, sig, fmt.Errorf("brak książki do kompilacji STBC")
+	}
+	if media == nil {
+		media, err = CollectBookMediaBytes(b)
+		if err != nil {
+			return nil, key, nonce, permSeed, sig, err
+		}
+	}
+
+	if _, err = io.ReadFull(rand.Reader, key[:]); err != nil {
+		return nil, key, nonce, permSeed, sig, err
+	}
+	if _, err = io.ReadFull(rand.Reader, nonce[:]); err != nil {
+		return nil, key, nonce, permSeed, sig, err
+	}
+	if _, err = io.ReadFull(rand.Reader, permSeed[:]); err != nil {
+		return nil, key, nonce, permSeed, sig, err
+	}
+
+	encOps, _ := stbcOpcodeTable(permSeed)
+	var plain bytes.Buffer
+	plain.WriteString(stbcHeaderMagic)
+
+	plain.WriteByte(encOps[stbcOpBookMeta])
+	writeSTBCString(&plain, b.ID)
+	writeSTBCString(&plain, b.Title)
+	writeSTBCString(&plain, b.Author)
+	writeSTBCString(&plain, b.License)
+	writeSTBCString(&plain, b.Description)
+	writeSTBCString(&plain, b.NormalizedMode())
+	writeSTBCString(&plain, b.NormalizedStandard())
+	writeSTBCString(&plain, b.StartSceneID)
+	writeSTBCString(&plain, b.CoverFile)
+	var flags byte
+	if b.Narrated {
+		flags |= 1
+	}
+	if b.Imageless {
+		flags |= 2
+	}
+	plain.WriteByte(flags)
+
+	for _, ed := range b.Enums {
+		plain.WriteByte(encOps[stbcOpEnumDef])
+		writeSTBCString(&plain, ed.Name)
+		_ = binary.Write(&plain, binary.LittleEndian, uint16(len(ed.Values)))
+		for _, v := range ed.Values {
+			writeSTBCString(&plain, v)
+		}
+	}
+
+	for _, vd := range b.Variables {
+		plain.WriteByte(encOps[stbcOpVarDef])
+		writeSTBCString(&plain, vd.Name)
+		writeSTBCString(&plain, vd.Kind)
+		if vd.BoolVal {
+			plain.WriteByte(1)
+		} else {
+			plain.WriteByte(0)
+		}
+		_ = binary.Write(&plain, binary.LittleEndian, int64(vd.IntVal))
+		writeSTBCString(&plain, vd.EnumName)
+		writeSTBCString(&plain, vd.EnumVal)
+		_ = binary.Write(&plain, binary.LittleEndian, uint16(len(vd.Options)))
+		for _, opt := range vd.Options {
+			writeSTBCString(&plain, opt)
+		}
+	}
+
+	for _, ch := range b.Chapters {
+		plain.WriteByte(encOps[stbcOpChapter])
+		writeSTBCString(&plain, ch.ID)
+		writeSTBCString(&plain, ch.ExplicitID)
+		writeSTBCString(&plain, ch.Name)
+		writeSTBCString(&plain, ch.StartSceneID)
+		_ = binary.Write(&plain, binary.LittleEndian, uint16(len(ch.SceneIDs)))
+		for _, sid := range ch.SceneIDs {
+			writeSTBCString(&plain, sid)
+		}
+	}
+
+	for _, sc := range b.Scenes {
+		plain.WriteByte(encOps[stbcOpScene])
+		writeSTBCString(&plain, sc.ID)
+		writeSTBCString(&plain, sc.ExplicitID)
+		writeSTBCString(&plain, sc.Name)
+		writeSTBCString(&plain, sc.Slugline)
+		writeSTBCString(&plain, sc.Synopsis)
+		writeSTBCString(&plain, sc.Effects)
+		writeSTBCString(&plain, sc.Chapter)
+		writeSTBCString(&plain, sc.ChapterID)
+		writeSTBCString(&plain, SerializeSceneProseWithSectionVoices(sc, b))
+		writeSTBCString(&plain, sc.AudioFile)
+		writeSTBCString(&plain, sc.ImageFile)
+		_ = binary.Write(&plain, binary.LittleEndian, int32(sc.OrderIndex))
+		var scFlags byte
+		if sc.ExplicitEnd {
+			scFlags |= 1
+		}
+		hasTrim := b.Narrated && sc.HasVoiceTrim()
+		if hasTrim {
+			scFlags |= 2
+		}
+		plain.WriteByte(scFlags)
+		if hasTrim {
+			ts, te := sc.NormalizedVoiceTrim()
+			_ = binary.Write(&plain, binary.LittleEndian, float32(ts))
+			_ = binary.Write(&plain, binary.LittleEndian, float32(te))
+		}
+		_ = binary.Write(&plain, binary.LittleEndian, uint16(len(sc.Choices)))
+		for _, ch := range sc.Choices {
+			plain.WriteByte(encOps[stbcOpChoice])
+			writeSTBCString(&plain, ch.Label)
+			writeSTBCString(&plain, ch.Target)
+			writeSTBCString(&plain, ch.TargetSceneID)
+			writeSTBCString(&plain, ch.TargetChapterID)
+			writeSTBCString(&plain, ch.Condition)
+			writeSTBCString(&plain, ch.Effects)
+			var cFlags byte
+			if ch.ShowWhenLocked {
+				cFlags |= 1
+			}
+			if ch.IsChapterLink {
+				cFlags |= 2
+			}
+			if ch.IsImplicit {
+				cFlags |= 4
+			}
+			if ch.IsEnding {
+				cFlags |= 8
+			}
+			plain.WriteByte(cFlags)
+		}
+	}
+
+	mediaKeys := make([]string, 0, len(media))
+	for k := range media {
+		mediaKeys = append(mediaKeys, k)
+	}
+	sort.Strings(mediaKeys)
+	for _, rel := range mediaKeys {
+		raw := media[rel]
+		if len(raw) == 0 {
+			continue
+		}
+		plain.WriteByte(encOps[stbcOpMedia])
+		writeSTBCString(&plain, rel)
+		_ = binary.Write(&plain, binary.LittleEndian, uint32(len(raw)))
+		plain.Write(raw)
+	}
+
+	plain.WriteByte(encOps[stbcOpEnd])
+
+	block, err := aes.NewCipher(key[:])
+	if err != nil {
+		return nil, key, nonce, permSeed, sig, err
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, key, nonce, permSeed, sig, err
+	}
+	ciphertext = gcm.Seal(nil, nonce[:], plain.Bytes(), permSeed[:])
+
+	_, priv := stbcKeypair()
+	msgHash := stbcSignatureDigest(ciphertext, key, nonce, permSeed)
+	signature := ed25519.Sign(priv, msgHash[:])
+	copy(sig[:], signature)
+	return ciphertext, key, nonce, permSeed, sig, nil
+}
+
+// EmbedSTBCIntoWasm appends a Wasm custom section ("mojra_stbc") containing the encrypted STBC payload
+// and the 148-byte cryptographic trailer directly into a compiled .wasm binary.
+func EmbedSTBCIntoWasm(baseWasm []byte, b *Book, media map[string][]byte) ([]byte, error) {
+	if len(baseWasm) < 8 || !bytes.Equal(baseWasm[:4], []byte("\x00asm")) {
+		return nil, fmt.Errorf("nieprawidłowy nagłówek pliku .wasm")
+	}
+	baseWasm = StripEmbeddedSTBCFromWasm(baseWasm)
+
+	ciphertext, key, nonce, permSeed, sig, err := CompileEncryptedSTBC(b, media)
+	if err != nil {
+		return nil, err
+	}
+
+	secName := "mojra_stbc"
+	var secHeader bytes.Buffer
+	writeULEB128(&secHeader, uint64(len(secName)))
+	secHeader.WriteString(secName)
+
+	secPayloadLen := secHeader.Len() + len(ciphertext) + stbcTrailerSize
+	var customSec bytes.Buffer
+	customSec.WriteByte(0x00)
+	writeULEB128(&customSec, uint64(secPayloadLen))
+	customSec.Write(secHeader.Bytes())
+
+	payloadOffset := uint64(len(baseWasm) + customSec.Len())
+	customSec.Write(ciphertext)
+
+	var trailer [stbcTrailerSize]byte
+	binary.LittleEndian.PutUint64(trailer[0:8], payloadOffset)
+	binary.LittleEndian.PutUint64(trailer[8:16], uint64(len(ciphertext)))
+	copy(trailer[16:48], key[:])
+	copy(trailer[48:60], nonce[:])
+	copy(trailer[60:76], permSeed[:])
+	copy(trailer[76:140], sig[:])
+	copy(trailer[140:148], stbcTrailerMagic)
+	customSec.Write(trailer[:])
+
+	out := make([]byte, 0, len(baseWasm)+customSec.Len())
+	out = append(out, baseWasm...)
+	out = append(out, customSec.Bytes()...)
+	return out, nil
+}
+
+// StripEmbeddedSTBCFromWasm removes an existing embedded STBC custom section if present, returning the clean base .wasm.
+func StripEmbeddedSTBCFromWasm(wasmBytes []byte) []byte {
+	if len(wasmBytes) < 8+stbcTrailerSize {
+		return wasmBytes
+	}
+	trailer := wasmBytes[len(wasmBytes)-stbcTrailerSize:]
+	if string(trailer[140:148]) != stbcTrailerMagic {
+		return wasmBytes
+	}
+	payloadOffset := binary.LittleEndian.Uint64(trailer[0:8])
+	payloadLen := binary.LittleEndian.Uint64(trailer[8:16])
+	endOffset := uint64(len(wasmBytes) - stbcTrailerSize)
+	if payloadOffset < 20 || payloadOffset+payloadLen != endOffset {
+		return wasmBytes
+	}
+	pos := 8
+	for pos < len(wasmBytes) {
+		secStart := pos
+		secID := wasmBytes[pos]
+		pos++
+		secLen, n := readULEB128(wasmBytes[pos:])
+		if n <= 0 {
+			break
+		}
+		pos += n
+		if secID == 0 && pos+int(secLen) == len(wasmBytes) {
+			return wasmBytes[:secStart]
+		}
+		pos += int(secLen)
+	}
+	return wasmBytes
+}
+
+func writeULEB128(buf *bytes.Buffer, v uint64) {
+	for step := 0; step < 10; step++ {
+		b := byte(v & 0x7f)
+		v >>= 7
+		if v != 0 {
+			b |= 0x80
+		}
+		buf.WriteByte(b)
+		if v == 0 {
+			break
+		}
+	}
+}
+
+func readULEB128(b []byte) (uint64, int) {
+	var val uint64
+	var shift uint
+	for i := 0; i < len(b) && i < 10; i++ {
+		byt := b[i]
+		val |= uint64(byt&0x7f) << shift
+		if (byt & 0x80) == 0 {
+			return val, i + 1
+		}
+		shift += 7
+	}
+	return 0, 0
+}
+
+func writeSTBCString(buf *bytes.Buffer, s string) {
+	raw := []byte(s)
+	_ = binary.Write(buf, binary.LittleEndian, uint32(len(raw)))
+	buf.Write(raw)
 }

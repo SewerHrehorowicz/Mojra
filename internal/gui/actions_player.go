@@ -1,3 +1,5 @@
+//go:build !(js && wasm)
+
 package gui
 
 import (
@@ -210,9 +212,10 @@ func (s *Server) playFromScene(r *http.Request) string {
 			}
 			s.persistSaveState()
 		}
+		s.saveCurrentBookEditorUIState()
 		s.Settings.ActiveView = "player"
 		s.SceneTextModalID = ""
-		s.persistSettings()
+		s.syncAndPersistEditorUIState()
 	}
 	return ""
 }

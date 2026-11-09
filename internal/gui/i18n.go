@@ -979,18 +979,3 @@ func trLang(l Lang, k TrKey) string {
 func trfLang(l Lang, k TrKey, args ...any) string {
 	return fmt.Sprintf(trLang(l, k), args...)
 }
-
-func (s *Server) lang() Lang {
-	if s == nil || s.Settings == nil {
-		return LangPL
-	}
-	return tpl.ParseLang(s.Settings.Language)
-}
-
-func (s *Server) tr(k TrKey) string {
-	return i18nTable[k][s.lang()]
-}
-
-func (s *Server) trf(k TrKey, args ...any) string {
-	return fmt.Sprintf(s.tr(k), args...)
-}

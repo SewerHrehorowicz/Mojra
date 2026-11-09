@@ -14,6 +14,9 @@ const (
 	DefaultScreenplayActName = "Akt I"
 	EditorStateFileName      = ".editor.cfg"
 	PlaytxtExt               = ".playtxt"
+
+	MaxZipTotalUncompressedBytes = 500 * 1024 * 1024
+	MaxZipSingleTextBytes        = 4 * 1024 * 1024
 )
 
 type Choice struct {
@@ -453,22 +456,40 @@ type SaveState struct {
 	UpdatedAtUnix      int64
 }
 
+// EditorBookUIState stores remembered Studio UI state for a specific book.
+type EditorBookUIState struct {
+	SelectedSceneID       string
+	SceneTextModalID      string
+	SceneTextWidthMode    string
+	SceneTextSettingsOpen bool
+	RightPanel            string
+	SelectedChapter       string
+}
+
 type AppSettings struct {
-	Theme              string
-	Language           string
-	PreviewMode        string
-	ActiveBookID       string
-	EditorBookID       string
-	ActiveView         string
-	Imageless          bool
-	UIScale            string
-	ScrollSensitivity  string
-	PlaybackSpeed      float64
-	AutoChoice         bool
-	AutoChoiceStrategy string
-	AutoChoiceDelay    float64
-	NewBookDir         string
-	ExportDir          string
-	BookExportDirs     map[string]string
-	ExternalBooks      []string
+	Theme                  string
+	Language               string
+	PreviewMode            string
+	ActiveBookID           string
+	EditorBookID           string
+	EditorStudioHome       bool
+	EditorSelectedSceneID  string
+	EditorSceneTextModalID string
+	EditorSceneTextWidth   string
+	EditorSceneSettings    bool
+	EditorRightPanel       string
+	EditorSelectedChapter  string
+	EditorBookStates       map[string]EditorBookUIState
+	ActiveView             string
+	Imageless              bool
+	UIScale                string
+	ScrollSensitivity      string
+	PlaybackSpeed          float64
+	AutoChoice             bool
+	AutoChoiceStrategy     string
+	AutoChoiceDelay        float64
+	NewBookDir             string
+	ExportDir              string
+	BookExportDirs         map[string]string
+	ExternalBooks          []string
 }
