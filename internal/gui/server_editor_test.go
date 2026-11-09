@@ -1858,15 +1858,45 @@ func TestNewSceneIDAndTitleEditsNeverOverwriteFirstSceneAndSyncChapterSlugs(t *t
 		t.Fatalf("expected zatopiona_sluza to preserve both ExplicitID and Name, got %+v", renamedSc)
 	}
 
-	// 3. Single-word title ("Korytarz") on another new scene must auto-generate slug "korytarz" and preserve Name="Korytarz"
+	// 3. Editing title ("Korytarz") on another new scene must keep its permanent ID "s2" (never mutating ID on title edit)
+	// unless explicit_id is explicitly changed by the user
 	postForm("CreateSceneAt", url.Values{"x": {"720"}, "y": {"480"}})
+	fourthSc := srv.ActiveBook.Scenes[len(srv.ActiveBook.Scenes)-1]
+	if fourthSc.ID == "s1" || fourthSc.ID != "s2" {
+		t.Fatalf("expected 4th scene to get fresh auto-ID s2 (never reusing retired s1), got %q", fourthSc.ID)
+	}
 	postForm("AutoSaveScene", url.Values{
-		"scene_id": {"s1"},
+		"scene_id": {fourthSc.ID},
 		"name":     {"Korytarz"},
 	})
-	korytarzSc := srv.findScene("korytarz")
-	if korytarzSc == nil || korytarzSc.ExplicitID != "korytarz" || korytarzSc.Name != "Korytarz" {
-		t.Fatalf("expected single-word title Korytarz to auto-slug ExplicitID=korytarz and preserve Name=Korytarz, got %+v", korytarzSc)
+	korytarzSc := srv.findScene("s2")
+	if korytarzSc == nil || korytarzSc.ID != "s2" || korytarzSc.ExplicitID != "s2" || korytarzSc.Name != "Korytarz" {
+		t.Fatalf("expected title edit Korytarz to preserve permanent ID=s2 and Name=Korytarz, got %+v", korytarzSc)
+	}
+	if checkPrev := srv.findScene("zatopiona_sluza"); checkPrev == nil || checkPrev.Name != "Zatopiona śluza" || !strings.Contains(checkPrev.Text, "po drugim zapisie") {
+		t.Fatalf("expected previous scene zatopiona_sluza to remain completely intact after adding and renaming 4th scene, got %+v", checkPrev)
+	}
+
+	// 3b. Open modal on zatopiona_sluza, create a new empty scene on canvas, then AddChoice in zatopiona_sluza:
+	// the new empty scene and zatopiona_sluza must remain completely separate and never merge
+	postForm("OpenSceneTextModal", url.Values{"scene": {"zatopiona_sluza"}})
+	postForm("CreateSceneAt", url.Values{"x": {"960"}, "y": {"480"}})
+	fifthSc := srv.ActiveBook.Scenes[len(srv.ActiveBook.Scenes)-1]
+	if fifthSc.ID != "s3" {
+		t.Fatalf("expected 5th scene to get permanent ID s3, got %q", fifthSc.ID)
+	}
+	postForm("AddChoice", url.Values{
+		"scene":       {"zatopiona_sluza"},
+		"scene_id":    {"zatopiona_sluza"},
+		"name":        {"Zatopiona śluza"},
+		"explicit_id": {""},
+		"text":        {"Treść nowej sceny przy śluzie po drugim zapisie."},
+	})
+	if verifyFifth := srv.findScene("s3"); verifyFifth == nil || verifyFifth.Name == "Zatopiona śluza" || len(verifyFifth.Choices) > 1 {
+		t.Fatalf("expected new empty scene s3 to remain untouched after AddChoice on zatopiona_sluza, got %+v", verifyFifth)
+	}
+	if verifyZat := srv.findScene("zatopiona_sluza"); verifyZat == nil || verifyZat.ExplicitID != "zatopiona_sluza" || len(verifyZat.Choices) < 2 {
+		t.Fatalf("expected zatopiona_sluza to keep its ID and receive the new choice, got %+v", verifyZat)
 	}
 
 	// 4. Renaming start scene explicit_id ("poczatek" -> "brama_startowa") must update StartSceneID and book.playtxt
@@ -1887,6 +1917,20 @@ func TestNewSceneIDAndTitleEditsNeverOverwriteFirstSceneAndSyncChapterSlugs(t *t
 	ch := srv.ActiveBook.FindChapter("Wioskowe dziwadło")
 	if ch == nil || ch.ExplicitID != "wioskowe_dziwadlo" || ch.SourceFile != "wioskowe_dziwadlo.playtxt" {
 		t.Fatalf("expected chapter rename to update ExplicitID=wioskowe_dziwadlo and SourceFile=wioskowe_dziwadlo.playtxt, got %+v", ch)
+	}
+
+	// 6. UndoEditor with dirty form parameters flushes the edit to history first so RedoEditor restores it
+	postForm("UndoEditor", url.Values{
+		"scene_id": {"brama_startowa"},
+		"name":     {"Brama startowa"},
+		"text":     {"Niezapisany jeszcze akapit przed Ctrl+Z."},
+	})
+	if sc := srv.findScene("brama_startowa"); sc == nil || sc.Text == "Niezapisany jeszcze akapit przed Ctrl+Z." {
+		t.Fatalf("expected UndoEditor with dirty form to step back to previous saved state, got %+v", sc)
+	}
+	postForm("RedoEditor", url.Values{})
+	if sc := srv.findScene("brama_startowa"); sc == nil || sc.Text != "Niezapisany jeszcze akapit przed Ctrl+Z." {
+		t.Fatalf("expected RedoEditor to restore the flushed dirty form state, got %+v", sc)
 	}
 }
 

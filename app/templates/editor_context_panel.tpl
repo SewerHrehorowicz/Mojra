@@ -229,12 +229,13 @@ aside.editor-context-panel#editor-context-panel .hidden?: {is_context_panel_hidd
                                 span.voice-rec-timer
                                     data-voice-timer: "true"
                                     {selected_node.voice_duration_label}
-                                button.voice-rec-action-btn.voice-rec-cut-btn .hidden?: {!selected_node.has_voice_trim}
+                                button.voice-rec-action-btn.voice-rec-cut-btn .is-disabled?: {!selected_node.has_voice_trim}
                                     type: button
                                     data-voice-trim-destructive: "true"
                                     data-scene: "{selected_node.id}"
                                     data-voice-section: "{selected_node.active_voice_section_key}"
                                     data-hint: "{t_voice_trim_destructive_hint}"
+                                    disabled?: {!selected_node.has_voice_trim}
                                     svg.voice-rec-btn-icon src: /icons/scissors.svg
                                 button.voice-rec-action-btn.voice-rec-rerecord-btn .hidden?: {!selected_node.has_voice_file}
                                     type: button

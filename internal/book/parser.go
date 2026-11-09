@@ -195,7 +195,11 @@ func ParseStoryFile(content string, sourceFileName string, b *Book) {
 		pendingSceneID = ""
 		sceneID := explicitID
 		if sceneID == "" {
-			sceneID = fmt.Sprintf("s%d", len(b.Scenes)+1)
+			if bound := b.LookupBoundAutoSceneID(cleanName); bound != "" {
+				sceneID = bound
+			} else if !b.HasPersistedAutoIDs {
+				sceneID = fmt.Sprintf("s%d", len(b.Scenes)+1)
+			}
 		}
 		imgVal := pendingImage
 		pendingImage = ""

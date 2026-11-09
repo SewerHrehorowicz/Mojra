@@ -310,7 +310,7 @@ func TestServerActionLifecycleAndSecurity(t *testing.T) {
 		t.Fatalf("expected updated choice_label_2 in modal HTML")
 	}
 	if !strings.Contains(string(editTargetModalHTML), "choice-exit-input") ||
-		!strings.Contains(string(editTargetModalHTML), `value="Nowa scena 3"`) ||
+		!strings.Contains(string(editTargetModalHTML), `value="s1"`) ||
 		strings.Contains(string(editTargetModalHTML), "choice-port-trigger") ||
 		!strings.Contains(string(editTargetModalHTML), "choice-trash-icon") ||
 		!strings.Contains(string(editTargetModalHTML), `action="PromptRemoveChoice"`) ||
@@ -2445,11 +2445,11 @@ func TestEditorUIStatePersistenceAcrossSessionsAndRotatedExpandTitle(t *testing.
 	ts2 := httptest.NewServer(srv2.Handler())
 	defer ts2.Close()
 
-	if srv2.SelectedSceneID != "costam" {
-		t.Fatalf("expected restored SelectedSceneID='costam' across sessions, got %q", srv2.SelectedSceneID)
+	if srv2.SelectedSceneID != "s1" {
+		t.Fatalf("expected restored SelectedSceneID='s1' across sessions, got %q", srv2.SelectedSceneID)
 	}
-	if srv2.SceneTextModalID != "costam" {
-		t.Fatalf("expected restored SceneTextModalID='costam' across sessions when window was open, got %q", srv2.SceneTextModalID)
+	if srv2.SceneTextModalID != "s1" {
+		t.Fatalf("expected restored SceneTextModalID='s1' across sessions when window was open, got %q", srv2.SceneTextModalID)
 	}
 	if srv2.SceneTextModalWidthMode != "full" || !srv2.SceneTextModalSettingsOpen || !srv2.EditorVariablesPanelOpen {
 		t.Fatalf("expected restored widthMode='full', settingsOpen=true, variablesPanel=true, got width=%q settings=%v vars=%v",
@@ -2475,8 +2475,8 @@ func TestEditorUIStatePersistenceAcrossSessionsAndRotatedExpandTitle(t *testing.
 		"action": {"CloseSceneTextModal"},
 	})
 	srv3 := NewServer(rootDir, mojra.AppFS)
-	if srv3.SelectedSceneID != "costam" || srv3.SceneTextModalID != "" {
-		t.Fatalf("expected srv3 to restore SelectedSceneID='costam' and closed SceneTextModalID='', got sel=%q modal=%q", srv3.SelectedSceneID, srv3.SceneTextModalID)
+	if srv3.SelectedSceneID != "s1" || srv3.SceneTextModalID != "" {
+		t.Fatalf("expected srv3 to restore SelectedSceneID='s1' and closed SceneTextModalID='', got sel=%q modal=%q", srv3.SelectedSceneID, srv3.SceneTextModalID)
 	}
 }
 

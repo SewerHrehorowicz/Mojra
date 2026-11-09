@@ -1399,38 +1399,12 @@ function bindEditorCanvasEvents() {
     if (
       (e.ctrlKey || e.metaKey) &&
       !e.altKey &&
-      qs("#timeline-scroll-viewport") &&
-      !(typeof isEditorHistoryPreview === "function" && isEditorHistoryPreview())
+      qs("#timeline-scroll-viewport")
     ) {
       const keyLower = (e.key || "").toLowerCase();
       const isUndo = (keyLower === "z" || e.code === "KeyZ") && !e.shiftKey;
       const isRedo = ((keyLower === "z" || e.code === "KeyZ") && e.shiftKey) || ((keyLower === "y" || e.code === "KeyY") && !e.shiftKey);
       if (isUndo || isRedo) {
-        const editEl = e.target && e.target.closest ? e.target.closest("input, textarea") : null;
-        if (editEl && !editEl.readOnly && !editEl.disabled) {
-          const beforeVal = editEl.value;
-          try {
-            if (typeof document.execCommand === "function") {
-              document.execCommand(isRedo ? "redo" : "undo");
-            }
-          } catch (_err) {}
-          if (editEl.value !== beforeVal) {
-            e.preventDefault();
-            if (editEl.id === "modal-scene-textarea" && typeof autoResizeSceneTextarea === "function") {
-              autoResizeSceneTextarea(editEl);
-            }
-            const form = editEl.closest("form.editor-context-form, form#form-scene-text");
-            if (form) {
-              if (typeof validateRuleInputElement === "function") validateRuleInputElement(editEl, form);
-              if (editEl.name && editEl.name.indexOf("choice_target_") === 0) syncChoiceTargetToCanvas(form, editEl);
-              if (typeof scheduleNodeLiveSave === "function") scheduleNodeLiveSave(form);
-            }
-            if (typeof showToast === "function") {
-              showToast(isRedo ? tr("redo_toast") : tr("undo_toast"));
-            }
-            return;
-          }
-        }
         e.preventDefault();
         sendServerAction(isRedo ? "RedoEditor" : "UndoEditor", {});
         return;

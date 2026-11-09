@@ -1,6 +1,8 @@
 package book
 
 import (
+	"fmt"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -353,10 +355,242 @@ type Book struct {
 	EditorPanY     int
 	EditorZoom     float64
 	HasEditorView        bool
+	HasPersistedAutoIDs  bool
+	NextAutoSceneSeq     int
+	NextSceneNameSeq     int
+	RetiredSceneIDs      map[string]bool
+	AutoSceneIDByName    map[string]string
 	Warnings             []string
 	deferProseHTML       bool
 	cachedBreakdown      *ScreenplayBreakdown
 	cachedBreakdownStamp uint64
+}
+
+// ParseAutoSceneSeq extracts N from an auto scene ID of the form "s<N>" (N >= 1), or returns 0.
+func ParseAutoSceneSeq(raw string) int {
+	trimmed := strings.ToLower(strings.TrimSpace(raw))
+	if len(trimmed) < 2 || trimmed[0] != 's' {
+		return 0
+	}
+	for i := 1; i < len(trimmed); i++ {
+		if trimmed[i] < '0' || trimmed[i] > '9' {
+			return 0
+		}
+	}
+	n, err := strconv.Atoi(trimmed[1:])
+	if err != nil || n <= 0 {
+		return 0
+	}
+	return n
+}
+
+// ParseDefaultSceneNameSeq extracts N from "Nowa scena N", "Scena N", "nowa_scena_N", or "scena_N", or returns 0.
+func ParseDefaultSceneNameSeq(raw string) int {
+	lower := strings.ToLower(strings.TrimSpace(raw))
+	for _, prefix := range []string{"nowa scena ", "nowa_scena_", "scena ", "scena_"} {
+		if strings.HasPrefix(lower, prefix) {
+			rest := strings.TrimSpace(lower[len(prefix):])
+			if n, err := strconv.Atoi(rest); err == nil && n > 0 {
+				return n
+			}
+		}
+	}
+	return 0
+}
+
+// RetireSceneID records one or more scene IDs, explicit IDs, or scene names as permanently allocated
+// so they are never returned to the pool for reuse.
+func (b *Book) RetireSceneID(ids ...string) {
+	if b == nil {
+		return
+	}
+	if b.RetiredSceneIDs == nil {
+		b.RetiredSceneIDs = make(map[string]bool)
+	}
+	for _, raw := range ids {
+		trimmed := strings.ToLower(strings.TrimSpace(raw))
+		if trimmed == "" {
+			continue
+		}
+		b.RetiredSceneIDs[trimmed] = true
+		if seq := ParseAutoSceneSeq(trimmed); seq > b.NextAutoSceneSeq {
+			b.NextAutoSceneSeq = seq
+		}
+		if nameSeq := ParseDefaultSceneNameSeq(trimmed); nameSeq > b.NextSceneNameSeq {
+			b.NextSceneNameSeq = nameSeq
+		}
+		if slug := strings.ToLower(SanitizeSceneID(raw)); slug != "" {
+			b.RetiredSceneIDs[slug] = true
+			if seq := ParseAutoSceneSeq(slug); seq > b.NextAutoSceneSeq {
+				b.NextAutoSceneSeq = seq
+			}
+			if nameSeq := ParseDefaultSceneNameSeq(slug); nameSeq > b.NextSceneNameSeq {
+				b.NextSceneNameSeq = nameSeq
+			}
+		}
+		if norm := NormalizeLookupKey(raw); norm != "" {
+			b.RetiredSceneIDs[norm] = true
+		}
+	}
+}
+
+// IsSceneIDRetired reports whether cand was ever allocated and retired in this book.
+func (b *Book) IsSceneIDRetired(cand string) bool {
+	if b == nil || len(b.RetiredSceneIDs) == 0 {
+		return false
+	}
+	trimmed := strings.ToLower(strings.TrimSpace(cand))
+	if trimmed != "" && b.RetiredSceneIDs[trimmed] {
+		return true
+	}
+	if slug := strings.ToLower(SanitizeSceneID(cand)); slug != "" && b.RetiredSceneIDs[slug] {
+		return true
+	}
+	if norm := NormalizeLookupKey(cand); norm != "" && b.RetiredSceneIDs[norm] {
+		return true
+	}
+	return false
+}
+
+// BindAutoSceneID associates an unnamed/placeholder scene's normalized Name with its allocated s<N> auto-ID.
+func (b *Book) BindAutoSceneID(sceneName, autoID string) {
+	if b == nil {
+		return
+	}
+	norm := NormalizeLookupKey(sceneName)
+	idLower := strings.ToLower(strings.TrimSpace(autoID))
+	if norm == "" || idLower == "" {
+		return
+	}
+	if b.AutoSceneIDByName == nil {
+		b.AutoSceneIDByName = make(map[string]string)
+	}
+	b.AutoSceneIDByName[norm] = idLower
+	b.HasPersistedAutoIDs = true
+	b.RetireSceneID(idLower)
+}
+
+// LookupBoundAutoSceneID returns any previously bound auto-ID for sceneName.
+func (b *Book) LookupBoundAutoSceneID(sceneName string) string {
+	if b == nil || len(b.AutoSceneIDByName) == 0 {
+		return ""
+	}
+	norm := NormalizeLookupKey(sceneName)
+	if norm == "" {
+		return ""
+	}
+	return b.AutoSceneIDByName[norm]
+}
+
+// UnbindAutoSceneName removes a sceneName from AutoSceneIDByName while keeping its old auto-ID retired forever.
+func (b *Book) UnbindAutoSceneName(sceneName string) {
+	if b == nil || len(b.AutoSceneIDByName) == 0 {
+		return
+	}
+	norm := NormalizeLookupKey(sceneName)
+	if norm == "" {
+		return
+	}
+	if oldID, ok := b.AutoSceneIDByName[norm]; ok {
+		b.RetireSceneID(oldID)
+		delete(b.AutoSceneIDByName, norm)
+	}
+}
+
+// NextUniqueAutoSceneID allocates the next monotonic "s<N>" scene ID that has never been used in this book.
+func (b *Book) NextUniqueAutoSceneID(usedIDs map[string]bool) string {
+	if b == nil {
+		return "s1"
+	}
+	start := b.NextAutoSceneSeq + 1
+	if start < 1 {
+		start = 1
+	}
+	maxTries := len(b.Scenes) + len(b.RetiredSceneIDs) + 64
+	for n := start; n < start+maxTries; n++ {
+		cand := fmt.Sprintf("s%d", n)
+		if usedIDs != nil && usedIDs[cand] {
+			continue
+		}
+		if b.IsSceneIDRetired(cand) {
+			continue
+		}
+		takenInScenes := false
+		for _, sc := range b.Scenes {
+			if sc != nil && (strings.EqualFold(sc.ID, cand) || strings.EqualFold(sc.ExplicitID, cand)) {
+				takenInScenes = true
+				break
+			}
+		}
+		if takenInScenes {
+			continue
+		}
+		b.NextAutoSceneSeq = n
+		b.RetireSceneID(cand)
+		if usedIDs != nil {
+			usedIDs[cand] = true
+		}
+		return cand
+	}
+	b.NextAutoSceneSeq++
+	cand := fmt.Sprintf("s%d", b.NextAutoSceneSeq)
+	b.RetireSceneID(cand)
+	if usedIDs != nil {
+		usedIDs[cand] = true
+	}
+	return cand
+}
+
+// CopySceneIDPoolStateFrom merges monotonic counters and retired scene IDs from prev into b.
+func (b *Book) CopySceneIDPoolStateFrom(prev *Book) {
+	if b == nil || prev == nil {
+		return
+	}
+	b.HasPersistedAutoIDs = true
+	if prev.NextAutoSceneSeq > b.NextAutoSceneSeq {
+		b.NextAutoSceneSeq = prev.NextAutoSceneSeq
+	}
+	if prev.NextSceneNameSeq > b.NextSceneNameSeq {
+		b.NextSceneNameSeq = prev.NextSceneNameSeq
+	}
+	for k, v := range prev.RetiredSceneIDs {
+		if v {
+			b.RetireSceneID(k)
+		}
+	}
+	if len(prev.AutoSceneIDByName) > 0 {
+		if b.AutoSceneIDByName == nil {
+			b.AutoSceneIDByName = make(map[string]string, len(prev.AutoSceneIDByName))
+		}
+		for k, v := range prev.AutoSceneIDByName {
+			if _, exists := b.AutoSceneIDByName[k]; !exists {
+				b.AutoSceneIDByName[k] = v
+			}
+			b.RetireSceneID(v)
+		}
+	}
+	for _, sc := range prev.Scenes {
+		if sc == nil {
+			continue
+		}
+		if ParseAutoSceneSeq(sc.ID) > 0 {
+			b.RetireSceneID(sc.ID)
+		}
+		if ParseAutoSceneSeq(sc.ExplicitID) > 0 {
+			b.RetireSceneID(sc.ExplicitID)
+		}
+		if sc.ExplicitID == "" && sc.ID != "" && sc.Name != "" {
+			if b.AutoSceneIDByName == nil {
+				b.AutoSceneIDByName = make(map[string]string)
+			}
+			norm := NormalizeLookupKey(sc.Name)
+			if norm != "" {
+				if _, exists := b.AutoSceneIDByName[norm]; !exists {
+					b.AutoSceneIDByName[norm] = strings.ToLower(sc.ID)
+				}
+			}
+		}
+	}
 }
 
 // NormalizeBookMode normalizes a project mode string to "screenplay" or "book".

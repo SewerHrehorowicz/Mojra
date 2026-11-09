@@ -168,6 +168,11 @@ let sceneIdRedirects = new Map();
 
 function resolveCurrentClientSceneId(id) {
   let cur = (id || "").trim();
+  if (!cur) return "";
+  if (typeof studioGraphState !== "undefined" && studioGraphState.nodeById && studioGraphState.nodeById.has(cur)) {
+    sceneIdRedirects.delete(cur);
+    return cur;
+  }
   let guard = 0;
   while (cur && sceneIdRedirects.has(cur) && guard < 16) {
     const next = sceneIdRedirects.get(cur);
@@ -207,6 +212,10 @@ function syncSceneIdentityAndMetaFromHeaders(oldId, newId, newExplicitId, newRef
 
   if (idChanged && typeof studioGraphState !== "undefined" && studioGraphState.nodeById) {
     const nd = studioGraphState.nodeById.get(prevId);
+    const existingTargetNode = studioGraphState.nodeById.get(curId);
+    if (existingTargetNode && existingTargetNode !== nd) {
+      return;
+    }
     if (nd) {
       studioGraphState.nodeById.delete(prevId);
       nd.id = curId;

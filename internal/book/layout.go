@@ -96,7 +96,7 @@ func orderChaptersAndScenesByGraph(b *Book, prevChapterMeta map[string]Chapter) 
 }
 
 func canonicalizeAutoSceneIDsAfterReorder(b *Book, sceneMap map[string]*Scene) {
-	if b == nil || len(b.Scenes) == 0 {
+	if b == nil || len(b.Scenes) == 0 || b.HasPersistedAutoIDs {
 		return
 	}
 	usedIDs := make(map[string]bool, len(b.Scenes))
@@ -127,6 +127,7 @@ func canonicalizeAutoSceneIDsAfterReorder(b *Book, sceneMap map[string]*Scene) {
 					idRemap[sc.ID] = cand
 					sc.ID = cand
 				}
+				b.BindAutoSceneID(sc.Name, cand)
 				break
 			}
 		}
@@ -1115,6 +1116,30 @@ func ParseEditorFile(raw string, b *Book) {
 				b.EditorZoom = v
 				b.HasEditorView = true
 			}
+		case "auto_seq":
+			if v, err := strconv.Atoi(val); err == nil && v > b.NextAutoSceneSeq {
+				b.NextAutoSceneSeq = v
+				b.HasPersistedAutoIDs = true
+				for i := 1; i <= v; i++ {
+					b.RetireSceneID(fmt.Sprintf("s%d", i))
+				}
+			}
+		case "name_seq":
+			if v, err := strconv.Atoi(val); err == nil && v > b.NextSceneNameSeq {
+				b.NextSceneNameSeq = v
+				for i := 1; i <= v; i++ {
+					b.RetireSceneID(fmt.Sprintf("Nowa scena %d", i))
+				}
+			}
+		case "auto_id":
+			arrowIdx := strings.LastIndex(val, "->")
+			if arrowIdx > 0 {
+				scName := strings.TrimSpace(val[:arrowIdx])
+				autoID := strings.TrimSpace(val[arrowIdx+2:])
+				if scName != "" && autoID != "" {
+					b.BindAutoSceneID(scName, autoID)
+				}
+			}
 		case "node":
 			arrowIdx := strings.LastIndex(val, "->")
 			if arrowIdx <= 0 {
@@ -1133,6 +1158,9 @@ func ParseEditorFile(raw string, b *Book) {
 				b.Layout[nodeKey] = pos
 				b.Layout[strings.ToLower(nodeKey)] = pos
 				b.Layout[NormalizeLookupKey(nodeKey)] = pos
+				if ParseAutoSceneSeq(nodeKey) > 0 {
+					b.RetireSceneID(nodeKey)
+				}
 			}
 		case "wire":
 			arrowIdx := strings.LastIndex(val, "->")
@@ -1183,13 +1211,23 @@ func SerializeEditorFile(b *Book) string {
 	}
 	fmt.Fprintf(&sb, "pan_x: %d\n", b.EditorPanX)
 	fmt.Fprintf(&sb, "pan_y: %d\n", b.EditorPanY)
-	fmt.Fprintf(&sb, "zoom: %.2f\n\n", zoom)
+	fmt.Fprintf(&sb, "zoom: %.2f\n", zoom)
+	if b.NextAutoSceneSeq > 0 {
+		fmt.Fprintf(&sb, "auto_seq: %d\n", b.NextAutoSceneSeq)
+	}
+	if b.NextSceneNameSeq > 0 {
+		fmt.Fprintf(&sb, "name_seq: %d\n", b.NextSceneNameSeq)
+	}
+	sb.WriteString("\n")
 	for _, sc := range b.Scenes {
 		ref := sc.ID
 		if sc.ExplicitID != "" {
 			ref = sc.ExplicitID
 		} else if sc.Name != "" {
 			ref = sc.Name
+			if sc.ID != "" {
+				fmt.Fprintf(&sb, "auto_id: %s -> %s\n", sc.Name, sc.ID)
+			}
 		}
 		fmt.Fprintf(&sb, "node: %s -> %d, %d\n", ref, sc.X, sc.Y)
 	}

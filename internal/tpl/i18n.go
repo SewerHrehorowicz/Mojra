@@ -146,8 +146,6 @@ var jsI18nKeys = [...]string{
 	"search_badge_dialogue",
 	"search_badge_prose",
 	"search_badge_choice",
-	"undo_toast",
-	"redo_toast",
 }
 
 // I18nDicts holds per-language dictionaries parsed from internal/tpl/i18n/<code.cfg>.

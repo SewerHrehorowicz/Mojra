@@ -1449,11 +1449,19 @@ function makeEvent(type, props) {
   if (!doc.querySelector("#inspector-voice-rec-strip").classList.contains("is-recording")) {
     throw new Error("Expected clicking #btn-inspector-voice-recorder on scene without audio to auto-start recording");
   }
+  const cutBtnWhileRec = doc.querySelector('#inspector-voice-rec-strip [data-voice-trim-destructive="true"]');
+  if (!cutBtnWhileRec || cutBtnWhileRec.classList.contains("hidden") || !cutBtnWhileRec.disabled || !cutBtnWhileRec.classList.contains("is-disabled")) {
+    throw new Error("Expected destructive trim scissors button to always be visible and disabled/grayed out while recording");
+  }
   // Click Stop ([data-voice-transport=true]) to finish recording & auto-save voice/<scene_id>.flac
   await clickEl('#inspector-voice-rec-strip [data-voice-transport="true"]');
   const savedVoiceAttr = doc.querySelector("#inspector-voice-rec-strip").getAttribute("data-voice-file") || "";
   if (!savedVoiceAttr.endsWith(".flac")) {
     throw new Error("Expected stopping recording to auto-save .flac file and set data-voice-file, got: " + savedVoiceAttr);
+  }
+  const cutBtnUntrimmed = doc.querySelector('#inspector-voice-rec-strip [data-voice-trim-destructive="true"]');
+  if (!cutBtnUntrimmed || cutBtnUntrimmed.classList.contains("hidden") || !cutBtnUntrimmed.disabled || !cutBtnUntrimmed.classList.contains("is-disabled")) {
+    throw new Error("Expected destructive trim scissors button to remain visible and disabled/grayed out when untrimmed [0, 1]");
   }
   // Drag right 4-corner trim handle (.trim-end) and release to auto-save non-destructive trim by default
   const trimEndEl = doc.querySelector('#inspector-voice-rec-strip .voice-rec-trim-handle.trim-end');
@@ -1468,16 +1476,17 @@ function makeEvent(type, props) {
     throw new Error("Expected default non-destructive trim to persist data-trim-end=0.7500, got: " + nonDestructiveEnd);
   }
   const cutBtn = doc.querySelector('#inspector-voice-rec-strip [data-voice-trim-destructive="true"]');
-  if (!cutBtn || cutBtn.classList.contains("hidden")) {
-    throw new Error("Expected destructive trim button [data-voice-trim-destructive=true] to be visible when non-destructive trim is active");
+  if (!cutBtn || cutBtn.classList.contains("hidden") || cutBtn.disabled || cutBtn.classList.contains("is-disabled")) {
+    throw new Error("Expected destructive trim button [data-voice-trim-destructive=true] to be visible and enabled when non-destructive trim is active");
   }
   await clickEl('#inspector-voice-rec-strip [data-voice-trim-destructive="true"]');
   const afterDestructiveEnd = doc.querySelector("#inspector-voice-rec-strip").getAttribute("data-trim-end") || "";
   if (afterDestructiveEnd !== "1.0000") {
     throw new Error("Expected destructive trim to crop file and reset data-trim-end=1.0000, got: " + afterDestructiveEnd);
   }
-  if (!doc.querySelector('#inspector-voice-rec-strip [data-voice-trim-destructive="true"]').classList.contains("hidden")) {
-    throw new Error("Expected destructive trim button to hide after destructive trim resets bounds to [0, 1]");
+  const cutBtnAfter = doc.querySelector('#inspector-voice-rec-strip [data-voice-trim-destructive="true"]');
+  if (!cutBtnAfter || cutBtnAfter.classList.contains("hidden") || !cutBtnAfter.disabled || !cutBtnAfter.classList.contains("is-disabled")) {
+    throw new Error("Expected destructive trim button to remain visible and become disabled/grayed out after destructive trim resets bounds to [0, 1]");
   }
 
   // 10b. Settings modal toggles (Theme, UI Scale) & Studio Home <-> Reader Home navigation

@@ -281,15 +281,38 @@ func verifySandboxHostIsolation(t *testing.T, repoRoot string, preUserAppData ma
 		t.Fatalf("sandbox violation: .history directory created inside repo books: %v", repoBooks)
 	}
 
-	// 2. Real OS user AppData directory must remain untouched
+	// 2. Real OS user AppData directory must remain untouched by test artifacts
 	if realUserAppDataDir != "" {
 		postSnap := captureDirMtimeSnapshot(realUserAppDataDir)
-		if len(postSnap) != len(preUserAppData) {
-			t.Fatalf("sandbox violation: user AppData entry count changed (%d -> %d) in %s", len(preUserAppData), len(postSnap), realUserAppDataDir)
+		liveHostInstance := false
+		if rawPID, err := os.ReadFile(filepath.Join(realUserAppDataDir, "saves", ".mojra.pid")); err == nil {
+			if pid, pErr := strconv.Atoi(strings.TrimSpace(string(rawPID))); pErr == nil && pid > 0 && pid != os.Getpid() {
+				liveHostInstance = true
+			}
 		}
-		for k, preMod := range preUserAppData {
-			if postMod, ok := postSnap[k]; !ok || postMod != preMod {
-				t.Fatalf("sandbox violation: user AppData file %q modified during test", k)
+		testSlugs := []string{
+			"kronika-chaosu",
+			"scenariusz-testowy",
+			"opowiesc-glowna",
+			"do-usuniecia",
+			"ksiazka-crawler-dom",
+		}
+		for k := range postSnap {
+			lowerK := strings.ToLower(k)
+			for _, slug := range testSlugs {
+				if strings.Contains(lowerK, slug) {
+					t.Fatalf("sandbox violation: test artifact %q written to user AppData %s", k, realUserAppDataDir)
+				}
+			}
+		}
+		if !liveHostInstance {
+			if len(postSnap) != len(preUserAppData) {
+				t.Fatalf("sandbox violation: user AppData entry count changed (%d -> %d) in %s", len(preUserAppData), len(postSnap), realUserAppDataDir)
+			}
+			for k, preMod := range preUserAppData {
+				if postMod, ok := postSnap[k]; !ok || postMod != preMod {
+					t.Fatalf("sandbox violation: user AppData file %q modified during test", k)
+				}
 			}
 		}
 	}

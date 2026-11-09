@@ -129,13 +129,19 @@ static NSImage *createAppIcon(void) {
     for (int i = 0; i < 3; i++) {
         NSButton *btn = [self.window standardWindowButton:buttons[i]];
         if (btn != nil) {
-            [btn setHidden:YES];
-            [btn setEnabled:NO];
+            if (![btn isHidden]) {
+                [btn setHidden:YES];
+            }
+            if ([btn isEnabled]) {
+                [btn setEnabled:NO];
+            }
             NSView *titlebarView = [btn superview];
             if (titlebarView != nil) {
-                [titlebarView setHidden:YES];
+                if (![titlebarView isHidden]) {
+                    [titlebarView setHidden:YES];
+                }
                 NSView *titlebarContainer = [titlebarView superview];
-                if (titlebarContainer != nil) {
+                if (titlebarContainer != nil && ![titlebarContainer isHidden]) {
                     [titlebarContainer setHidden:YES];
                 }
             }
@@ -145,26 +151,32 @@ static NSImage *createAppIcon(void) {
     if (themeFrame != nil) {
         for (NSView *sub in [themeFrame subviews]) {
             if (sub != [self.window contentView] && [NSStringFromClass([sub class]) containsString:@"Titlebar"]) {
-                [sub setHidden:YES];
+                if (![sub isHidden]) {
+                    [sub setHidden:YES];
+                }
             }
         }
     }
     for (NSWindow *win in [NSApp windows]) {
         if (win != self.window && [NSStringFromClass([win class]) containsString:@"ToolbarFullScreen"]) {
-            [win setIgnoresMouseEvents:YES];
-            [win setOpaque:NO];
-            [win setHasShadow:NO];
-            [win setBackgroundColor:[NSColor clearColor]];
-            [win setAlphaValue:0.0];
-            if ([win contentView] != nil) {
+            if (![win ignoresMouseEvents]) {
+                [win setIgnoresMouseEvents:YES];
+            }
+            if ([win isOpaque]) {
+                [win setOpaque:NO];
+            }
+            if ([win hasShadow]) {
+                [win setHasShadow:NO];
+            }
+            if ([win alphaValue] != 0.0) {
+                [win setBackgroundColor:[NSColor clearColor]];
+                [win setAlphaValue:0.0];
+            }
+            if ([win contentView] != nil && ![[win contentView] isHidden]) {
                 [[win contentView] setHidden:YES];
             }
         }
     }
-}
-
-- (void)windowDidUpdate:(NSNotification *)notification {
-    [self hideSystemWindowButtons];
 }
 
 - (void)windowDidResize:(NSNotification *)notification {

@@ -682,6 +682,13 @@ const ACTIONS_FLUSH_INSPECTOR = new Set([
   "TrimSceneVoice",
   "DeleteSceneVoice",
   "OpenSceneTextModal",
+  "CreateSceneAt",
+  "InsertScene",
+  "InsertSceneBefore",
+  "CreateChapterGroup",
+  "SelectStudioScene",
+  "SelectStudioChapter",
+  "UndoEditor",
   "SwitchView",
   "OpenBook"
 ]);
@@ -885,8 +892,7 @@ async function sendServerAction(actionName, params) {
         prevModalSceneId &&
         nextModalSceneId &&
         prevModalSceneId !== nextModalSceneId &&
-        actionName !== "NavigateSceneTextModal" &&
-        actionName !== "OpenSceneTextModal" &&
+        actionName === "SaveSceneTextModal" &&
         typeof syncSceneIdentityAndMetaFromHeaders === "function"
       ) {
         syncSceneIdentityAndMetaFromHeaders(prevModalSceneId, nextModalSceneId);
@@ -1094,6 +1100,9 @@ async function sendServerAction(actionName, params) {
   }
 
   const wasSceneTextOpen = Boolean(qs("#modal-scene-text"));
+  const wasModalTextareaFocused = Boolean(
+    typeof document !== "undefined" && document.activeElement && document.activeElement.id === "modal-scene-textarea"
+  );
   const prevOpenRightPanels = new Set();
   qsa("#editor-workspace-body > aside:not(.hidden)").forEach((el) => {
     if (el.id) prevOpenRightPanels.add(el.id);
@@ -1229,6 +1238,10 @@ async function sendServerAction(actionName, params) {
       }
     } else if (qs("#modal-scene-text") && typeof initSceneTextModalFeed === "function") {
       initSceneTextModalFeed(false);
+      if (wasModalTextareaFocused && (actionName === "UndoEditor" || actionName === "RedoEditor" || actionName === "RestoreHistoryRevision")) {
+        const modalTa = qs("#modal-scene-textarea");
+        if (modalTa) modalTa.focus({ preventScroll: true });
+      }
     }
   }
 }

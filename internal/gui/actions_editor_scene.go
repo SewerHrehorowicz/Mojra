@@ -216,18 +216,20 @@ func (s *Server) applySceneFormFields(target *book.Scene, r *http.Request) {
 	oldID := target.ID
 	oldName := target.Name
 	oldExplicitID := target.ExplicitID
-	customExplicitID := false
 	if _, hasID := r.Form["explicit_id"]; hasID {
 		rawExp := strings.TrimSpace(r.FormValue("explicit_id"))
 		if rawExp != "" {
 			cleanExp := book.SanitizeSceneID(rawExp)
-			if cleanExp != "" && !strings.EqualFold(cleanExp, oldExplicitID) {
+			if cleanExp != "" && !strings.EqualFold(cleanExp, oldExplicitID) && !strings.EqualFold(cleanExp, oldID) {
 				cleanExp = book.NextUniqueSceneSlug(s.ActiveBook, cleanExp, target)
-				customExplicitID = true
 			}
-			target.ExplicitID = cleanExp
-		} else {
-			target.ExplicitID = ""
+			if cleanExp != "" {
+				target.ExplicitID = cleanExp
+			}
+		} else if oldExplicitID != "" {
+			target.ExplicitID = oldExplicitID
+		} else if oldID != "" {
+			target.ExplicitID = oldID
 		}
 	}
 	if _, hasName := r.Form["name"]; hasName {
@@ -236,9 +238,28 @@ func (s *Server) applySceneFormFields(target *book.Scene, r *http.Request) {
 			target.Name = newName
 		}
 	}
-	wasAutoDerived := oldExplicitID == "" || oldName == "" || isSlugDerivedFromTitle(oldExplicitID, oldName)
-	if !customExplicitID && wasAutoDerived && target.Name != "" && !strings.EqualFold(target.Name, oldName) && !isPlaceholderSceneName(target.Name) {
-		target.ExplicitID = book.NextUniqueSceneSlug(s.ActiveBook, target.Name, target)
+	if target.ExplicitID == "" {
+		if oldExplicitID != "" {
+			target.ExplicitID = oldExplicitID
+		} else if oldID != "" {
+			target.ExplicitID = oldID
+		} else if s.ActiveBook != nil {
+			target.ExplicitID = s.ActiveBook.NextUniqueAutoSceneID(nil)
+		}
+	}
+	if s.ActiveBook != nil {
+		if oldName != "" && !strings.EqualFold(target.Name, oldName) {
+			s.ActiveBook.UnbindAutoSceneName(oldName)
+		}
+		if target.ExplicitID != "" && !strings.EqualFold(target.ExplicitID, oldID) {
+			s.ActiveBook.UnbindAutoSceneName(target.Name)
+			if book.ParseAutoSceneSeq(oldID) > 0 {
+				s.ActiveBook.RetireSceneID(oldID)
+			}
+			if book.ParseAutoSceneSeq(oldExplicitID) > 0 {
+				s.ActiveBook.RetireSceneID(oldExplicitID)
+			}
+		}
 	}
 	if _, hasSlug := r.Form["slugline"]; hasSlug {
 		target.Slugline = strings.ToUpper(strings.TrimSpace(book.SanitizePlainText(r.FormValue("slugline"))))
@@ -305,7 +326,8 @@ func (s *Server) applySceneFormFields(target *book.Scene, r *http.Request) {
 		}
 	}
 	chapterChanged := false
-	if _, hasChapter := r.Form["chapter"]; hasChapter {
+	action := strings.TrimSpace(r.FormValue("action"))
+	if _, hasChapter := r.Form["chapter"]; hasChapter && action != "CreateSceneAt" && action != "CreateChapterGroup" && action != "SelectStudioChapter" && action != "PromptDeleteChapter" && action != "DeleteChapter" {
 		newCh := book.SanitizePlainText(r.FormValue("chapter"))
 		if !strings.EqualFold(strings.TrimSpace(target.Chapter), newCh) {
 			chapterChanged = true
@@ -676,14 +698,23 @@ func (s *Server) resolveEditorSceneFromRequest(r *http.Request, fallbackActive b
 }
 
 func (s *Server) commitTargetSceneChoicesMutation(target *book.Scene, msgPrefix string) string {
+	prevID := target.ID
 	book.FinalizeBook(s.ActiveBook)
+	newID := target.ID
 	if err := book.SaveBookScenesToDisk(s.ActiveBook); err != nil {
 		return err.Error()
 	}
 	s.reloadActiveBook()
-	s.SelectedSceneID = target.ID
 	if s.SceneTextModalID != "" {
-		s.SceneTextModalID = target.ID
+		if strings.EqualFold(s.SceneTextModalID, prevID) || strings.EqualFold(s.SceneTextModalID, newID) {
+			s.SceneTextModalID = newID
+			s.SceneTextModalInitialID = newID
+			s.SelectedSceneID = newID
+		} else {
+			s.SelectedSceneID = s.SceneTextModalID
+		}
+	} else {
+		s.SelectedSceneID = newID
 	}
 	msg := msgPrefix + target.DisplayName()
 	s.recordHistoryAfterMutation(msg, "graph", "")
@@ -923,7 +954,11 @@ func (s *Server) branchSceneFromChoice(r *http.Request) string {
 	choices := s.materializeChoicesForEdit(target)
 
 	newName := book.NextUniqueSceneName(s.ActiveBook)
+	allocID := s.ActiveBook.NextUniqueAutoSceneID(nil)
+	s.ActiveBook.BindAutoSceneID(newName, allocID)
 	newScene := &book.Scene{
+		ID:         allocID,
+		ExplicitID: allocID,
 		Name:       newName,
 		Chapter:    target.Chapter,
 		Text:       "Nowy fragment opowieści...",
@@ -999,11 +1034,11 @@ func (s *Server) saveSceneFromFormWithMode(r *http.Request, isAutoSave bool) str
 	}
 	scID := strings.TrimSpace(r.FormValue("scene_id"))
 	var target *book.Scene
-	if s.SceneTextModalID != "" && (scID == "" || strings.EqualFold(scID, s.SceneTextModalID) || (s.SceneTextModalInitialID != "" && strings.EqualFold(scID, s.SceneTextModalInitialID))) {
-		target = s.findScene(s.SceneTextModalID)
-	}
-	if target == nil && scID != "" {
+	if scID != "" {
 		target = s.findScene(scID)
+	}
+	if target == nil && s.SceneTextModalID != "" && (scID == "" || strings.EqualFold(scID, s.SceneTextModalID) || (s.SceneTextModalInitialID != "" && strings.EqualFold(scID, s.SceneTextModalInitialID))) {
+		target = s.findScene(s.SceneTextModalID)
 	}
 	if target == nil && s.SceneTextModalID != "" {
 		target = s.findScene(s.SceneTextModalID)
@@ -1027,13 +1062,18 @@ func (s *Server) saveSceneFromFormWithMode(r *http.Request, isAutoSave bool) str
 	}
 	s.reloadActiveBook()
 	if newID != "" {
+		if prevTargetID != "" && !strings.EqualFold(prevTargetID, newID) {
+			s.LastRenamedFromSceneID = prevTargetID
+		}
 		s.SelectedSceneID = newID
 		if s.SceneTextModalID != "" && (strings.EqualFold(s.SceneTextModalID, prevTargetID) || strings.EqualFold(s.SceneTextModalID, scID) || (s.SceneTextModalInitialID != "" && strings.EqualFold(s.SceneTextModalInitialID, scID))) {
 			s.SceneTextModalID = newID
 		}
 	}
 	coalesceKey := ""
-	if newID != "" {
+	if r != nil && r.FormValue("action") == "UndoEditor" {
+		coalesceKey = "major"
+	} else if newID != "" {
 		coalesceKey = "autosave:" + newID
 	}
 	s.recordHistoryAfterMutation("Edycja sceny: "+targetLabel, "scene", coalesceKey)
@@ -1062,6 +1102,10 @@ func (s *Server) deleteSceneByID(sceneID string) string {
 		return ""
 	}
 	s.ensureHistoryBaselineBeforeMutation()
+	if delSc := s.ActiveBook.Scenes[delIdx]; delSc != nil {
+		s.ActiveBook.UnbindAutoSceneName(delSc.Name)
+		s.ActiveBook.RetireSceneID(delSc.ID, delSc.ExplicitID)
+	}
 	s.ActiveBook.Scenes = append(s.ActiveBook.Scenes[:delIdx], s.ActiveBook.Scenes[delIdx+1:]...)
 	delete(s.ActiveBook.Layout, sceneID)
 
@@ -1153,6 +1197,8 @@ func (s *Server) deleteScenesByIDs(rawIDs string) string {
 	}
 
 	for _, sc := range deletedScenes {
+		s.ActiveBook.UnbindAutoSceneName(sc.Name)
+		s.ActiveBook.RetireSceneID(sc.ID, sc.ExplicitID)
 		delete(s.ActiveBook.Layout, sc.ID)
 		if sc.ExplicitID != "" {
 			delete(s.ActiveBook.Layout, sc.ExplicitID)

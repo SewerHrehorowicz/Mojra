@@ -307,7 +307,7 @@ func FinalizeBook(b *Book) {
 					b.Warnings = append(b.Warnings, fmt.Sprintf("Duplikat id sceny „%s” w scenie „%s”", cleanID, sc.DisplayName()))
 					for suffix := 2; ; suffix++ {
 						cand := fmt.Sprintf("%s_%d", cleanID, suffix)
-						if !usedIDs[strings.ToLower(cand)] {
+						if !usedIDs[strings.ToLower(cand)] && !b.IsSceneIDRetired(cand) {
 							cleanID = cand
 							lowerID = strings.ToLower(cand)
 							sc.ExplicitID = cleanID
@@ -316,28 +316,48 @@ func FinalizeBook(b *Book) {
 					}
 				}
 				usedIDs[lowerID] = true
+				if sc.ID != "" && !strings.EqualFold(sc.ID, cleanID) && ParseAutoSceneSeq(sc.ID) > 0 {
+					b.RetireSceneID(sc.ID)
+				}
 				sc.ID = cleanID
+				b.UnbindAutoSceneName(sc.Name)
+				if ParseAutoSceneSeq(cleanID) > 0 {
+					b.RetireSceneID(cleanID)
+				}
 			}
 		}
 	}
 
 	defaultChName := b.DefaultChapterName()
 
+	hadPersistedAutoIDs := b.HasPersistedAutoIDs
 	nextAuto := 1
 	for i, sc := range b.Scenes {
 		if sc.ExplicitID == "" {
 			if strings.TrimSpace(sc.Name) == "" {
 				sc.Name = fmt.Sprintf("Scena %d", i+1)
 			}
-			for maxTries := len(usedIDs) + len(b.Scenes) + 16; maxTries > 0; maxTries-- {
-				cand := fmt.Sprintf("s%d", nextAuto)
-				nextAuto++
-				if !usedIDs[strings.ToLower(cand)] {
-					sc.ID = cand
-					usedIDs[strings.ToLower(cand)] = true
-					break
+			assigned := ""
+			if bound := b.LookupBoundAutoSceneID(sc.Name); bound != "" && !usedIDs[strings.ToLower(bound)] {
+				assigned = bound
+			} else if sc.ID != "" && !usedIDs[strings.ToLower(sc.ID)] && (!hadPersistedAutoIDs || !b.IsSceneIDRetired(sc.ID)) {
+				assigned = strings.ToLower(sc.ID)
+			} else if !hadPersistedAutoIDs {
+				for maxTries := len(usedIDs) + len(b.Scenes) + len(b.RetiredSceneIDs) + 32; maxTries > 0; maxTries-- {
+					cand := fmt.Sprintf("s%d", nextAuto)
+					nextAuto++
+					if !usedIDs[strings.ToLower(cand)] && !b.IsSceneIDRetired(cand) {
+						assigned = cand
+						break
+					}
 				}
 			}
+			if assigned == "" {
+				assigned = b.NextUniqueAutoSceneID(usedIDs)
+			}
+			sc.ID = assigned
+			usedIDs[strings.ToLower(assigned)] = true
+			b.BindAutoSceneID(sc.Name, assigned)
 		}
 		sc.OrderIndex = i
 		if sc.Chapter == "" {
@@ -554,7 +574,9 @@ func FinalizeBook(b *Book) {
 
 	// Order chapters (and multi-file scene groups) by graph reachability starting from StartSceneID
 	// so disk filename order is completely irrelevant.
+	b.HasPersistedAutoIDs = hadPersistedAutoIDs
 	orderChaptersAndScenesByGraph(b, prevChapterMeta)
+	b.HasPersistedAutoIDs = true
 
 	if b.Narrated && len(b.AudioFiles) == 0 {
 		b.AudioFiles = discoverBookAudioFilesForSections(b)

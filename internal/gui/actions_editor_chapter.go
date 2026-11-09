@@ -237,6 +237,10 @@ func (s *Server) createChapterGroup(r *http.Request) string {
 	} else {
 		s.SelectedSceneID = created.ID
 	}
+	if s.SceneTextModalID != "" {
+		s.SceneTextModalID = s.SelectedSceneID
+		s.SceneTextModalInitialID = s.SelectedSceneID
+	}
 	toast := fmt.Sprintf("Utworzono rozdział „%s”", chName)
 	if s.ActiveBook != nil && s.ActiveBook.IsScreenplay() {
 		toast = fmt.Sprintf("Utworzono akt „%s”", chName)

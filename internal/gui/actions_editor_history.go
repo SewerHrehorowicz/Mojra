@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -79,7 +78,7 @@ func (s *Server) loadActiveBookHistory() *book.BookHistory {
 	if s.ActiveBook == nil || s.ActiveBook.IsPacked || s.StandaloneMode || strings.TrimSpace(s.ActiveBook.RootPath) == "" {
 		return nil
 	}
-	indexPath := filepath.Join(s.ActiveBook.RootPath, ".history", "history.txt")
+	indexPath := book.BookHistoryIndexPath(s.ActiveBook.RootPath)
 	info, statErr := os.Stat(indexPath)
 	var modNano, size int64
 	if statErr == nil {
@@ -107,6 +106,7 @@ func (s *Server) reloadActiveBook() {
 	if s.ActiveBook == nil {
 		return
 	}
+	prevBook := s.ActiveBook
 	prevID := s.ActiveBook.ID
 	prevExt := s.ActiveBook.IsExternal
 	prevExportDir := s.ActiveBook.ExportDir
@@ -117,6 +117,7 @@ func (s *Server) reloadActiveBook() {
 		if reloaded, err := book.LoadBookFromPath(s.ActiveBook.RootPath); err == nil && reloaded != nil {
 			reloaded.IsExternal = prevExt
 			reloaded.ExportDir = prevExportDir
+			reloaded.CopySceneIDPoolStateFrom(prevBook)
 			if prevID != "" && reloaded.ID != prevID {
 				book.RebindBookID(reloaded, prevID)
 			}
@@ -129,6 +130,7 @@ func (s *Server) reloadActiveBook() {
 	}
 	if reloaded, err := s.findBookByID(prevID); err == nil && reloaded != nil {
 		reloaded.ExportDir = prevExportDir
+		reloaded.CopySceneIDPoolStateFrom(prevBook)
 		s.ActiveBook = reloaded
 		if !s.isHistoryPreview() && s.PlayerBook != nil && s.PlayerBook.ID == reloaded.ID {
 			s.PlayerBook = reloaded
@@ -226,6 +228,10 @@ func (s *Server) writeEditorHistoryHeaders(w http.ResponseWriter) {
 	if s.ActiveBook != nil {
 		if s.SelectedSceneID != "" {
 			w.Header().Set("X-Scene-ID", s.SelectedSceneID)
+			if s.LastRenamedFromSceneID != "" && !strings.EqualFold(s.LastRenamedFromSceneID, s.SelectedSceneID) {
+				w.Header().Set("X-Scene-Prev-ID", s.LastRenamedFromSceneID)
+			}
+			s.LastRenamedFromSceneID = ""
 			if sc := s.findScene(s.SelectedSceneID); sc != nil {
 				w.Header().Set("X-Scene-Explicit-ID", sc.ExplicitID)
 				w.Header().Set("X-Scene-Ref", url.QueryEscape(sc.ReferenceKey()))
@@ -280,10 +286,11 @@ func (s *Server) writeEditorHistoryHeaders(w http.ResponseWriter) {
 	}
 }
 
-func (s *Server) undoEditor(_ *http.Request) string {
+func (s *Server) undoEditor(r *http.Request) string {
 	if s.isHistoryPreview() {
-		return historyPreviewLockedToast
+		s.exitHistoryPreview()
 	}
+	s.flushFormSceneIfPresent(r)
 	if s.ActiveBook != nil && !s.ActiveBook.IsPacked {
 		if selID, lbl, err := book.UndoBookHistory(s.ActiveBook); err == nil {
 			s.reloadActiveBookAfterHistoryRestore(selID)
@@ -297,7 +304,7 @@ func (s *Server) undoEditor(_ *http.Request) string {
 
 func (s *Server) redoEditor(_ *http.Request) string {
 	if s.isHistoryPreview() {
-		return historyPreviewLockedToast
+		s.exitHistoryPreview()
 	}
 	if s.ActiveBook != nil && !s.ActiveBook.IsPacked {
 		if selID, lbl, err := book.RedoBookHistory(s.ActiveBook); err == nil {
@@ -394,6 +401,9 @@ func (s *Server) previewHistoryRevision(r *http.Request) string {
 	}
 	if previewBook == nil || targetRev == nil {
 		return ""
+	}
+	if !targetRev.Named && strings.EqualFold(targetRev.Branch, h.NormalizedActiveBranch()) {
+		return s.restoreHistoryRevision(r)
 	}
 
 	if !s.isHistoryPreview() {

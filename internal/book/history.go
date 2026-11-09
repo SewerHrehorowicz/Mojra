@@ -101,6 +101,11 @@ func bookHistoryIndexPath(bookRoot string) string {
 	return filepath.Join(bookHistoryDir(bookRoot), "history.txt")
 }
 
+// BookHistoryIndexPath returns the resolved path to history.txt for the given book root directory.
+func BookHistoryIndexPath(bookRoot string) string {
+	return bookHistoryIndexPath(bookRoot)
+}
+
 func bookHistoryBlobsDir(bookRoot string) string {
 	return filepath.Join(bookHistoryDir(bookRoot), "blobs")
 }

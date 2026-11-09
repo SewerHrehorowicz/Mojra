@@ -35,14 +35,10 @@ static void stAudioInputCallback(
     UInt32 inNumberPacketDescriptions,
     const AudioStreamPacketDescription *inPacketDescs
 ) {
-    pthread_mutex_lock(&gVoiceCaptureMu);
-    if (!gVoiceIsCapturing) {
-        pthread_mutex_unlock(&gVoiceCaptureMu);
-        return;
-    }
-    size_t numSamples = inBuffer->mAudioDataByteSize / sizeof(int16_t);
-    if (numSamples > 0 && inBuffer->mAudioData != NULL) {
-        const int16_t *samples = (const int16_t *)inBuffer->mAudioData;
+    size_t numSamples = (inBuffer != NULL) ? (inBuffer->mAudioDataByteSize / sizeof(int16_t)) : 0;
+    const int16_t *samples = (inBuffer != NULL && inBuffer->mAudioData != NULL) ? (const int16_t *)inBuffer->mAudioData : NULL;
+    float scaled = 0.0f;
+    if (numSamples > 0 && samples != NULL) {
         float maxAbs = 0.0f;
         for (size_t i = 0; i < numSamples; i++) {
             float a = fabsf((float)samples[i] / 32768.0f);
@@ -50,15 +46,23 @@ static void stAudioInputCallback(
                 maxAbs = a;
             }
         }
-        float scaled = maxAbs * 1.8f;
+        scaled = maxAbs * 1.8f;
         if (scaled > 1.0f) scaled = 1.0f;
+    }
+
+    pthread_mutex_lock(&gVoiceCaptureMu);
+    if (!gVoiceIsCapturing || gVoiceQueue != inAQ) {
+        pthread_mutex_unlock(&gVoiceCaptureMu);
+        return;
+    }
+    if (numSamples > 0 && samples != NULL) {
         gVoiceLastPeak = scaled;
 
         // Cap single recording at 30 minutes (24000 * 1800 samples)
         size_t maxSamples = ST_VOICE_SAMPLE_RATE * 1800;
         if (gVoicePCMLen + numSamples <= maxSamples) {
             if (gVoicePCMLen + numSamples > gVoicePCMCap) {
-                size_t newCap = gVoicePCMCap == 0 ? (ST_VOICE_SAMPLE_RATE * 15) : (gVoicePCMCap * 2);
+                size_t newCap = gVoicePCMCap == 0 ? (ST_VOICE_SAMPLE_RATE * 60) : (gVoicePCMCap * 2);
                 while (newCap < gVoicePCMLen + numSamples) {
                     newCap *= 2;
                 }
@@ -74,10 +78,11 @@ static void stAudioInputCallback(
             }
         }
     }
-    if (gVoiceIsCapturing && gVoiceQueue != NULL) {
-        AudioQueueEnqueueBuffer(gVoiceQueue, inBuffer, 0, NULL);
-    }
     pthread_mutex_unlock(&gVoiceCaptureMu);
+
+    if (inAQ != NULL && inBuffer != NULL) {
+        AudioQueueEnqueueBuffer(inAQ, inBuffer, 0, NULL);
+    }
 }
 
 static int stRequestMicPermissionIfNeeded(void) {
@@ -112,8 +117,17 @@ static int stStartNativeAudioCapture(void) {
         pthread_mutex_unlock(&gVoiceCaptureMu);
         return 0;
     }
+    size_t minInitialCap = ST_VOICE_SAMPLE_RATE * 60;
+    if (gVoicePCMCap < minInitialCap) {
+        int16_t *nextBuf = (int16_t *)realloc(gVoicePCMBuf, minInitialCap * sizeof(int16_t));
+        if (nextBuf != NULL) {
+            gVoicePCMBuf = nextBuf;
+            gVoicePCMCap = minInitialCap;
+        }
+    }
     gVoicePCMLen = 0;
     gVoiceLastPeak = 0.0f;
+    pthread_mutex_unlock(&gVoiceCaptureMu);
 
     AudioStreamBasicDescription fmt;
     memset(&fmt, 0, sizeof(fmt));
@@ -129,10 +143,8 @@ static int stStartNativeAudioCapture(void) {
     AudioQueueRef queue = NULL;
     OSStatus err = AudioQueueNewInput(&fmt, stAudioInputCallback, NULL, NULL, kCFRunLoopCommonModes, 0, &queue);
     if (err != noErr || queue == NULL) {
-        pthread_mutex_unlock(&gVoiceCaptureMu);
         return -1;
     }
-    gVoiceQueue = queue;
     UInt32 bufByteSize = ST_VOICE_BUF_SAMPLES * sizeof(int16_t);
     for (int i = 0; i < ST_VOICE_NUM_BUFFERS; i++) {
         gVoiceBuffers[i] = NULL;
@@ -141,16 +153,23 @@ static int stStartNativeAudioCapture(void) {
             AudioQueueEnqueueBuffer(queue, gVoiceBuffers[i], 0, NULL);
         }
     }
+
+    pthread_mutex_lock(&gVoiceCaptureMu);
+    gVoiceQueue = queue;
     gVoiceIsCapturing = 1;
+    pthread_mutex_unlock(&gVoiceCaptureMu);
+
     err = AudioQueueStart(queue, NULL);
     if (err != noErr) {
-        gVoiceIsCapturing = 0;
-        AudioQueueDispose(queue, true);
-        gVoiceQueue = NULL;
+        pthread_mutex_lock(&gVoiceCaptureMu);
+        if (gVoiceQueue == queue) {
+            gVoiceIsCapturing = 0;
+            gVoiceQueue = NULL;
+        }
         pthread_mutex_unlock(&gVoiceCaptureMu);
+        AudioQueueDispose(queue, true);
         return -1;
     }
-    pthread_mutex_unlock(&gVoiceCaptureMu);
     return 0;
 }
 

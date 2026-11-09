@@ -238,7 +238,7 @@ var actionSpecs = map[string]ActionSpec{
 	"RenameChapter":              {StandaloneForbidden: true, Target: targetUndoRedoWorkspaceOrAppShell, Handler: (*Server).renameActiveBookChapter},
 	"AssignChapterToScenes":      {StandaloneForbidden: true, Target: targetUndoRedoWorkspaceOrAppShell, Handler: (*Server).assignChapterToScenes},
 	"CreateChapterGroup":         {StandaloneForbidden: true, FlushFormScene: true, Target: targetUndoRedoWorkspaceOrAppShell, Handler: (*Server).createChapterGroup},
-	"UndoEditor":                 {StandaloneForbidden: true, Target: targetUndoRedoWorkspaceOrAppShell, Handler: (*Server).undoEditor},
+	"UndoEditor":                 {StandaloneForbidden: true, FlushFormScene: true, Target: targetUndoRedoWorkspaceOrAppShell, Handler: (*Server).undoEditor},
 	"RedoEditor":                 {StandaloneForbidden: true, Target: targetUndoRedoWorkspaceOrAppShell, Handler: (*Server).redoEditor},
 	"PreviewHistoryRevision":     {StandaloneForbidden: true, FlushFormScene: true, Target: targetUndoRedoWorkspaceOrAppShell, Handler: (*Server).previewHistoryRevision},
 	"ExitHistoryPreview":         {StandaloneForbidden: true, Target: targetUndoRedoWorkspaceOrAppShell, Handler: (*Server).exitHistoryPreviewAction},
@@ -327,6 +327,10 @@ func (s *Server) resolveActionChunkTarget(action, prevConfirmAction string, hasF
 				return "app_shell", targetSelApp
 			}
 			return "modals", targetSelModals
+		}
+		if (action == "ToggleSceneVoiceRecorder" || action == "SelectSceneVoiceSection" || action == "TrimSceneVoice") &&
+			!hasFormSceneID && s.activeWorkspaceView() == "editor" && !s.StandaloneMode && !s.StudioHome {
+			return "editor_context_panel", targetSelEditorContext
 		}
 		return s.activeWorkspaceTemplateName(), targetSelWorkspace
 	case targetUndoRedoWorkspaceOrAppShell:
@@ -866,6 +870,22 @@ func (s *Server) handleAction(w http.ResponseWriter, r *http.Request) {
 	}
 	ParseActionRequest(r)
 	action := strings.TrimSpace(r.FormValue("action"))
+
+	if action == "PollSceneVoiceCapture" && !s.StandaloneMode {
+		if !isLoopbackRequest(r) {
+			http.Error(w, "forbidden remote LAN action", http.StatusForbidden)
+			return
+		}
+		peak, active := PollNativeAudioCapturePeak()
+		if active {
+			w.Header().Set("X-Voice-Peak", fmt.Sprintf("%.3f", peak))
+		} else {
+			w.Header().Set("X-Voice-Peak", "stopped")
+		}
+		w.Header().Set("X-Target", targetSelNone)
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()

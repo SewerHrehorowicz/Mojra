@@ -52,6 +52,12 @@ func NextUniqueSceneSlug(b *Book, raw string, self *Scene) string {
 		if b == nil {
 			return false
 		}
+		if self != nil && (strings.EqualFold(self.ID, cand) || (self.ExplicitID != "" && strings.EqualFold(self.ExplicitID, cand))) {
+			return false
+		}
+		if b.IsSceneIDRetired(cand) {
+			return true
+		}
 		for _, sc := range b.Scenes {
 			if sc == nil || sc == self {
 				continue
@@ -63,11 +69,17 @@ func NextUniqueSceneSlug(b *Book, raw string, self *Scene) string {
 		return false
 	}
 	if !isTaken(base) {
+		if b != nil && ParseAutoSceneSeq(base) > 0 {
+			b.RetireSceneID(base)
+		}
 		return base
 	}
-	for seq := 2; seq <= len(b.Scenes)+100; seq++ {
+	for seq := 2; seq <= len(b.Scenes)+len(b.RetiredSceneIDs)+100; seq++ {
 		cand := fmt.Sprintf("%s_%d", base, seq)
 		if !isTaken(cand) {
+			if b != nil && ParseAutoSceneSeq(cand) > 0 {
+				b.RetireSceneID(cand)
+			}
 			return cand
 		}
 	}
@@ -133,6 +145,9 @@ func SaveBookScenesToDisk(b *Book) error {
 		defaultFile = DefaultActFile
 	}
 	for _, sc := range b.Scenes {
+		if sc.ExplicitID == "" && sc.ID != "" {
+			sc.ExplicitID = sc.ID
+		}
 		if strings.TrimSpace(sc.Chapter) == "" {
 			sc.Chapter = defaultCh
 		}
@@ -267,7 +282,11 @@ func InsertSceneBetween(b *Book, parentSceneID, childSceneID, newSceneName strin
 		sourceFile = lastCh.FileName()
 	}
 
+	allocID := b.NextUniqueAutoSceneID(nil)
+	b.BindAutoSceneID(cleanName, allocID)
 	newScene := &Scene{
+		ID:         allocID,
+		ExplicitID: allocID,
 		Name:       cleanName,
 		Chapter:    chapterName,
 		ChapterID:  chapterID,
@@ -401,7 +420,11 @@ func InsertSceneBefore(b *Book, targetSceneID, newSceneName string) (*Scene, err
 		}
 	}
 
+	allocID := b.NextUniqueAutoSceneID(nil)
+	b.BindAutoSceneID(cleanName, allocID)
 	newScene := &Scene{
+		ID:         allocID,
+		ExplicitID: allocID,
 		Name:       cleanName,
 		Chapter:    chapterName,
 		ChapterID:  chapterID,
@@ -592,7 +615,11 @@ func CreateStandaloneSceneInChapter(b *Book, newSceneName, targetChapter string,
 		x, y = resolveNonCollidingStandaloneCoords(b, chapterName, x, y)
 	}
 
+	allocID := b.NextUniqueAutoSceneID(nil)
+	b.BindAutoSceneID(cleanName, allocID)
 	newScene := &Scene{
+		ID:          allocID,
+		ExplicitID:  allocID,
 		Name:        cleanName,
 		Chapter:     chapterName,
 		ChapterID:   chapterID,

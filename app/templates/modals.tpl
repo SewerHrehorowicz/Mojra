@@ -742,12 +742,13 @@
                                         span.voice-rec-timer
                                             data-voice-timer: "true"
                                             {scene_text_modal_voice_duration_label}
-                                        button.voice-rec-action-btn.voice-rec-cut-btn .hidden?: {!scene_text_modal_has_voice_trim}
+                                        button.voice-rec-action-btn.voice-rec-cut-btn .is-disabled?: {!scene_text_modal_has_voice_trim}
                                             type: button
                                             data-voice-trim-destructive: "true"
                                             data-scene: "{scene_text_modal_id}"
                                             data-voice-section: "{scene_text_modal_active_voice_section_key}"
                                             data-hint: "{t_voice_trim_destructive_hint}"
+                                            disabled?: {!scene_text_modal_has_voice_trim}
                                             svg.voice-rec-btn-icon src: /icons/scissors.svg
                                         button.voice-rec-action-btn.voice-rec-rerecord-btn .hidden?: {!scene_text_modal_has_voice}
                                             type: button

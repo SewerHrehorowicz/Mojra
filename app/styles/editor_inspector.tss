@@ -912,6 +912,13 @@
 .voice-rec-action-btn:hover
   color --text-primary
 
+.voice-rec-action-btn:disabled,
+.voice-rec-action-btn.is-disabled
+  opacity 0.28
+  color --text-muted
+  cursor default
+  pointer-events none
+
 .voice-rec-icon,
 .voice-rec-btn-icon
   width 15px

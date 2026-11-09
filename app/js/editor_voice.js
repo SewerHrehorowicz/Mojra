@@ -14,6 +14,7 @@ const voiceAudioState = {
   isRecording: false,
   isNativeCapture: false,
   nativePollTimer: null,
+  nativePollInFlight: false,
   isPlaying: false,
   recStartTime: 0,
   recChunks: [],
@@ -141,7 +142,12 @@ function parseFLACMono16FromArrayBuffer(buf) {
     if (isLast) break;
   }
 
-  const out = [];
+  const estSamples =
+    totalSamples > 0 && totalSamples < 100000000
+      ? totalSamples
+      : Math.max(1024, Math.ceil((view.byteLength - pos) / 2));
+  let out = new Int16Array(estSamples);
+  let outLen = 0;
   while (pos + 6 < view.byteLength) {
     if (view.getUint8(pos) !== 0xff || (view.getUint8(pos + 1) & 0xfe) !== 0xf8) {
       break;
@@ -151,8 +157,12 @@ function parseFLACMono16FromArrayBuffer(buf) {
     const utf8Len = readFLACUTF8Len(view, pos + 4);
     if (utf8Len <= 0) break;
     let cur = pos + 4 + utf8Len;
-    let blockLen = 4096;
-    if (bsCode === 0x06) {
+    let blockLen = 1024;
+    if (bsCode === 0x01) {
+      blockLen = 192;
+    } else if (bsCode >= 0x02 && bsCode <= 0x05) {
+      blockLen = 576 << (bsCode - 2);
+    } else if (bsCode === 0x06) {
       if (cur + 1 > view.byteLength) break;
       blockLen = view.getUint8(cur) + 1;
       cur += 1;
@@ -160,6 +170,8 @@ function parseFLACMono16FromArrayBuffer(buf) {
       if (cur + 2 > view.byteLength) break;
       blockLen = view.getUint16(cur, false) + 1;
       cur += 2;
+    } else if (bsCode >= 0x08 && bsCode <= 0x0f) {
+      blockLen = 256 << (bsCode - 8);
     }
     if (srCode === 0x0c) {
       cur += 1;
@@ -175,15 +187,25 @@ function parseFLACMono16FromArrayBuffer(buf) {
     const subHdr = view.getUint8(cur);
     cur += 1;
     const subType = (subHdr >> 1) & 0x3f;
+    if (outLen + blockLen > out.length) {
+      let nextCap = Math.max(1024, out.length * 2);
+      while (nextCap < outLen + blockLen) {
+        nextCap *= 2;
+      }
+      const grown = new Int16Array(nextCap);
+      grown.set(out);
+      out = grown;
+    }
     if (subType === 0x00) {
       if (cur + 2 > view.byteLength) break;
       const val = view.getInt16(cur, false);
       cur += 2;
-      for (let i = 0; i < blockLen; i++) out.push(val);
+      out.fill(val, outLen, outLen + blockLen);
+      outLen += blockLen;
     } else if (subType === 0x01) {
       if (cur + blockLen * 2 > view.byteLength) break;
       for (let i = 0; i < blockLen; i++) {
-        out.push(view.getInt16(cur, false));
+        out[outLen++] = view.getInt16(cur, false);
         cur += 2;
       }
     } else {
@@ -192,8 +214,8 @@ function parseFLACMono16FromArrayBuffer(buf) {
     cur += 2; // CRC-16
     pos = cur;
   }
-  if (out.length === 0) return null;
-  const int16 = new Int16Array(out);
+  if (outLen === 0) return null;
+  const int16 = outLen === out.length ? out : out.subarray(0, outLen);
   const dur = sampleRate > 0 ? int16.length / sampleRate : 0;
   return {
     sampleRate: sampleRate,
@@ -217,6 +239,7 @@ function syncVoiceStripDOM(stripEl) {
   const stopIcon = qs(".voice-rec-icon-stop", stripEl);
   const hasAudio = Boolean(
     (stripEl.getAttribute("data-voice-url") || "").trim() ||
+      (voiceAudioState.voiceUrl || "").trim() ||
       (voiceAudioState.pcmSamplesInt16 && voiceAudioState.pcmSamplesInt16.length > 0)
   );
   if (voiceAudioState.isRecording) {
@@ -245,7 +268,9 @@ function syncVoiceStripDOM(stripEl) {
     !voiceAudioState.isRecording &&
     (voiceAudioState.startRatio > 0.002 || voiceAudioState.endRatio < 0.998);
   if (cutBtn) {
-    cutBtn.classList.toggle("hidden", !hasTrim);
+    cutBtn.classList.remove("hidden");
+    cutBtn.disabled = !hasTrim;
+    cutBtn.classList.toggle("is-disabled", !hasTrim);
   }
 
   if (startHandle) {
@@ -273,17 +298,21 @@ function syncVoiceStripDOM(stripEl) {
   drawVoiceRecorderCanvas(stripEl);
 }
 
-let cachedVoiceStripEl = null;
-let cachedVoiceCanvasEl = null;
+const voiceStripCanvasCache = typeof WeakMap !== "undefined" ? new WeakMap() : null;
 
 function resolveVoiceWaveformCanvas(stripEl) {
   if (!stripEl) return null;
-  if (cachedVoiceStripEl === stripEl && cachedVoiceCanvasEl && cachedVoiceCanvasEl.isConnected !== false) {
-    return cachedVoiceCanvasEl;
+  if (voiceStripCanvasCache) {
+    const cached = voiceStripCanvasCache.get(stripEl);
+    if (cached && cached.isConnected !== false) {
+      return cached;
+    }
   }
-  cachedVoiceStripEl = stripEl;
-  cachedVoiceCanvasEl = qs(".voice-rec-waveform-canvas", stripEl);
-  return cachedVoiceCanvasEl;
+  const found = qs(".voice-rec-waveform-canvas", stripEl);
+  if (found && voiceStripCanvasCache) {
+    voiceStripCanvasCache.set(stripEl, found);
+  }
+  return found;
 }
 
 function drawVoiceRecorderCanvas(stripEl) {
@@ -717,21 +746,38 @@ async function startVoiceRecording(stripEl) {
 
 async function startNativeBackendVoiceCapture(sceneId) {
   voiceAudioState.isNativeCapture = true;
+  voiceAudioState.nativePollInFlight = false;
   if (voiceAudioState.nativePollTimer) {
     clearInterval(voiceAudioState.nativePollTimer);
     voiceAudioState.nativePollTimer = null;
   }
   await sendServerAction("StartSceneVoiceCapture", { scene: sceneId });
-  postServerActionSilent("PollSceneVoiceCapture", {});
-  if (!voiceAudioState.isRecording) return;
-  voiceAudioState.nativePollTimer = setInterval(() => {
+  if (!voiceAudioState.isRecording || !voiceAudioState.isNativeCapture) return;
+  const pollOnce = () => {
     if (!voiceAudioState.isRecording || !voiceAudioState.isNativeCapture) {
-      clearInterval(voiceAudioState.nativePollTimer);
-      voiceAudioState.nativePollTimer = null;
+      if (voiceAudioState.nativePollTimer) {
+        clearInterval(voiceAudioState.nativePollTimer);
+        voiceAudioState.nativePollTimer = null;
+      }
       return;
     }
-    postServerActionSilent("PollSceneVoiceCapture", {});
-  }, 90);
+    if (getAllActiveVoiceStrips().length === 0) {
+      stopVoiceRecordingAndSave();
+      return;
+    }
+    if (voiceAudioState.nativePollInFlight) return;
+    voiceAudioState.nativePollInFlight = true;
+    const p = postServerActionSilent("PollSceneVoiceCapture", {});
+    if (p && typeof p.finally === "function") {
+      p.finally(() => {
+        voiceAudioState.nativePollInFlight = false;
+      });
+    } else {
+      voiceAudioState.nativePollInFlight = false;
+    }
+  };
+  pollOnce();
+  voiceAudioState.nativePollTimer = setInterval(pollOnce, 90);
 }
 
 function handleNativeVoicePeakHeader(peakVal) {
@@ -895,15 +941,15 @@ function initVoiceRecorderStrips() {
   if (strips.length === 0) return;
   const pendingAutoScene = voiceAudioState.autoRecordOnNextOpenScene;
   voiceAudioState.autoRecordOnNextOpenScene = "";
-  strips.forEach((stripEl) => {
-    const scId = (stripEl.getAttribute("data-scene") || "").trim();
-    const vUrl = (stripEl.getAttribute("data-voice-url") || "").trim();
-    if (pendingAutoScene && scId === pendingAutoScene && !vUrl && !voiceAudioState.isRecording) {
-      startVoiceRecording(stripEl);
-      return;
-    }
-    loadVoiceStripAudio(stripEl);
-  });
+  const primaryStrip =
+    strips.find((el) => el.id === "modal-voice-rec-strip") || strips[0];
+  const scId = (primaryStrip.getAttribute("data-scene") || "").trim();
+  const vUrl = (primaryStrip.getAttribute("data-voice-url") || "").trim();
+  if (pendingAutoScene && scId === pendingAutoScene && !vUrl && !voiceAudioState.isRecording) {
+    startVoiceRecording(primaryStrip);
+    return;
+  }
+  loadVoiceStripAudio(primaryStrip);
 }
 
 function bindVoiceRecorderEvents() {
@@ -953,6 +999,9 @@ function bindVoiceRecorderEvents() {
     if (cutBtn) {
       e.preventDefault();
       e.stopPropagation();
+      if (cutBtn.disabled || cutBtn.classList.contains("is-disabled")) {
+        return;
+      }
       const stripEl = cutBtn.closest(".voice-rec-strip");
       if (stripEl) {
         commitVoiceTrimDestructive(stripEl);

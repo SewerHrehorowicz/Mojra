@@ -362,6 +362,7 @@ func (s *Server) selectStudioScene(r *http.Request) string {
 		s.SelectedSceneID = found.ID
 		if s.SceneTextModalID != "" {
 			s.SceneTextModalID = found.ID
+			s.SceneTextModalInitialID = found.ID
 		}
 	}
 	return ""
@@ -390,6 +391,10 @@ func (s *Server) finishInsertedScene(inserted *book.Scene, err error) string {
 		s.SelectedSceneID = found.ID
 	} else {
 		s.SelectedSceneID = inserted.ID
+	}
+	if s.SceneTextModalID != "" {
+		s.SceneTextModalID = s.SelectedSceneID
+		s.SceneTextModalInitialID = s.SelectedSceneID
 	}
 	toast := "Wstawiono nową scenę: " + inserted.Name
 	s.recordHistoryAfterMutation(toast, "graph", "")
@@ -454,13 +459,12 @@ func (s *Server) createSceneAt(r *http.Request) string {
 		newName := book.NextUniqueSceneName(s.ActiveBook)
 		if created, err := book.CreateStandaloneSceneInChapter(s.ActiveBook, newName, targetCh, x, y, hasCoords); err == nil && created != nil {
 			s.reloadActiveBook()
-			if found := s.findScene(created.Name); found != nil {
+			if s.SceneTextModalID != "" {
+				s.SelectedSceneID = s.SceneTextModalID
+			} else if found := s.findScene(created.Name); found != nil {
 				s.SelectedSceneID = found.ID
 			} else {
 				s.SelectedSceneID = created.ID
-			}
-			if s.SceneTextModalInitialID != "" && strings.EqualFold(s.SceneTextModalInitialID, s.SelectedSceneID) {
-				s.SceneTextModalInitialID = ""
 			}
 			toast = "Dodano nową scenę: " + created.Name
 			s.recordHistoryAfterMutation(toast, "graph", "")
@@ -582,6 +586,10 @@ func (s *Server) saveSceneTextModal(r *http.Request) string {
 		targetID := target.ID
 		s.SelectedSceneID = target.ID
 		s.SceneTextModalID = target.ID
+		s.SceneTextModalInitialID = target.ID
+		if cleanPrev := book.SanitizeSceneID(scID); cleanPrev != "" && !strings.EqualFold(cleanPrev, target.ID) {
+			s.LastRenamedFromSceneID = cleanPrev
+		}
 		if err := book.SaveBookScenesToDisk(s.ActiveBook); err != nil {
 			toast = err.Error()
 		} else {
@@ -765,6 +773,7 @@ func (s *Server) navigateSceneTextModal(r *http.Request) string {
 				book.FinalizeBook(s.ActiveBook)
 				curScLabel := curSc.DisplayName()
 				curScID := curSc.ID
+				curID = curScID
 				if err := book.SaveBookScenesToDisk(s.ActiveBook); err != nil {
 					toast = err.Error()
 				} else {

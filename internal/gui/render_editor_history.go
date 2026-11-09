@@ -221,7 +221,7 @@ func buildHistoryGraphRows(
 	// 3. Compute active lineage (all revisions on the ancestor path of the active branch down to r1)
 	activeAncestorRevs := make(map[string]bool)
 	for _, e := range entries {
-		if e.branch == activeBranchName {
+		if e.branch == activeBranchName && !e.isUndone {
 			activeAncestorRevs[e.rev.ID] = true
 		}
 	}

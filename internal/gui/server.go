@@ -23,6 +23,7 @@ import (
 type ModalState struct {
 	SceneTextModalID           string
 	SceneTextModalInitialID    string
+	LastRenamedFromSceneID     string
 	SceneTextModalWidthMode    string
 	SceneTextModalSettingsOpen bool
 	VoiceRecorderOpen          bool
