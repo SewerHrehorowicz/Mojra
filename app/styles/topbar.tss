@@ -196,7 +196,7 @@ body[data-imageless="true"] #icon-imageless-on, body[data-imageless-locked="true
   display block
 
 body[data-zen="true"]
-  #tab-library, #tab-editor, .topbar-divider, #btn-topbar-menu, #btn-toggle-imageless, #btn-toggle-lang, #btn-toggle-fullscreen, .topbar-actions-menu button[action="PromptResetProgress"], .topbar-actions-menu button[action="OpenQRModal"]
+  #tab-library, .topbar-divider, #btn-toggle-fullscreen, #btn-open-settings
     display none !important
 
 body[data-theme="light"] #icon-theme-sun

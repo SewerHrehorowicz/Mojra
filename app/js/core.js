@@ -343,7 +343,7 @@ function applyServerResponseHeaders(resp, actionName) {
     }
     const autoBtn = qs("#btn-auto-choice-toggle");
     if (autoBtn) {
-      autoBtn.classList.toggle("chip-active", isAutoOn);
+      autoBtn.classList.toggle("active", isAutoOn);
       setElementHint(autoBtn, isAutoOn ? tr("auto_choice_on") : tr("auto_choice_off"));
     }
     if (actionName === "ToggleAutoChoice") {
@@ -897,6 +897,12 @@ async function sendServerAction(actionName, params) {
       ) {
         syncSceneIdentityAndMetaFromHeaders(prevModalSceneId, nextModalSceneId);
       }
+      if (typeof syncNodeSelectionDOM === "function") {
+        syncNodeSelectionDOM();
+      }
+      if (typeof syncEditorViewportVisibility === "function") {
+        syncEditorViewportVisibility();
+      }
       if (typeof syncCanvasNodeFromSceneTextModal === "function") {
         syncCanvasNodeFromSceneTextModal(modalsRoot);
       }
@@ -908,14 +914,10 @@ async function sendServerAction(actionName, params) {
           expandBtn.setAttribute("data-scene", syncedCanvasSceneId);
         }
       }
-      if (typeof syncNodeSelectionDOM === "function") {
-        syncNodeSelectionDOM();
-      }
       if (typeof renderStudioCanvas === "function") {
         renderStudioCanvas();
       }
-    }
-    if (typeof syncEditorViewportVisibility === "function") {
+    } else if (typeof syncEditorViewportVisibility === "function") {
       syncEditorViewportVisibility();
     }
     if (modalsRoot && typeof autoResizeAllInspectorTextareas === "function") {

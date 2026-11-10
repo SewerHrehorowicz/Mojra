@@ -657,6 +657,23 @@ function appendDynamicOverlayQuads(theme) {
     }
   }
 
+  if (gesture && gesture.type === "node-drag" && gesture.moved && gesture.ghostState) {
+    const gs = gesture.ghostState;
+    const cells = gs.collisionCells || [];
+    for (let i = 0; i < cells.length; i++) {
+      const cell = cells[i];
+      pushSolidQuad(cell.x + 1, cell.y + 1, EDITOR_GRID_SIZE - 2, EDITOR_GRID_SIZE - 2, theme.collisionCellFill);
+      pushSolidBorderQuads(cell.x, cell.y, EDITOR_GRID_SIZE, EDITOR_GRID_SIZE, 1, theme.collisionCellBorder);
+    }
+    const rects = gs.rects || [];
+    const borderColor = gs.valid ? theme.ghostValidBorder : theme.ghostInvalidBorder;
+    for (let i = 0; i < rects.length; i++) {
+      const gr = rects[i];
+      pushSolidQuad(gr.x, gr.y, gr.w, gr.h, theme.ghostFill);
+      pushDashedRectQuads(gr.x, gr.y, gr.w, gr.h, 1.5, 8.0, borderColor);
+    }
+  }
+
   if (gesture && gesture.type === "marquee-select" && gesture.moved && gesture.marqueeRect) {
     const mr = gesture.marqueeRect;
     pushQuadInstance(mr.x, mr.y, mr.w, mr.h, UV.screen, 0.0, UV.screen, 0.0, theme.marqueeFill);

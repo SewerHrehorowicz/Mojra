@@ -191,8 +191,10 @@ func (s *Server) applySceneFormFields(target *book.Scene, r *http.Request) {
 	if target == nil || s.ActiveBook == nil {
 		return
 	}
-	if formSceneID := strings.TrimSpace(r.FormValue("scene_id")); formSceneID != "" && !strings.EqualFold(formSceneID, target.ID) && !strings.EqualFold(s.SceneTextModalID, target.ID) {
-		return
+	if formSceneID := strings.TrimSpace(r.FormValue("scene_id")); formSceneID != "" && !strings.EqualFold(formSceneID, target.ID) {
+		if !(s.SceneTextModalInitialID != "" && strings.EqualFold(formSceneID, s.SceneTextModalInitialID) && strings.EqualFold(s.SceneTextModalID, target.ID)) {
+			return
+		}
 	}
 	oldID := target.ID
 	oldName := target.Name
@@ -679,23 +681,19 @@ func (s *Server) resolveEditorSceneFromRequest(r *http.Request, fallbackActive b
 }
 
 func (s *Server) commitTargetSceneChoicesMutation(target *book.Scene, msgPrefix string) string {
-	prevID := target.ID
 	book.FinalizeBook(s.ActiveBook)
+	book.PushCollidingNodesDown(s.ActiveBook, target)
 	newID := target.ID
 	if err := book.SaveBookScenesToDisk(s.ActiveBook); err != nil {
 		return err.Error()
 	}
 	s.reloadActiveBook()
+	s.SelectedSceneID = newID
+	s.SelectedChapter = ""
+	s.BookSettingsOpen = false
 	if s.SceneTextModalID != "" {
-		if strings.EqualFold(s.SceneTextModalID, prevID) || strings.EqualFold(s.SceneTextModalID, newID) {
-			s.SceneTextModalID = newID
-			s.SceneTextModalInitialID = newID
-			s.SelectedSceneID = newID
-		} else {
-			s.SelectedSceneID = s.SceneTextModalID
-		}
-	} else {
-		s.SelectedSceneID = newID
+		s.SceneTextModalID = newID
+		s.SceneTextModalInitialID = newID
 	}
 	msg := msgPrefix + target.DisplayName()
 	s.recordHistoryAfterMutation(msg, "graph", "")
@@ -986,9 +984,12 @@ func (s *Server) branchSceneFromChoice(r *http.Request) string {
 		return err.Error()
 	}
 	s.reloadActiveBook()
+	s.SelectedChapter = ""
+	s.BookSettingsOpen = false
 	if s.SceneTextModalID != "" {
 		s.SelectedSceneID = target.ID
 		s.SceneTextModalID = target.ID
+		s.SceneTextModalInitialID = target.ID
 	} else if found := s.findScene(newScene.Name); found != nil {
 		s.SelectedSceneID = found.ID
 	} else {

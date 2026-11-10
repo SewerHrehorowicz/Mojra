@@ -1626,7 +1626,7 @@ body.deck-page .pitch-section.first-on-sheet::before
   margin-top 0
 
 @media print
-  :root, html, body, body.pitch-page, body.deck-page
+  :root, html, body
     color-scheme light !important
     --bg-obsidian #ffffff !important
     --bg-surface #ffffff !important

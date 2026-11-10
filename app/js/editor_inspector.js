@@ -401,26 +401,30 @@ function syncCanvasNodeFromSceneTextModal(modalsRoot) {
     nd.hasChoices = true;
     nd.implicitPort = null;
     nd.ports = rows.map((rowEl, idx) => {
-      const lblEl = qs('[name="choice_label_' + idx + '"]', rowEl);
+      const lblEl = qs('[name="choice_label_' + idx + '"]', rowEl) || qs(".choice-label-text", rowEl);
       const tgtEl = qs('[name="choice_target_' + idx + '"]', rowEl);
       const condEl = qs('[name="choice_cond_' + idx + '"]', rowEl);
       const pIcon = qs(".choice-port-icon", rowEl);
       const rawTgt = tgtEl ? (tgtEl.value || "").trim() : "";
       let resolvedId = "";
+      let targetCh = "";
       let isCh = false;
       if (rawTgt && rawTgt.toUpperCase() !== "END") {
         if (rawTgt.toLowerCase().indexOf("chapter:") === 0) {
           isCh = true;
-          resolvedId = rawTgt;
+          targetCh = rawTgt.slice("chapter:".length).trim();
         } else {
           resolvedId = resolveCanvasSceneTargetId(rawTgt) || rawTgt;
         }
       }
+      const rawLabel = lblEl ? (lblEl.value !== undefined ? lblEl.value : lblEl.textContent || "").trim() : "";
       return {
         idx: idx,
-        label: (lblEl && (lblEl.value || "").trim()) || tr("choice_prefix") + (idx + 1),
+        label: rawLabel || tr("choice_prefix") + (idx + 1),
         target: rawTgt || "END",
         targetId: resolvedId,
+        targetChapter: targetCh,
+        connected: Boolean(resolvedId || targetCh),
         isChapterLink: isCh,
         isConditional: Boolean((condEl && (condEl.value || "").trim()) || (pIcon && pIcon.classList.contains("port-diamond"))),
         x: 0,
@@ -435,20 +439,27 @@ function syncCanvasNodeFromSceneTextModal(modalsRoot) {
     const pIcon = qs(".choice-port-icon", rows[0]);
     const rawTgt = tgtEl ? (tgtEl.value || "").trim() : "";
     let resolvedId = "";
+    let targetCh = "";
     let isCh = false;
     if (rawTgt && rawTgt.toUpperCase() !== "END") {
       if (rawTgt.toLowerCase().indexOf("chapter:") === 0) {
         isCh = true;
-        resolvedId = rawTgt;
+        targetCh = rawTgt.slice("chapter:".length).trim();
       } else {
         resolvedId = resolveCanvasSceneTargetId(rawTgt) || rawTgt;
       }
     }
+    nd.implicitTarget = resolvedId;
+    nd.impTarget = resolvedId;
+    nd.implicitChapter = targetCh;
+    nd.impChapter = targetCh;
     nd.implicitPort = {
       idx: 0,
       label: "Dalej",
       target: rawTgt || "END",
       targetId: resolvedId,
+      targetChapter: targetCh,
+      connected: Boolean(resolvedId || targetCh),
       isChapterLink: isCh,
       isConditional: Boolean((condEl && (condEl.value || "").trim()) || (pIcon && pIcon.classList.contains("port-diamond"))),
       x: 0,
@@ -459,6 +470,7 @@ function syncCanvasNodeFromSceneTextModal(modalsRoot) {
   if (typeof updateChapterGroupFrames === "function") updateChapterGroupFrames();
   if (typeof drawStudioWires === "function") drawStudioWires();
   studioGraphState.staticBatchDirty = true;
+  studioGraphState.overlayBatchDirty = true;
   if (typeof renderStudioCanvas === "function") renderStudioCanvas();
 }
 

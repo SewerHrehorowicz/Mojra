@@ -512,11 +512,11 @@
                                 {else}
                                     .scene-title-right-controls
                                         {if has_book_variables}
-                                            button.contextual-rewind-btn.scene-preview-mode-btn#btn-scene-preview-output .active?: {!is_scene_preview_normal}
+                                            button.contextual-rewind-btn.scene-preview-mode-btn.icon-toggle-btn#btn-scene-preview-output .active?: {!is_scene_preview_normal}
                                                 type: button
                                                 action: SetSceneTextPreviewMode
                                                 svg.scene-settings-icon src: /icons/preview-output.svg
-                                            button.contextual-rewind-btn.scene-preview-mode-btn#btn-scene-test-vars .active?: {show_scene_test_vars_bar}
+                                            button.contextual-rewind-btn.scene-preview-mode-btn.icon-toggle-btn#btn-scene-test-vars .active?: {show_scene_test_vars_bar}
                                                 type: button
                                                 action: ToggleSceneTestVarsPopover
                                                 svg.scene-settings-icon src: /icons/braces.svg
@@ -526,7 +526,7 @@
                                                 action: ToggleSceneVoiceRecorder
                                                 data-scene: "{scene_text_modal_id}"
                                                 svg.scene-settings-icon src: /icons/mic.svg
-                                        button.contextual-rewind-btn.scene-settings-toggle-btn .active?: {scene_text_modal_settings_open}
+                                        button.contextual-rewind-btn.scene-settings-toggle-btn.icon-toggle-btn .active?: {scene_text_modal_settings_open}
                                             type: button
                                             data-scene-settings-toggle: "true"
                                             data-hint: "{t_scene_settings_hint}"

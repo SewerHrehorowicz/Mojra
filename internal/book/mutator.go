@@ -681,8 +681,8 @@ func resolveNonCollidingStandaloneCoords(b *Book, targetChapter string, baseX, b
 		return baseX, baseY
 	}
 	const (
-		nodeW      = 192
-		nodeH      = 74
+		nodeW      = NodeCardWidth
+		nodeH      = NodeCardBaseHeight
 		nodeMargin = 48
 	)
 	targetChKey := strings.ToLower(strings.TrimSpace(targetChapter))

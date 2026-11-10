@@ -14,6 +14,8 @@ import (
 	"strings"
 )
 
+const maxTSSCommaSelectors = 4
+
 // Finding represents a single static analysis issue discovered in the codebase.
 type Finding struct {
 	File     string
@@ -92,6 +94,7 @@ func Run(rootDir string) ([]Finding, error) {
 	findings = append(findings, checkSuspiciousStrings(fset, goFiles)...)
 	findings = append(findings, checkASTDuplicatesAndAntiPatterns(fset, goFiles)...)
 	findings = append(findings, checkSecurityLoopsAndReliability(rootDir, fset, goFiles)...)
+	findings = append(findings, checkTSSSelectorLists(rootDir)...)
 
 	sort.SliceStable(findings, func(i, j int) bool {
 		if findings[i].Category != findings[j].Category {
@@ -955,4 +958,88 @@ func truncateStr(s string, maxLen int) string {
 		return s
 	}
 	return s[:maxLen] + "..."
+}
+
+// 9. TPL_ARCH: Forbid > 4 comma-separated selectors in a single .tss / .css rule
+func checkTSSSelectorLists(rootDir string) []Finding {
+	var out []Finding
+	for _, dir := range []string{filepath.Join(rootDir, "app", "styles"), filepath.Join(rootDir, "www")} {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, e := range entries {
+			if e.IsDir() || (!strings.HasSuffix(e.Name(), ".tss") && !strings.HasSuffix(e.Name(), ".css")) {
+				continue
+			}
+			fullPath := filepath.Join(dir, e.Name())
+			raw, err := os.ReadFile(fullPath)
+			if err != nil {
+				continue
+			}
+			rel, _ := filepath.Rel(rootDir, fullPath)
+			out = append(out, auditTSSSourceSelectorLists(filepath.ToSlash(rel), string(raw))...)
+		}
+	}
+	return out
+}
+
+func auditTSSSourceSelectorLists(relPath, source string) []Finding {
+	rawLines := strings.Split(strings.ReplaceAll(source, "\r\n", "\n"), "\n")
+	type lineEntry struct {
+		indent  int
+		content string
+		lineNum int
+	}
+	var lines []lineEntry
+	for i, ln := range rawLines {
+		trimmed := strings.TrimSpace(ln)
+		if trimmed == "" || strings.HasPrefix(trimmed, "//") || strings.HasPrefix(trimmed, "/*") {
+			continue
+		}
+		indent := len(ln) - len(strings.TrimLeft(ln, " \t"))
+		if n := len(lines); n > 0 && strings.HasSuffix(lines[n-1].content, ",") && lines[n-1].indent == indent {
+			lines[n-1].content += " " + trimmed
+			continue
+		}
+		lines = append(lines, lineEntry{indent: indent, content: trimmed, lineNum: i + 1})
+	}
+
+	var out []Finding
+	for i := 0; i+1 < len(lines); i++ {
+		if lines[i+1].indent <= lines[i].indent {
+			continue
+		}
+		count := countTopLevelCommaItems(lines[i].content)
+		if count > maxTSSCommaSelectors {
+			out = append(out, Finding{
+				File:     relPath,
+				Line:     lines[i].lineNum,
+				FuncName: "<stylesheet>",
+				Category: "TPL_ARCH",
+				Message:  fmt.Sprintf("reguła .tss łączy %d selektorów po przecinku (maks. %d): %s", count, maxTSSCommaSelectors, truncateStr(lines[i].content, 80)),
+			})
+		}
+	}
+	return out
+}
+
+func countTopLevelCommaItems(s string) int {
+	count := 1
+	depth := 0
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '(', '[':
+			depth++
+		case ')', ']':
+			if depth > 0 {
+				depth--
+			}
+		case ',':
+			if depth == 0 {
+				count++
+			}
+		}
+	}
+	return count
 }

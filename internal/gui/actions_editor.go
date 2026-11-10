@@ -360,6 +360,8 @@ func (s *Server) selectStudioScene(r *http.Request) string {
 			s.SelectedVoiceSectionKey = "01"
 		}
 		s.SelectedSceneID = found.ID
+		s.SelectedChapter = ""
+		s.BookSettingsOpen = false
 		if s.SceneTextModalID != "" {
 			s.SceneTextModalID = found.ID
 			s.SceneTextModalInitialID = found.ID
@@ -392,6 +394,8 @@ func (s *Server) finishInsertedScene(inserted *book.Scene, err error) string {
 	} else {
 		s.SelectedSceneID = inserted.ID
 	}
+	s.SelectedChapter = ""
+	s.BookSettingsOpen = false
 	if s.SceneTextModalID != "" {
 		s.SceneTextModalID = s.SelectedSceneID
 		s.SceneTextModalInitialID = s.SelectedSceneID
@@ -459,12 +463,16 @@ func (s *Server) createSceneAt(r *http.Request) string {
 		newName := book.NextUniqueSceneName(s.ActiveBook)
 		if created, err := book.CreateStandaloneSceneInChapter(s.ActiveBook, newName, targetCh, x, y, hasCoords); err == nil && created != nil {
 			s.reloadActiveBook()
-			if s.SceneTextModalID != "" {
-				s.SelectedSceneID = s.SceneTextModalID
-			} else if found := s.findScene(created.Name); found != nil {
+			if found := s.findScene(created.Name); found != nil {
 				s.SelectedSceneID = found.ID
 			} else {
 				s.SelectedSceneID = created.ID
+			}
+			s.SelectedChapter = ""
+			s.BookSettingsOpen = false
+			if s.SceneTextModalID != "" {
+				s.SceneTextModalID = s.SelectedSceneID
+				s.SceneTextModalInitialID = s.SelectedSceneID
 			}
 			toast = "Dodano nową scenę: " + created.Name
 			s.recordHistoryAfterMutation(toast, "graph", "")

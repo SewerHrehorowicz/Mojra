@@ -157,8 +157,8 @@ const (
 	maxCanvasCoord           = 1_000_000
 	NodeCardWidth            = 192
 	NodeCardHalfWidth        = 96
-	NodeCardBaseHeight       = 74
-	NodeChoiceRowHeight      = 26
+	NodeCardBaseHeight       = 72
+	NodeChoiceRowHeight      = 24
 	NodeMinLogicalHeight     = 120
 	NodeColSpacing           = 264
 	ChapterFramePadX         = 36
@@ -1047,6 +1047,51 @@ func absInt(v int) int {
 		return -v
 	}
 	return v
+}
+
+// PushCollidingNodesDown shifts scenes positioned at or below grownScene downward on the 24px grid
+// whenever grownScene's height increases (e.g. after adding choices) and would violate the 48px (2-grid) clearance.
+func PushCollidingNodesDown(b *Book, grownScene *Scene) {
+	if b == nil || grownScene == nil || len(b.Scenes) <= 1 {
+		return
+	}
+	const nodeMargin = 48
+	pushed := map[*Scene]bool{grownScene: true}
+	for pass := 0; pass < len(b.Scenes); pass++ {
+		changed := false
+		for _, src := range b.Scenes {
+			if src == nil || !pushed[src] {
+				continue
+			}
+			srcH := sceneCanvasHeight(src)
+			for _, other := range b.Scenes {
+				if other == nil || other == src || other.Y < src.Y {
+					continue
+				}
+				if nodesOverlapWithMargin(src.X, src.Y, srcH, other.X, other.Y, sceneCanvasHeight(other), nodeMargin) {
+					minY := SnapToGrid(src.Y + srcH + nodeMargin)
+					if minY < src.Y+srcH+nodeMargin {
+						minY += EditorGridSize
+					}
+					if other.Y < minY {
+						other.Y = minY
+						StoreSceneNodePosition(b, other, NodePosition{
+							Row:   other.Row,
+							Col:   other.Col,
+							X:     other.X,
+							Y:     other.Y,
+							HasXY: true,
+						})
+						pushed[other] = true
+						changed = true
+					}
+				}
+			}
+		}
+		if !changed {
+			break
+		}
+	}
 }
 
 func lookupNodePosition(layout map[string]NodePosition, sc *Scene) (NodePosition, bool) {

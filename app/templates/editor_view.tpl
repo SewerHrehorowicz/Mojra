@@ -45,34 +45,34 @@ section.view-panel#view-editor .is-history-preview?: {is_history_preview}
                             data-hint: "{t_auto_layout_hint}"
                             svg.action-icon src: /icons/nodes.svg
                 .canvas-toolbar-right
-                    button.top-action-btn#btn-studio-search
+                    button.top-action-btn.icon-toggle-btn#btn-studio-search
                         type: button
                         data-studio-search-toggle: "true"
                         data-hint: "{t_studio_search_hint}"
                         svg.action-icon src: /icons/search.svg
-                    button.top-action-btn#btn-book-settings .active?: {book_settings_open}
+                    button.top-action-btn.icon-toggle-btn#btn-book-settings .active?: {book_settings_open}
                         type: button
                         action: ToggleBookSettings
                         data-hint: "{editor_settings_hint}"
                         svg.action-icon src: /icons/settings.svg
-                    button.top-action-btn#btn-editor-variables .active?: {show_editor_variables_panel}
+                    button.top-action-btn.icon-toggle-btn#btn-editor-variables .active?: {show_editor_variables_panel}
                         type: button
                         action: ToggleEditorVariablesPanel
                         data-hint: "{t_variables_title}"
                         svg.action-icon src: /icons/braces.svg
                     {if is_screenplay_mode}
-                        button.top-action-btn#btn-editor-breakdown .active?: {show_editor_breakdown_panel}
+                        button.top-action-btn.icon-toggle-btn#btn-editor-breakdown .active?: {show_editor_breakdown_panel}
                             type: button
                             action: ToggleEditorBreakdownPanel
                             data-hint: "{t_breakdown_hint}"
                             svg.action-icon src: /icons/cast.svg
                     .canvas-history-controls
-                        button.top-action-btn .active?: {show_editor_history_panel}
+                        button.top-action-btn.icon-toggle-btn .active?: {show_editor_history_panel}
                             type: button
                             action: ToggleEditorHistoryPanel
                             data-hint: "{t_history_panel_hint}"
                             svg.action-icon src: /icons/history.svg
-                    button.top-action-btn#btn-editor-help .active?: {show_editor_help_panel}
+                    button.top-action-btn.icon-toggle-btn#btn-editor-help .active?: {show_editor_help_panel}
                         type: button
                         action: OpenEditorHelpModal
                         data-hint: "{t_editor_help_hint}"

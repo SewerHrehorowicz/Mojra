@@ -57,13 +57,13 @@
   flex-shrink 0
   z-index 35
 
-.editor-context-panel.is-entering, .editor-history-panel.is-entering, .editor-help-panel.is-entering, .editor-breakdown-panel.is-entering, .editor-variables-panel.is-entering
+.editor-workspace-body > aside.is-entering
   will-change transform
   animation rightPanelSlideIn 0.2s cubic-bezier(0.22, 1, 0.36, 1)
 
 /* @dev-only-start */
 .device-stage[data-preview="portrait"]
-  .editor-context-panel, .editor-history-panel, .editor-help-panel, .editor-breakdown-panel, .editor-variables-panel
+  .editor-workspace-body > aside
     width 100%
     min-width 0
     max-width none
@@ -75,7 +75,7 @@
 /* @dev-only-end */
 
 @media (max-width: 760px) and (orientation: portrait)
-  .editor-context-panel, .editor-history-panel, .editor-help-panel, .editor-breakdown-panel, .editor-variables-panel
+  .editor-workspace-body > aside
     width 100%
     min-width 0
     max-width none
@@ -1155,10 +1155,10 @@ body[data-ui-scale="large"]
   .var-bool-toggle-btn.active .ui-toggle-thumb, .test-var-bool-btn.active .ui-toggle-thumb, .book-setting-toggle-btn.active .toggle-thumb, .form-toggle-btn.active .toggle-thumb
     transform translateX(14px)
 
-  .node-media-add-btn .media-plus-icon, .folder-browse-icon, .choice-braces-icon, .choice-help-icon, .choice-grip-icon, .book-setting-toggle-btn .action-icon, .form-toggle-btn .action-icon
+  .node-media-add-btn .media-plus-icon, .folder-browse-icon, .choice-grip-icon, .book-setting-toggle-btn .action-icon
     width 18px
     height 18px
-  .choice-rule-toggle-btn, .choice-syntax-help-btn, .var-remove-btn, .node-folder-btn
+  .var-remove-btn, .node-folder-btn
     width 32px
     height 32px
   .node-chapter-caret-btn
@@ -1169,7 +1169,7 @@ body[data-ui-scale="large"]
     font-size 13px
     width 64px
 
-  .node-meta-input, .custom-select-trigger, .book-setting-toggle-btn, .form-toggle-btn, .form-radio-option
+  .node-meta-input, .custom-select-trigger, .book-setting-toggle-btn, .form-radio-option
     font-size 13px
     padding 5px 0
 

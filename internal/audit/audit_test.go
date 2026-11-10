@@ -20,7 +20,30 @@ func TestCodebaseAudit(t *testing.T) {
 	count := PrintReportWithLang(&buf, findings, filter, lang)
 	t.Log("\n" + buf.String())
 
-	if os.Getenv("ST_AUDIT_STRICT") == "1" && count > 0 {
-		t.Fatalf("tryb ST_AUDIT_STRICT=1: wykryto %d problemów w audycie statycznym", count)
+	if count > 0 {
+		t.Fatalf("wykryto %d problemów w audycie statycznym:\n%s", count, buf.String())
+	}
+}
+
+func TestAuditRejectsMoreThanFourCommaSelectorsInTSS(t *testing.T) {
+	validSrc := `
+.btn-a, .btn-b, .btn-c, .btn-d
+  color --text-primary
+`
+	if got := auditTSSSourceSelectorLists("app/styles/test.tss", validSrc); len(got) != 0 {
+		t.Fatalf("expected 0 findings for 4 selectors, got %d: %v", len(got), got)
+	}
+
+	invalidMultiline := `
+.btn-1::before,
+.btn-2::before,
+.btn-3::before,
+.btn-4::before,
+.btn-5::before
+  content ""
+`
+	got := auditTSSSourceSelectorLists("app/styles/test.tss", invalidMultiline)
+	if len(got) != 1 || got[0].Category != "TPL_ARCH" {
+		t.Fatalf("expected 1 TPL_ARCH finding for >4 comma-separated selectors, got: %v", got)
 	}
 }

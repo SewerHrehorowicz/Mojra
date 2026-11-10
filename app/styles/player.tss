@@ -653,7 +653,7 @@
   flex-shrink 0
   pointer-events none
 
-.deck-chip:hover, .deck-chip.chip-active
+.deck-chip:hover, .deck-chip.active
   color --text-primary
   border none !important
   text-decoration none !important
@@ -950,7 +950,7 @@ body[data-ui-scale="large"]
 
 // Zen Mode — Pure E-Book Reading (no images, no meta bar, no history rail, no footer, no side/header box borders)
 body[data-zen="true"]
-  .player-bg-stage, .scene-portrait-frame, .scene-illustration-spacer, #reader-global-meta, .story-history-rail, .reader-progress-footer, .audio-deck
+  .player-layout > :not(.story-scroll-feed), .scene-illustration-spacer, #reader-global-meta
     display none !important
 
   .story-scroll-feed

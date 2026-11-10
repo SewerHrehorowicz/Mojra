@@ -39,7 +39,7 @@ header.topbar#topbar
         .topbar-actions-menu#topbar-actions-menu
             {if is_view_player}
                 {if show_zen_mode}
-                    button.top-action-btn#btn-toggle-zen .active?: {zen_mode}
+                    button.top-action-btn.icon-toggle-btn#btn-toggle-zen .active?: {zen_mode}
                         type: button
                         action: ToggleZenMode
                         data-hint: "{zen_toggle_title}"

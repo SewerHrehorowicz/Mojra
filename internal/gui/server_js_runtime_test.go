@@ -1209,6 +1209,20 @@ function makeEvent(type, props) {
     throw new Error("Expected clicking gray branch-radio square to promote node to primary, got " + promotedRole);
   }
 
+  // 6c2. Open #modal-scene-text on rootId, then click add-choice-btn on another canvas node (secRadioPt.id) and verify the target node refreshes on canvas
+  await vm.runInContext("sendServerAction('OpenSceneTextModal', { scene: '" + rootId + "' })", win);
+  await waitForActions();
+  const childAddPt = vm.runInContext("(() => { const n = studioGraphState.nodeById.get('" + secRadioPt.id + "'); const z = editorCanvasState.zoom; return { x: Math.round((getNodeFooterBtnX(n, 'add', false) + 12) * z + editorCanvasState.panX), y: Math.round((n.y + n.h - 19) * z + editorCanvasState.panY) }; })()", win);
+  const activeCanvas = doc.querySelector("#studio-canvas");
+  activeCanvas.dispatchEvent(makeEvent("mousedown", { button: 0, clientX: childAddPt.x, clientY: childAddPt.y, target: activeCanvas }));
+  activeCanvas.dispatchEvent(makeEvent("mouseup", { button: 0, clientX: childAddPt.x, clientY: childAddPt.y, target: activeCanvas }));
+  await waitForActions();
+  const childPortsAfterCanvasAdd = vm.runInContext("(() => { const n = studioGraphState.nodeById.get('" + secRadioPt.id + "'); return n && n.hasChoices && n.ports ? n.ports.length : 0; })()", win);
+  if (childPortsAfterCanvasAdd !== 2) {
+    throw new Error("Expected clicking add-choice-btn on another canvas node while #modal-scene-text is open to refresh that node to 2 choices, got " + childPortsAfterCanvasAdd);
+  }
+  await clickEl('#modal-scene-text [action="CloseSceneTextModal"]');
+
   // 6d. Drag choice-grip handle on WebGL canvas node card from row 0 to row 1 to reorder choices live + persist via ReorderChoice
   const beforeDragZeroLabel = vm.runInContext("studioGraphState.nodes[0].ports[0].label", win);
   const choiceGripPt = vm.runInContext("(() => { const n = studioGraphState.nodes[0]; const hit = hitTestStudioCanvas(n.x + 10, n.y + 36 + 14); if (!hit || hit.type !== 'choice-grip') return null; const z = editorCanvasState.zoom; return { x: Math.round((n.x + 10) * z + editorCanvasState.panX), y0: Math.round((n.y + 36 + 14) * z + editorCanvasState.panY), y1: Math.round((n.y + 36 + 42) * z + editorCanvasState.panY) }; })()", win);
@@ -1228,22 +1242,26 @@ function makeEvent(type, props) {
     throw new Error("Expected right-branch choice wire to route as a clean 3-point L-wire without extra kinks, got pts.length=" + directRightForkPtsLen);
   }
 
-  // 7. Drag node grip on WebGL canvas (+48px X, -24px Y) and verify grid snap + SaveEditorState
+  // 7. Drag node grip on WebGL canvas (+48px X, -24px Y) and verify RTS Ghost Drag (no live move during mousemove, apply on mouseup) + SaveEditorState
   const startNodeX = vm.runInContext("studioGraphState.nodes[0].x", win);
   const updatedGripPt = vm.runInContext("(() => { const n = studioGraphState.nodes[0]; const z = editorCanvasState.zoom; return { x: Math.round((n.x + 12) * z + editorCanvasState.panX), y: Math.round((n.y + 16) * z + editorCanvasState.panY) }; })()", win);
   canvas.dispatchEvent(makeEvent("mousedown", { button: 0, clientX: updatedGripPt.x, clientY: updatedGripPt.y, target: canvas }));
   canvas.dispatchEvent(makeEvent("mousemove", { button: 0, clientX: updatedGripPt.x + 48, clientY: updatedGripPt.y - 24, target: canvas }));
+  const midDragCheck = vm.runInContext("(() => ({ nodeX: studioGraphState.nodes[0].x, hasGhost: Boolean(activeCanvasGesture && activeCanvasGesture.ghostState && activeCanvasGesture.ghostState.valid && activeCanvasGesture.ghostState.rects.length === 1 && activeCanvasGesture.ghostState.rects[0].x === studioGraphState.nodes[0].x + 48) }))()", win);
+  if (midDragCheck.nodeX !== startNodeX || !midDragCheck.hasGhost) {
+    throw new Error("Expected RTS Ghost Drag to keep node static during mousemove while projecting ghost rect, got nodeX=" + midDragCheck.nodeX + " hasGhost=" + midDragCheck.hasGhost);
+  }
   canvas.dispatchEvent(makeEvent("mouseup", { button: 0, clientX: updatedGripPt.x + 48, clientY: updatedGripPt.y - 24, target: canvas }));
   await waitForActions();
   const movedNodeX = vm.runInContext("studioGraphState.nodes[0].x", win);
   if (movedNodeX !== startNodeX + 48) {
-    throw new Error("Expected node grip drag to snap +48px on 24px grid, got " + startNodeX + " -> " + movedNodeX);
+    throw new Error("Expected node grip drag to snap +48px on 24px grid on mouseup, got " + startNodeX + " -> " + movedNodeX);
   }
 
-  // 7a. Verify node-on-node collision prevention (48px = 2 grid jumps), single-input socket color inheritance, and frustum culling
-  const collisionPrevented = vm.runInContext("(() => { const n0 = studioGraphState.nodes[0]; const n1 = studioGraphState.nodes[1]; const dx = n1.x - n0.x; const dy = n1.y - n0.y; const res = resolveValidNodeDragDelta([{ node: n0, sceneId: n0.id, startX: n0.x, startY: n0.y }], dx, dy, 0, 0); const nx = snapToEditorGrid(n0.x + res.dx); const ny = snapToEditorGrid(n0.y + res.dy); return !(nx < n1.right + 48 && nx + n0.w + 48 > n1.left && ny < n1.bottom + 48 && ny + n0.h + 48 > n1.top); })()", win);
+  // 7a. Verify node-on-node collision prevention (48px = 2 grid jumps), RTS red collision cells, single-input socket color inheritance, and frustum culling
+  const collisionPrevented = vm.runInContext("(() => { const n0 = studioGraphState.nodes[0]; const n1 = studioGraphState.nodes[1]; const dx = n1.x - n0.x; const dy = n1.y - n0.y; const ghostCollide = evaluateNodeDragGhost([{ node: n0, sceneId: n0.id, startX: n0.x, startY: n0.y }], dx, dy); const ghostTwoGridY = evaluateNodeDragGhost([{ node: n1, sceneId: n1.id, startX: n1.x, startY: n1.y }], n0.x - n1.x, (n0.y - n1.h - 48) - n1.y); const ghostOneGridY = evaluateNodeDragGhost([{ node: n1, sceneId: n1.id, startX: n1.x, startY: n1.y }], n0.x - n1.x, (n0.y - n1.h - 24) - n1.y); return !ghostCollide.valid && ghostCollide.collisionCells.length > 0 && ghostTwoGridY.valid && ghostTwoGridY.collisionCells.length === 0 && !ghostOneGridY.valid && ghostOneGridY.collisionCells.length === 8; })()", win);
   if (!collisionPrevented) {
-    throw new Error("Expected resolveValidNodeDragDelta to enforce 48px (2 grid jumps) spacing between nodes");
+    throw new Error("Expected 48px (2 grid jumps) spacing to be valid and 24px (1 grid jump) to light up 8 red collision cells");
   }
   const singleInColoredOk = vm.runInContext("(() => { const w = studioGraphState.wires.find((it) => it.fromNode && it.fromNode.hasChoices && it.fromNode.ports && it.fromNode.ports.length >= 2 && it.toNode && studioGraphState.wires.filter((x) => x.toNode === it.toNode).length === 1); return Boolean(w && w.colorIdx >= 0 && w.toNode.inColorIdx === w.colorIdx); })()", win);
   if (!singleInColoredOk) {

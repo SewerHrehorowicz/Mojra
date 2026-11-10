@@ -3,9 +3,9 @@
 const EDITOR_GRID_SIZE = 24;
 const NODE_CARD_WIDTH = 192;
 const NODE_HEADER_HEIGHT = 34;
-const NODE_CHOICE_ROW_HEIGHT = 26;
-const NODE_FOOTER_HEIGHT = 40;
-const NODE_BASE_HEIGHT = 74;
+const NODE_CHOICE_ROW_HEIGHT = 24;
+const NODE_FOOTER_HEIGHT = 38;
+const NODE_BASE_HEIGHT = 72;
 const PORT_RADIUS = 6.5;
 const CHAPTER_PORT_RADIUS = 3.5;
 const CHAPTER_OUT_PORT_PITCH = 37;
@@ -14,9 +14,9 @@ const CARD = {
   w: 192,
   halfW: 96,
   headerH: 34,
-  choiceH: 26,
-  footerH: 40,
-  baseH: 74,
+  choiceH: 24,
+  footerH: 38,
+  baseH: 72,
   minChapterH: 120,
   btnSize: 24,
   pad: 8
@@ -341,6 +341,11 @@ function resolveStudioThemeColors() {
         accentDanger: packRGBA(0.788, 0.188, 0.173, 1.0),
         chapterFill: packRGBA(0.0, 0.0, 0.0, 0.018),
         marqueeFill: packRGBA(0.0, 0.0, 0.0, 0.07),
+        ghostFill: packRGBA(0.0, 0.0, 0.0, 0.045),
+        ghostValidBorder: packRGBA(0.0, 0.0, 0.0, 0.85),
+        ghostInvalidBorder: packRGBA(0.788, 0.188, 0.173, 0.95),
+        collisionCellFill: packRGBA(0.86, 0.18, 0.18, 0.26),
+        collisionCellBorder: packRGBA(0.788, 0.188, 0.173, 0.62),
         unreachCardBg: packRGBA(0.957, 0.957, 0.957, 0.55),
         unreachBorder: packRGBA(0.85, 0.85, 0.85, 0.55),
         unreachText: packRGBA(0.45, 0.45, 0.45, 0.55),
@@ -371,6 +376,11 @@ function resolveStudioThemeColors() {
         accentDanger: packRGBA(0.878, 0.322, 0.322, 1.0),
         chapterFill: packRGBA(0.5, 0.5, 0.5, 0.03),
         marqueeFill: packRGBA(0.62, 0.62, 0.62, 0.09),
+        ghostFill: packRGBA(1.0, 1.0, 1.0, 0.055),
+        ghostValidBorder: packRGBA(1.0, 1.0, 1.0, 0.85),
+        ghostInvalidBorder: packRGBA(0.92, 0.32, 0.32, 0.95),
+        collisionCellFill: packRGBA(0.92, 0.24, 0.24, 0.28),
+        collisionCellBorder: packRGBA(0.92, 0.32, 0.32, 0.62),
         unreachCardBg: packRGBA(0.047, 0.047, 0.047, 0.55),
         unreachBorder: packRGBA(0.18, 0.18, 0.18, 0.55),
         unreachText: packRGBA(0.5, 0.5, 0.5, 0.55),

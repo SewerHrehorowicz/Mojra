@@ -592,50 +592,6 @@ function updateNodeInSpatialGrids(nd) {
   }
 }
 
-function hasSpatialNodeOverlap(grid, nodesFallback, nx, ny, nw, nh) {
-  const nr = nx + nw;
-  const nb = ny + nh;
-  if (grid && grid.size > 0) {
-    const gx0 = toSpatialCell(nx - GAP.node);
-    const gx1 = toSpatialCell(nr + GAP.node);
-    const gy0 = toSpatialCell(ny - GAP.node);
-    const gy1 = toSpatialCell(nb + GAP.node);
-    for (let gy = gy0; gy <= gy1; gy++) {
-      const rowMask = (gy & 0xffff) << 16;
-      for (let gx = gx0; gx <= gx1; gx++) {
-        const cell = grid.get(rowMask | (gx & 0xffff));
-        if (!cell) continue;
-        for (let i = 0; i < cell.length; i++) {
-          const other = cell[i];
-          if (other._isDragging) continue;
-          if (
-            nx < other.right + GAP.node &&
-            nr + GAP.node > other.left &&
-            ny < other.bottom + GAP.node &&
-            nb + GAP.node > other.top
-          ) {
-            return true;
-          }
-        }
-      }
-    }
-    return false;
-  }
-  for (let i = 0; i < nodesFallback.length; i++) {
-    const other = nodesFallback[i];
-    if (other._isDragging) continue;
-    if (
-      nx < other.right + GAP.node &&
-      nr + GAP.node > other.left &&
-      ny < other.bottom + GAP.node &&
-      nb + GAP.node > other.top
-    ) {
-      return true;
-    }
-  }
-  return false;
-}
-
 function findClosestChapterAtWorldCoords(worldX, worldY) {
   const px = worldX + CARD.halfW;
   const py = worldY + GAP.node;
@@ -817,11 +773,13 @@ function resolveValidChapterDragDelta(ch, items, desiredDx, desiredDy, lastValid
   });
 }
 
-function resolveValidNodeDragDelta(items, desiredDx, desiredDy, lastValidDx, lastValidDy) {
+function evaluateNodeDragGhost(items, desiredDx, desiredDy) {
+  const dx = snapToEditorGrid(desiredDx || 0);
+  const dy = snapToEditorGrid(desiredDy || 0);
   const nodes = studioGraphState.nodes || [];
   const chapters = studioGraphState.chapters || [];
   if (!items || items.length === 0) {
-    return { dx: desiredDx, dy: desiredDy };
+    return { dx: dx, dy: dy, valid: true, rects: [], collisionCells: [] };
   }
 
   for (let i = 0; i < items.length; i++) {
@@ -866,77 +824,132 @@ function resolveValidNodeDragDelta(items, desiredDx, desiredDy, lastValidDx, las
     }
   }
 
-  const globalGrid = studioGraphState.nodeSpatialGrid;
+  const rects = [];
+  const collisionCells = [];
+  const seenCellKeys = new Set();
+  let hasCollision = false;
 
-  const res = findClosestValidDragDelta(desiredDx, desiredDy, lastValidDx, lastValidDy, 720, (dx, dy) => {
-    for (let i = 0; i < items.length; i++) {
-      const it = items[i];
-      const nd = it.node;
-      const nx = snapToEditorGrid(it.startX + dx);
-      const ny = snapToEditorGrid(it.startY + dy);
-      if (hasSpatialNodeOverlap(globalGrid, nodes, nx, ny, nd.w, nd.h)) {
-        return false;
-      }
+  const addCollisionCell = (cx, cy) => {
+    const key = cx + "," + cy;
+    if (!seenCellKeys.has(key)) {
+      seenCellKeys.add(key);
+      collisionCells.push({ x: cx, y: cy });
     }
+  };
 
-    for (let c = 0; c < affectedChapters.length; c++) {
-      const ch = affectedChapters[c];
-      let minX = ch._staticMinX;
-      let minY = ch._staticMinY;
-      let maxX = ch._staticMaxX;
-      let maxY = ch._staticMaxY;
-      for (let k = 0; k < items.length; k++) {
-        const it = items[k];
-        const nd = it.node;
-        if (nd.chapterObj !== ch) continue;
-        const nx = snapToEditorGrid(it.startX + dx);
-        const ny = snapToEditorGrid(it.startY + dy);
-        const nh = Math.max(nd.h || CARD.baseH, CARD.minChapterH);
-        if (nx < minX) minX = nx;
-        if (ny < minY) minY = ny;
-        if (nx + nd.w > maxX) maxX = nx + nd.w;
-        if (ny + nh > maxY) maxY = ny + nh;
-      }
-      const cLeft = minX - PAD.x;
-      const cTop = minY - PAD.top;
-      const cRight = maxX + PAD.x;
-      const cBottom = maxY + PAD.bottom;
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i];
+    const nd = it.node;
+    const gx = snapToEditorGrid(it.startX + dx);
+    const gy = snapToEditorGrid(it.startY + dy);
+    const gw = nd.w || CARD.w;
+    const gh = Math.ceil((nd.h || CARD.baseH) / EDITOR_GRID_SIZE) * EDITOR_GRID_SIZE;
+    const r = {
+      node: nd,
+      x: gx,
+      y: gy,
+      w: gw,
+      h: gh,
+      right: gx + gw,
+      bottom: gy + gh
+    };
+    rects.push(r);
 
-      for (let o = 0; o < chapters.length; o++) {
-        const otherCh = chapters[o];
-        if (otherCh === ch || otherCh.hidden) continue;
-        if (
-          cLeft < otherCh.right + GAP.chapter &&
-          cRight + GAP.chapter > otherCh.left &&
-          cTop < otherCh.bottom + GAP.chapter &&
-          cBottom + GAP.chapter > otherCh.top
-        ) {
-          const wasOverlapping =
-            ch._initialLeft < otherCh.right + GAP.chapter &&
-            ch._initialRight + GAP.chapter > otherCh.left &&
-            ch._initialTop < otherCh.bottom + GAP.chapter &&
-            ch._initialBottom + GAP.chapter > otherCh.top;
-          if (!wasOverlapping) {
-            return false;
-          }
-          if (
-            cLeft < ch._initialLeft ||
-            cRight > ch._initialRight ||
-            cTop < ch._initialTop ||
-            cBottom > ch._initialBottom
-          ) {
-            return false;
+    for (let j = 0; j < nodes.length; j++) {
+      const other = nodes[j];
+      if (other._isDragging || other.hidden) continue;
+      const fLeft = other.left - GAP.node;
+      const fRight = other.right + GAP.node;
+      const fTop = other.top - GAP.node;
+      const fBottom = other.bottom + GAP.node;
+      if (r.x < fRight && r.right > fLeft && r.y < fBottom && r.bottom > fTop) {
+        hasCollision = true;
+        const ix0 = Math.max(r.x, Math.floor(fLeft / EDITOR_GRID_SIZE) * EDITOR_GRID_SIZE);
+        const ix1 = Math.min(r.right, Math.ceil(fRight / EDITOR_GRID_SIZE) * EDITOR_GRID_SIZE);
+        const iy0 = Math.max(r.y, Math.floor(fTop / EDITOR_GRID_SIZE) * EDITOR_GRID_SIZE);
+        const iy1 = Math.min(r.bottom, Math.ceil(fBottom / EDITOR_GRID_SIZE) * EDITOR_GRID_SIZE);
+        for (let cy = iy0; cy < iy1; cy += EDITOR_GRID_SIZE) {
+          for (let cx = ix0; cx < ix1; cx += EDITOR_GRID_SIZE) {
+            addCollisionCell(cx, cy);
           }
         }
       }
     }
-    return true;
-  });
+  }
+
+  for (let c = 0; c < affectedChapters.length; c++) {
+    const ch = affectedChapters[c];
+    let minX = ch._staticMinX;
+    let minY = ch._staticMinY;
+    let maxX = ch._staticMaxX;
+    let maxY = ch._staticMaxY;
+    for (let k = 0; k < rects.length; k++) {
+      const r = rects[k];
+      if (r.node.chapterObj !== ch) continue;
+      const nh = Math.max(r.h, CARD.minChapterH);
+      if (r.x < minX) minX = r.x;
+      if (r.y < minY) minY = r.y;
+      if (r.right > maxX) maxX = r.right;
+      if (r.y + nh > maxY) maxY = r.y + nh;
+    }
+    const cLeft = minX - PAD.x;
+    const cTop = minY - PAD.top;
+    const cRight = maxX + PAD.x;
+    const cBottom = maxY + PAD.bottom;
+
+    for (let o = 0; o < chapters.length; o++) {
+      const otherCh = chapters[o];
+      if (otherCh === ch || otherCh.hidden) continue;
+      if (
+        cLeft < otherCh.right + GAP.chapter &&
+        cRight + GAP.chapter > otherCh.left &&
+        cTop < otherCh.bottom + GAP.chapter &&
+        cBottom + GAP.chapter > otherCh.top
+      ) {
+        const wasOverlapping =
+          ch._initialLeft < otherCh.right + GAP.chapter &&
+          ch._initialRight + GAP.chapter > otherCh.left &&
+          ch._initialTop < otherCh.bottom + GAP.chapter &&
+          ch._initialBottom + GAP.chapter > otherCh.top;
+        const expandedOutward =
+          cLeft < ch._initialLeft ||
+          cRight > ch._initialRight ||
+          cTop < ch._initialTop ||
+          cBottom > ch._initialBottom;
+        if (!wasOverlapping || expandedOutward) {
+          hasCollision = true;
+          for (let k = 0; k < rects.length; k++) {
+            const r = rects[k];
+            if (r.node.chapterObj !== ch) continue;
+            for (let cy = r.y; cy < r.bottom; cy += EDITOR_GRID_SIZE) {
+              for (let cx = r.x; cx < r.right; cx += EDITOR_GRID_SIZE) {
+                if (
+                  cx - PAD.x < otherCh.right + GAP.chapter &&
+                  cx + EDITOR_GRID_SIZE + PAD.x > otherCh.left &&
+                  cy - PAD.top < otherCh.bottom + GAP.chapter &&
+                  cy + EDITOR_GRID_SIZE + PAD.bottom > otherCh.top
+                ) {
+                  addCollisionCell(cx, cy);
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
 
   for (let i = 0; i < items.length; i++) {
     items[i].node._isDragging = false;
   }
-  return res;
+
+  return {
+    dx: dx,
+    dy: dy,
+    valid: !hasCollision && collisionCells.length === 0,
+    rects: rects,
+    collisionCells: collisionCells
+  };
 }
 
 function createSceneNodeAtWorldCoords(worldX, worldY, chapterName) {

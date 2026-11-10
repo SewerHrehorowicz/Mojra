@@ -441,22 +441,39 @@ function updateCanvasHoverCursor(viewport, hit) {
 }
 
 function getMatchingContextForm(sceneId) {
+  if (!sceneId || typeof dirtyInspectorForms === "undefined") return null;
+  const modalForm = qs("#form-scene-text");
+  if (modalForm && dirtyInspectorForms.has(modalForm)) {
+    const scInp = qs('input[name="scene_id"]', modalForm);
+    if (scInp && scInp.value === sceneId) {
+      if (typeof liveSaveTimers !== "undefined" && liveSaveTimers.has(modalForm)) {
+        clearTimeout(liveSaveTimers.get(modalForm));
+        liveSaveTimers.delete(modalForm);
+      }
+      dirtyInspectorForms.delete(modalForm);
+      return modalForm;
+    }
+  }
   const cf = qs("#editor-context-form");
   if (!cf || cf.getAttribute("data-context-scene-id") !== sceneId) return null;
   const scInp = qs('input[name="scene_id"]', cf);
   if (!scInp || scInp.value !== sceneId) return null;
-  if (typeof dirtyInspectorForms === "undefined" || !dirtyInspectorForms.has(cf)) return null;
+  if (!dirtyInspectorForms.has(cf)) return null;
+  if (typeof liveSaveTimers !== "undefined" && liveSaveTimers.has(cf)) {
+    clearTimeout(liveSaveTimers.get(cf));
+    liveSaveTimers.delete(cf);
+  }
+  dirtyInspectorForms.delete(cf);
   return cf;
 }
 
-let lastCanvasAddChoiceAt = 0;
-
 function triggerCanvasAddChoiceForNode(nd) {
   if (!nd || !nd.id || (typeof isEditorHistoryPreview === "function" && isEditorHistoryPreview())) return;
-  const now = Date.now();
-  if (now - lastCanvasAddChoiceAt < 320) return;
-  lastCanvasAddChoiceAt = now;
-  sendServerAction("AddChoice", formToParams(getMatchingContextForm(nd.id), { scene: nd.id }));
+  const matchForm = getMatchingContextForm(nd.id);
+  if (!matchForm && typeof flushInspectorFormIfDirty === "function") {
+    flushInspectorFormIfDirty();
+  }
+  sendServerAction("AddChoice", formToParams(matchForm, { scene: nd.id }));
 }
 
 function triggerCanvasReorderChoice(nd, fromIdx, toIdx, sourceForm) {
@@ -1316,9 +1333,13 @@ function beginNodeDragGesture(nd, viewport, clientX, clientY, isTouch, isMultiMo
     startClientY: clientY,
     lastValidDx: 0,
     lastValidDy: 0,
+    ghostDx: 0,
+    ghostDy: 0,
+    ghostState: null,
     moved: false,
     hoveredChapterDrop: ""
   };
+  studioGraphState.overlayBatchDirty = true;
   renderStudioCanvas();
   return true;
 }
@@ -1365,6 +1386,13 @@ function bindEditorCanvasEvents() {
         } else {
           e.target.blur();
         }
+        return;
+      }
+      if (activeCanvasGesture && activeCanvasGesture.type === "node-drag") {
+        e.preventDefault();
+        activeCanvasGesture = null;
+        studioGraphState.overlayBatchDirty = true;
+        renderStudioCanvas();
         return;
       }
       if (!e.target.closest("input, textarea") && !qs(".modal-backdrop")) {
@@ -1690,8 +1718,26 @@ function bindEditorCanvasEvents() {
       return;
     }
 
-    if (activeCanvasGesture.type === "node-drag" || activeCanvasGesture.type === "chapter-drag") {
-      if (activeCanvasGesture.type === "chapter-drag" && !activeCanvasGesture.dragConfirmed) {
+    if (activeCanvasGesture.type === "node-drag") {
+      const z = editorCanvasState.zoom || 1.0;
+      const rawDx = snapToEditorGrid((clientX - activeCanvasGesture.startClientX) / z);
+      const rawDy = snapToEditorGrid((clientY - activeCanvasGesture.startClientY) / z);
+      if (rawDx === activeCanvasGesture.lastSnappedDx && rawDy === activeCanvasGesture.lastSnappedDy) return;
+      activeCanvasGesture.lastSnappedDx = rawDx;
+      activeCanvasGesture.lastSnappedDy = rawDy;
+      activeCanvasGesture.ghostDx = rawDx;
+      activeCanvasGesture.ghostDy = rawDy;
+      activeCanvasGesture.ghostState = evaluateNodeDragGhost(activeCanvasGesture.items || [], rawDx, rawDy);
+      if (Math.abs(rawDx) >= EDITOR_GRID_SIZE || Math.abs(rawDy) >= EDITOR_GRID_SIZE) {
+        activeCanvasGesture.moved = true;
+      }
+      studioGraphState.overlayBatchDirty = true;
+      renderStudioCanvas();
+      return;
+    }
+
+    if (activeCanvasGesture.type === "chapter-drag") {
+      if (!activeCanvasGesture.dragConfirmed) {
         if (Math.hypot(clientX - activeCanvasGesture.startClientX, clientY - activeCanvasGesture.startClientY) < 5) {
           return;
         }
@@ -1704,23 +1750,14 @@ function bindEditorCanvasEvents() {
       if (rawDx === activeCanvasGesture.lastSnappedDx && rawDy === activeCanvasGesture.lastSnappedDy) return;
       activeCanvasGesture.lastSnappedDx = rawDx;
       activeCanvasGesture.lastSnappedDy = rawDy;
-      const valid =
-        activeCanvasGesture.type === "node-drag"
-          ? resolveValidNodeDragDelta(
-              activeCanvasGesture.items || [],
-              rawDx,
-              rawDy,
-              activeCanvasGesture.lastValidDx || 0,
-              activeCanvasGesture.lastValidDy || 0
-            )
-          : resolveValidChapterDragDelta(
-              activeCanvasGesture.chapter,
-              activeCanvasGesture.items || [],
-              rawDx,
-              rawDy,
-              activeCanvasGesture.lastValidDx || 0,
-              activeCanvasGesture.lastValidDy || 0
-            );
+      const valid = resolveValidChapterDragDelta(
+        activeCanvasGesture.chapter,
+        activeCanvasGesture.items || [],
+        rawDx,
+        rawDy,
+        activeCanvasGesture.lastValidDx || 0,
+        activeCanvasGesture.lastValidDy || 0
+      );
       if (valid.dx === activeCanvasGesture.lastValidDx && valid.dy === activeCanvasGesture.lastValidDy && activeCanvasGesture.moved) {
         return;
       }
@@ -2077,15 +2114,21 @@ function bindEditorCanvasEvents() {
 
     if (g.type === "node-drag") {
       const items = g.items || [];
-      renderStudioCanvas();
       if (g.moved && items.length > 0) {
         if (g.isTouch) suppressNextTouchClickUntil = Date.now() + 360;
-        const payload = items.map((it) => ({
-          sceneId: it.sceneId,
-          x: it.node.x,
-          y: it.node.y
-        }));
-        saveBatchNodePositionsOnServer(payload);
+        const ghost = g.ghostState || evaluateNodeDragGhost(items, g.ghostDx || 0, g.ghostDy || 0);
+        if (ghost.valid && (ghost.dx !== 0 || ghost.dy !== 0)) {
+          applyIncrementalNodeMove(items, ghost.dx, ghost.dy);
+          const payload = items.map((it) => ({
+            sceneId: it.sceneId,
+            x: it.node.x,
+            y: it.node.y
+          }));
+          saveBatchNodePositionsOnServer(payload);
+        } else {
+          studioGraphState.overlayBatchDirty = true;
+          renderStudioCanvas();
+        }
         if (selectedNodeIds.size === 1) {
           selectNodeForContextPanel(Array.from(selectedNodeIds)[0]);
         }
@@ -2095,9 +2138,13 @@ function bindEditorCanvasEvents() {
           selectedNodeIds.clear();
           selectedNodeIds.add(g.sceneId);
           syncNodeSelectionDOM();
-          renderStudioCanvas();
         }
+        studioGraphState.overlayBatchDirty = true;
+        renderStudioCanvas();
         selectNodeForContextPanel(g.sceneId);
+      } else {
+        studioGraphState.overlayBatchDirty = true;
+        renderStudioCanvas();
       }
       return;
     }

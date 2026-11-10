@@ -120,7 +120,7 @@
   width 64px
   font-size 13px
 
-.modal-meta-fields .node-meta-input, .modal-meta-fields .custom-select-trigger, .modal-meta-fields .book-setting-toggle-btn, .modal-meta-fields .form-toggle-btn, .modal-meta-fields .form-radio-option
+.modal-meta-fields .node-meta-input, .modal-meta-fields .custom-select-trigger, .modal-meta-fields .book-setting-toggle-btn, .modal-meta-fields .form-radio-option
   font-size 13px
   padding 4px 0
 
@@ -953,7 +953,7 @@
   text-overflow ellipsis
   white-space nowrap
 
-.test-var-bool-btn, .test-var-int-input, .test-var-enum-select .custom-select-trigger, .test-var-enum-select .custom-select-option
+.test-var-row button, .test-var-row input
   font-family --font-mono
   font-size 12px
 
@@ -1050,14 +1050,14 @@
   line-height 1.48
   padding 0
 
-.modal-choice-row .syn-autocomplete-dropdown, .modal-choice-triple-stack .syn-autocomplete-dropdown, .scene-settings-row .syn-autocomplete-dropdown
+.scene-text-editor-card .syn-autocomplete-dropdown
   width 320px
   max-width 100%
 
-.modal-choice-row .syn-dropdown-list, .modal-choice-triple-stack .syn-dropdown-list, .scene-settings-row .syn-dropdown-list
+.scene-text-editor-card .syn-dropdown-list
   max-height 196px
 
-.modal-choice-row .syn-dropdown-item, .modal-choice-triple-stack .syn-dropdown-item, .scene-settings-row .syn-dropdown-item
+.scene-text-editor-card .syn-dropdown-item
   height 28px
   font-size 15px
   line-height 1.48
@@ -1117,7 +1117,7 @@ body[data-ui-scale="large"]
   .scene-text-editor-card .scene-title-row
     padding 13px 36px
 
-  .modal-choice-nav-btn, .scene-settings-toggle-btn, .scene-preview-mode-btn, .scene-settings-row .node-media-add-btn, .modal-add-choice-btn
+  .modal-choice-nav-btn, .scene-header-block .icon-toggle-btn, .scene-settings-row .node-media-add-btn, .modal-add-choice-btn
     width 32px
     height 32px
 
@@ -1147,7 +1147,7 @@ body[data-ui-scale="large"]
     max-width 144px
     font-size 13px
 
-  .test-var-bool-btn, .test-var-int-input, .test-var-enum-select .custom-select-trigger, .test-var-enum-select .custom-select-option
+  .test-var-row button, .test-var-row input
     font-size 13px
 
 body[data-zen="true"]

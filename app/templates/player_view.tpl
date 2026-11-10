@@ -205,7 +205,7 @@ section.view-panel#view-player
                             type: button
                             action: CycleAudioSpeed
                             "{audio_speed}x"
-                        button.deck-chip#btn-auto-choice-toggle .chip-active?: {auto_choice_enabled}
+                        button.deck-chip.icon-toggle-btn#btn-auto-choice-toggle .active?: {auto_choice_enabled}
                             type: button
                             action: ToggleAutoChoice
                             data-hint: "{auto_choice_label}"
