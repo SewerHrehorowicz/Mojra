@@ -172,9 +172,33 @@ if [ "${1:-}" = "audit" ] || [ "${1:-}" = "--audit" ]; then
     exec go run ./cmd/mojra audit "$@"
 fi
 
+if [ "${1:-}" = "www" ] || [ "${1:-}" = "--www" ]; then
+    shift
+    exec go run ./cmd/www "$@"
+fi
+
 if [ "${1:-}" = "deck" ] || [ "${1:-}" = "--deck" ]; then
     shift
-    exec go test -v ./internal/tpl -run TestBuildDeckPDF
+    exec go run ./cmd/deck "$@"
+fi
+
+if [ "${1:-}" = "graph" ] || [ "${1:-}" = "--graph" ]; then
+    shift
+    GRAPH_ARGS=()
+    for arg in "$@"; do
+        case "$arg" in
+            graph|--graph|--with-graph|-with-graph)
+                ;;
+            *)
+                GRAPH_ARGS+=("$arg")
+                ;;
+        esac
+    done
+    if [ "${#GRAPH_ARGS[@]}" -eq 0 ]; then
+        exec go run ./cmd/projgraph
+    else
+        exec go run ./cmd/projgraph "${GRAPH_ARGS[@]}"
+    fi
 fi
 
 if [ "${1:-}" = "chaos" ] || [ "${1:-}" = "--chaos" ]; then
@@ -262,4 +286,25 @@ EOF
     exit 0
 fi
 
-exec go run ./cmd/mojra build "$@"
+WITH_GRAPH=0
+BUILD_ARGS=()
+for arg in "$@"; do
+    case "$arg" in
+        --with-graph|-with-graph)
+            WITH_GRAPH=1
+            ;;
+        *)
+            BUILD_ARGS+=("$arg")
+            ;;
+    esac
+done
+
+if [ "$WITH_GRAPH" -eq 1 ]; then
+    go run ./cmd/projgraph
+fi
+
+if [ "${#BUILD_ARGS[@]}" -eq 0 ]; then
+    exec go run ./cmd/mojra build
+else
+    exec go run ./cmd/mojra build "${BUILD_ARGS[@]}"
+fi

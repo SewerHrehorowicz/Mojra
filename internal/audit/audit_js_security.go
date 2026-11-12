@@ -541,7 +541,7 @@ func checkSecurityLoopsAndReliability(rootDir string, fset *token.FileSet, goFil
 	// 8a. SECURITY_XSS_INJECTION in JS (innerHTML / outerHTML / insertAdjacentHTML outside HTML-Over-The-Wire transport)
 	innerHTMLRe := regexp.MustCompile(`\.(innerHTML|outerHTML)\s*=|insertAdjacentHTML\s*\(`)
 	emptyInnerHTMLRe := regexp.MustCompile(`\.(?:innerHTML|outerHTML)\s*=\s*(?:""|'')\s*;?$`)
-	hotwTransportLineRe := regexp.MustCompile(`^(?:modalsRoot\.innerHTML\s*=\s*html;|existingPanel\.outerHTML\s*=\s*html;|editorBody\.insertAdjacentHTML\("afterbegin",\s*html\);|targetEl\.innerHTML\s*=\s*html;|mountEl\.innerHTML\s*=\s*bootParsed\.html;)$`)
+	hotwTransportLineRe := regexp.MustCompile(`^(?:modalsRoot\.innerHTML\s*=\s*html;|existingModal\.outerHTML\s*=\s*html;|modalsRoot\.insertAdjacentHTML\("beforeend",\s*html\);|existingPanel\.outerHTML\s*=\s*html;|editorBody\.insertAdjacentHTML\("afterbegin",\s*html\);|targetEl\.innerHTML\s*=\s*html;|mountEl\.innerHTML\s*=\s*bootParsed\.html;)$`)
 	for _, jf := range jsFiles {
 		curFunc := "<global>"
 		funcDeclRe := regexp.MustCompile(`^\s*(?:async\s+)?function\s+([A-Za-z0-9_]+)\s*\(`)
@@ -640,7 +640,8 @@ func checkSecurityLoopsAndReliability(rootDir string, fset *token.FileSet, goFil
 			continue
 		}
 		lines := strings.Split(string(pf.src), "\n")
-		isNativeWindowLoopFile := strings.HasPrefix(pf.relPath, "internal/gui/window_")
+		isNativeWindowLoopFile := strings.HasPrefix(pf.relPath, "internal/gui/window_") ||
+			strings.HasPrefix(pf.relPath, "internal/osbridge/window_")
 
 		for _, decl := range pf.file.Decls {
 			fn, ok := decl.(*ast.FuncDecl)
@@ -705,8 +706,8 @@ func checkSecurityLoopsAndReliability(rootDir string, fset *token.FileSet, goFil
 						})
 					}
 
-					// HOT_PATH_ALLOC: Disk I/O or heavy analysis inside render_*.go
-					if strings.HasPrefix(pf.relPath, "internal/gui/render") {
+					// HOT_PATH_ALLOC: Disk I/O or heavy analysis inside render_*.go / view_*.go
+					if strings.HasPrefix(pf.relPath, "internal/gui/render") || strings.HasPrefix(pf.relPath, "internal/views/view_") {
 						if callName == "os.Stat" || callName == "os.ReadFile" || callName == "os.ReadDir" || callName == "book.AnalyzeScreenplay" || callName == "book.CompareBookBranches" {
 							out = append(out, Finding{
 								File:     pf.relPath,

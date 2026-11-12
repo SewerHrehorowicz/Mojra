@@ -14,8 +14,9 @@ import (
 	"syscall/js"
 
 	"mojra"
+	"mojra/internal/actions"
 	"mojra/internal/book"
-	"mojra/internal/gui"
+	"mojra/internal/i18n"
 	"mojra/internal/tpl"
 )
 
@@ -133,7 +134,7 @@ func wasmBoot(_ js.Value, args []js.Value) any {
 	respVals.Set("X-Auto-Delay", fmt.Sprintf("%.2g", book.NormalizeAutoChoiceDelay(rt.save.AutoChoiceDelay)))
 	respVals.Set("X-Save-Hex", hex.EncodeToString(book.EncodeSaveStateBytes(rt.save)))
 	respVals.Set("html", `<main class="workspace" id="workspace">`+playerHTML+`</main><div class="modals-root" id="modals-root">`+modalsHTML+`</div><div class="toast hidden" id="toast-banner"></div><div class="ui-tooltip hidden" id="ui-tooltip"></div>`)
-	return string(gui.EncodeWFPForm(respVals))
+	return string(actions.EncodeWFPForm(respVals))
 }
 
 func wasmAction(_ js.Value, args []js.Value) any {
@@ -142,7 +143,7 @@ func wasmAction(_ js.Value, args []js.Value) any {
 	}
 	rawReq := args[0].String()
 	form := make(url.Values, 8)
-	if !gui.DecodeWFPFormBytes([]byte(rawReq), form) {
+	if !actions.DecodeWFPFormBytes([]byte(rawReq), form) {
 		return ""
 	}
 	action := strings.TrimSpace(form.Get("action"))
@@ -387,7 +388,7 @@ func wasmAction(_ js.Value, args []js.Value) any {
 	if renderedHTML != "" {
 		respVals.Set("html", renderedHTML)
 	}
-	return string(gui.EncodeWFPForm(respVals))
+	return string(actions.EncodeWFPForm(respVals))
 }
 
 func (r *wasmPlayerRuntime) currentScene() *book.Scene {
@@ -466,7 +467,7 @@ func (r *wasmPlayerRuntime) renderTemplate(name string) string {
 }
 
 func (r *wasmPlayerRuntime) populateContext(vars map[string]any) {
-	gui.PopulateI18nContext(vars, gui.LangPL)
+	i18n.PopulateI18nContext(vars, i18n.LangPL)
 	vars["lang"] = "pl"
 	vars["lang_upper"] = "PL"
 	vars["is_lang_en"] = false

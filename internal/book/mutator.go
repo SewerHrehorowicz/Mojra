@@ -32,7 +32,7 @@ func writeFileIfChanged(path string, data []byte, perm os.FileMode) error {
 // SaveBookMetadataToDisk writes book.playtxt for an unpacked book.
 func SaveBookMetadataToDisk(b *Book) error {
 	if b.IsPacked {
-		return fmt.Errorf("nie można edytować spakowanego archiwum .stbook bezpośrednio")
+		return fmt.Errorf("nie można edytować spakowanego archiwum .playbook bezpośrednio")
 	}
 	dataPath := filepath.Join(b.RootPath, BookDataFileName)
 	return writeFileIfChanged(dataPath, []byte(SerializeDataFile(b)), 0644)
@@ -124,7 +124,7 @@ func NextUniqueChapterSlug(b *Book, raw string, ignoreChapter string) string {
 // SaveBookScenesToDisk writes all modified source .playtxt files, book.playtxt, and .editor.cfg back to the book directory.
 func SaveBookScenesToDisk(b *Book) error {
 	if b.IsPacked {
-		return fmt.Errorf("nie można edytować spakowanego archiwum .stbook bezpośrednio; rozpakuj książkę do katalogu books/%s", b.ID)
+		return fmt.Errorf("nie można edytować spakowanego archiwum .playbook bezpośrednio; rozpakuj książkę do katalogu books/%s", b.ID)
 	}
 	if err := os.MkdirAll(b.RootPath, 0755); err != nil {
 		return err
@@ -243,7 +243,7 @@ func NextUniqueSceneName(b *Book) string {
 // (or after parentSceneID if childSceneID is empty), updates links, and writes back to the .txt file.
 func InsertSceneBetween(b *Book, parentSceneID, childSceneID, newSceneName string) (*Scene, error) {
 	if b.IsPacked {
-		return nil, fmt.Errorf("książka jest spakowana (.stbook)")
+		return nil, fmt.Errorf("książka jest spakowana (.playbook)")
 	}
 	cleanName := SanitizePlainText(newSceneName)
 	if cleanName == "" {
@@ -376,7 +376,7 @@ func InsertSceneBetween(b *Book, parentSceneID, childSceneID, newSceneName strin
 // (or updating the book start scene if targetSceneID was the root scene) and writing back to disk.
 func InsertSceneBefore(b *Book, targetSceneID, newSceneName string) (*Scene, error) {
 	if b.IsPacked {
-		return nil, fmt.Errorf("książka jest spakowana (.stbook)")
+		return nil, fmt.Errorf("książka jest spakowana (.playbook)")
 	}
 	cleanName := SanitizePlainText(newSceneName)
 	if cleanName == "" {
@@ -478,7 +478,7 @@ func InsertSceneBefore(b *Book, targetSceneID, newSceneName string) (*Scene, err
 // without any artificial coordinate bounds.
 func CreateStandaloneSceneInChapter(b *Book, newSceneName, targetChapter string, x, y int, hasCoords bool) (*Scene, error) {
 	if b.IsPacked {
-		return nil, fmt.Errorf("książka jest spakowana (.stbook)")
+		return nil, fmt.Errorf("książka jest spakowana (.playbook)")
 	}
 	cleanName := SanitizePlainText(newSceneName)
 	if cleanName == "" {
@@ -968,7 +968,7 @@ func ImportBookMediaFromDisk(b *Book, rawPaths []string, kind string) ([]string,
 		return nil, fmt.Errorf("brak aktywnej książki")
 	}
 	if b.IsPacked {
-		return nil, fmt.Errorf("nie można dodawać plików multimedialnych do spakowanego archiwum .stbook")
+		return nil, fmt.Errorf("nie można dodawać plików multimedialnych do spakowanego archiwum .playbook")
 	}
 	if strings.TrimSpace(b.RootPath) == "" {
 		return nil, fmt.Errorf("brak ścieżki katalogu książki na dysku")
@@ -1143,7 +1143,7 @@ func ImportBookMediaFromDisk(b *Book, rawPaths []string, kind string) ([]string,
 	return imported, nil
 }
 
-// PackBookToZip packages an unpacked book directory into a single .stbook archive (including subdirectories).
+// PackBookToZip packages an unpacked book directory into a single .playbook archive (including subdirectories).
 // It streams directly to an atomic .tmp file on disk, using zip.Deflate for .txt files and zip.Store for media files.
 func PackBookToZip(bookDir, outZipPath string) error {
 	if err := os.MkdirAll(filepath.Dir(outZipPath), 0755); err != nil {
@@ -1303,7 +1303,7 @@ func RenameScreenplayCharacter(b *Book, oldName, newName string) (int, error) {
 		return 0, fmt.Errorf("brak aktywnej książki")
 	}
 	if b.IsPacked {
-		return 0, fmt.Errorf("nie można edytować spakowanego archiwum .stbook bezpośrednio")
+		return 0, fmt.Errorf("nie można edytować spakowanego archiwum .playbook bezpośrednio")
 	}
 	oldBase, _ := SplitCharacterCue(SanitizePlainText(oldName))
 	newBase, _ := SplitCharacterCue(SanitizePlainText(newName))
@@ -1364,7 +1364,7 @@ func RenameScreenplayLocation(b *Book, oldLoc, newLoc string) (int, error) {
 		return 0, fmt.Errorf("brak aktywnej książki")
 	}
 	if b.IsPacked {
-		return 0, fmt.Errorf("nie można edytować spakowanego archiwum .stbook bezpośrednio")
+		return 0, fmt.Errorf("nie można edytować spakowanego archiwum .playbook bezpośrednio")
 	}
 	targetLoc := strings.ToUpper(strings.TrimSpace(SanitizePlainText(oldLoc)))
 	replacementLoc := strings.ToUpper(strings.TrimSpace(SanitizePlainText(newLoc)))
@@ -1446,7 +1446,7 @@ func MoveBookToDirectory(b *Book, targetParentDir string) (*Book, error) {
 		return nil, fmt.Errorf("brak aktywnej książki")
 	}
 	if b.IsPacked {
-		return nil, fmt.Errorf("nie można przenieść spakowanego archiwum .stbook")
+		return nil, fmt.Errorf("nie można przenieść spakowanego archiwum .playbook")
 	}
 	oldRoot := filepath.Clean(strings.TrimSpace(b.RootPath))
 	if oldRoot == "" || oldRoot == "." {

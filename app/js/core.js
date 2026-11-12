@@ -862,8 +862,34 @@ async function sendServerAction(actionName, params) {
     const prevModalSceneId = prevModalSceneInput ? (prevModalSceneInput.value || "").trim() : "";
     const prevModalFeed = qs(".scene-text-editor-feed", modalsRoot);
     const prevModalScrollTop = prevModalFeed ? prevModalFeed.scrollTop : 0;
+    const modalId = (resp.headers.get("X-Modal-ID") || "").trim();
     if (modalsRoot) {
-      modalsRoot.innerHTML = html;
+      if (modalId) {
+        if ((actionName === "ConfirmModalAccept" || actionName === "ConfirmModalClose") && modalId !== "modal-confirm") {
+          const prevConfirm = qs("#modal-confirm", modalsRoot);
+          if (prevConfirm) prevConfirm.remove();
+        }
+        const trimmedHtml = html.trim();
+        if (trimmedHtml && modalId !== "modal-scene-text" && modalId !== "modal-confirm") {
+          qsa(".modal-backdrop", modalsRoot).forEach((el) => {
+            if (el.id !== "modal-scene-text" && el.id !== modalId) {
+              el.remove();
+            }
+          });
+        }
+        const existingModal = qs("#" + modalId, modalsRoot);
+        if (trimmedHtml) {
+          if (existingModal) {
+            existingModal.outerHTML = html;
+          } else {
+            modalsRoot.insertAdjacentHTML("beforeend", html);
+          }
+        } else if (existingModal) {
+          existingModal.remove();
+        }
+      } else {
+        modalsRoot.innerHTML = html;
+      }
     }
     const nextSceneTextModal = qs("#modal-scene-text", modalsRoot);
     if (nextSceneTextModal && !wasModalSceneTextOpen) {

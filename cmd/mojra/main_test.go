@@ -14,55 +14,43 @@ import (
 )
 
 func TestAppIconsAndWindowsResourceSYSO(t *testing.T) {
-	tmp := t.TempDir()
-
-	icnsPath := filepath.Join(tmp, "AppIcon.icns")
-	if err := writeMacOSAppIconICNS(icnsPath); err != nil {
-		t.Fatalf("writeMacOSAppIconICNS failed: %v", err)
-	}
-
-	icoPath := filepath.Join(tmp, "Mojra.ico")
-	if err := writeWindowsAppIconICO(icoPath); err != nil {
-		t.Fatalf("writeWindowsAppIconICO failed: %v", err)
-	}
-
-	pngBytes, err := encodeIconPNG(256)
+	rootDir, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
-		t.Fatalf("encodeIconPNG failed: %v", err)
+		t.Fatalf("filepath.Abs failed: %v", err)
+	}
+	srcIconPNG := filepath.Join(rootDir, "app", "icons", "icon.png")
+	srcFaviconICO := filepath.Join(rootDir, "app", "icons", "favicon.ico")
+
+	pngBytes, err := os.ReadFile(srcIconPNG)
+	if err != nil {
+		t.Fatalf("failed to read %s: %v", srcIconPNG, err)
 	}
 	img, err := png.Decode(bytes.NewReader(pngBytes))
 	if err != nil {
-		t.Fatalf("png.Decode failed: %v", err)
+		t.Fatalf("png.Decode(%s) failed: %v", srcIconPNG, err)
 	}
-	if img.Bounds().Dx() != 256 || img.Bounds().Dy() != 256 {
+	if img.Bounds().Dx() < 128 || img.Bounds().Dy() < 128 {
 		t.Fatalf("unexpected icon dimensions: %v", img.Bounds())
 	}
 
-	// Verify key features of the Mojra "M" loom icon (512px render):
-	// 1. Center destiny node dot at (256, 256)
-	// 2. Top-left & bottom-left solid nodes at (141, 135) and (141, 377)
-	// 3. Bottom-right solid node at (371, 377)
-	// 4. Center lower vertical stem at (256, 330)
-	icon512 := renderIcon(512)
-	for _, pt := range []struct {
-		name string
-		x, y int
-	}{
-		{"center destiny node", 256, 256},
-		{"top-left node", 141, 135},
-		{"bottom-left node", 141, 377},
-		{"bottom-right node", 371, 377},
-		{"center lower stem", 256, 330},
-	} {
-		c := icon512.RGBAAt(pt.x, pt.y)
-		if c.R < 180 || c.G < 180 || c.B < 180 {
-			t.Fatalf("expected bright foreground glyph at %s (%d,%d), got RGBA=%v", pt.name, pt.x, pt.y, c)
-		}
+	icoBytes, err := os.ReadFile(srcFaviconICO)
+	if err != nil {
+		t.Fatalf("failed to read %s: %v", srcFaviconICO, err)
+	}
+	frames, err := parseICOFrames(icoBytes)
+	if err != nil || len(frames) == 0 {
+		t.Fatalf("parseICOFrames(%s) failed: frames=%d err=%v", srcFaviconICO, len(frames), err)
+	}
+
+	tmp := t.TempDir()
+	icnsPath := filepath.Join(tmp, "AppIcon.icns")
+	if err := writeMacOSAppIconICNS(srcIconPNG, icnsPath); err != nil {
+		t.Fatalf("writeMacOSAppIconICNS failed: %v", err)
 	}
 
 	sysoPath := filepath.Join(tmp, "rsrc_windows_amd64.syso")
-	if err := writeWindowsResourceSYSO(sysoPath); err != nil {
-		t.Fatalf("writeWindowsResourceSYSO failed: %v", err)
+	if err := writeWindowsResourceSYSOForArch(srcFaviconICO, sysoPath, "amd64"); err != nil {
+		t.Fatalf("writeWindowsResourceSYSOForArch(amd64) failed: %v", err)
 	}
 
 	peFile, err := pe.Open(sysoPath)
@@ -75,12 +63,13 @@ func TestAppIconsAndWindowsResourceSYSO(t *testing.T) {
 	if rsrcSec == nil {
 		t.Fatalf("expected .rsrc section in generated .syso")
 	}
-	if len(rsrcSec.Relocs) != 8 {
-		t.Fatalf("expected 8 relocations in .rsrc (6 RT_ICON + 1 RT_GROUP_ICON + 1 RT_MANIFEST), got %d", len(rsrcSec.Relocs))
+	wantRelocs := len(frames) + 2
+	if len(rsrcSec.Relocs) != wantRelocs {
+		t.Fatalf("expected %d relocations in .rsrc (%d RT_ICON + 1 RT_GROUP_ICON + 1 RT_MANIFEST), got %d", wantRelocs, len(frames), len(rsrcSec.Relocs))
 	}
 
 	sysoArm64Path := filepath.Join(tmp, "rsrc_windows_arm64.syso")
-	if err := writeWindowsResourceSYSOForArch(sysoArm64Path, "arm64"); err != nil {
+	if err := writeWindowsResourceSYSOForArch(srcFaviconICO, sysoArm64Path, "arm64"); err != nil {
 		t.Fatalf("writeWindowsResourceSYSOForArch(arm64) failed: %v", err)
 	}
 	peArm64, err := pe.Open(sysoArm64Path)
@@ -90,11 +79,6 @@ func TestAppIconsAndWindowsResourceSYSO(t *testing.T) {
 	defer peArm64.Close()
 	if peArm64.Machine != 0xAA64 {
 		t.Fatalf("expected ARM64 machine 0xAA64, got 0x%x", peArm64.Machine)
-	}
-
-	linuxIconPath := filepath.Join(tmp, "Mojra.png")
-	if err := writeLinuxAppIconPNG(linuxIconPath); err != nil {
-		t.Fatalf("writeLinuxAppIconPNG failed: %v", err)
 	}
 }
 
@@ -277,14 +261,14 @@ func TestPackageBooksForDistPacksOnlyStbook(t *testing.T) {
 		t.Fatalf("packageBooksForDist failed: %v", err)
 	}
 
-	// Source directory must NOT have a .stbook file created inside it
-	if _, err := os.Stat(filepath.Join(srcBooks, "nie-boj-sie-policji-rzecznej.stbook")); !os.IsNotExist(err) {
-		t.Fatalf("expected no .stbook in source books/ directory")
+	// Source directory must NOT have a .playbook file created inside it
+	if _, err := os.Stat(filepath.Join(srcBooks, "nie-boj-sie-policji-rzecznej.playbook")); !os.IsNotExist(err) {
+		t.Fatalf("expected no .playbook in source books/ directory")
 	}
 
-	// Destination dist/books must have the packed .stbook and NOT the unpacked folder
-	if _, err := os.Stat(filepath.Join(dstBooks, "nie-boj-sie-policji-rzecznej.stbook")); err != nil {
-		t.Fatalf("expected nie-boj-sie-policji-rzecznej.stbook in dist books/: %v", err)
+	// Destination dist/books must have the packed .playbook and NOT the unpacked folder
+	if _, err := os.Stat(filepath.Join(dstBooks, "nie-boj-sie-policji-rzecznej.playbook")); err != nil {
+		t.Fatalf("expected nie-boj-sie-policji-rzecznej.playbook in dist books/: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(dstBooks, "nie-boj-sie-policji-rzecznej")); !os.IsNotExist(err) {
 		t.Fatalf("expected no unpacked source folder in dist books/")
@@ -311,8 +295,8 @@ func TestResolveDistRuntimeDirNeverReturnsRepoRoot(t *testing.T) {
 	if filepath.Clean(resolved) == filepath.Clean(fakeRepo) {
 		t.Fatalf("expected resolveDistRuntimeDir to never return repo root %q", fakeRepo)
 	}
-	if _, err := os.Stat(filepath.Join(resolved, "books", "nie-boj-sie-policji-rzecznej.stbook")); err != nil {
-		t.Fatalf("expected packed .stbook in resolved runtime books dir: %v", err)
+	if info, err := os.Stat(filepath.Join(resolved, "books")); err != nil || !info.IsDir() {
+		t.Fatalf("expected runtime books dir in resolved runtime dir: %v", err)
 	}
 }
 
@@ -325,7 +309,6 @@ func TestAndroidToolchainAndAPKPackagingInvariants(t *testing.T) {
 		t.Fatalf("unexpected options for --android: %+v", optsAndroid)
 	}
 
-	manifestXML := buildAndroidManifestXML()
 	for _, want := range []string{
 		`android.permission.INTERNET`,
 		`android.permission.RECORD_AUDIO`,
@@ -335,20 +318,21 @@ func TestAndroidToolchainAndAPKPackagingInvariants(t *testing.T) {
 		`android:extractNativeLibs="true"`,
 		`android:targetSdkVersion="35"`,
 	} {
-		if !strings.Contains(manifestXML, want) {
+		if !strings.Contains(androidManifestXML, want) {
 			t.Fatalf("expected AndroidManifest.xml to contain %q", want)
 		}
 	}
 
+	rootDir, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatalf("filepath.Abs failed: %v", err)
+	}
+	srcIconPNG := filepath.Join(rootDir, "app", "icons", "icon.png")
 	resTmp := filepath.Join(t.TempDir(), "res")
-	if err := writeAndroidLauncherResources(resTmp); err != nil {
+	if err := writeAndroidLauncherResources(srcIconPNG, resTmp); err != nil {
 		t.Fatalf("writeAndroidLauncherResources failed: %v", err)
 	}
 	for _, relPath := range []string{
-		filepath.Join("mipmap-anydpi-v26", "ic_launcher.xml"),
-		filepath.Join("mipmap-anydpi-v26", "ic_launcher_round.xml"),
-		filepath.Join("mipmap-xxxhdpi", "ic_launcher_background.png"),
-		filepath.Join("mipmap-xxxhdpi", "ic_launcher_foreground.png"),
 		filepath.Join("mipmap-xxxhdpi", "ic_launcher.png"),
 		filepath.Join("mipmap-xxxhdpi", "ic_launcher_round.png"),
 	} {
@@ -356,24 +340,7 @@ func TestAndroidToolchainAndAPKPackagingInvariants(t *testing.T) {
 			t.Fatalf("expected non-empty Android launcher resource %s: err=%v", relPath, err)
 		}
 	}
-	fgFile, err := os.Open(filepath.Join(resTmp, "mipmap-xxxhdpi", "ic_launcher_foreground.png"))
-	if err != nil {
-		t.Fatalf("Open ic_launcher_foreground.png failed: %v", err)
-	}
-	defer fgFile.Close()
-	fgImg, err := png.Decode(fgFile)
-	if err != nil {
-		t.Fatalf("png.Decode ic_launcher_foreground.png failed: %v", err)
-	}
-	if fgImg.Bounds().Dx() != 432 || fgImg.Bounds().Dy() != 432 {
-		t.Fatalf("expected 432x432 adaptive foreground icon, got %v", fgImg.Bounds())
-	}
-	_, _, _, cornerA := fgImg.At(2, 2).RGBA()
-	if cornerA != 0xffff {
-		t.Fatalf("expected full-bleed opaque adaptive icon corner (no inset tile margin), got alpha=%d", cornerA)
-	}
 
-	javaSrc := buildAndroidMainActivityJava()
 	for _, want := range []string{
 		`pb.environment().put("MOJRA_DATA_DIR", filesDir.getAbsolutePath());`,
 		`pb.environment().put("MOJRA_ANDROID_APK", "1");`,
@@ -387,7 +354,7 @@ func TestAndroidToolchainAndAPKPackagingInvariants(t *testing.T) {
 		`onShowFileChooser`,
 		`onBackPressed()`,
 	} {
-		if !strings.Contains(javaSrc, want) {
+		if !strings.Contains(androidMainActivityJava, want) {
 			t.Fatalf("expected MainActivity.java to contain %q", want)
 		}
 	}
@@ -498,6 +465,3 @@ func TestProdEmbedUsesCompressedWasmAndNoDuplicateBook(t *testing.T) {
 		t.Fatalf("expected embed_prod.go not to embed uncompressed mojra.wasm or duplicate books/: %s", src)
 	}
 }
-
-
-

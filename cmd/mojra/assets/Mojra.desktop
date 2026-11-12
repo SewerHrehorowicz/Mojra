@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Mojra
+Comment=Interaktywny Czytnik & Playbook Studio
+Exec=./mojra
+Icon=Mojra
+Terminal=false
+Categories=AudioVideo;Audio;Player;

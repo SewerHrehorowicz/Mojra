@@ -11,9 +11,10 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
-	"mojra/internal/tpl"
+	"mojra/internal/i18n"
 )
 
 const (
@@ -24,6 +25,22 @@ const (
 	audioTimeOffset = 5
 )
 
+var (
+	activeSaveFileMu   sync.Mutex
+	activeSaveFilePath string
+	activeSaveFile     *os.File
+)
+
+func closeCachedSaveFile(targetPath string) {
+	activeSaveFileMu.Lock()
+	defer activeSaveFileMu.Unlock()
+	if activeSaveFile != nil && (targetPath == "" || activeSaveFilePath == targetPath) {
+		_ = activeSaveFile.Close()
+		activeSaveFile = nil
+		activeSaveFilePath = ""
+	}
+}
+
 func saveFilePath(savesDir, bookID string) string {
 	safeID := SanitizeBookID(bookID)
 	return filepath.Join(savesDir, safeID+".sav")
@@ -33,9 +50,9 @@ func settingsIniPath(savesDir string) string {
 	return filepath.Join(savesDir, "settings.ini")
 }
 
-// NormalizeLanguage normalizes a UI language code to one of the registered languages in tpl.SupportedLanguages.
+// NormalizeLanguage normalizes a UI language code to one of the registered languages in i18n.SupportedLanguages.
 func NormalizeLanguage(raw string) string {
-	return tpl.NormalizeLangCode(raw)
+	return i18n.NormalizeLangCode(raw)
 }
 
 const DefaultScrollSensitivity = "medium"
@@ -689,6 +706,7 @@ func WriteSaveState(savesDir string, state *SaveState) error {
 	if err := os.WriteFile(tmp, raw, 0644); err != nil {
 		return err
 	}
+	closeCachedSaveFile(target)
 	return os.Rename(tmp, target)
 }
 
@@ -699,18 +717,35 @@ func UpdateSaveAudioTimeInPlace(savesDir, bookID string, audioTime float64, defa
 		audioTime = 0
 	}
 	path := saveFilePath(savesDir, bookID)
-	f, err := os.OpenFile(path, os.O_RDWR, 0644)
-	if err != nil {
-		st := LoadSaveState(savesDir, bookID, defaultStartSceneID)
-		st.AudioTime = audioTime
-		return WriteSaveState(savesDir, st)
-	}
-	defer f.Close()
 
 	var patch [16]byte
 	binary.LittleEndian.PutUint64(patch[0:8], math.Float64bits(audioTime))
 	binary.LittleEndian.PutUint64(patch[8:16], uint64(time.Now().Unix()))
-	_, err = f.WriteAt(patch[:], audioTimeOffset)
+
+	activeSaveFileMu.Lock()
+	if activeSaveFile == nil || activeSaveFilePath != path {
+		if activeSaveFile != nil {
+			_ = activeSaveFile.Close()
+			activeSaveFile = nil
+			activeSaveFilePath = ""
+		}
+		f, err := os.OpenFile(path, os.O_RDWR, 0644)
+		if err != nil {
+			activeSaveFileMu.Unlock()
+			st := LoadSaveState(savesDir, bookID, defaultStartSceneID)
+			st.AudioTime = audioTime
+			return WriteSaveState(savesDir, st)
+		}
+		activeSaveFile = f
+		activeSaveFilePath = path
+	}
+	_, err := activeSaveFile.WriteAt(patch[:], audioTimeOffset)
+	if err != nil {
+		_ = activeSaveFile.Close()
+		activeSaveFile = nil
+		activeSaveFilePath = ""
+	}
+	activeSaveFileMu.Unlock()
 	return err
 }
 
@@ -718,7 +753,9 @@ func UpdateSaveAudioTimeInPlace(savesDir, bookID string, audioTime float64, defa
 func DeleteSaveState(savesDir, bookID string) error {
 	safeID := SanitizeBookID(bookID)
 	_ = os.Remove(filepath.Join(savesDir, safeID+".save.json"))
-	err := os.Remove(saveFilePath(savesDir, safeID))
+	target := saveFilePath(savesDir, safeID)
+	closeCachedSaveFile(target)
+	err := os.Remove(target)
 	if os.IsNotExist(err) {
 		return nil
 	}

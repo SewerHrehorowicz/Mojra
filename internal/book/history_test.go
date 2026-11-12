@@ -359,7 +359,7 @@ func TestBookHistoryLifecycleAndNamedVersions(t *testing.T) {
 	}
 
 	// 8. Verify PackBookToZip excludes .history/
-	outZip := filepath.Join(booksDir, "exported.stbook")
+	outZip := filepath.Join(booksDir, "exported.playbook")
 	if err := PackBookToZip(b.RootPath, outZip); err != nil {
 		t.Fatalf("PackBookToZip failed: %v", err)
 	}
@@ -369,7 +369,7 @@ func TestBookHistoryLifecycleAndNamedVersions(t *testing.T) {
 	}
 	for _, tf := range packedBook.TextFiles {
 		if strings.Contains(tf, "history") {
-			t.Fatalf("expected .history to be excluded from .stbook archive, found %q", tf)
+			t.Fatalf("expected .history to be excluded from .playbook archive, found %q", tf)
 		}
 	}
 }
@@ -660,9 +660,9 @@ func TestSmartCoalescingDeltaAndFiveMinuteCompaction(t *testing.T) {
 	for i := 1; i < len(h.Revisions); i++ {
 		h.Revisions[i].TimeUnix = bucketBase + int64(i*20)
 	}
+	compactHistoryRevisions(b.RootPath, h, bucketBase+600, nil)
 	_ = SaveBookHistory(b, h)
 
-	// Reloading when now is 10 minutes later triggers 5-minute bucket compaction
 	compactedH, err := LoadBookHistory(b)
 	if err != nil {
 		t.Fatalf("LoadBookHistory after aging failed: %v", err)

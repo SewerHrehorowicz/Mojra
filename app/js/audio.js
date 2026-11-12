@@ -704,7 +704,7 @@ function initAudioController(shouldAutoPlay, preservedTime) {
     setPlayButtonVisual(true);
   });
   audio.addEventListener("pause", () => {
-    if (pendingSceneAutoPlay) return;
+    if (!audio.isConnected || pendingSceneAutoPlay) return;
     setPlayButtonVisual(false);
     if (!audio.ended && !sceneAudioEndedHandled && audio.currentTime > 0) {
       const globalElapsed = getQueueCurrentElapsed(queueSegments, audio._currentSegmentIndex || 0, audio);

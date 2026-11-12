@@ -535,10 +535,10 @@ func TestDownloadBookFromURLBlocksSSRFPrivateAndLinkLocalIPs(t *testing.T) {
 	booksDir := t.TempDir()
 	ssrfTargets := []string{
 		"http://169.254.169.254/latest/meta-data/",
-		"http://10.0.0.1/book.stbook",
-		"http://192.168.1.1/book.stbook",
-		"http://172.16.0.1/book.stbook",
-		"http://0.0.0.0/book.stbook",
+		"http://10.0.0.1/book.playbook",
+		"http://192.168.1.1/book.playbook",
+		"http://172.16.0.1/book.playbook",
+		"http://0.0.0.0/book.playbook",
 	}
 	for _, target := range ssrfTargets {
 		_, err := DownloadBookFromURL(booksDir, target)
@@ -686,7 +686,7 @@ func TestPackBookToZipStoreMediaAndZeroRAMRangeServing(t *testing.T) {
 	_ = os.WriteFile(filepath.Join(bookDir, "images", "s1.png"), pngPayload, 0644)
 	_ = os.WriteFile(filepath.Join(bookDir, "voice", "s1.ogg"), oggPayload, 0644)
 
-	outZip := filepath.Join(dir, "kronika.stbook")
+	outZip := filepath.Join(dir, "kronika.playbook")
 	if err := PackBookToZip(bookDir, outZip); err != nil {
 		t.Fatalf("PackBookToZip failed: %v", err)
 	}
@@ -699,7 +699,7 @@ func TestPackBookToZipStoreMediaAndZeroRAMRangeServing(t *testing.T) {
 		slashed := filepath.ToSlash(f.Name)
 		if strings.Contains(slashed, ".history") {
 			_ = zr.Close()
-			t.Fatalf("expected .history to be excluded from .stbook, found %q", slashed)
+			t.Fatalf("expected .history to be excluded from .playbook, found %q", slashed)
 		}
 		if strings.HasSuffix(slashed, ".playtxt") && f.Method != zip.Deflate {
 			_ = zr.Close()
@@ -732,7 +732,7 @@ func TestPackBookToZipStoreMediaAndZeroRAMRangeServing(t *testing.T) {
 	rec := httptest.NewRecorder()
 	ServeBookMedia(rec, req, b, "voice/s1.ogg")
 	if rec.Code != http.StatusPartialContent {
-		t.Fatalf("expected HTTP 206 Partial Content for Range request on .stbook media, got %d", rec.Code)
+		t.Fatalf("expected HTTP 206 Partial Content for Range request on .playbook media, got %d", rec.Code)
 	}
 	if rec.Header().Get("Cache-Control") != "private, max-age=3600" {
 		t.Fatalf("expected Cache-Control 'private, max-age=3600', got %q", rec.Header().Get("Cache-Control"))
@@ -742,7 +742,7 @@ func TestPackBookToZipStoreMediaAndZeroRAMRangeServing(t *testing.T) {
 	}
 
 	// Verify fallback serving for legacy zip.Deflate media entries
-	legacyZip := filepath.Join(dir, "legacy.stbook")
+	legacyZip := filepath.Join(dir, "legacy.playbook")
 	var legacyBuf bytes.Buffer
 	lzw := zip.NewWriter(&legacyBuf)
 	dw, _ := lzw.Create("book.playtxt")
@@ -775,7 +775,7 @@ func BenchmarkServePackedBookMediaRange(b *testing.B) {
 	oggPayload := append([]byte("OggS\x00\x02\x00\x00"), bytes.Repeat([]byte("B"), 64*1024)...)
 	_ = os.WriteFile(filepath.Join(bookDir, "voice", "s1.ogg"), oggPayload, 0644)
 
-	outZip := filepath.Join(dir, "benchbook.stbook")
+	outZip := filepath.Join(dir, "benchbook.playbook")
 	if err := PackBookToZip(bookDir, outZip); err != nil {
 		b.Fatalf("PackBookToZip failed: %v", err)
 	}
@@ -827,7 +827,7 @@ func TestSecurityZipBombSymlinkExportDirAndDotDirs(t *testing.T) {
 	dir := t.TempDir()
 
 	// 1. Zip bomb: entry count > MaxZipEntries must be rejected by ValidateBookZip, LoadBookFromZip, and UnpackBookZip
-	manyFilesZip := filepath.Join(dir, "many.stbook")
+	manyFilesZip := filepath.Join(dir, "many.playbook")
 	var manyBuf bytes.Buffer
 	mzw := zip.NewWriter(&manyBuf)
 	dw, _ := mzw.Create("story.playtxt")
@@ -892,7 +892,7 @@ func TestSecurityZipBombSymlinkExportDirAndDotDirs(t *testing.T) {
 		}
 
 		// PackBookToZip must not include the symlink target
-		packedPath := filepath.Join(dir, "packed.stbook")
+		packedPath := filepath.Join(dir, "packed.playbook")
 		if err := PackBookToZip(bookDir, packedPath); err != nil {
 			t.Fatalf("PackBookToZip failed: %v", err)
 		}
@@ -903,7 +903,7 @@ func TestSecurityZipBombSymlinkExportDirAndDotDirs(t *testing.T) {
 		for _, f := range zr.File {
 			if strings.Contains(f.Name, "leak.png") {
 				_ = zr.Close()
-				t.Fatalf("expected symlinked file leak.png to be excluded from packed .stbook")
+				t.Fatalf("expected symlinked file leak.png to be excluded from packed .playbook")
 			}
 		}
 		_ = zr.Close()

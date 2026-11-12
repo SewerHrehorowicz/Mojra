@@ -16,6 +16,10 @@ const (
 	DefaultScreenplayActName = "Akt I"
 	EditorStateFileName      = ".editor.cfg"
 	PlaytxtExt               = ".playtxt"
+	TargetEnd                = "END"
+	DefaultAudioDuration     = "0:00"
+	DefaultTrimStartStr      = "0.0000"
+	DefaultTrimEndStr        = "1.0000"
 
 	MaxZipTotalUncompressedBytes = 500 * 1024 * 1024
 	MaxZipSingleTextBytes        = 4 * 1024 * 1024
@@ -145,6 +149,23 @@ func (s Scene) ReferenceKey() string {
 		return name
 	}
 	return strings.TrimSpace(s.ID)
+}
+
+// ResolveChoiceNavigation resolves the destination scene ID and choice effects for choiceIdx.
+func (s *Scene) ResolveChoiceNavigation(choiceIdx int, fallbackTargetID, startSceneID string) (string, string) {
+	if s == nil || choiceIdx < 0 || choiceIdx >= len(s.Choices) {
+		return fallbackTargetID, ""
+	}
+	ch := s.Choices[choiceIdx]
+	targetID := fallbackTargetID
+	if ch.IsEnding || strings.EqualFold(ch.TargetSceneID, TargetEnd) || strings.EqualFold(ch.Target, TargetEnd) {
+		targetID = startSceneID
+	} else if ch.TargetSceneID != "" {
+		targetID = ch.TargetSceneID
+	} else if targetID == "" {
+		targetID = ch.Target
+	}
+	return targetID, ch.Effects
 }
 
 // NormalizedVoiceTrimValues normalizes [start, end] ratios to [0, 1].
@@ -636,6 +657,12 @@ func (b *Book) NormalizedStandard() string {
 	return NormalizeScriptStandard(b.ScriptStandard)
 }
 
+// IsNumberedStandard reports whether the screenplay standard numbers scene sluglines ("pl" or "eu").
+func IsNumberedStandard(raw string) bool {
+	norm := NormalizeScriptStandard(raw)
+	return norm == "pl" || norm == "eu"
+}
+
 // DefaultChapterNameForKind returns the default first chapter or act title.
 func DefaultChapterNameForKind(isScreenplay bool) string {
 	if isScreenplay {
@@ -655,6 +682,61 @@ func (b *Book) EffectiveLicense() string {
 		return strings.TrimSpace(b.License)
 	}
 	return "Wszelkie prawa zastrzeżone (All Rights Reserved)"
+}
+
+// FindScene finds a scene in the book by ID, ExplicitID, or normalized Name.
+func (b *Book) FindScene(sceneID string) *Scene {
+	if b == nil || sceneID == "" {
+		return nil
+	}
+	for _, sc := range b.Scenes {
+		if sc.ID == sceneID {
+			return sc
+		}
+	}
+	for _, sc := range b.Scenes {
+		if strings.EqualFold(sc.ID, sceneID) || (sc.ExplicitID != "" && strings.EqualFold(sc.ExplicitID, sceneID)) {
+			return sc
+		}
+	}
+	normKey := NormalizeLookupKey(sceneID)
+	for _, sc := range b.Scenes {
+		if sc.Name != "" && (strings.EqualFold(sc.Name, sceneID) || (normKey != "" && NormalizeLookupKey(sc.Name) == normKey)) {
+			return sc
+		}
+	}
+	return nil
+}
+
+// CurrentScene resolves the active scene in b for the given save state.
+func (b *Book) CurrentScene(save *SaveState) *Scene {
+	if b == nil || len(b.Scenes) == 0 {
+		return nil
+	}
+	if save != nil {
+		if sc := b.FindScene(save.CurrentSceneID); sc != nil {
+			return sc
+		}
+	}
+	if b.StartSceneID != "" {
+		if sc := b.FindScene(b.StartSceneID); sc != nil {
+			return sc
+		}
+	}
+	return b.Scenes[0]
+}
+
+// IsImageless reports whether the book enforces imageless mode (explicitly or as a screenplay).
+func (b *Book) IsImageless() bool {
+	return b != nil && (b.Imageless || b.IsScreenplay())
+}
+
+// IsEffectiveImageless reports whether imageless mode is active for this book and settings.
+func (b *Book) IsEffectiveImageless(settings *AppSettings) bool {
+	if b.IsImageless() {
+		return true
+	}
+	return settings != nil && settings.Imageless
 }
 
 type HistoryEntry struct {

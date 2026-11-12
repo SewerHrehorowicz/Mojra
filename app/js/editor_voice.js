@@ -12,6 +12,7 @@ const voiceAudioState = {
   endRatio: 1,
   playheadRatio: 0,
   isRecording: false,
+  isSaving: false,
   isNativeCapture: false,
   nativePollTimer: null,
   nativePollInFlight: false,
@@ -508,6 +509,9 @@ function stopVoicePlayback() {
   if (voiceAudioState.playbackAudio) {
     try {
       voiceAudioState.playbackAudio.pause();
+      voiceAudioState.playbackAudio.removeAttribute("src");
+      voiceAudioState.playbackAudio.removeAttribute("data-src");
+      voiceAudioState.playbackAudio.load();
     } catch (_) {}
   }
   voiceAudioState.isPlaying = false;
@@ -666,7 +670,7 @@ function startVoicePlaybackFromRatio(stripEl, ratio) {
 }
 
 async function startVoiceRecording(stripEl) {
-  if (voiceAudioState.isRecording) return;
+  if (voiceAudioState.isRecording || voiceAudioState.isSaving) return;
   stopVoicePlayback();
 
   const sceneId =
@@ -866,8 +870,8 @@ function handleNativeVoicePeakHeader(peakVal) {
   syncAllVoiceStrips();
 }
 
-function stopVoiceRecordingAndSave() {
-  if (!voiceAudioState.isRecording) return;
+async function stopVoiceRecordingAndSave() {
+  if (!voiceAudioState.isRecording || voiceAudioState.isSaving) return;
   const wasNative = voiceAudioState.isNativeCapture;
   voiceAudioState.isRecording = false;
   voiceAudioState.isNativeCapture = false;
@@ -891,22 +895,32 @@ function stopVoiceRecordingAndSave() {
           Number(androidBridge.getAudioSampleRate())) ||
         24000;
       if (b64 && voiceAudioState.sceneId) {
-        sendServerAction("SaveSceneVoiceRecording", {
-          scene: voiceAudioState.sceneId,
-          voice_section: voiceAudioState.voiceSection || "01",
-          pcm_b64: b64,
-          sample_rate: String(sr),
-          start_ratio: "0",
-          end_ratio: "1"
-        });
+        voiceAudioState.isSaving = true;
+        try {
+          await sendServerAction("SaveSceneVoiceRecording", {
+            scene: voiceAudioState.sceneId,
+            voice_section: voiceAudioState.voiceSection || "01",
+            pcm_b64: b64,
+            sample_rate: String(sr),
+            start_ratio: "0",
+            end_ratio: "1"
+          });
+        } finally {
+          voiceAudioState.isSaving = false;
+        }
       }
       return;
     }
     if (voiceAudioState.sceneId) {
-      sendServerAction("StopSceneVoiceCapture", {
-        scene: voiceAudioState.sceneId,
-        voice_section: voiceAudioState.voiceSection || "01"
-      });
+      voiceAudioState.isSaving = true;
+      try {
+        await sendServerAction("StopSceneVoiceCapture", {
+          scene: voiceAudioState.sceneId,
+          voice_section: voiceAudioState.voiceSection || "01"
+        });
+      } finally {
+        voiceAudioState.isSaving = false;
+      }
     }
     return;
   }
@@ -959,14 +973,19 @@ function stopVoiceRecordingAndSave() {
 
   const b64 = int16ArrayToLEBase64(merged, 0, 1);
   if (b64 && voiceAudioState.sceneId) {
-    sendServerAction("SaveSceneVoiceRecording", {
-      scene: voiceAudioState.sceneId,
-      voice_section: voiceAudioState.voiceSection || "01",
-      pcm_b64: b64,
-      sample_rate: String(sr),
-      start_ratio: "0",
-      end_ratio: "1"
-    });
+    voiceAudioState.isSaving = true;
+    try {
+      await sendServerAction("SaveSceneVoiceRecording", {
+        scene: voiceAudioState.sceneId,
+        voice_section: voiceAudioState.voiceSection || "01",
+        pcm_b64: b64,
+        sample_rate: String(sr),
+        start_ratio: "0",
+        end_ratio: "1"
+      });
+    } finally {
+      voiceAudioState.isSaving = false;
+    }
   }
 }
 
@@ -1106,6 +1125,7 @@ function bindVoiceRecorderEvents() {
     if (transportBtn) {
       e.preventDefault();
       e.stopPropagation();
+      if (voiceAudioState.isSaving) return;
       const stripEl = transportBtn.closest(".voice-rec-strip");
       if (!stripEl) return;
 

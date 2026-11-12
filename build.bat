@@ -137,6 +137,27 @@ if %ERRORLEVEL% NEQ 0 (
     exit /b %ERRORLEVEL%
 )
 
+if /I "%~1"=="--www" (
+    shift
+    go run ./cmd/www %1 %2 %3 %4 %5 %6 %7 %8 %9
+    exit /b %ERRORLEVEL%
+)
+if /I "%~1"=="www" (
+    shift
+    go run ./cmd/www %1 %2 %3 %4 %5 %6 %7 %8 %9
+    exit /b %ERRORLEVEL%
+)
+if /I "%~1"=="--deck" (
+    shift
+    go run ./cmd/deck %1 %2 %3 %4 %5 %6 %7 %8 %9
+    exit /b %ERRORLEVEL%
+)
+if /I "%~1"=="deck" (
+    shift
+    go run ./cmd/deck %1 %2 %3 %4 %5 %6 %7 %8 %9
+    exit /b %ERRORLEVEL%
+)
+
 go run ./cmd/mojra build %*
 exit /b %ERRORLEVEL%
 

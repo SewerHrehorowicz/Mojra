@@ -140,6 +140,12 @@ func hasLeadingDoctype(nodes []*Node) bool {
 	return len(nodes) > 0 && nodes[0].Kind == NodeDoctype
 }
 
+// TemplateChunk binds a template name to its strongly typed view data (struct or map).
+type TemplateChunk struct {
+	Template string
+	Data     any
+}
+
 // RenderTemplateTo streams a named template directly into w using a pooled buffer.
 func RenderTemplateTo(w io.Writer, tplName string, components map[string]*ParsedTemplate, ctx *RenderContext) error {
 	tpl, ok := components[tplName]
@@ -318,6 +324,38 @@ func renderNodesToBuffer(buf *bytes.Buffer, nodes []*Node, components map[string
 				}
 				continue
 			}
+			if subVal, exists := lookupRootVar(curCtx, n.Tag); exists && subVal != nil {
+				switch typed := subVal.(type) {
+				case TemplateChunk:
+					if typed.Template != "" {
+						if comp, ok := components[typed.Template]; ok && len(comp.Nodes) > 0 && sp+1 < len(stackBuf) {
+							sp++
+							stackBuf[sp] = renderStackFrame{
+								nodes:  comp.Nodes,
+								ctx:    curCtx.WithVar(".", typed.Data),
+								indent: curIndent,
+							}
+						}
+					}
+					continue
+				case []TemplateChunk:
+					for i := len(typed) - 1; i >= 0; i-- {
+						ch := typed[i]
+						if ch.Template == "" {
+							continue
+						}
+						if comp, ok := components[ch.Template]; ok && len(comp.Nodes) > 0 && sp+1 < len(stackBuf) {
+							sp++
+							stackBuf[sp] = renderStackFrame{
+								nodes:  comp.Nodes,
+								ctx:    curCtx.WithVar(".", ch.Data),
+								indent: curIndent,
+							}
+						}
+					}
+					continue
+				}
+			}
 			comp, ok := components[n.Tag]
 			if !ok || len(comp.Nodes) == 0 || sp+1 >= len(stackBuf) {
 				continue
@@ -327,6 +365,8 @@ func renderNodesToBuffer(buf *bytes.Buffer, nodes []*Node, components map[string
 				if subVal, exists := resolvePath(curCtx, n.ContextExpr); exists {
 					compCtx = curCtx.WithVar(".", subVal)
 				}
+			} else if subVal, exists := lookupRootVar(curCtx, n.Tag); exists && subVal != nil {
+				compCtx = curCtx.WithVar(".", subVal)
 			}
 			if len(n.Attrs) > 0 || len(n.Classes) > 0 || len(n.CondClasses) > 0 || n.ID != "" || len(n.Children) > 0 {
 				var propVars map[string]any
@@ -1370,7 +1410,7 @@ func lookupFieldOnVal(curr any, part string) (any, bool) {
 			}
 		}
 	}
-	return nil, false
+	return lookupStructField(curr, part)
 }
 
 func lookupRootVar(ctx *RenderContext, key string) (any, bool) {
@@ -1501,8 +1541,12 @@ func isTruthy(v any) bool {
 		return len(t) > 0
 	case []string:
 		return len(t) > 0
+	case TemplateChunk:
+		return t.Template != ""
+	case []TemplateChunk:
+		return len(t) > 0
 	}
-	return true
+	return isStructOrSliceTruthy(v)
 }
 
 func listLen(v any) int {
@@ -1514,7 +1558,7 @@ func listLen(v any) int {
 	case []string:
 		return len(t)
 	}
-	return 0
+	return reflectSliceLen(v)
 }
 
 func listItemAt(v any, i int) any {
@@ -1526,7 +1570,7 @@ func listItemAt(v any, i int) any {
 	case []string:
 		return t[i]
 	}
-	return nil
+	return reflectSliceItemAt(v, i)
 }
 
 func valToString(v any) string {

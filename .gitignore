@@ -3,6 +3,7 @@
 /mojra.exe
 /build/
 /dist/
+/logs/
 *.syso
 *.test
 *.out

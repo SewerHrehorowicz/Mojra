@@ -505,7 +505,7 @@ func writeVoiceFLACFileAtomically(b *Book, sceneID string, flacBytes []byte) (st
 		return "", fmt.Errorf("brak aktywnej książki")
 	}
 	if b.IsPacked {
-		return "", fmt.Errorf("nie można edytować spakowanego archiwum .stbook")
+		return "", fmt.Errorf("nie można edytować spakowanego archiwum .playbook")
 	}
 	if !b.Narrated {
 		return "", fmt.Errorf("książka nie posiada włączonej narracji (narrated: false)")
@@ -663,7 +663,7 @@ func DeleteSceneVoiceFile(b *Book, sc *Scene) error {
 		return fmt.Errorf("brak aktywnej sceny")
 	}
 	if b.IsPacked {
-		return fmt.Errorf("nie można edytować spakowanego archiwum .stbook")
+		return fmt.Errorf("nie można edytować spakowanego archiwum .playbook")
 	}
 	prevRel := SanitizeRelativeMediaPath(sc.ExplicitVoice)
 	if prevRel == "" {
@@ -776,7 +776,7 @@ func DeleteSceneVoiceSectionFile(b *Book, sc *Scene, sectionKey string) error {
 		return fmt.Errorf("brak aktywnej sceny")
 	}
 	if b.IsPacked {
-		return fmt.Errorf("nie można edytować spakowanego archiwum .stbook")
+		return fmt.Errorf("nie można edytować spakowanego archiwum .playbook")
 	}
 	if !HasConditionalVoiceDirectives(sc.Text) {
 		return DeleteSceneVoiceFile(b, sc)

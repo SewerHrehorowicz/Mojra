@@ -1,0 +1,153 @@
+:root
+  color-scheme: light dark
+  --bg-page: light-dark(#f4f2ec, #0e1013)
+  --bg-card: light-dark(#ffffff, #171a20)
+  --bg-leaf: light-dark(#ebe8df, #13161b)
+  --text-main: light-dark(#161616, #eceae4)
+  --text-muted: light-dark(#68655e, #8e9299)
+  --wire-color: light-dark(#b8b2a6, #343942)
+  --border-card: light-dark(#c6c0b4, #2e333d)
+  --accent-dir: light-dark(#8c5a08, #e3b341)
+  --accent-file: light-dark(#3b5bdb, #79c0ff)
+  --accent-struct: light-dark(#7048e8, #d2a8ff)
+  --accent-func: light-dark(#0c8599, #56d4dd)
+  --accent-out: light-dark(#1864ab, #58a6ff)
+  --accent-in: light-dark(#2b8a3e, #56d364)
+
+*
+  box-sizing: border-box
+  border-radius: 0
+
+body
+  margin: 0
+  padding: 24px
+  background: var(--bg-page)
+  color: var(--text-main)
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace
+  font-size: 12px
+  line-height: 1.4
+  overflow-x: auto
+
+.graph-header
+  padding-bottom: 14px
+  margin-bottom: 24px
+  border-bottom: 1px solid var(--border-card)
+
+.graph-title
+  margin: 0 0 4px 0
+  font-size: 16px
+  letter-spacing: 0.06em
+
+.graph-meta
+  color: var(--text-muted)
+  font-size: 11px
+
+.graph-canvas
+  display: flex
+  flex-direction: column
+  gap: 28px
+  min-width: max-content
+  padding-bottom: 48px
+
+.node-branch
+  position: relative
+  display: flex
+  align-items: flex-start
+
+.node-branch[open]
+  display: flex
+  align-items: flex-start
+
+.node-card
+  position: relative
+  list-style: none
+  cursor: pointer
+  user-select: none
+  background: var(--bg-card)
+  border: 1px solid var(--border-card)
+  padding: 6px 12px
+  white-space: nowrap
+  flex-shrink: 0
+
+.node-card::-webkit-details-marker
+  display: none
+
+.node-card:hover
+  border-color: var(--text-main)
+
+.dir-card
+  border-left: 3px solid var(--accent-dir)
+  font-weight: 700
+  font-size: 13px
+  min-width: 170px
+
+.file-card
+  border-left: 3px solid var(--accent-file)
+  font-weight: 600
+  min-width: 210px
+
+.sym-card
+  border-left: 3px solid var(--accent-func)
+  min-width: 260px
+
+.kind-struct, .kind-interface, .kind-type
+  border-left-color: var(--accent-struct)
+
+.kind-template, .kind-component
+  border-left-color: var(--accent-dir)
+
+.node-branch[open] > .node-card::after
+  content: ""
+  position: absolute
+  top: 50%
+  right: -24px
+  width: 24px
+  border-top: 1px solid var(--wire-color)
+
+.node-children
+  position: relative
+  display: flex
+  flex-direction: column
+  gap: 8px
+  margin-left: 24px
+  padding-left: 24px
+  border-left: 1px solid var(--wire-color)
+
+.node-children:empty
+  display: none
+
+.node-children > .node-branch::before, .node-children > .leaf-node::before
+  content: ""
+  position: absolute
+  top: 14px
+  left: -24px
+  width: 24px
+  border-top: 1px solid var(--wire-color)
+
+.leaf-node
+  position: relative
+  display: block
+  background: var(--bg-leaf)
+  border: 1px solid var(--border-card)
+  padding: 4px 10px
+  white-space: nowrap
+  text-decoration: none
+
+.sym-field
+  color: var(--text-muted)
+
+.edge-out
+  color: var(--accent-out)
+  border-left: 2px solid var(--accent-out)
+
+.edge-in
+  color: var(--accent-in)
+  border-left: 2px solid var(--accent-in)
+
+.edge-link:hover
+  background: var(--bg-card)
+  text-decoration: underline
+
+.tree-sym:target > .sym-card
+  outline: 2px solid var(--accent-out)
+  background: var(--bg-leaf)

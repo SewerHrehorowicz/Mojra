@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"mojra/internal/i18n"
 )
 
 var devOnlyBlockRe = regexp.MustCompile(`(?s)/\*\s*@dev-only-start\s*\*/.*?/\*\s*@dev-only-end\s*\*/[ \t]*\r?\n?|(?s)//\s*@dev-only-start\b.*?//\s*@dev-only-end\b[ \t]*\r?\n?`)
@@ -106,16 +108,7 @@ func BundleFilesToString(files []string, stripDev bool) (string, error) {
 	var sb strings.Builder
 	for _, f := range files {
 		if strings.HasSuffix(filepath.ToSlash(f), "js/core.js") {
-			sb.WriteString(BuildJSI18nHeader())
-			break
-		}
-	}
-	for _, f := range files {
-		if strings.HasSuffix(filepath.ToSlash(f), "js/editor_canvas.js") {
-			appDir := filepath.Dir(filepath.Dir(f))
-			if _, metricsJS, err := BuildStudioMSDFAtlas(appDir); err == nil && metricsJS != "" {
-				sb.WriteString(metricsJS)
-			}
+			sb.WriteString(i18n.BuildJSI18nHeader())
 			break
 		}
 	}
@@ -170,9 +163,23 @@ func bundleCSSPathsFromFS(fsys fs.FS, paths []string, stripDev bool) (string, er
 		if err != nil {
 			return "", fmt.Errorf("read %s: %w", slashPath, err)
 		}
-		if err := appendTranspiledCSSChunk(&sb, raw, slashPath, nil, switches, stripDev); err != nil {
+		src := string(raw)
+		if stripDev {
+			src = StripDevOnlyBlocks(src)
+		}
+		name := strings.TrimSuffix(strings.TrimSuffix(filepath.Base(slashPath), tssExt), cssExt)
+		rendered, err := transpileCSSWithSwitches(src, name, nil, switches, stripDev)
+		if err != nil {
 			return "", err
 		}
+		rendered = strings.TrimSpace(rendered)
+		if rendered == "" {
+			continue
+		}
+		if sb.Len() > 0 {
+			sb.WriteString("\n\n")
+		}
+		sb.WriteString(rendered)
 	}
 	if sb.Len() > 0 {
 		sb.WriteString("\n")
@@ -185,17 +192,12 @@ func BundleCSSFromFS(fsys fs.FS, stripDev bool) (string, error) {
 	return bundleCSSPathsFromFS(fsys, CSSModuleFiles("app"), stripDev)
 }
 
-func bundleJSPathsFromFS(fsys fs.FS, paths []string, stripDev bool, prependMSDF bool) (string, error) {
+func bundleJSPathsFromFS(fsys fs.FS, paths []string, stripDev bool) (string, error) {
 	if fsys == nil {
 		return "", fmt.Errorf("nil fs")
 	}
 	var sb strings.Builder
-	sb.WriteString(BuildJSI18nHeader())
-	if prependMSDF {
-		if _, metricsJS, err := BuildStudioMSDFAtlasFromFS(fsys); err == nil && metricsJS != "" {
-			sb.WriteString(metricsJS)
-		}
-	}
+	sb.WriteString(i18n.BuildJSI18nHeader())
 	for i, path := range paths {
 		slashPath := filepath.ToSlash(path)
 		raw, err := fs.ReadFile(fsys, slashPath)
@@ -207,9 +209,9 @@ func bundleJSPathsFromFS(fsys fs.FS, paths []string, stripDev bool, prependMSDF 
 	return sb.String(), nil
 }
 
-// BundleJSFromFS concatenates embedded app/js/*.js modules from fsys and prepends MSDF glyph metrics.
+// BundleJSFromFS concatenates embedded app/js/*.js modules from fsys.
 func BundleJSFromFS(fsys fs.FS, stripDev bool) (string, error) {
-	return bundleJSPathsFromFS(fsys, JSModuleFiles("app"), stripDev, true)
+	return bundleJSPathsFromFS(fsys, JSModuleFiles("app"), stripDev)
 }
 
 // BundlePlayerCSSFromFS transpiles and bundles player-only app/styles/*.tss modules from fsys.
@@ -219,7 +221,7 @@ func BundlePlayerCSSFromFS(fsys fs.FS, stripDev bool) (string, error) {
 
 // BundlePlayerJSFromFS concatenates player-only app/js/*.js modules from fsys.
 func BundlePlayerJSFromFS(fsys fs.FS, stripDev bool) (string, error) {
-	return bundleJSPathsFromFS(fsys, JSPlayerModuleFiles("app"), stripDev, false)
+	return bundleJSPathsFromFS(fsys, JSPlayerModuleFiles("app"), stripDev)
 }
 
 // CSSModuleFiles returns the ordered list of TSS stylesheet template files in appDir/styles (plus any appDir/components/*/*.tss).
@@ -269,6 +271,7 @@ func JSModuleFiles(appDir string) []string {
 		"core.js",
 		"audio.js",
 		"player.js",
+		"msdf_metrics.js",
 		"editor_webgl.js",
 		"editor_webgl_scene.js",
 		"editor_canvas.js",
@@ -327,7 +330,7 @@ func BuildApp(appDir string) error {
 	); err != nil {
 		return fmt.Errorf("js bundle error: %w", err)
 	}
-	if pngBytes, _, err := BuildStudioMSDFAtlas(appDir); err == nil && len(pngBytes) > 0 {
+	if pngBytes, err := os.ReadFile(filepath.Join(appDir, "studio-atlas.png")); err == nil && len(pngBytes) > 0 {
 		if err := os.WriteFile(filepath.Join(outDir, "studio-atlas.png"), pngBytes, 0644); err != nil {
 			return fmt.Errorf("write studio-atlas.png: %w", err)
 		}
@@ -389,87 +392,4 @@ func RenderWasmSplashPageHTML(title, author, description, coverSrc, bookID, imag
 	return sb.String()
 }
 
-// BuildWWW compiles the standalone website from rootDir/www/{index.tpl,style.tss,app.js}
-// using shared tokens/icons/fonts from rootDir/app into a self-contained static directory rootDir/dist/www/.
-func BuildWWW(rootDir string) error {
-	wwwDir := filepath.Join(rootDir, "www")
-	if _, err := os.Stat(filepath.Join(wwwDir, "index.tpl")); os.IsNotExist(err) {
-		return nil
-	}
-	appDir := filepath.Join(rootDir, "app")
-	outDir := filepath.Join(rootDir, "dist", "www")
-	if err := os.MkdirAll(filepath.Join(outDir, "fonts"), 0755); err != nil {
-		return fmt.Errorf("mkdir %s: %w", outDir, err)
-	}
-	templates, err := LoadTemplatesFromDir(wwwDir, nil)
-	if err != nil {
-		return fmt.Errorf("www tpl load error: %w", err)
-	}
-	if _, ok := templates["index"]; !ok {
-		return fmt.Errorf("missing index.tpl in %s", wwwDir)
-	}
-	financeCtx := LoadDeckFinanceContext(rootDir)
-	for name, tmpl := range templates {
-		htmlPath := filepath.Join(outDir, name+".html")
-		htmlStr := TranspileStaticHTMLWithContext(tmpl, templates, financeCtx)
-		relHTML := strings.ReplaceAll(htmlStr, `src="/app.js"`, `src="app.js"`)
-		if err := os.WriteFile(htmlPath, []byte(relHTML), 0644); err != nil {
-			return fmt.Errorf("write %s: %w", htmlPath, err)
-		}
-	}
-	styleCSSPath := filepath.Join(outDir, "style.css")
-	wwwCSSFiles := append([]string{}, CSSPlayerModuleFiles(appDir)...)
-	wwwCSSFiles = append(wwwCSSFiles, filepath.Join(wwwDir, "style.tss"))
-	if err := BundleCSSFiles(
-		wwwCSSFiles,
-		styleCSSPath,
-	); err != nil {
-		return fmt.Errorf("www css bundle error: %w", err)
-	}
-	if rawCSS, err := os.ReadFile(styleCSSPath); err == nil {
-		relCSS := strings.ReplaceAll(string(rawCSS), `url("/fonts/`, `url("fonts/`)
-		if err := os.WriteFile(styleCSSPath, []byte(relCSS), 0644); err != nil {
-			return err
-		}
-	}
-	var wwwJSFiles []string
-	wasmExecPath := filepath.Join(rootDir, "build", "wasm", "wasm_exec.js")
-	if _, err := os.Stat(wasmExecPath); err == nil {
-		wwwJSFiles = append(wwwJSFiles, wasmExecPath)
-	}
-	wwwJSFiles = append(wwwJSFiles, JSPlayerModuleFiles(appDir)...)
-	wwwJSFiles = append(wwwJSFiles, filepath.Join(wwwDir, "app.js"))
-	if err := BundleJSFiles(
-		wwwJSFiles,
-		filepath.Join(outDir, "app.js"),
-	); err != nil {
-		return fmt.Errorf("www js bundle error: %w", err)
-	}
-
-	if fontEntries, err := os.ReadDir(filepath.Join(appDir, "fonts")); err == nil {
-		for _, fe := range fontEntries {
-			if fe.IsDir() || !strings.HasSuffix(strings.ToLower(fe.Name()), ".ttf") {
-				continue
-			}
-			if raw, rErr := os.ReadFile(filepath.Join(appDir, "fonts", fe.Name())); rErr == nil {
-				if err := os.WriteFile(filepath.Join(outDir, "fonts", fe.Name()), raw, 0644); err != nil {
-					return err
-				}
-			}
-		}
-	}
-	for _, iconFile := range []string{"favicon.ico", "icon.png"} {
-		if raw, rErr := os.ReadFile(filepath.Join(appDir, "icons", iconFile)); rErr == nil {
-			if err := os.WriteFile(filepath.Join(outDir, iconFile), raw, 0644); err != nil {
-				return err
-			}
-		}
-	}
-	if rawCover, cErr := os.ReadFile(filepath.Join(rootDir, "books", "nie-boj-sie-policji-rzecznej", "images", "cover.jpg")); cErr == nil && len(rawCover) > 0 {
-		if err := os.WriteFile(filepath.Join(outDir, "cover.jpg"), rawCover, 0644); err != nil {
-			return err
-		}
-	}
-	return nil
-}
 

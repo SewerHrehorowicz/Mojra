@@ -4,7 +4,11 @@
 - **Jednokrotne indeksowanie przestrzeni roboczej (`workspaceIndex`)**: Wszystkie przebiegi (`Run`, `RunArch`, `RunMagic`) współdzielą pojedynczy odczyt i parsowanie plików `.go` (`go/ast`), `.tpl`, `.tss`, `.js` oraz `.svg` z katalogów `internal/`, `cmd/`, `app/` i `www/` bez wielokrotnego czytania dysku w każdej regule.
 - **Zero wpływu na ścieżkę wykonawczą aplikacji**: Analizator działa wyłącznie w `internal/audit/` podczas `go test ./internal/audit/...` oraz komendy CLI `mojra audit`, wykonując pełny przebieg w `< 50 ms` (weryfikowane przez `BenchmarkAuditRun`, `BenchmarkArchAuditRun`, `BenchmarkMagicAuditRun`).
 - **Ujednolicony model znaleziska (`Finding`)**:
-  - Rozszerzenie struktury `Finding` o pola `Severity` (`"ERROR"`, `"WARN"`, `"INFO"`), `Symbol` (nazwa funkcji, struktury, selektora lub komponentu) oraz `Score` (waga punktowa długu architektonicznego / magic stringów).
+  - Rozszerzenie struktury `Finding` o pola `Severity` (`"ERROR"`, `"WARNING"`, `"INFO"`), `Symbol` (nazwa funkcji, struktury, selektora lub komponentu) oraz `Score` (waga punktowa długu architektonicznego / magic stringów).
+- **Trzy dedykowane logi w `logs/`**:
+  - `logs/audit_static.log` (`--static`): twarda bramka analizy statycznej i kontraktów (zero tolerancji dla błędów).
+  - `logs/audit_arch.log` (`--arch`): doradczy audyt architektury i długu technicznego posortowany wg `Score`.
+  - `logs/audit_strings.log` (`--magic` / `--strings`): doradczy audyt magic stringów w ciałach funkcji/metod posortowany wg `Score`.
 
 ---
 
@@ -118,13 +122,18 @@ Każde znalezisko otrzymuje deterministyczny wynik `Score`, severity (`ERROR` dl
 
 ### 5.2. Rozszerzenie CLI (`cmd/mojra/main.go`) i `build.sh`
 - Nowe flagi w `mojra audit` oraz `./build.sh --audit`:
-  - `--arch` (lub `ST_AUDIT_ARCH=1`): uruchamia `audit.RunArch` i zapisuje raport do `build/audit-arch.log`.
-  - `--magic` (lub `ST_AUDIT_MAGIC=1`): uruchamia `audit.RunMagic` i zapisuje raport do `build/audit-magic.log`.
-  - `--tss` / `--css`, `--js`, `--go`, `--tpl`, `--category <KATEGORIA>`, `--strict` (lub `ST_AUDIT_STRICT=1`), `--out <ścieżka>`.
+  - `--static`: uruchamia wyłącznie analizę statyczną (`audit.Run`), zapisuje `logs/audit_static.log` i blokuje przy wykrytych problemach w trybie `--strict` / `ST_AUDIT_STRICT=1`.
+  - `--arch` (lub `ST_AUDIT_ARCH=1`): uruchamia `audit.RunArch` i zapisuje raport do `logs/audit_arch.log` (tryb doradczy).
+  - `--magic` / `--strings` (lub `ST_AUDIT_MAGIC=1`): uruchamia `audit.RunMagic` i zapisuje raport do `logs/audit_strings.log` (tryb doradczy).
+  - Brak flag trybu (`mojra audit`): uruchamia wszystkie 3 audyty i zapisuje wszystkie 3 pliki w `logs/`.
+  - `--tss` / `--css`, `--js`, `--go`, `--tpl`, `--category <KATEGORIA>`, `--severity <error|warning|info>`, `--strict` (lub `ST_AUDIT_STRICT=1`), `--out <ścieżka>`.
 
 ```sh
-# Audyt podstawowy + kontrakty:
+# Wszystkie 3 raporty (logs/audit_static.log, logs/audit_arch.log, logs/audit_strings.log):
 go run ./cmd/mojra audit
+
+# Wyłącznie twarda analiza statyczna:
+go run ./cmd/mojra audit --static --strict
 
 # Audyt architektury i długu technicznego (z rankingiem Top 10 plików):
 go run ./cmd/mojra audit --arch

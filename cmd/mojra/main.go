@@ -1,201 +1,325 @@
 package main
 
 import (
-	"archive/zip"
 	"bytes"
-	"encoding/binary"
 	"flag"
 	"fmt"
-	"image"
-	"image/color"
-	"image/png"
-	"io"
-	"math"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"time"
 
 	"mojra"
 	"mojra/internal/audit"
 	"mojra/internal/book"
-	"mojra/internal/gui"
-	"mojra/internal/tpl"
+	"mojra/internal/logging"
+	"mojra/internal/osbridge"
+	"mojra/internal/server"
 )
 
-// productionBuild is set to "true" via -ldflags="-X main.productionBuild=true" during production builds.
-var productionBuild string
+const (
+	flagTelemetryName     = "telemetry"
+	flagTelemetryDesc     = "Zapisuj pomiary czasu startu i przełączania widoków do saves/telemetry.log"
+	flagDashTelemetry     = "--telemetry"
+	flagShortTelemetry    = "-telemetry"
+	argTelemetry          = "telemetry"
+	ldflagTelemetryEnable = " -X mojra/internal/logging.buildEnabled=true"
 
-// previewBuild is set to "true" via -ldflags="-X main.previewBuild=true" during preview builds (--preview).
-var previewBuild string
+	cmdDefault     = "run"
+	cmdBuild       = "build"
+	cmdPack        = "pack"
+	cmdAdd         = "add"
+	cmdImport      = "import"
+	cmdAudit       = "audit"
+	cmdLint        = "lint"
+	goBuildMarker  = "/go-build"
+	goModFileName  = "go.mod"
+	booksDirName   = "books"
+	distDirName    = "dist"
+	appDirName     = "app"
+	iconsDirName   = "icons"
+	iconPNGFile    = "icon.png"
+	faviconICOFile = "favicon.ico"
+	resourcesDir   = "Resources"
+	parentDirRel   = ".."
+	currentDirRel  = "."
+	playbookExt    = ".playbook"
+	zipExt         = ".zip"
+	httpPrefix     = "http://"
+	httpsPrefix    = "https://"
+	boolTrueStr    = "true"
+	envOneStr      = "1"
+	envSTDev       = "ST_DEV"
+	envSTPreview   = "ST_PREVIEW"
+	envBetaKey     = "MOJRA_BETA_KEY"
 
-// betaExpiryRFC3339 and betaPubKeyHex can be injected via -ldflags during Closed Beta builds.
-var betaExpiryRFC3339 string
-var betaPubKeyHex string
+	flagRunPortName     = "port"
+	flagRunPortDesc     = "Port lokalny i sieciowy LAN"
+	flagRunHeadlessName = "headless"
+	flagRunHeadlessDesc = "Uruchom bez otwierania natywnego okna (tryb testowy/serwerowy)"
+	flagRunDevName      = "dev"
+	flagRunDevDesc      = "Uruchom w trybie deweloperskim (z paskiem podglądu urządzeń)"
+	flagRunPreviewName  = "preview"
+	flagRunPreviewDesc  = "Uruchom z paskiem podglądu urządzeń (Telefon / Tablet / Desktop)"
+	flagRunProdName     = "prod"
+	flagRunProdDesc     = "Wymuś tryb produkcyjny (bez narzędzi deweloperskich)"
+
+	flagAuditStaticName   = "static"
+	flagAuditStaticDesc   = "Uruchom wyłącznie twardą analizę statyczną (-> logs/audit_static.log)"
+	flagAuditArchName     = "arch"
+	flagAuditArchDesc     = "Uruchom doradczy audyt architektury i długu technicznego (-> logs/audit_arch.log)"
+	flagAuditMagicName    = "magic"
+	flagAuditMagicDesc    = "Uruchom doradczy audyt magic stringów w metodach (-> logs/audit_strings.log)"
+	flagAuditStringsName  = "strings"
+	flagAuditStringsDesc  = "Alias dla --magic (-> logs/audit_strings.log)"
+	flagAuditCategoryName = "category"
+	flagAuditCategoryDesc = "Filtruj po kategorii (np. DEAD_CODE, ARCH_*, MAGIC_*)"
+	flagAuditSeverityName = "severity"
+	flagAuditSeverityDesc = "Filtruj po ważności: error, warning, info"
+	flagAuditLangName     = "lang"
+	flagAuditLangDesc     = "Filtruj po języku: js, go, tpl, tss"
+	flagAuditJSName       = "js"
+	flagAuditJSDesc       = "Skanuj i wyświetl wyłącznie wyniki dla plików JavaScript (app/js/*.js)"
+	flagAuditGoName       = "go"
+	flagAuditGoDesc       = "Skanuj i wyświetl wyłącznie wyniki dla plików Go (*.go)"
+	flagAuditTplName      = "tpl"
+	flagAuditTplDesc      = "Skanuj i wyświetl wyłącznie wyniki dla szablonów (*.tpl / *.tss)"
+	flagAuditTSSName      = "tss"
+	flagAuditTSSDesc      = "Skanuj i wyświetl wyłącznie wyniki dla arkuszy stylów (*.tss / *.css)"
+	flagAuditOutName      = "out"
+	flagAuditOutDesc      = "Opcjonalna ścieżka zapisu raportu do pliku"
+	flagAuditStrictName   = "strict"
+	flagAuditStrictDesc   = "Zwróć kod wyjścia 1 jeśli wykryto problemy w analizie statycznej"
+
+	langJS  = "js"
+	langGo  = "go"
+	langTpl = "tpl"
+	langTSS = "tss"
+
+	auditStaticLogFile  = "audit_static.log"
+	auditArchLogFile    = "audit_arch.log"
+	auditStringsLogFile = "audit_strings.log"
+
+	usageHeader  = "Mojra — Interaktywny Czytnik & Playbook Studio\n\nUżycie / Usage:"
+	usageLineFmt = "  mojra %s\n      %s"
+	pipeSep      = " | "
+
+	msgUnknownCommand   = "Nieznana komenda: %s\n\n"
+	msgBetaAuthErr      = "Błąd autoryzacji buildu Closed Beta: %v\n"
+	msgLaunchErr        = "Błąd uruchomienia Mojra: %v\n"
+	msgPackMissingArg   = "Podaj identyfikator książki, np.: mojra pack <book-id>"
+	msgPackErr          = "Błąd pakowania .playbook: %v\n"
+	msgPackSaved        = "✓ Spakowano książkę do archiwum: %s\n"
+	msgAddMissingArg    = "Podaj ścieżkę na dysku lub adres URL, np.: mojra add /ścieżka/do/książki lub mojra add https://example.com/ksiazka.playbook"
+	msgAddDownloadErr   = "Błąd pobierania książki z URL (%s): %v\n"
+	msgSaveSettingsErr  = "Błąd zapisu ustawień: %v\n"
+	msgAddDownloaded    = "✓ Pobrano i dodano książkę do biblioteki: %s (%s)\n"
+	msgAddDiskErr       = "Błąd dodawania książki z dysku (%s): %v\n"
+	msgAddDiskSuccess   = "✓ Dodano książkę z dysku (bez kopiowania): %s -> %s\n"
+	msgAuditStaticErr   = "Błąd audytu statycznego: %v\n"
+	msgAuditStaticSaved = "\n✓ Zapisano raport statyczny: %s\n"
+	msgAuditArchErr     = "Błąd audytu architektury: %v\n"
+	msgAuditArchSaved   = "✓ Zapisano raport architektury: %s\n"
+	msgAuditMagicErr    = "Błąd audytu magic stringów: %v\n"
+	msgAuditMagicSaved  = "✓ Zapisano raport magic stringów: %s\n"
+)
+
+type cliCommandDef struct {
+	names          []string
+	argHint        string
+	desc           string
+	bundlePlatform string
+	isRun          bool
+	forceDev       bool
+}
+
+var (
+	// productionBuild is set to "true" via -ldflags="-X main.productionBuild=true" during production builds.
+	productionBuild string
+
+	// previewBuild is set to "true" via -ldflags="-X main.previewBuild=true" during preview builds (--preview).
+	previewBuild string
+
+	// betaExpiryRFC3339 and betaPubKeyHex can be injected via -ldflags during Closed Beta builds.
+	betaExpiryRFC3339 string
+	betaPubKeyHex     string
+
+	cliCommandDefs = []cliCommandDef{
+		{
+			names:   []string{cmdDefault, "start", "gui"},
+			argHint: "[--port 8484] [--headless]",
+			desc:    "Uruchamia samodzielną aplikację okienkową (natywne okno systemowe).",
+			isRun:   true,
+		},
+		{
+			names:    []string{flagRunDevName, flagRunPreviewName},
+			isRun:    true,
+			forceDev: true,
+		},
+		{
+			names:   []string{cmdBuild},
+			argHint: "[opcje] [platformy...]",
+			desc:    "Kompiluje szablony .tpl -> app/index.html, łączy CSS i JS oraz buduje pliki wykonywalne i paczki dystrybucyjne.",
+		},
+		{
+			names:          []string{"bundle-all", "bundle"},
+			desc:           "Buduje binaria oraz paczki dystrybucyjne dla wszystkich platform (macOS, Windows, Linux).",
+			bundlePlatform: specAll,
+		},
+		{
+			names:          []string{"bundle-app", "bundle-macos"},
+			desc:           "Tworzy gotową paczkę aplikacji natywnej (dist/Mojra.app oraz dist/Mojra-macos.zip).",
+			bundlePlatform: osDarwin,
+		},
+		{
+			names:          []string{"bundle-windows"},
+			desc:           "Buduje samodzielną paczkę wykonywalną dla systemu Windows (dist/Mojra-windows/ + .zip).",
+			bundlePlatform: osWindows,
+		},
+		{
+			names:          []string{"bundle-linux"},
+			desc:           "Buduje samodzielną paczkę wykonywalną dla systemu Linux (dist/Mojra-linux/ + .zip).",
+			bundlePlatform: osLinux,
+		},
+		{
+			names:          []string{"bundle-android"},
+			desc:           "Buduje podpisany pakiet instalacyjny Android APK (dist/Mojra-android.apk) z binariami arm64/amd64.",
+			bundlePlatform: osAndroid,
+		},
+		{
+			names:   []string{cmdPack},
+			argHint: "<id-książki>",
+			desc:    "Pakuje folder książki z katalogu books/<id> do archiwum dist/<id>.playbook.",
+		},
+		{
+			names:   []string{cmdAdd, cmdImport},
+			argHint: "<ścieżka-na-dysku | url>",
+			desc:    "Dodaje książkę do biblioteki z dysku (bez kopiowania plików) lub pobiera z adresu URL (.playbook / .zip).",
+		},
+		{
+			names:   []string{cmdAudit, cmdLint},
+			argHint: "[--js | --go | --tpl | --lang <język>] [--category <kategoria>] [--out <plik.log>] [--strict]",
+			desc:    "Uruchamia statyczny audyt kodu Go, szablonów .tpl i skryptów .js.",
+		},
+	}
+
+	helpSubcommands = map[string]bool{
+		"help":   true,
+		"-h":     true,
+		"--help": true,
+	}
+
+	auditLangAliases = map[string]string{
+		"js":         langJS,
+		"javascript": langJS,
+		"go":         langGo,
+		"golang":     langGo,
+		"tpl":        langTpl,
+		"tss":        langTSS,
+		"css":        langTSS,
+	}
+
+	auditSevAliases = map[string]bool{
+		"error":   true,
+		"warning": true,
+		"warn":    true,
+		"info":    true,
+	}
+)
+
+func formatCLIUsage() string {
+	lines := make([]string, 0, len(cliCommandDefs)+1)
+	lines = append(lines, usageHeader)
+	for _, def := range cliCommandDefs {
+		if def.desc == "" {
+			continue
+		}
+		synopsis := strings.Join(def.names, pipeSep)
+		if def.argHint != "" {
+			synopsis += " " + def.argHint
+		}
+		lines = append(lines, fmt.Sprintf(usageLineFmt, synopsis, def.desc))
+	}
+	return strings.Join(lines, "\n\n")
+}
+
+func findCLICommandDef(cmd string) (cliCommandDef, bool) {
+	for _, def := range cliCommandDefs {
+		for _, name := range def.names {
+			if name == cmd {
+				return def, true
+			}
+		}
+	}
+	return cliCommandDef{}, false
+}
 
 func isGoRunBinary() bool {
 	exe, err := os.Executable()
 	if err != nil {
 		return false
 	}
-	return strings.Contains(filepath.ToSlash(exe), "/go-build")
+	return strings.Contains(filepath.ToSlash(exe), goBuildMarker)
 }
 
 func main() {
-	cmd := "run"
+	cmd := cmdDefault
 	args := os.Args[1:]
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 		cmd = strings.ToLower(strings.TrimSpace(args[0]))
 		args = args[1:]
 	}
 
-	switch cmd {
-	case "run", "start", "gui":
-		runCmd(args, false)
-	case "dev", "preview":
-		runCmd(args, true)
-	case "build":
-		buildCmd(args)
-	case "bundle", "bundle-all":
-		buildCmd(append([]string{"--all"}, args...))
-	case "bundle-app", "bundle-macos":
-		bundleMacOSCmd(args)
-	case "bundle-windows":
-		bundleWindowsCmd(args)
-	case "bundle-linux":
-		bundleLinuxCmd(args)
-	case "bundle-android":
-		bundleAndroidCmd(args)
-	case "www", "build-www":
-		buildCmd(append([]string{"--www"}, args...))
-	case "deck", "build-deck", "deck-pdf":
-		buildCmd(append([]string{"--deck"}, args...))
-	case "pack":
-		packCmd(args)
-	case "add", "import":
-		addCmd(args)
-	case "audit", "lint":
-		auditCmd(args)
-	case "help", "-h", "--help":
-		printUsage()
-	default:
-		fmt.Fprintf(os.Stderr, "Nieznana komenda: %s\n\n", cmd)
-		printUsage()
-		os.Exit(1)
+	if helpSubcommands[cmd] {
+		fmt.Println(formatCLIUsage())
+		return
 	}
-}
+	if def, ok := findCLICommandDef(cmd); ok {
+		if def.isRun {
+			runCmd(args, def.forceDev)
+			return
+		}
+		if def.bundlePlatform != "" {
+			buildCmd(append([]string{def.bundlePlatform}, args...))
+			return
+		}
+		switch def.names[0] {
+		case cmdBuild:
+			buildCmd(args)
+		case cmdPack:
+			packCmd(args)
+		case cmdAdd:
+			addCmd(args)
+		case cmdAudit:
+			auditCmd(args)
+		}
+		return
+	}
 
-func printUsage() {
-	fmt.Println(`Mojra — Interaktywny Czytnik & Playbook Studio
-
-Użycie / Usage:
-  mojra [run] [--port 8484] [--headless]
-      Uruchamia samodzielną aplikację okienkową (natywne okno systemowe).
-
-  mojra build [opcje] [platformy...]
-      Kompiluje szablony .tpl -> app/index.html, łączy CSS i JS oraz buduje
-      pliki wykonywalne i paczki dystrybucyjne dla wybranych lub wszystkich platform.
-      Uruchom 'mojra build --help' lub './build.sh --help' po pełną listę flag.
-
-  mojra bundle-all
-      Buduje binaria oraz paczki dystrybucyjne dla wszystkich platform (macOS, Windows, Linux).
-
-  mojra bundle-app | bundle-macos
-      Tworzy gotową paczkę aplikacji natywnej (dist/Mojra.app oraz dist/Mojra-macos.zip)
-      wraz z binariami dla macOS (arm64/amd64) i przykładową książką.
-
-  mojra bundle-windows
-      Buduje samodzielną paczkę wykonywalną dla systemu Windows (dist/Mojra-windows/ + .zip).
-
-  mojra bundle-linux
-      Buduje samodzielną paczkę wykonywalną dla systemu Linux (dist/Mojra-linux/ + .zip).
-
-  mojra bundle-android
-      Buduje podpisany pakiet instalacyjny Android APK (dist/Mojra-android.apk) z binariami arm64/amd64.
-
-  mojra pack <id-książki>
-      Pakuje folder książki z katalogu books/<id> do archiwum dist/<id>.playbook.
-
-  mojra add <ścieżka-na-dysku | url>
-      Dodaje książkę do biblioteki z dysku (bez kopiowania plików) lub pobiera z adresu URL (.playbook / .zip).
-
-  mojra deck [-o <plik.pdf>]
-      Kompiluje szablon www/deck.tpl (jasny motyw) i eksportuje deck finansowy PDF (dist/www/mojra-deck-finansowy.pdf).
-
-  mojra audit [--js | --go | --tpl | --lang <język>] [--category <kategoria>] [--out <plik.log>] [--strict]
-      Uruchamia statyczny audyt kodu Go, szablonów .tpl i skryptów .js.`)
-}
-
-func printBuildUsage() {
-	fmt.Println(`Mojra — Wieloplatformowy System Budowania (Multi-Platform Builder)
-
-Użycie / Usage:
-  ./build.sh [opcje] [platformy...]
-  build.bat [opcje] [platformy...]
-  go run ./cmd/mojra build [opcje] [platformy...]
-
-Platformy (Platforms):
-  -a, --all                  Buduj dla wszystkich platform: macOS, Windows, Linux (domyślne)
-  -m, --macos, --darwin      Buduj dla systemu macOS (.app, .zip oraz binaria arm64/amd64)
-  -w, --windows, --win       Buduj dla systemu Windows (.exe z ikoną, .zip, amd64/arm64)
-  -l, --linux                Buduj dla systemu Linux (binarium, .desktop, ikona .png, .zip)
-      --android, --apk       Buduj pakiet instalacyjny Android APK (dist/Mojra-android.apk, arm64/amd64)
-      --local, --host        Buduj wyłącznie pojedyncze binarium dla bieżącego systemu i architektury
-  -p, --platform <lista>     Lista platform lub celów os/arch oddzielona przecinkami
-                             (np. macos,windows lub darwin/arm64,windows/amd64,linux/amd64)
-
-Architektura i wyjście (Architecture & Output):
-      --arch <arch>          Docelowa architektura: amd64 (x64), arm64 lub all (domyślnie: all)
-  -o, --output <ścieżka>     Ścieżka wynikowego pliku wykonywalnego (dla pojedynczego binarium)
-      --preview              Buduj z aktywnym podglądem urządzeń (Telefon / Tablet / Desktop)
-      --binaries-only        Buduj wyłącznie pliki wykonywalne (pomiń paczki .app / .zip)
-      --no-zip               Alias dla --binaries-only
-      --assets-only          Kompiluj tylko szablony .tpl, CSS/JS oraz przykładową książkę
-      --chaos [opcje]        Uruchom inżynierię chaosu UI, crawler DOM i wygeneruj raport (./build.sh --chaos --help)
-  -y, --yes                  Automatycznie zaakceptuj instalację brakujących zależności w build.sh / build.bat
-  -h, --help, /?             Wyświetl tę pomoc i zakończ (Show this help message)
-
-Argumenty pozycyjne (Positional arguments):
-  Możesz również podać nazwy platform bezpośrednio jako argumenty:
-  all, macos, darwin, windows, win, linux, darwin/arm64, darwin/amd64,
-  windows/amd64, windows/arm64, linux/amd64, linux/arm64
-
-Przykłady (Examples):
-  ./build.sh                                    # Buduje wszystko (macOS, Windows, Linux — amd64 + arm64)
-  build.bat                                     # Buduje wszystko na Windowsie
-  ./build.sh --macos                            # Tylko macOS (.app + binaria + .zip)
-  build.bat --windows --linux                   # Windows oraz Linux
-  ./build.sh windows linux                      # Windows oraz Linux (argumenty pozycyjne)
-  ./build.sh -p windows/amd64,linux/amd64       # Wybrane kombinacje system/architektura
-  ./build.sh --all --arch amd64                 # Wszystkie platformy tylko dla x86_64 (amd64)
-  ./build.sh --binaries-only --linux            # Same pliki binarne dla Linuxa bez archiwum ZIP
-  ./build.sh --help                             # Wyświetla pomoc`)
+	fmt.Fprintf(os.Stderr, msgUnknownCommand, cmd)
+	fmt.Println(formatCLIUsage())
+	os.Exit(1)
 }
 
 func isRepoDir(dir string) bool {
 	if dir == "" {
 		return false
 	}
-	info, err := os.Stat(filepath.Join(dir, "go.mod"))
+	info, err := os.Stat(filepath.Join(dir, goModFileName))
 	return err == nil && !info.IsDir()
 }
 
-func resolveDistRuntimeDir(repoDir string) string {
+func resolveDistRuntimeDir(_ string) string {
 	runtimeDir := book.DefaultAppDataDir()
-	runtimeBooks := filepath.Join(runtimeDir, "books")
+	runtimeBooks := filepath.Join(runtimeDir, booksDirName)
 	_ = os.MkdirAll(runtimeBooks, 0755)
-	if repoDir != "" {
-		_ = packageBooksForDist(filepath.Join(repoDir, "books"), runtimeBooks)
-	}
 	return runtimeDir
 }
 
 func resolveRepoRootDir() string {
 	cwd, err := os.Getwd()
 	if err != nil {
-		cwd = "."
+		cwd = currentDirRel
 	}
 	if isRepoDir(cwd) {
 		return cwd
@@ -205,7 +329,7 @@ func resolveRepoRootDir() string {
 		if isRepoDir(exeDir) {
 			return exeDir
 		}
-		parentDir := filepath.Clean(filepath.Join(exeDir, ".."))
+		parentDir := filepath.Clean(filepath.Join(exeDir, parentDirRel))
 		if isRepoDir(parentDir) {
 			return parentDir
 		}
@@ -216,30 +340,30 @@ func resolveRepoRootDir() string {
 func resolveRootDir() string {
 	cwd, err := os.Getwd()
 	if err != nil {
-		cwd = "."
+		cwd = currentDirRel
 	}
 	if !isGoRunBinary() {
 		if exe, err := os.Executable(); err == nil {
 			exeDir := filepath.Dir(exe)
-			bundleRepoCandidate := filepath.Clean(filepath.Join(exeDir, "..", "..", "..", ".."))
+			bundleRepoCandidate := filepath.Clean(filepath.Join(exeDir, parentDirRel, parentDirRel, parentDirRel, parentDirRel))
 			if isRepoDir(bundleRepoCandidate) {
 				return resolveDistRuntimeDir(bundleRepoCandidate)
 			}
-			resDir := filepath.Clean(filepath.Join(exeDir, "..", "Resources"))
-			if info, err := os.Stat(filepath.Join(resDir, "books")); err == nil && info.IsDir() {
+			resDir := filepath.Clean(filepath.Join(exeDir, parentDirRel, resourcesDir))
+			if info, err := os.Stat(filepath.Join(resDir, booksDirName)); err == nil && info.IsDir() {
 				return resDir
 			}
 			if isRepoDir(exeDir) {
 				return resolveDistRuntimeDir(exeDir)
 			}
-			parentDir := filepath.Clean(filepath.Join(exeDir, ".."))
+			parentDir := filepath.Clean(filepath.Join(exeDir, parentDirRel))
 			if isRepoDir(parentDir) {
 				return resolveDistRuntimeDir(parentDir)
 			}
-			if info, err := os.Stat(filepath.Join(exeDir, "books")); err == nil && info.IsDir() {
+			if info, err := os.Stat(filepath.Join(exeDir, booksDirName)); err == nil && info.IsDir() {
 				return exeDir
 			}
-			if info, err := os.Stat(filepath.Join(parentDir, "books")); err == nil && info.IsDir() {
+			if info, err := os.Stat(filepath.Join(parentDir, booksDirName)); err == nil && info.IsDir() {
 				return parentDir
 			}
 		}
@@ -251,2545 +375,59 @@ func resolveRootDir() string {
 }
 
 func runCmd(args []string, forceDev bool) {
-	fs := flag.NewFlagSet("run", flag.ExitOnError)
-	port := fs.Int("port", 8484, "Port lokalny i sieciowy LAN")
-	headless := fs.Bool("headless", false, "Uruchom bez otwierania natywnego okna (tryb testowy/serwerowy)")
-	devFlag := fs.Bool("dev", false, "Uruchom w trybie deweloperskim (z paskiem podglądu urządzeń)")
-	previewFlag := fs.Bool("preview", false, "Uruchom z paskiem podglądu urządzeń (Telefon / Tablet / Desktop)")
-	prodFlag := fs.Bool("prod", false, "Wymuś tryb produkcyjny (bez narzędzi deweloperskich)")
+	t0 := time.Now()
+	fs := flag.NewFlagSet(cmdDefault, flag.ExitOnError)
+	port := fs.Int(flagRunPortName, 8484, flagRunPortDesc)
+	headless := fs.Bool(flagRunHeadlessName, false, flagRunHeadlessDesc)
+	devFlag := fs.Bool(flagRunDevName, false, flagRunDevDesc)
+	previewFlag := fs.Bool(flagRunPreviewName, false, flagRunPreviewDesc)
+	prodFlag := fs.Bool(flagRunProdName, false, flagRunProdDesc)
+	telemetryFlag := fs.Bool(flagTelemetryName, false, flagTelemetryDesc)
 	_ = fs.Parse(args)
 
 	devMode := false
 	if !*prodFlag {
-		if forceDev || *devFlag || *previewFlag || os.Getenv("ST_DEV") == "1" || os.Getenv("ST_PREVIEW") == "1" || previewBuild == "true" || (productionBuild != "true" && isGoRunBinary()) {
+		if forceDev || *devFlag || *previewFlag || os.Getenv(envSTDev) == envOneStr || os.Getenv(envSTPreview) == envOneStr || previewBuild == boolTrueStr || (productionBuild != boolTrueStr && isGoRunBinary()) {
 			devMode = true
 		}
 	}
 
 	rootDir := resolveRootDir()
-	if err := book.CheckBetaBuildExpiry(betaExpiryRFC3339, os.Getenv("MOJRA_BETA_KEY"), betaPubKeyHex, time.Time{}); err != nil {
-		fmt.Fprintf(os.Stderr, "Błąd autoryzacji buildu Closed Beta: %v\n", err)
+	logging.Init(book.ResolveSavesDir(rootDir), t0, *telemetryFlag)
+	logging.Active.MarkStep(logging.StageResolveRoot, t0, rootDir)
+	if err := book.CheckBetaBuildExpiry(betaExpiryRFC3339, os.Getenv(envBetaKey), betaPubKeyHex, time.Time{}); err != nil {
+		fmt.Fprintf(os.Stderr, msgBetaAuthErr, err)
 		os.Exit(1)
 	}
-	if err := gui.LaunchWithOptions(rootDir, mojra.AppFS, *port, *headless, devMode); err != nil {
-		fmt.Fprintf(os.Stderr, "Błąd uruchomienia Mojra: %v\n", err)
+	srv := server.NewServerWithOptions(rootDir, mojra.AppFS, devMode)
+	if err := osbridge.LaunchWithOptions(rootDir, *port, *headless, devMode, srv.Handler(), srv.State.Config.ShutdownCh, srv.State.Config.TriggerShutdown, func(p int) { srv.State.Config.Port = p }); err != nil {
+		fmt.Fprintf(os.Stderr, msgLaunchErr, err)
 		os.Exit(1)
 	}
-}
-
-type platformTarget struct {
-	OS   string // "darwin", "windows", "linux"
-	Arch string // "amd64", "arm64"
-}
-
-type buildOptions struct {
-	ShowHelp     bool
-	AssetsOnly   bool
-	WWWOnly      bool
-	DeckOnly     bool
-	BinariesOnly bool
-	Preview      bool
-	OutPath      string
-	Platforms    []string         // ordered unique OS list: "darwin", "windows", "linux"
-	Targets      []platformTarget // ordered unique (OS, Arch) pairs
-	SingleLocal  bool             // true when no platform args were provided
-}
-
-func normalizePlatformName(raw string) ([]string, error) {
-	switch strings.ToLower(strings.TrimSpace(raw)) {
-	case "all", "*":
-		return []string{"darwin", "windows", "linux"}, nil
-	case "macos", "darwin", "mac", "osx":
-		return []string{"darwin"}, nil
-	case "windows", "win", "win64", "win32":
-		return []string{"windows"}, nil
-	case "linux", "gnu/linux":
-		return []string{"linux"}, nil
-	case "android", "apk":
-		return []string{"android"}, nil
-	default:
-		return nil, fmt.Errorf("nieznana platforma %q (dostępne: all, macos/darwin, windows, linux, android)", raw)
-	}
-}
-
-func normalizeArchName(raw string) ([]string, error) {
-	switch strings.ToLower(strings.TrimSpace(raw)) {
-	case "all", "*":
-		return []string{"amd64", "arm64"}, nil
-	case "amd64", "x86_64", "x64":
-		return []string{"amd64"}, nil
-	case "arm64", "aarch64":
-		return []string{"arm64"}, nil
-	default:
-		return nil, fmt.Errorf("nieznana architektura %q (dostępne: all, amd64, arm64)", raw)
-	}
-}
-
-func parseBuildArgs(args []string) (buildOptions, error) {
-	opts := buildOptions{}
-	var rawPlatformSpecs []string
-	var rawArchSpecs []string
-
-	for i := 0; i < len(args); i++ {
-		arg := strings.TrimSpace(args[i])
-		if arg == "" {
-			continue
-		}
-
-		// Handle --key=value syntax
-		var key, val string
-		hasEq := false
-		if strings.HasPrefix(arg, "-") {
-			if eqIdx := strings.IndexByte(arg, '='); eqIdx >= 0 {
-				key = arg[:eqIdx]
-				val = arg[eqIdx+1:]
-				hasEq = true
-			} else {
-				key = arg
-			}
-		}
-
-		nextVal := func(flagName string) (string, error) {
-			if hasEq {
-				if strings.TrimSpace(val) == "" {
-					return "", fmt.Errorf("flaga %s wymaga wartości", flagName)
-				}
-				return val, nil
-			}
-			if i+1 >= len(args) {
-				return "", fmt.Errorf("flaga %s wymaga wartości", flagName)
-			}
-			i++
-			return args[i], nil
-		}
-
-		switch key {
-		case "-h", "--help":
-			opts.ShowHelp = true
-		case "--local", "-local", "--host", "-host":
-			opts.SingleLocal = true
-		case "-a", "--all":
-			rawPlatformSpecs = append(rawPlatformSpecs, "all")
-		case "-m", "--macos", "--darwin", "--mac", "--osx":
-			rawPlatformSpecs = append(rawPlatformSpecs, "darwin")
-		case "-w", "--windows", "--win":
-			rawPlatformSpecs = append(rawPlatformSpecs, "windows")
-		case "-l", "--linux":
-			rawPlatformSpecs = append(rawPlatformSpecs, "linux")
-		case "--android", "-android", "--apk":
-			rawPlatformSpecs = append(rawPlatformSpecs, "android")
-			opts.BinariesOnly = false
-		case "-p", "--platform", "--platforms", "-platform", "-platforms":
-			v, err := nextVal(key)
-			if err != nil {
-				return opts, err
-			}
-			for _, part := range strings.Split(v, ",") {
-				if p := strings.TrimSpace(part); p != "" {
-					rawPlatformSpecs = append(rawPlatformSpecs, p)
-				}
-			}
-		case "--arch", "-arch", "--architecture":
-			v, err := nextVal(key)
-			if err != nil {
-				return opts, err
-			}
-			for _, part := range strings.Split(v, ",") {
-				if a := strings.TrimSpace(part); a != "" {
-					rawArchSpecs = append(rawArchSpecs, a)
-				}
-			}
-		case "-o", "--output", "-output":
-			v, err := nextVal(key)
-			if err != nil {
-				return opts, err
-			}
-			opts.OutPath = v
-		case "--assets-only", "-assets-only":
-			opts.AssetsOnly = true
-		case "--www", "-www":
-			opts.WWWOnly = true
-		case "--deck", "-deck", "--deck-pdf", "-deck-pdf":
-			opts.DeckOnly = true
-		case "--preview", "-preview", "--dev", "-dev":
-			opts.Preview = true
-		case "--binaries-only", "-binaries-only", "--no-zip", "-no-zip", "--no-bundle", "-no-bundle":
-			opts.BinariesOnly = true
-		case "--no-pause", "-no-pause", "-y", "--yes", "-yes":
-			// Ignored flags used by build wrapper scripts (build.bat / build.sh)
-		default:
-			if strings.HasPrefix(arg, "-") {
-				return opts, fmt.Errorf("nieznana flaga: %s (użyj --help aby wyświetlić dostępne opcje)", arg)
-			}
-			if strings.EqualFold(arg, "help") || arg == "/?" || strings.EqualFold(arg, "/h") || strings.EqualFold(arg, "/help") {
-				opts.ShowHelp = true
-				continue
-			}
-			if strings.EqualFold(arg, "preview") || strings.EqualFold(arg, "dev") {
-				opts.Preview = true
-				continue
-			}
-			if strings.EqualFold(arg, "deck") || strings.EqualFold(arg, "deck-pdf") {
-				opts.DeckOnly = true
-				continue
-			}
-			if strings.EqualFold(arg, "www") {
-				opts.WWWOnly = true
-				continue
-			}
-			for _, part := range strings.Split(arg, ",") {
-				if p := strings.TrimSpace(part); p != "" {
-					rawPlatformSpecs = append(rawPlatformSpecs, p)
-				}
-			}
-		}
-	}
-
-	if opts.ShowHelp || opts.AssetsOnly || opts.WWWOnly || opts.DeckOnly || opts.SingleLocal {
-		return opts, nil
-	}
-
-	// Resolve global arch filter (default: amd64 + arm64)
-	defaultArchs := []string{"amd64", "arm64"}
-	var selectedArchs []string
-	seenArch := map[string]bool{}
-	if len(rawArchSpecs) > 0 {
-		for _, spec := range rawArchSpecs {
-			archs, err := normalizeArchName(spec)
-			if err != nil {
-				return opts, err
-			}
-			for _, a := range archs {
-				if !seenArch[a] {
-					seenArch[a] = true
-					selectedArchs = append(selectedArchs, a)
-				}
-			}
-		}
-	} else {
-		selectedArchs = defaultArchs
-	}
-
-	if len(rawPlatformSpecs) == 0 {
-		if opts.OutPath != "" && len(rawArchSpecs) == 0 {
-			opts.SingleLocal = true
-			return opts, nil
-		}
-		// Default to building all platforms when no platform argument was provided
-		rawPlatformSpecs = []string{"all"}
-	}
-
-	seenPlatform := map[string]bool{}
-	seenTarget := map[string]bool{}
-	addTarget := func(osName, archName string) {
-		if !seenPlatform[osName] {
-			seenPlatform[osName] = true
-			opts.Platforms = append(opts.Platforms, osName)
-		}
-		key := osName + "/" + archName
-		if !seenTarget[key] {
-			seenTarget[key] = true
-			opts.Targets = append(opts.Targets, platformTarget{OS: osName, Arch: archName})
-		}
-	}
-
-	for _, spec := range rawPlatformSpecs {
-		if slashIdx := strings.IndexByte(spec, '/'); slashIdx >= 0 {
-			osPart := spec[:slashIdx]
-			archPart := spec[slashIdx+1:]
-			osList, err := normalizePlatformName(osPart)
-			if err != nil {
-				return opts, err
-			}
-			archList, err := normalizeArchName(archPart)
-			if err != nil {
-				return opts, err
-			}
-			for _, o := range osList {
-				for _, a := range archList {
-					addTarget(o, a)
-				}
-			}
-			continue
-		}
-
-		osList, err := normalizePlatformName(spec)
-		if err != nil {
-			return opts, err
-		}
-		for _, o := range osList {
-			// On macOS, list arm64 first then amd64 if both are selected
-			archsForOS := selectedArchs
-			if o == "darwin" && len(selectedArchs) == 2 && selectedArchs[0] == "amd64" && selectedArchs[1] == "arm64" && len(rawArchSpecs) == 0 {
-				archsForOS = []string{"arm64", "amd64"}
-			}
-			for _, a := range archsForOS {
-				addTarget(o, a)
-			}
-		}
-	}
-
-	return opts, nil
-}
-
-func prepareBuildAssets(rootDir string) error {
-	appDir := filepath.Join(rootDir, "app")
-	booksDir := filepath.Join(rootDir, "books")
-
-	if err := writeWindowsAppIconICO(filepath.Join(appDir, "icons", "favicon.ico")); err != nil {
-		return fmt.Errorf("błąd generowania favicon.ico: %w", err)
-	}
-	if png256, err := encodeIconPNG(256); err == nil {
-		if err := os.WriteFile(filepath.Join(appDir, "icons", "icon.png"), png256, 0644); err != nil {
-			return fmt.Errorf("błąd generowania icon.png: %w", err)
-		}
-	}
-	if err := tpl.BuildApp(appDir); err != nil {
-		return fmt.Errorf("błąd kompilacji .tpl/CSS/JS: %w", err)
-	}
-	baseWasm, _, err := book.BuildBaseWasmAssets(rootDir)
-	if err != nil {
-		return fmt.Errorf("błąd kompilacji mojra.wasm: %w", err)
-	}
-	if err := tpl.BuildWWW(rootDir); err != nil {
-		return fmt.Errorf("błąd kompilacji strony WWW: %w", err)
-	}
-	if err := book.EmbedDemoBookIntoWWW(rootDir, baseWasm); err != nil {
-		return fmt.Errorf("błąd osadzania STBC w dist/www/mojra.wasm: %w", err)
-	}
-	if entries, rErr := os.ReadDir(booksDir); rErr == nil {
-		for _, e := range entries {
-			if !e.IsDir() || strings.HasPrefix(e.Name(), ".") {
-				continue
-			}
-			sampleID := e.Name()
-			sampleBookDir := filepath.Join(booksDir, sampleID)
-			if !book.HasBookFilesInDir(sampleBookDir) {
-				continue
-			}
-			_ = os.Remove(filepath.Join(booksDir, sampleID+".playbook"))
-			_ = os.Remove(filepath.Join(booksDir, sampleID+".stbook"))
-			fmt.Printf("✓ Zweryfikowano przykładową książkę -> books/%s/\n", sampleID)
-			break
-		}
-	}
-	fmt.Println("✓ Skompilowano app/templates/*.tpl -> build/app/index.html")
-	fmt.Println("✓ Połączono arkusze CSS -> build/app/style.css")
-	fmt.Println("✓ Połączono moduły JS -> build/app/app.js")
-	fmt.Println("✓ Skompilowano bazowy runtime WASM -> build/wasm/mojra.wasm")
-	fmt.Println("✓ Zbudowano statyczną stronę WWW z zaszytym STBC w mojra.wasm -> dist/www/")
-	if tpl.FindHeadlessPDFBrowser() != "" {
-		if pdfPath, pdfErr := tpl.BuildDeckPDF(rootDir, ""); pdfErr == nil {
-			fmt.Printf("✓ Wygenerowano deck finansowy PDF -> %s\n", pdfPath)
-		}
-	}
-	return nil
-}
-
-// packageBooksForDist packs unpacked source book directories from srcBooksDir into .stbook archives
-// inside dstBooksDir so built bundles only ship read-only .stbook packages and never copy raw source folders.
-func packageBooksForDist(srcBooksDir, dstBooksDir string) error {
-	if err := os.MkdirAll(dstBooksDir, 0755); err != nil {
-		return err
-	}
-	entries, err := os.ReadDir(srcBooksDir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return err
-	}
-	packedIDs := make(map[string]bool)
-	for _, e := range entries {
-		if !e.IsDir() || strings.HasPrefix(e.Name(), ".") {
-			continue
-		}
-		dirPath := filepath.Join(srcBooksDir, e.Name())
-		if !book.HasBookFilesInDir(dirPath) {
-			continue
-		}
-		bookID := book.SanitizeBookID(e.Name())
-		_ = os.RemoveAll(filepath.Join(dstBooksDir, e.Name()))
-		outZip := filepath.Join(dstBooksDir, bookID+".stbook")
-		if err := book.PackBookToZip(dirPath, outZip); err != nil {
-			return err
-		}
-		packedIDs[bookID] = true
-	}
-	for _, e := range entries {
-		if e.IsDir() || strings.HasPrefix(e.Name(), ".") {
-			continue
-		}
-		lower := strings.ToLower(e.Name())
-		if !strings.HasSuffix(lower, ".playbook") && !strings.HasSuffix(lower, ".stbook") && !strings.HasSuffix(lower, ".zip") {
-			continue
-		}
-		stem := strings.TrimSuffix(e.Name(), filepath.Ext(e.Name()))
-		bookID := book.SanitizeBookID(stem)
-		if packedIDs[bookID] {
-			continue
-		}
-		if err := copyFileWithMode(filepath.Join(srcBooksDir, e.Name()), filepath.Join(dstBooksDir, e.Name()), 0644); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func platformBinaryFilename(target platformTarget) string {
-	switch target.OS {
-	case "darwin":
-		return fmt.Sprintf("Mojra-macos-%s", target.Arch)
-	case "windows":
-		return fmt.Sprintf("Mojra-windows-%s.exe", target.Arch)
-	case "linux":
-		return fmt.Sprintf("Mojra-linux-%s", target.Arch)
-	case "android":
-		return fmt.Sprintf("Mojra-android-%s", target.Arch)
-	default:
-		return fmt.Sprintf("Mojra-%s-%s", target.OS, target.Arch)
-	}
-}
-
-func buildPlatformBinary(rootDir string, target platformTarget, outPath string, preview ...bool) error {
-	_ = os.MkdirAll(filepath.Dir(outPath), 0755)
-	isPreview := len(preview) > 0 && preview[0]
-	modeFlags := "-X main.productionBuild=true"
-	if isPreview {
-		modeFlags = "-X main.productionBuild=true -X main.previewBuild=true"
-	}
-
-	switch target.OS {
-	case "windows":
-		// Clean up any stale .syso files before writing the target architecture .syso
-		if matches, err := filepath.Glob(filepath.Join(rootDir, "cmd", "mojra", "rsrc_windows_*.syso")); err == nil {
-			for _, m := range matches {
-				_ = os.Remove(m)
-			}
-		}
-		sysoPath := filepath.Join(rootDir, "cmd", "mojra", fmt.Sprintf("rsrc_windows_%s.syso", target.Arch))
-		if err := writeWindowsResourceSYSOForArch(sysoPath, target.Arch); err != nil {
-			return fmt.Errorf("błąd generowania zasobów PE (.syso) dla windows/%s: %w", target.Arch, err)
-		}
-		defer func() {
-			_ = os.Remove(sysoPath)
-		}()
-
-		cmd := exec.Command("go", "build", "-tags=prod_embed", "-trimpath", "-ldflags=-s -w -H=windowsgui "+modeFlags, "-o", outPath, "./cmd/mojra")
-		cmd.Dir = rootDir
-		cmd.Env = append(os.Environ(), "GOOS=windows", "GOARCH="+target.Arch, "CGO_ENABLED=0")
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("błąd kompilacji windows/%s: %w", target.Arch, err)
-		}
-		return nil
-
-	case "darwin":
-		// On macOS host, prefer CGO_ENABLED=1 so native Cocoa/WKWebView window support is compiled in.
-		if runtime.GOOS == "darwin" {
-			cmd := exec.Command("go", "build", "-tags=prod_embed", "-trimpath", "-ldflags=-s -w "+modeFlags, "-o", outPath, "./cmd/mojra")
-			cmd.Dir = rootDir
-			cmd.Env = append(os.Environ(), "GOOS=darwin", "GOARCH="+target.Arch, "CGO_ENABLED=1")
-			var stderr bytes.Buffer
-			cmd.Stdout = os.Stdout
-			cmd.Stderr = &stderr
-			if err := cmd.Run(); err == nil {
-				return nil
-			}
-		}
-		cmd := exec.Command("go", "build", "-tags=prod_embed", "-trimpath", "-ldflags=-s -w "+modeFlags, "-o", outPath, "./cmd/mojra")
-		cmd.Dir = rootDir
-		cmd.Env = append(os.Environ(), "GOOS=darwin", "GOARCH="+target.Arch, "CGO_ENABLED=0")
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("błąd kompilacji darwin/%s: %w", target.Arch, err)
-		}
-		return nil
-
-	case "android":
-		ndkClang, err := findAndroidNDKClang(target.Arch)
-		if err != nil {
-			return err
-		}
-		cmd := exec.Command("go", "build", "-tags=prod_embed", "-trimpath", "-ldflags=-s -w "+modeFlags, "-o", outPath, "./cmd/mojra")
-		cmd.Dir = rootDir
-		cmd.Env = append(os.Environ(),
-			"GOOS=android",
-			"GOARCH="+target.Arch,
-			"CGO_ENABLED=1",
-			"CC="+ndkClang,
-			"CGO_LDFLAGS=-Wl,-z,max-page-size=16384",
-		)
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("błąd kompilacji android/%s: %w", target.Arch, err)
-		}
-		return nil
-
-	default: // linux and others
-		cmd := exec.Command("go", "build", "-tags=prod_embed", "-trimpath", "-ldflags=-s -w "+modeFlags, "-o", outPath, "./cmd/mojra")
-		cmd.Dir = rootDir
-		cmd.Env = append(os.Environ(), "GOOS="+target.OS, "GOARCH="+target.Arch, "CGO_ENABLED=0")
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("błąd kompilacji %s/%s: %w", target.OS, target.Arch, err)
-		}
-		return nil
-	}
-}
-
-func buildCmd(args []string) {
-	opts, err := parseBuildArgs(args)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Błąd argumentów: %v\n\n", err)
-		printBuildUsage()
-		os.Exit(1)
-	}
-	if opts.ShowHelp {
-		printBuildUsage()
-		return
-	}
-
-	rootDir := resolveRepoRootDir()
-	fmt.Println("==================================================================")
-	fmt.Println("  Mojra — Wieloplatformowy System Budowania")
-	fmt.Println("==================================================================")
-
-	if opts.WWWOnly || opts.DeckOnly {
-		appDir := filepath.Join(rootDir, "app")
-		_ = writeWindowsAppIconICO(filepath.Join(appDir, "icons", "favicon.ico"))
-		if png256, err := encodeIconPNG(256); err == nil {
-			if wErr := os.WriteFile(filepath.Join(appDir, "icons", "icon.png"), png256, 0644); wErr != nil {
-				fmt.Fprintf(os.Stderr, "błąd zapisu icon.png: %v\n", wErr)
-				os.Exit(1)
-			}
-		}
-		if opts.WWWOnly {
-			baseWasm, _, wasmErr := book.BuildBaseWasmAssets(rootDir)
-			if wasmErr != nil {
-				fmt.Fprintf(os.Stderr, "błąd kompilacji mojra.wasm: %v\n", wasmErr)
-				os.Exit(1)
-			}
-			if err := tpl.BuildWWW(rootDir); err != nil {
-				fmt.Fprintf(os.Stderr, "błąd kompilacji strony WWW: %v\n", err)
-				os.Exit(1)
-			}
-			if err := book.EmbedDemoBookIntoWWW(rootDir, baseWasm); err != nil {
-				fmt.Fprintf(os.Stderr, "błąd osadzania STBC w dist/www/mojra.wasm: %v\n", err)
-				os.Exit(1)
-			}
-			fmt.Println("✓ Zbudowano statyczną stronę WWW -> dist/www/")
-		} else {
-			if err := tpl.BuildWWW(rootDir); err != nil {
-				fmt.Fprintf(os.Stderr, "błąd kompilacji szablonu decku: %v\n", err)
-				os.Exit(1)
-			}
-			_ = book.EmbedDemoBookIntoWWW(rootDir, nil)
-		}
-		if opts.DeckOnly || tpl.FindHeadlessPDFBrowser() != "" {
-			pdfPath, err := tpl.BuildDeckPDF(rootDir, opts.OutPath)
-			if err != nil {
-				if opts.DeckOnly {
-					fmt.Fprintf(os.Stderr, "błąd generowania decku PDF: %v\n", err)
-					os.Exit(1)
-				}
-			} else {
-				fmt.Printf("✓ Wygenerowano deck finansowy PDF (jasny motyw) -> %s\n", pdfPath)
-			}
-		}
-		return
-	}
-
-	if err := prepareBuildAssets(rootDir); err != nil {
-		fmt.Fprintf(os.Stderr, "%v\n", err)
-		os.Exit(1)
-	}
-
-	if opts.AssetsOnly {
-		return
-	}
-
-	// Single local binary build when invoked with --local / --host or -o <path>
-	if opts.SingleLocal {
-		targetOS := runtime.GOOS
-		if envOS := os.Getenv("GOOS"); envOS != "" {
-			targetOS = envOS
-		}
-		targetArch := runtime.GOARCH
-		if envArch := os.Getenv("GOARCH"); envArch != "" {
-			targetArch = envArch
-		}
-		targetBin := opts.OutPath
-		if targetBin == "" {
-			targetBin = "mojra"
-			if targetOS == "windows" {
-				targetBin = "mojra.exe"
-			}
-		}
-		if !filepath.IsAbs(targetBin) {
-			targetBin = filepath.Join(rootDir, targetBin)
-		}
-		if err := buildPlatformBinary(rootDir, platformTarget{OS: targetOS, Arch: targetArch}, targetBin, opts.Preview); err != nil {
-			fmt.Fprintf(os.Stderr, "Błąd budowania pliku wykonywalnego: %v\n", err)
-			os.Exit(1)
-		}
-		fmt.Printf("✓ Zbudowano samodzielną aplikację (%s/%s): %s\n", targetOS, targetArch, targetBin)
-		return
-	}
-
-	distDir := filepath.Join(rootDir, "dist")
-	_ = os.MkdirAll(distDir, 0755)
-	for _, stale := range []string{
-		"Mojra.app",
-		"Mojra-macos.zip",
-		"Mojra-windows",
-		"Mojra-windows.zip",
-		"Mojra-linux",
-		"Mojra-linux.zip",
-		"Mojra-macos-arm64",
-		"Mojra-macos-amd64",
-		"books",
-		"saves",
-	} {
-		_ = os.RemoveAll(filepath.Join(distDir, stale))
-	}
-	if legacyMatches, err := filepath.Glob(filepath.Join(distDir, "StoryTeller-*")); err == nil {
-		for _, m := range legacyMatches {
-			_ = os.RemoveAll(m)
-		}
-	}
-
-	builtByOS := map[string]map[string]string{}
-	for _, target := range opts.Targets {
-		outPath := filepath.Join(distDir, platformBinaryFilename(target))
-		if len(opts.Targets) == 1 && opts.OutPath != "" {
-			if filepath.IsAbs(opts.OutPath) {
-				outPath = opts.OutPath
-			} else {
-				outPath = filepath.Join(rootDir, opts.OutPath)
-			}
-		}
-		if err := buildPlatformBinary(rootDir, target, outPath, opts.Preview); err != nil {
-			fmt.Fprintf(os.Stderr, "%v\n", err)
-			os.Exit(1)
-		}
-		if target.OS == "darwin" {
-			adhocSignMacOSPath(outPath)
-		}
-		if builtByOS[target.OS] == nil {
-			builtByOS[target.OS] = map[string]string{}
-		}
-		builtByOS[target.OS][target.Arch] = outPath
-		fmt.Printf("✓ Zbudowano binarium [%s/%s]: %s\n", target.OS, target.Arch, outPath)
-	}
-
-	if hostMap := builtByOS[runtime.GOOS]; hostMap != nil {
-		if hostBin := hostMap[runtime.GOARCH]; hostBin != "" {
-			rootBinName := "mojra"
-			if runtime.GOOS == "windows" {
-				rootBinName = "Mojra.exe"
-			}
-			rootBin := filepath.Join(rootDir, rootBinName)
-			_ = copyFileWithMode(hostBin, rootBin, 0755)
-			if runtime.GOOS == "darwin" {
-				adhocSignMacOSPath(rootBin)
-			}
-		}
-	}
-
-	for _, p := range opts.Platforms {
-		if p == "android" {
-			opts.BinariesOnly = false
-		}
-	}
-	if !opts.BinariesOnly {
-		for _, osName := range opts.Platforms {
-			archMap := builtByOS[osName]
-			switch osName {
-			case "darwin":
-				if err := packageMacOSBundle(rootDir, archMap); err != nil {
-					fmt.Fprintf(os.Stderr, "Błąd tworzenia paczki macOS: %v\n", err)
-					os.Exit(1)
-				}
-			case "windows":
-				if err := packageWindowsBundle(rootDir, archMap); err != nil {
-					fmt.Fprintf(os.Stderr, "Błąd tworzenia paczki Windows: %v\n", err)
-					os.Exit(1)
-				}
-			case "linux":
-				if err := packageLinuxBundle(rootDir, archMap); err != nil {
-					fmt.Fprintf(os.Stderr, "Błąd tworzenia paczki Linux: %v\n", err)
-					os.Exit(1)
-				}
-			case "android":
-				if err := packageAndroidBundle(rootDir, archMap); err != nil {
-					fmt.Fprintf(os.Stderr, "Błąd tworzenia paczki Android (.apk): %v\n", err)
-					os.Exit(1)
-				}
-			}
-		}
-	}
-
-	fmt.Println("==================================================================")
-	fmt.Printf("  Budowanie zakończone pomyślnie! Artefakty: %s\n", distDir)
-	fmt.Println("==================================================================")
-}
-
-func copyFileWithMode(src, dst string, mode os.FileMode) error {
-	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
-		return err
-	}
-	in, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer in.Close()
-
-	// Remove the destination file first (or write via temp + rename) so macOS kernel
-	// allocates a fresh inode and does not kill the binary due to cached vnode code-signing hashes.
-	_ = os.Remove(dst)
-	tmpDst := dst + ".tmp"
-	_ = os.Remove(tmpDst)
-	out, err := os.OpenFile(tmpDst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
-	if err != nil {
-		return err
-	}
-	if _, err := io.Copy(out, in); err != nil {
-		_ = out.Close()
-		_ = os.Remove(tmpDst)
-		return err
-	}
-	if err := out.Close(); err != nil {
-		_ = os.Remove(tmpDst)
-		return err
-	}
-	return os.Rename(tmpDst, dst)
-}
-
-func adhocSignMacOSPath(targetPath string) {
-	if runtime.GOOS != "darwin" {
-		return
-	}
-	if codesignPath, err := exec.LookPath("codesign"); err == nil && codesignPath != "" {
-		entitlementsXML := `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-	<key>com.apple.security.device.audio-input</key>
-	<true/>
-</dict>
-</plist>
-`
-		tmpEnt, tmpErr := os.CreateTemp("", "mojra-entitlements-*.plist")
-		if tmpErr == nil {
-			entPath := tmpEnt.Name()
-			_, _ = tmpEnt.WriteString(entitlementsXML)
-			_ = tmpEnt.Close()
-			defer os.Remove(entPath)
-			_ = exec.Command(codesignPath, "--force", "--sign", "-", "--entitlements", entPath, targetPath).Run()
-			return
-		}
-		_ = exec.Command(codesignPath, "--force", "--sign", "-", targetPath).Run()
-	}
-}
-
-func packageMacOSBundle(rootDir string, archBins map[string]string) error {
-	bundleRoot := filepath.Join(rootDir, "dist", "Mojra.app")
-	contentsDir := filepath.Join(bundleRoot, "Contents")
-	macOSDir := filepath.Join(contentsDir, "MacOS")
-	resourcesDir := filepath.Join(contentsDir, "Resources")
-
-	_ = os.RemoveAll(bundleRoot)
-	_ = os.MkdirAll(macOSDir, 0755)
-	_ = os.MkdirAll(resourcesDir, 0755)
-
-	binPath := filepath.Join(macOSDir, "Mojra")
-	arm64Bin := archBins["arm64"]
-	amd64Bin := archBins["amd64"]
-
-	chosen := archBins[runtime.GOARCH]
-	if chosen == "" {
-		if arm64Bin != "" {
-			chosen = arm64Bin
-		} else {
-			chosen = amd64Bin
-		}
-	}
-	if chosen == "" {
-		if err := buildPlatformBinary(rootDir, platformTarget{OS: "darwin", Arch: "arm64"}, binPath); err != nil {
-			return err
-		}
-	} else {
-		if err := copyFileWithMode(chosen, binPath, 0755); err != nil {
-			return err
-		}
-	}
-
-	// Keep ./mojra in the project root updated when building on macOS
-	if runtime.GOOS == "darwin" {
-		hostBin := archBins[runtime.GOARCH]
-		if hostBin == "" {
-			hostBin = binPath
-		}
-		rootBin := filepath.Join(rootDir, "mojra")
-		_ = copyFileWithMode(hostBin, rootBin, 0755)
-		adhocSignMacOSPath(rootBin)
-	}
-
-	infoPlist := `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-	<key>CFBundleName</key>
-	<string>Mojra</string>
-	<key>CFBundleDisplayName</key>
-	<string>Mojra</string>
-	<key>CFBundleIdentifier</key>
-	<string>pl.mojra.app</string>
-	<key>CFBundleVersion</key>
-	<string>1.0.0</string>
-	<key>CFBundlePackageType</key>
-	<string>APPL</string>
-	<key>CFBundleExecutable</key>
-	<string>Mojra</string>
-	<key>CFBundleIconFile</key>
-	<string>AppIcon</string>
-	<key>NSHighResolutionCapable</key>
-	<true/>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>Mojra potrzebuje dostępu do mikrofonu, aby nagrywać ścieżki lektorskie scen.</string>
-</dict>
-</plist>
-`
-	if err := os.WriteFile(filepath.Join(contentsDir, "Info.plist"), []byte(infoPlist), 0644); err != nil {
-		return err
-	}
-	if err := writeMacOSAppIconICNS(filepath.Join(resourcesDir, "AppIcon.icns")); err != nil {
-		return err
-	}
-	if err := packageBooksForDist(filepath.Join(rootDir, "books"), filepath.Join(resourcesDir, "books")); err != nil {
-		return err
-	}
-	adhocSignMacOSPath(binPath)
-	adhocSignMacOSPath(bundleRoot)
-
-	zipPath := filepath.Join(rootDir, "dist", "Mojra-macos.zip")
-	if err := zipDirRecursive(bundleRoot, zipPath, "Mojra.app"); err != nil {
-		return err
-	}
-
-	fmt.Printf("✓ Utworzono natywną aplikację macOS: %s\n", bundleRoot)
-	fmt.Printf("✓ Utworzono archiwum dystrybucyjne macOS: %s\n", zipPath)
-	return nil
-}
-
-func packageWindowsBundle(rootDir string, archBins map[string]string) error {
-	booksDir := filepath.Join(rootDir, "books")
-	outDir := filepath.Join(rootDir, "dist", "Mojra-windows")
-	_ = os.RemoveAll(outDir)
-	_ = os.MkdirAll(outDir, 0755)
-
-	icoPath := filepath.Join(outDir, "Mojra.ico")
-	if err := writeWindowsAppIconICO(icoPath); err != nil {
-		return fmt.Errorf("błąd generowania ikony Windows (.ico): %w", err)
-	}
-
-	exePath := filepath.Join(outDir, "Mojra.exe")
-	primaryBin := archBins["amd64"]
-	if primaryBin == "" {
-		primaryBin = archBins["arm64"]
-	}
-	if primaryBin != "" {
-		if err := copyFileWithMode(primaryBin, exePath, 0755); err != nil {
-			return err
-		}
-	} else {
-		if err := buildPlatformBinary(rootDir, platformTarget{OS: "windows", Arch: "amd64"}, exePath); err != nil {
-			return err
-		}
-	}
-
-	if runtime.GOOS == "windows" {
-		_ = copyFileWithMode(exePath, filepath.Join(rootDir, "Mojra.exe"), 0755)
-		_ = copyFileWithMode(icoPath, filepath.Join(rootDir, "Mojra.ico"), 0644)
-	}
-
-	if err := packageBooksForDist(booksDir, filepath.Join(outDir, "books")); err != nil {
-		return err
-	}
-
-	launcherBat := "@echo off\r\ncd /d \"%~dp0\"\r\nstart \"\" \"%~dp0Mojra.exe\"\r\n"
-	if err := os.WriteFile(filepath.Join(outDir, "Uruchom Mojra.bat"), []byte(launcherBat), 0644); err != nil {
-		return err
-	}
-
-	zipPath := filepath.Join(rootDir, "dist", "Mojra-windows.zip")
-	if err := zipDirRecursive(outDir, zipPath, "Mojra-windows"); err != nil {
-		return fmt.Errorf("błąd tworzenia archiwum ZIP dla Windows: %w", err)
-	}
-
-	fmt.Printf("✓ Utworzono aplikację Windows z ikoną: %s\n", exePath)
-	fmt.Printf("✓ Utworzono ikonę aplikacji Windows: %s\n", icoPath)
-	fmt.Printf("✓ Utworzono archiwum dystrybucyjne Windows: %s\n", zipPath)
-	return nil
-}
-
-func writeLinuxAppIconPNG(outPath string) error {
-	pngData, err := encodeIconPNG(512)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(outPath, pngData, 0644)
-}
-
-func packageLinuxBundle(rootDir string, archBins map[string]string) error {
-	booksDir := filepath.Join(rootDir, "books")
-	outDir := filepath.Join(rootDir, "dist", "Mojra-linux")
-	_ = os.RemoveAll(outDir)
-	_ = os.MkdirAll(outDir, 0755)
-
-	iconPath := filepath.Join(outDir, "Mojra.png")
-	if err := writeLinuxAppIconPNG(iconPath); err != nil {
-		return fmt.Errorf("błąd generowania ikony Linux (.png): %w", err)
-	}
-
-	binPath := filepath.Join(outDir, "mojra")
-	primaryBin := archBins["amd64"]
-	if primaryBin == "" {
-		primaryBin = archBins["arm64"]
-	}
-	if primaryBin != "" {
-		if err := copyFileWithMode(primaryBin, binPath, 0755); err != nil {
-			return err
-		}
-	} else {
-		if err := buildPlatformBinary(rootDir, platformTarget{OS: "linux", Arch: "amd64"}, binPath); err != nil {
-			return err
-		}
-	}
-
-	if runtime.GOOS == "linux" {
-		hostBin := archBins[runtime.GOARCH]
-		if hostBin == "" {
-			hostBin = binPath
-		}
-		_ = copyFileWithMode(hostBin, filepath.Join(rootDir, "mojra"), 0755)
-	}
-
-	if err := packageBooksForDist(booksDir, filepath.Join(outDir, "books")); err != nil {
-		return err
-	}
-
-	launcherSh := "#!/usr/bin/env bash\nset -euo pipefail\nDIR=\"$(cd \"$(dirname \"${BASH_SOURCE[0]}\")\" && pwd)\"\ncd \"$DIR\"\nexec \"$DIR/mojra\" \"$@\"\n"
-	if err := os.WriteFile(filepath.Join(outDir, "Uruchom Mojra.sh"), []byte(launcherSh), 0755); err != nil {
-		return err
-	}
-
-	desktopEntry := `[Desktop Entry]
-Type=Application
-Name=Mojra
-Comment=Interaktywny Czytnik & Playbook Studio
-Exec=./mojra
-Icon=Mojra
-Terminal=false
-Categories=AudioVideo;Audio;Player;
-`
-	if err := os.WriteFile(filepath.Join(outDir, "Mojra.desktop"), []byte(desktopEntry), 0755); err != nil {
-		return err
-	}
-
-	zipPath := filepath.Join(rootDir, "dist", "Mojra-linux.zip")
-	if err := zipDirRecursive(outDir, zipPath, "Mojra-linux"); err != nil {
-		return fmt.Errorf("błąd tworzenia archiwum ZIP dla Linux: %w", err)
-	}
-
-	fmt.Printf("✓ Utworzono aplikację Linux: %s\n", binPath)
-	fmt.Printf("✓ Utworzono ikonę aplikacji Linux: %s\n", iconPath)
-	fmt.Printf("✓ Utworzono archiwum dystrybucyjne Linux: %s\n", zipPath)
-	return nil
-}
-
-func bundleMacOSCmd(args []string) {
-	buildCmd(append([]string{"--macos"}, args...))
-}
-
-func bundleWindowsCmd(args []string) {
-	buildCmd(append([]string{"--windows"}, args...))
-}
-
-func bundleLinuxCmd(args []string) {
-	buildCmd(append([]string{"--linux"}, args...))
-}
-
-func bundleAndroidCmd(args []string) {
-	buildCmd(append([]string{"--android"}, args...))
-}
-
-type androidToolchain struct {
-	SDKDir     string
-	JDKDir     string
-	AndroidJar string
-	Aapt       string
-	D8         string
-	Zipalign   string
-	Apksigner  string
-	Javac      string
-	Keytool    string
-}
-
-func candidateUnityAndroidPlayerDirs() []string {
-	patterns := []string{
-		"/Applications/Unity/Hub/Editor/*/PlaybackEngines/AndroidPlayer",
-	}
-	if pf := os.Getenv("ProgramFiles"); pf != "" {
-		patterns = append(patterns, filepath.Join(pf, "Unity", "Hub", "Editor", "*", "Editor", "Data", "PlaybackEngines", "AndroidPlayer"))
-	}
-	if home, err := os.UserHomeDir(); err == nil && home != "" {
-		patterns = append(patterns,
-			filepath.Join(home, "Unity", "Hub", "Editor", "*", "Editor", "Data", "PlaybackEngines", "AndroidPlayer"),
-			filepath.Join(home, "Applications", "Unity", "Hub", "Editor", "*", "PlaybackEngines", "AndroidPlayer"),
-		)
-	}
-	var out []string
-	seen := make(map[string]bool)
-	for _, pat := range patterns {
-		if matches, err := filepath.Glob(pat); err == nil {
-			for i := len(matches) - 1; i >= 0; i-- {
-				clean := filepath.Clean(matches[i])
-				if !seen[clean] {
-					seen[clean] = true
-					out = append(out, clean)
-				}
-			}
-		}
-	}
-	return out
-}
-
-func candidateAndroidSDKDirs() []string {
-	var dirs []string
-	addDir := func(p string) {
-		p = strings.TrimSpace(p)
-		if p != "" {
-			dirs = append(dirs, filepath.Clean(p))
-		}
-	}
-	addDir(os.Getenv("ANDROID_HOME"))
-	addDir(os.Getenv("ANDROID_SDK_ROOT"))
-	if localAppData := os.Getenv("LOCALAPPDATA"); localAppData != "" {
-		addDir(filepath.Join(localAppData, "Android", "Sdk"))
-	}
-	if home, err := os.UserHomeDir(); err == nil && home != "" {
-		addDir(filepath.Join(home, "Library", "Android", "sdk"))
-		addDir(filepath.Join(home, "AppData", "Local", "Android", "Sdk"))
-		addDir(filepath.Join(home, "Android", "Sdk"))
-		addDir(filepath.Join(home, "Android", "sdk"))
-	}
-	addDir("/opt/android-sdk")
-	addDir("/usr/lib/android-sdk")
-	for _, ap := range candidateUnityAndroidPlayerDirs() {
-		addDir(filepath.Join(ap, "SDK"))
-	}
-	return dirs
-}
-
-func findAndroidNDKClang(arch string) (string, error) {
-	prefix := "aarch64-linux-android24-clang"
-	if arch == "amd64" {
-		prefix = "x86_64-linux-android24-clang"
-	}
-	binNames := []string{prefix}
-	if runtime.GOOS == "windows" {
-		binNames = []string{prefix + ".cmd", prefix + ".exe", prefix}
-	}
-
-	var ndkRoots []string
-	addNDK := func(p string) {
-		p = strings.TrimSpace(p)
-		if p != "" {
-			ndkRoots = append(ndkRoots, filepath.Clean(p))
-		}
-	}
-	addNDK(os.Getenv("ANDROID_NDK_HOME"))
-	addNDK(os.Getenv("ANDROID_NDK_ROOT"))
-	addNDK(os.Getenv("NDK_HOME"))
-
-	for _, sdkDir := range candidateAndroidSDKDirs() {
-		if m, err := filepath.Glob(filepath.Join(sdkDir, "ndk", "*")); err == nil {
-			for i := len(m) - 1; i >= 0; i-- {
-				addNDK(m[i])
-			}
-		}
-		addNDK(filepath.Join(sdkDir, "ndk-bundle"))
-	}
-	for _, ap := range candidateUnityAndroidPlayerDirs() {
-		addNDK(filepath.Join(ap, "NDK"))
-	}
-
-	for _, root := range ndkRoots {
-		for _, binName := range binNames {
-			if m, err := filepath.Glob(filepath.Join(root, "toolchains", "llvm", "prebuilt", "*", "bin", binName)); err == nil {
-				for i := len(m) - 1; i >= 0; i-- {
-					if info, err := os.Stat(m[i]); err == nil && !info.IsDir() {
-						return m[i], nil
-					}
-				}
-			}
-		}
-	}
-	return "", fmt.Errorf("nie znaleziono kompilatora Android NDK (%s) — ustaw ANDROID_NDK_HOME lub zainstaluj NDK w Android SDK", prefix)
-}
-
-func resolveAndroidToolBinary(dir, name string, exts ...string) string {
-	for _, ext := range exts {
-		p := filepath.Join(dir, name+ext)
-		if info, err := os.Stat(p); err == nil && !info.IsDir() {
-			return p
-		}
-	}
-	return ""
-}
-
-func resolveAndroidToolchain() (androidToolchain, error) {
-	var tc androidToolchain
-	exeExts := []string{""}
-	scriptExts := []string{"", ".bat", ".cmd"}
-	if runtime.GOOS == "windows" {
-		exeExts = []string{".exe", ".cmd", ".bat", ""}
-		scriptExts = []string{".bat", ".cmd", ".exe", ""}
-	}
-
-	sdkCandidates := candidateAndroidSDKDirs()
-	for i := len(sdkCandidates) - 1; i >= 0; i-- {
-		// Prefer explicit env vars at index 0..1 first, so scan forward:
-		_ = i
-	}
-	for _, sdkDir := range sdkCandidates {
-		btMatches, _ := filepath.Glob(filepath.Join(sdkDir, "build-tools", "*"))
-		platMatches, _ := filepath.Glob(filepath.Join(sdkDir, "platforms", "android-*"))
-		if len(btMatches) == 0 || len(platMatches) == 0 {
-			continue
-		}
-		btDir := btMatches[len(btMatches)-1]
-		androidJar := filepath.Join(platMatches[len(platMatches)-1], "android.jar")
-		if info, err := os.Stat(androidJar); err != nil || info.IsDir() {
-			continue
-		}
-		aapt := resolveAndroidToolBinary(btDir, "aapt", exeExts...)
-		d8 := resolveAndroidToolBinary(btDir, "d8", scriptExts...)
-		if d8 == "" {
-			d8 = resolveAndroidToolBinary(filepath.Join(btDir, "lib"), "d8", scriptExts...)
-		}
-		zipalign := resolveAndroidToolBinary(btDir, "zipalign", exeExts...)
-		apksigner := resolveAndroidToolBinary(btDir, "apksigner", scriptExts...)
-		if aapt != "" && d8 != "" && zipalign != "" && apksigner != "" {
-			tc.SDKDir = sdkDir
-			tc.AndroidJar = androidJar
-			tc.Aapt = aapt
-			tc.D8 = d8
-			tc.Zipalign = zipalign
-			tc.Apksigner = apksigner
-			break
-		}
-	}
-	if tc.SDKDir == "" {
-		return tc, fmt.Errorf("nie znaleziono Android SDK (build-tools + platforms/android-*) — ustaw ANDROID_HOME lub zainstaluj Android SDK")
-	}
-
-	var jdkCandidates []string
-	if javaHome := strings.TrimSpace(os.Getenv("JAVA_HOME")); javaHome != "" {
-		jdkCandidates = append(jdkCandidates, filepath.Clean(javaHome))
-	}
-	for _, ap := range candidateUnityAndroidPlayerDirs() {
-		jdkCandidates = append(jdkCandidates, filepath.Join(ap, "OpenJDK"))
-	}
-	if pf := os.Getenv("ProgramFiles"); pf != "" {
-		jdkCandidates = append(jdkCandidates,
-			filepath.Join(pf, "Android", "Android Studio", "jbr"),
-			filepath.Join(pf, "Android", "Android Studio", "jre"),
-		)
-	}
-	jdkCandidates = append(jdkCandidates,
-		"/Applications/Android Studio.app/Contents/jbr/Contents/Home",
-		"/Applications/Android Studio.app/Contents/jre/Contents/Home",
-		"/opt/android-studio/jbr",
-	)
-	for _, jdkDir := range jdkCandidates {
-		binDir := filepath.Join(jdkDir, "bin")
-		javac := resolveAndroidToolBinary(binDir, "javac", exeExts...)
-		keytool := resolveAndroidToolBinary(binDir, "keytool", exeExts...)
-		if javac != "" && keytool != "" {
-			tc.JDKDir = jdkDir
-			tc.Javac = javac
-			tc.Keytool = keytool
-			break
-		}
-	}
-	if tc.Javac == "" {
-		if javacPath, err := exec.LookPath("javac"); err == nil {
-			if keytoolPath, kErr := exec.LookPath("keytool"); kErr == nil {
-				tc.Javac = javacPath
-				tc.Keytool = keytoolPath
-				tc.JDKDir = filepath.Dir(filepath.Dir(javacPath))
-			}
-		}
-	}
-	if tc.Javac == "" || tc.Keytool == "" {
-		return tc, fmt.Errorf("nie znaleziono narzędzi JDK (javac / keytool) — ustaw JAVA_HOME lub zainstaluj OpenJDK")
-	}
-	return tc, nil
-}
-
-func buildAndroidManifestXML() string {
-	return `<?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="pl.mojra.app"
-    android:versionCode="1"
-    android:versionName="1.0.0">
-    <uses-sdk android:minSdkVersion="24" android:targetSdkVersion="35" />
-    <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="android.permission.RECORD_AUDIO" />
-    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
-    <application
-        android:label="Mojra"
-        android:icon="@mipmap/ic_launcher"
-        android:roundIcon="@mipmap/ic_launcher_round"
-        android:usesCleartextTraffic="true"
-        android:hardwareAccelerated="true"
-        android:extractNativeLibs="true"
-        android:theme="@android:style/Theme.NoTitleBar.Fullscreen">
-        <activity
-            android:name="pl.mojra.app.MainActivity"
-            android:exported="true"
-            android:configChanges="orientation|screenSize|keyboardHidden">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity>
-    </application>
-</manifest>
-`
-}
-
-func buildAndroidMainActivityJava() string {
-	return `package pl.mojra.app;
-
-import android.Manifest;
-import android.app.Activity;
-import android.content.Intent;
-import android.content.pm.PackageManager;
-import android.media.AudioFormat;
-import android.media.AudioRecord;
-import android.media.MediaRecorder;
-import android.net.Uri;
-import android.os.Bundle;
-import android.os.Handler;
-import android.os.Looper;
-import android.util.Base64;
-import android.webkit.JavascriptInterface;
-import android.webkit.PermissionRequest;
-import android.webkit.ValueCallback;
-import android.webkit.WebChromeClient;
-import android.webkit.WebSettings;
-import android.webkit.WebView;
-import android.webkit.WebViewClient;
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.InputStream;
-import java.net.Socket;
-import java.util.Arrays;
-import java.util.Locale;
-
-public class MainActivity extends Activity {
-    private static Process serverProcess;
-    private WebView webView;
-    private ValueCallback<Uri[]> filePathCallback;
-    private PermissionRequest pendingWebPermissionRequest;
-    private static final int PORT = 18484;
-    private static final int REQ_FILE_CHOOSER = 1001;
-    private static final int REQ_RECORD_AUDIO = 1002;
-
-    private final Object audioLock = new Object();
-    private AudioRecord audioRecord;
-    private Thread audioRecordThread;
-    private volatile boolean isAudioCapturing = false;
-    private volatile boolean audioPermissionPending = false;
-    private volatile boolean audioPermissionDenied = false;
-    private volatile float lastAudioPeak = 0.0f;
-    private volatile int activeAudioSampleRate = 24000;
-    private short[] audioPCMBuf = new short[0];
-    private int audioPCMLen = 0;
-
-    @Override
-    protected void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
-        webView = new WebView(this);
-        WebSettings ws = webView.getSettings();
-        ws.setJavaScriptEnabled(true);
-        ws.setDomStorageEnabled(true);
-        ws.setAllowFileAccess(true);
-        ws.setMediaPlaybackRequiresUserGesture(false);
-        webView.addJavascriptInterface(new MojraAndroidBridge(), "mojraAndroid");
-        webView.setWebViewClient(new WebViewClient());
-        webView.setWebChromeClient(new WebChromeClient() {
-            @Override
-            public void onPermissionRequest(final PermissionRequest request) {
-                for (String res : request.getResources()) {
-                    if (PermissionRequest.RESOURCE_AUDIO_CAPTURE.equals(res)) {
-                        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-                            request.grant(new String[]{PermissionRequest.RESOURCE_AUDIO_CAPTURE});
-                        } else {
-                            pendingWebPermissionRequest = request;
-                            requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, REQ_RECORD_AUDIO);
-                        }
-                        return;
-                    }
-                }
-                request.deny();
-            }
-
-            @Override
-            public boolean onShowFileChooser(WebView wv, ValueCallback<Uri[]> filePathCb, FileChooserParams params) {
-                if (filePathCallback != null) {
-                    filePathCallback.onReceiveValue(null);
-                }
-                filePathCallback = filePathCb;
-                try {
-                    Intent intent = params.createIntent();
-                    startActivityForResult(intent, REQ_FILE_CHOOSER);
-                    return true;
-                } catch (Exception e) {
-                    filePathCallback = null;
-                    return false;
-                }
-            }
-        });
-        setContentView(webView);
-
-        new Thread(new Runnable() {
-            @Override
-            public void run() {
-                startEmbeddedServer();
-            }
-        }).start();
-    }
-
-    private boolean startAndroidAudioRecordLocked() {
-        stopAndroidAudioRecordLocked();
-        int[] candidateRates = new int[]{24000, 16000, 44100, 48000};
-        int[] sources = new int[]{MediaRecorder.AudioSource.MIC, MediaRecorder.AudioSource.DEFAULT};
-        AudioRecord rec = null;
-        int chosenRate = 24000;
-        int chosenBufBytes = 0;
-
-        outer:
-        for (int src : sources) {
-            for (int sr : candidateRates) {
-                int minBuf = AudioRecord.getMinBufferSize(sr, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT);
-                if (minBuf <= 0) {
-                    continue;
-                }
-                int bufBytes = Math.max(minBuf * 2, (sr / 5) * 2);
-                try {
-                    AudioRecord candidate = new AudioRecord(src, sr, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, bufBytes);
-                    if (candidate.getState() == AudioRecord.STATE_INITIALIZED) {
-                        candidate.startRecording();
-                        if (candidate.getRecordingState() == AudioRecord.RECORDSTATE_RECORDING) {
-                            rec = candidate;
-                            chosenRate = sr;
-                            chosenBufBytes = bufBytes;
-                            break outer;
-                        }
-                    }
-                    candidate.release();
-                } catch (Exception ignored) {
-                }
-            }
-        }
-        if (rec == null) {
-            return false;
-        }
-        activeAudioSampleRate = chosenRate;
-        lastAudioPeak = 0.0f;
-        audioPCMLen = 0;
-        int minCap = chosenRate * 60;
-        if (audioPCMBuf.length < minCap) {
-            audioPCMBuf = new short[minCap];
-        }
-        audioRecord = rec;
-        isAudioCapturing = true;
-        final AudioRecord activeRec = rec;
-        final int readSamples = Math.max(512, Math.min(2048, chosenBufBytes / 4));
-        final int maxSamples = chosenRate * 1800;
-        final int rateCap = chosenRate;
-        audioRecordThread = new Thread(new Runnable() {
-            @Override
-            public void run() {
-                short[] temp = new short[readSamples];
-                while (isAudioCapturing) {
-                    int n = activeRec.read(temp, 0, temp.length);
-                    if (n <= 0) {
-                        continue;
-                    }
-                    float maxAbs = 0.0f;
-                    for (int i = 0; i < n; i++) {
-                        float a = Math.abs((float) temp[i] / 32768.0f);
-                        if (a > maxAbs) {
-                            maxAbs = a;
-                        }
-                    }
-                    float scaled = maxAbs * 1.8f;
-                    if (scaled > 1.0f) {
-                        scaled = 1.0f;
-                    }
-                    synchronized (audioLock) {
-                        if (!isAudioCapturing || audioRecord != activeRec) {
-                            break;
-                        }
-                        lastAudioPeak = scaled;
-                        if (audioPCMLen + n <= maxSamples) {
-                            if (audioPCMLen + n > audioPCMBuf.length) {
-                                int newCap = Math.max(rateCap * 60, audioPCMBuf.length * 2);
-                                while (newCap < audioPCMLen + n) {
-                                    newCap *= 2;
-                                }
-                                audioPCMBuf = Arrays.copyOf(audioPCMBuf, newCap);
-                            }
-                            System.arraycopy(temp, 0, audioPCMBuf, audioPCMLen, n);
-                            audioPCMLen += n;
-                        }
-                    }
-                }
-            }
-        }, "MojraAudioRecord");
-        audioRecordThread.start();
-        return true;
-    }
-
-    private void stopAndroidAudioRecordLocked() {
-        isAudioCapturing = false;
-        AudioRecord rec = audioRecord;
-        audioRecord = null;
-        if (rec != null) {
-            try {
-                rec.stop();
-            } catch (Exception ignored) {
-            }
-            try {
-                rec.release();
-            } catch (Exception ignored) {
-            }
-        }
-    }
-
-    private class MojraAndroidBridge {
-        @JavascriptInterface
-        public int startAudioCapture() {
-            synchronized (audioLock) {
-                audioPermissionDenied = false;
-                if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-                    audioPermissionPending = true;
-                    runOnUiThread(new Runnable() {
-                        @Override
-                        public void run() {
-                            requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, REQ_RECORD_AUDIO);
-                        }
-                    });
-                    return 2;
-                }
-                audioPermissionPending = false;
-                return startAndroidAudioRecordLocked() ? 1 : -1;
-            }
-        }
-
-        @JavascriptInterface
-        public String pollAudioPeak() {
-            if (audioPermissionPending) {
-                return "pending";
-            }
-            if (audioPermissionDenied) {
-                return "denied";
-            }
-            if (!isAudioCapturing) {
-                return "stopped";
-            }
-            return String.format(Locale.US, "%.3f", lastAudioPeak);
-        }
-
-        @JavascriptInterface
-        public int getAudioSampleRate() {
-            return activeAudioSampleRate;
-        }
-
-        @JavascriptInterface
-        public String stopAudioCaptureBase64() {
-            Thread t;
-            synchronized (audioLock) {
-                audioPermissionPending = false;
-                t = audioRecordThread;
-                audioRecordThread = null;
-                stopAndroidAudioRecordLocked();
-            }
-            if (t != null) {
-                try {
-                    t.join(400);
-                } catch (Exception ignored) {
-                }
-            }
-            synchronized (audioLock) {
-                int count = audioPCMLen;
-                audioPCMLen = 0;
-                lastAudioPeak = 0.0f;
-                if (count <= 0) {
-                    return "";
-                }
-                byte[] bytes = new byte[count * 2];
-                for (int i = 0; i < count; i++) {
-                    short v = audioPCMBuf[i];
-                    bytes[i * 2] = (byte) (v & 0xff);
-                    bytes[i * 2 + 1] = (byte) ((v >> 8) & 0xff);
-                }
-                return Base64.encodeToString(bytes, Base64.NO_WRAP);
-            }
-        }
-    }
-
-    @Override
-    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        if (requestCode == REQ_RECORD_AUDIO) {
-            boolean granted = grantResults != null && grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED;
-            if (pendingWebPermissionRequest != null) {
-                if (granted) {
-                    pendingWebPermissionRequest.grant(new String[]{PermissionRequest.RESOURCE_AUDIO_CAPTURE});
-                } else {
-                    pendingWebPermissionRequest.deny();
-                }
-                pendingWebPermissionRequest = null;
-            }
-            synchronized (audioLock) {
-                if (audioPermissionPending) {
-                    audioPermissionPending = false;
-                    if (granted) {
-                        if (!startAndroidAudioRecordLocked()) {
-                            audioPermissionDenied = true;
-                        }
-                    } else {
-                        audioPermissionDenied = true;
-                    }
-                }
-            }
-        }
-    }
-
-    @Override
-    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode == REQ_FILE_CHOOSER && filePathCallback != null) {
-            Uri[] results = WebChromeClient.FileChooserParams.parseResult(resultCode, data);
-            filePathCallback.onReceiveValue(results);
-            filePathCallback = null;
-        }
-    }
-
-    @Override
-    public void onBackPressed() {
-        if (webView != null && webView.canGoBack()) {
-            webView.goBack();
-            return;
-        }
-        super.onBackPressed();
-    }
-
-    private synchronized void startEmbeddedServer() {
-        try {
-            File filesDir = getFilesDir();
-            File booksDir = new File(filesDir, "books");
-            if (!booksDir.exists()) {
-                booksDir.mkdirs();
-            }
-            String[] assetBooks = getAssets().list("books");
-            if (assetBooks != null) {
-                for (String name : assetBooks) {
-                    File dst = new File(booksDir, name);
-                    if (!dst.exists()) {
-                        try (InputStream in = getAssets().open("books/" + name);
-                             FileOutputStream out = new FileOutputStream(dst)) {
-                            byte[] buf = new byte[16384];
-                            int n;
-                            while ((n = in.read(buf)) > 0) {
-                                out.write(buf, 0, n);
-                            }
-                        }
-                    }
-                }
-            }
-            if (serverProcess == null) {
-                String libDir = getApplicationInfo().nativeLibraryDir;
-                File binFile = new File(libDir, "libmojra.so");
-                ProcessBuilder pb = new ProcessBuilder(
-                    binFile.getAbsolutePath(), "run", "--headless", "--port", String.valueOf(PORT)
-                );
-                pb.directory(filesDir);
-                pb.environment().put("ST_NO_WINDOW", "1");
-                pb.environment().put("MOJRA_ANDROID_APK", "1");
-                pb.environment().put("MOJRA_DATA_DIR", filesDir.getAbsolutePath());
-                pb.environment().put("HOME", filesDir.getAbsolutePath());
-                serverProcess = pb.start();
-            }
-
-            for (int i = 0; i < 60; i++) {
-                try (Socket s = new Socket("127.0.0.1", PORT)) {
-                    break;
-                } catch (Exception ignored) {
-                    Thread.sleep(60);
-                }
-            }
-
-            new Handler(Looper.getMainLooper()).post(new Runnable() {
-                @Override
-                public void run() {
-                    if (webView != null) {
-                        webView.loadUrl("http://127.0.0.1:" + PORT + "/");
-                    }
-                }
-            });
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-    }
-
-    @Override
-    protected void onDestroy() {
-        synchronized (audioLock) {
-            stopAndroidAudioRecordLocked();
-        }
-        if (isFinishing() && serverProcess != null) {
-            serverProcess.destroy();
-            serverProcess = null;
-        }
-        super.onDestroy();
-    }
-}
-`
-}
-
-func packageAndroidBundle(rootDir string, archBins map[string]string) error {
-	tc, err := resolveAndroidToolchain()
-	if err != nil {
-		return err
-	}
-
-	workDir, err := os.MkdirTemp("", "mojra-apk-*")
-	if err != nil {
-		return err
-	}
-	defer os.RemoveAll(workDir)
-
-	srcDir := filepath.Join(workDir, "src", "pl", "mojra", "app")
-	classesDir := filepath.Join(workDir, "classes")
-	assetsBooksDir := filepath.Join(workDir, "assets", "books")
-	_ = os.MkdirAll(srcDir, 0755)
-	_ = os.MkdirAll(classesDir, 0755)
-	_ = os.MkdirAll(assetsBooksDir, 0755)
-
-	if err := writeAndroidLauncherResources(filepath.Join(workDir, "res")); err != nil {
-		return err
-	}
-	if err := packageBooksForDist(filepath.Join(rootDir, "books"), assetsBooksDir); err != nil {
-		return err
-	}
-
-	manifestPath := filepath.Join(workDir, "AndroidManifest.xml")
-	if err := os.WriteFile(manifestPath, []byte(buildAndroidManifestXML()), 0644); err != nil {
-		return err
-	}
-
-	javaPath := filepath.Join(srcDir, "MainActivity.java")
-	if err := os.WriteFile(javaPath, []byte(buildAndroidMainActivityJava()), 0644); err != nil {
-		return err
-	}
-
-	pathSep := string(os.PathListSeparator)
-	envWithJava := append(os.Environ(),
-		"JAVA_HOME="+tc.JDKDir,
-		"PATH="+filepath.Join(tc.JDKDir, "bin")+pathSep+os.Getenv("PATH"),
-	)
-	runTool := func(bin string, toolArgs ...string) error {
-		c := exec.Command(bin, toolArgs...)
-		c.Dir = workDir
-		c.Env = envWithJava
-		out, err := c.CombinedOutput()
-		if err != nil {
-			return fmt.Errorf("%s failed: %v\n%s", filepath.Base(bin), err, string(out))
-		}
-		return nil
-	}
-
-	if err := runTool(tc.Aapt, "package", "-f", "-m", "-J", filepath.Join(workDir, "src"), "-M", manifestPath, "-S", filepath.Join(workDir, "res"), "-I", tc.AndroidJar); err != nil {
-		return err
-	}
-	rJavaPath := filepath.Join(srcDir, "R.java")
-	javacArgs := []string{"-source", "1.8", "-target", "1.8", "-bootclasspath", tc.AndroidJar, "-d", classesDir, javaPath}
-	if _, err := os.Stat(rJavaPath); err == nil {
-		javacArgs = append(javacArgs, rJavaPath)
-	}
-	if err := runTool(tc.Javac, javacArgs...); err != nil {
-		return err
-	}
-
-	classFiles, _ := filepath.Glob(filepath.Join(classesDir, "pl", "mojra", "app", "*.class"))
-	d8Args := append([]string{"--lib", tc.AndroidJar, "--output", workDir}, classFiles...)
-	if err := runTool(tc.D8, d8Args...); err != nil {
-		return err
-	}
-
-	unalignedAPK := filepath.Join(workDir, "unaligned.apk")
-	if err := runTool(tc.Aapt, "package", "-f", "-M", manifestPath, "-S", filepath.Join(workDir, "res"), "-A", filepath.Join(workDir, "assets"), "-I", tc.AndroidJar, "-F", unalignedAPK); err != nil {
-		return err
-	}
-
-	// Inject classes.dex and uncompressed native lib/<abi>/libmojra.so into unaligned.apk
-	if err := appendAndroidNativeAndDexToAPK(unalignedAPK, filepath.Join(workDir, "classes.dex"), archBins); err != nil {
-		return err
-	}
-
-	alignedAPK := filepath.Join(workDir, "aligned.apk")
-	if err := runTool(tc.Zipalign, "-f", "-p", "4", unalignedAPK, alignedAPK); err != nil {
-		return err
-	}
-
-	ksPath := strings.TrimSpace(os.Getenv("MOJRA_KEYSTORE"))
-	ksPass := strings.TrimSpace(os.Getenv("MOJRA_KEYSTORE_PASS"))
-	keyAlias := strings.TrimSpace(os.Getenv("MOJRA_KEY_ALIAS"))
-	keyPass := strings.TrimSpace(os.Getenv("MOJRA_KEY_PASS"))
-	if ksPath == "" {
-		ksPath = filepath.Join(workDir, "debug.keystore")
-		ksPass = "android"
-		keyAlias = "androiddebugkey"
-		keyPass = "android"
-		if err := runTool(tc.Keytool, "-genkeypair", "-v", "-keystore", ksPath, "-storepass", ksPass, "-alias", keyAlias, "-keypass", keyPass, "-keyalg", "RSA", "-keysize", "2048", "-validity", "10000", "-dname", "CN=Android Debug,O=Android,C=US"); err != nil {
-			return err
-		}
-	} else {
-		if ksPass == "" {
-			return fmt.Errorf("ustawiono MOJRA_KEYSTORE, ale brakuje MOJRA_KEYSTORE_PASS")
-		}
-		if keyPass == "" {
-			keyPass = ksPass
-		}
-	}
-
-	outAPK := filepath.Join(rootDir, "dist", "Mojra-android.apk")
-	signArgs := []string{"sign", "--ks", ksPath, "--ks-pass", "pass:" + ksPass, "--key-pass", "pass:" + keyPass}
-	if keyAlias != "" {
-		signArgs = append(signArgs, "--ks-key-alias", keyAlias)
-	}
-	signArgs = append(signArgs, "--out", outAPK, alignedAPK)
-	if err := runTool(tc.Apksigner, signArgs...); err != nil {
-		return err
-	}
-
-	fmt.Printf("✓ Utworzono podpisany pakiet instalacyjny Android APK: %s\n", outAPK)
-	return nil
-}
-
-func appendAndroidNativeAndDexToAPK(apkPath, dexPath string, archBins map[string]string) error {
-	rawAPK, err := os.ReadFile(apkPath)
-	if err != nil {
-		return err
-	}
-	zr, err := zip.NewReader(bytes.NewReader(rawAPK), int64(len(rawAPK)))
-	if err != nil {
-		return err
-	}
-	var outBuf bytes.Buffer
-	zw := zip.NewWriter(&outBuf)
-
-	for _, f := range zr.File {
-		rc, err := f.Open()
-		if err != nil {
-			return err
-		}
-		hdr := f.FileHeader
-		w, err := zw.CreateHeader(&hdr)
-		if err != nil {
-			_ = rc.Close()
-			return err
-		}
-		_, _ = io.Copy(w, rc)
-		_ = rc.Close()
-	}
-
-	if dexBytes, err := os.ReadFile(dexPath); err == nil {
-		w, err := zw.Create("classes.dex")
-		if err != nil {
-			return err
-		}
-		_, _ = w.Write(dexBytes)
-	}
-
-	abiMap := map[string]string{
-		"arm64": "arm64-v8a",
-		"amd64": "x86_64",
-	}
-	selectedAndroidArch := "arm64"
-	if archBins["arm64"] == "" && archBins["amd64"] != "" {
-		selectedAndroidArch = "amd64"
-	}
-	if binPath := archBins[selectedAndroidArch]; binPath != "" {
-		abi := abiMap[selectedAndroidArch]
-		if binBytes, err := os.ReadFile(binPath); err == nil {
-			hdr := &zip.FileHeader{
-				Name:   "lib/" + abi + "/libmojra.so",
-				Method: zip.Store,
-			}
-			hdr.SetMode(0755)
-			w, err := zw.CreateHeader(hdr)
-			if err != nil {
-				return err
-			}
-			_, _ = w.Write(binBytes)
-		}
-	}
-
-	if err := zw.Close(); err != nil {
-		return err
-	}
-	return os.WriteFile(apkPath, outBuf.Bytes(), 0644)
-}
-
-func sdCapsule(px, py, ax, ay, bx, by, r float64) float64 {
-	pax, pay := px-ax, py-ay
-	bax, bay := bx-ax, by-ay
-	h := math.Max(0.0, math.Min(1.0, (pax*bax+pay*bay)/(bax*bax+bay*bay)))
-	dx := pax - bax*h
-	dy := pay - bay*h
-	return math.Sqrt(dx*dx+dy*dy) - r
-}
-
-func blendRGBA(dst, src color.RGBA, alpha float64) color.RGBA {
-	if alpha <= 0 {
-		return dst
-	}
-	if alpha >= 1 {
-		return src
-	}
-	inv := 1.0 - alpha
-	return color.RGBA{
-		R: uint8(math.Round(float64(dst.R)*inv + float64(src.R)*alpha)),
-		G: uint8(math.Round(float64(dst.G)*inv + float64(src.G)*alpha)),
-		B: uint8(math.Round(float64(dst.B)*inv + float64(src.B)*alpha)),
-		A: uint8(math.Round(float64(dst.A)*inv + float64(src.A)*alpha)),
-	}
-}
-
-// renderIcon renders the Mojra app icon inside a macOS-style rounded squircle:
-// the minimalist black-and-white Mojra "M" loom mark with perfectly equal top/bottom and left/right margins.
-// Uses 2x2 supersampling and pixel-aligned minimum stroke weights so small icons (16x16..64x64)
-// and large icons (256x256..512x512) are both razor-sharp.
-func renderIcon(size int) *image.RGBA {
-	img := image.NewRGBA(image.Rect(0, 0, size, size))
-	scale := 512.0 / float64(size)
-	aa := 0.45 * scale
-	mainHalf := math.Max(6.0, 0.75*scale)
-	midHalf := math.Max(4.8, 0.65*scale)
-
-	sqHalf := 216.0
-	sqRad := 96.0
-	if size <= 64 {
-		sqHalf = 236.0
-		sqRad = 96.0
-	}
-
-	smoothAlpha := func(dist float64) float64 {
-		if dist >= aa {
-			return 0.0
-		}
-		if dist <= -aa {
-			return 1.0
-		}
-		return 0.5 - dist/(2.0*aa)
-	}
-
-	fgWhite := color.RGBA{R: 255, G: 255, B: 255, A: 255}
-
-	sampleAt := func(fx, fy float64) (float64, float64, float64, float64) {
-		dxSq := math.Abs(fx-256.0) - (sqHalf - sqRad)
-		dySq := math.Abs(fy-256.0) - (sqHalf - sqRad)
-		qx := math.Max(dxSq, 0)
-		qy := math.Max(dySq, 0)
-		distSq := math.Sqrt(qx*qx+qy*qy) + math.Min(math.Max(dxSq, dySq), 0) - sqRad
-
-		bgAlpha := smoothAlpha(distSq)
-		if bgAlpha <= 0 {
-			return 0, 0, 0, 0
-		}
-
-		tGrad := math.Max(0.0, math.Min(1.0, (fy-40.0)/432.0))
-		bgCol := color.RGBA{
-			R: uint8(14.0 - 8.0*tGrad),
-			G: uint8(14.0 - 8.0*tGrad),
-			B: uint8(16.0 - 8.0*tGrad),
-			A: 255,
-		}
-
-		borderHalf := math.Max(3.0, 0.45*scale)
-		borderDist := math.Abs(distSq+borderHalf) - borderHalf
-		col := blendRGBA(bgCol, color.RGBA{R: 76, G: 76, B: 82, A: 255}, smoothAlpha(borderDist))
-
-		// Mojra "M" Loom coordinates centered at (256, 256) with equal top/bottom margins (112..400 inside 40..472)
-		const (
-			xL   = 141.0
-			xM   = 256.0
-			xR   = 371.0
-			yTop = 135.0
-			yMid = 256.0
-			yBot = 377.0
-			rOut = 23.0
-		)
-
-		// 1. Stems & Diagonals
-		distLines := sdCapsule(fx, fy, xL, yTop, xL, yBot, mainHalf)
-		distLines = math.Min(distLines, sdCapsule(fx, fy, xR, yTop, xR, yBot, mainHalf))
-		distLines = math.Min(distLines, sdCapsule(fx, fy, xL, yTop, xM, yMid, mainHalf))
-		distLines = math.Min(distLines, sdCapsule(fx, fy, xR, yTop, xM, yMid, mainHalf))
-		distLines = math.Min(distLines, sdCapsule(fx, fy, xM, yMid, xM, yBot, midHalf))
-
-		// 2. Solid outer balls: top-left, bottom-left, bottom-right
-		distBalls := math.Hypot(fx-xL, fy-yTop) - rOut
-		distBalls = math.Min(distBalls, math.Hypot(fx-xL, fy-yBot)-rOut)
-		distBalls = math.Min(distBalls, math.Hypot(fx-xR, fy-yBot)-rOut)
-
-		col = blendRGBA(col, fgWhite, smoothAlpha(math.Min(distLines, distBalls)))
-
-		// 3. Top-right hollow ring ball at (xR, yTop)
-		dTopRight := math.Hypot(fx-xR, fy-yTop)
-		col = blendRGBA(col, bgCol, smoothAlpha(dTopRight-rOut))
-		ringHalfTR := math.Max(5.4, 0.65*scale)
-		dRingTR := math.Abs(dTopRight-(rOut-ringHalfTR)) - ringHalfTR
-		col = blendRGBA(col, fgWhite, smoothAlpha(dRingTR))
-
-		// 4. Center double-ring destiny node ◉ at (256, 256)
-		const rCenterOut = 35.5
-		dCenter := math.Hypot(fx-xM, fy-yMid)
-		col = blendRGBA(col, bgCol, smoothAlpha(dCenter-rCenterOut))
-		ringHalfC := math.Max(5.8, 0.70*scale)
-		dRingC := math.Abs(dCenter-(rCenterOut-ringHalfC)) - ringHalfC
-		dDotC := dCenter - 13.6
-		col = blendRGBA(col, fgWhite, smoothAlpha(math.Min(dRingC, dDotC)))
-
-		return float64(col.R) * bgAlpha, float64(col.G) * bgAlpha, float64(col.B) * bgAlpha, bgAlpha
-	}
-
-	offsets := [2]float64{0.25, 0.75}
-	for y := 0; y < size; y++ {
-		for x := 0; x < size; x++ {
-			var rSum, gSum, bSum, aSum float64
-			for _, oy := range offsets {
-				for _, ox := range offsets {
-					r, g, b, a := sampleAt((float64(x)+ox)*scale, (float64(y)+oy)*scale)
-					rSum += r
-					gSum += g
-					bSum += b
-					aSum += a
-				}
-			}
-			aAvg := aSum / 4.0
-			if aAvg <= 0 {
-				continue
-			}
-			img.SetRGBA(x, y, color.RGBA{
-				R: uint8(math.Min(255, math.Round(rSum/(4.0*aAvg)))),
-				G: uint8(math.Min(255, math.Round(gSum/(4.0*aAvg)))),
-				B: uint8(math.Min(255, math.Round(bSum/(4.0*aAvg)))),
-				A: uint8(math.Min(255, math.Round(255.0*aAvg))),
-			})
-		}
-	}
-	return img
-}
-
-func encodeIconPNG(size int) ([]byte, error) {
-	img := renderIcon(size)
-	var pngBuf bytes.Buffer
-	if err := png.Encode(&pngBuf, img); err != nil {
-		return nil, err
-	}
-	return pngBuf.Bytes(), nil
-}
-
-func buildAndroidAdaptiveIconXML() string {
-	return `<?xml version="1.0" encoding="utf-8"?>
-<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-    <background android:drawable="@mipmap/ic_launcher_background" />
-    <foreground android:drawable="@mipmap/ic_launcher_foreground" />
-</adaptive-icon>
-`
-}
-
-// renderAndroidIcon renders a full-bleed Android launcher icon without the desktop squircle tile border,
-// so Android's circular/adaptive launcher mask fills 100% of the icon instead of shrinking a tile inside a circle.
-func renderAndroidIcon(size int, symbolZoom float64, drawSymbol bool, circularMask bool) *image.RGBA {
-	img := image.NewRGBA(image.Rect(0, 0, size, size))
-	scale := 512.0 / float64(size)
-	if symbolZoom <= 0 {
-		symbolZoom = 1.0
-	}
-	invZoom := 1.0 / symbolZoom
-	aa := 0.45 * scale * invZoom
-	mainHalf := math.Max(6.0, 0.75*scale*invZoom)
-	midHalf := math.Max(4.8, 0.65*scale*invZoom)
-
-	smoothAlpha := func(dist float64) float64 {
-		if dist >= aa {
-			return 0.0
-		}
-		if dist <= -aa {
-			return 1.0
-		}
-		return 0.5 - dist/(2.0*aa)
-	}
-
-	fgWhite := color.RGBA{R: 255, G: 255, B: 255, A: 255}
-
-	sampleAt := func(fx, fy float64) (float64, float64, float64, float64) {
-		bgAlpha := 1.0
-		if circularMask {
-			distCircle := math.Hypot(fx-256.0, fy-256.0) - 248.0
-			bgAlpha = smoothAlpha(distCircle)
-			if bgAlpha <= 0 {
-				return 0, 0, 0, 0
-			}
-		}
-
-		tGrad := math.Max(0.0, math.Min(1.0, fy/512.0))
-		bgCol := color.RGBA{
-			R: uint8(14.0 - 8.0*tGrad),
-			G: uint8(14.0 - 8.0*tGrad),
-			B: uint8(16.0 - 8.0*tGrad),
-			A: 255,
-		}
-		col := bgCol
-
-		if drawSymbol {
-			sx := 256.0 + (fx-256.0)*invZoom
-			sy := 256.0 + (fy-256.0)*invZoom
-
-			const (
-				xL   = 141.0
-				xM   = 256.0
-				xR   = 371.0
-				yTop = 135.0
-				yMid = 256.0
-				yBot = 377.0
-				rOut = 23.0
-			)
-
-			distLines := sdCapsule(sx, sy, xL, yTop, xL, yBot, mainHalf)
-			distLines = math.Min(distLines, sdCapsule(sx, sy, xR, yTop, xR, yBot, mainHalf))
-			distLines = math.Min(distLines, sdCapsule(sx, sy, xL, yTop, xM, yMid, mainHalf))
-			distLines = math.Min(distLines, sdCapsule(sx, sy, xR, yTop, xM, yMid, mainHalf))
-			distLines = math.Min(distLines, sdCapsule(sx, sy, xM, yMid, xM, yBot, midHalf))
-
-			distBalls := math.Hypot(sx-xL, sy-yTop) - rOut
-			distBalls = math.Min(distBalls, math.Hypot(sx-xL, sy-yBot)-rOut)
-			distBalls = math.Min(distBalls, math.Hypot(sx-xR, sy-yBot)-rOut)
-
-			col = blendRGBA(col, fgWhite, smoothAlpha(math.Min(distLines, distBalls)))
-
-			dTopRight := math.Hypot(sx-xR, sy-yTop)
-			col = blendRGBA(col, bgCol, smoothAlpha(dTopRight-rOut))
-			ringHalfTR := math.Max(5.4, 0.65*scale*invZoom)
-			dRingTR := math.Abs(dTopRight-(rOut-ringHalfTR)) - ringHalfTR
-			col = blendRGBA(col, fgWhite, smoothAlpha(dRingTR))
-
-			const rCenterOut = 35.5
-			dCenter := math.Hypot(sx-xM, sy-yMid)
-			col = blendRGBA(col, bgCol, smoothAlpha(dCenter-rCenterOut))
-			ringHalfC := math.Max(5.8, 0.70*scale*invZoom)
-			dRingC := math.Abs(dCenter-(rCenterOut-ringHalfC)) - ringHalfC
-			dDotC := dCenter - 13.6
-			col = blendRGBA(col, fgWhite, smoothAlpha(math.Min(dRingC, dDotC)))
-		}
-
-		return float64(col.R) * bgAlpha, float64(col.G) * bgAlpha, float64(col.B) * bgAlpha, bgAlpha
-	}
-
-	offsets := [2]float64{0.25, 0.75}
-	for y := 0; y < size; y++ {
-		for x := 0; x < size; x++ {
-			var rSum, gSum, bSum, aSum float64
-			for _, oy := range offsets {
-				for _, ox := range offsets {
-					r, g, b, a := sampleAt((float64(x)+ox)*scale, (float64(y)+oy)*scale)
-					rSum += r
-					gSum += g
-					bSum += b
-					aSum += a
-				}
-			}
-			aAvg := aSum / 4.0
-			if aAvg <= 0 {
-				continue
-			}
-			img.SetRGBA(x, y, color.RGBA{
-				R: uint8(math.Min(255, math.Round(rSum/(4.0*aAvg)))),
-				G: uint8(math.Min(255, math.Round(gSum/(4.0*aAvg)))),
-				B: uint8(math.Min(255, math.Round(bSum/(4.0*aAvg)))),
-				A: uint8(math.Min(255, math.Round(255.0*aAvg))),
-			})
-		}
-	}
-	return img
-}
-
-func encodeAndroidIconPNG(size int, symbolZoom float64, drawSymbol bool, circularMask bool) ([]byte, error) {
-	img := renderAndroidIcon(size, symbolZoom, drawSymbol, circularMask)
-	var pngBuf bytes.Buffer
-	if err := png.Encode(&pngBuf, img); err != nil {
-		return nil, err
-	}
-	return pngBuf.Bytes(), nil
-}
-
-func writeAndroidLauncherResources(resRootDir string) error {
-	xxxhdpiDir := filepath.Join(resRootDir, "mipmap-xxxhdpi")
-	anydpiDir := filepath.Join(resRootDir, "mipmap-anydpi-v26")
-	if err := os.MkdirAll(xxxhdpiDir, 0755); err != nil {
-		return err
-	}
-	if err := os.MkdirAll(anydpiDir, 0755); err != nil {
-		return err
-	}
-
-	bgPNG, err := encodeAndroidIconPNG(432, 1.0, false, false)
-	if err != nil {
-		return err
-	}
-	if err := os.WriteFile(filepath.Join(xxxhdpiDir, "ic_launcher_background.png"), bgPNG, 0644); err != nil {
-		return err
-	}
-
-	fgPNG, err := encodeAndroidIconPNG(432, 0.72, true, false)
-	if err != nil {
-		return err
-	}
-	if err := os.WriteFile(filepath.Join(xxxhdpiDir, "ic_launcher_foreground.png"), fgPNG, 0644); err != nil {
-		return err
-	}
-
-	legacyPNG, err := encodeAndroidIconPNG(192, 0.92, true, false)
-	if err != nil {
-		return err
-	}
-	if err := os.WriteFile(filepath.Join(xxxhdpiDir, "ic_launcher.png"), legacyPNG, 0644); err != nil {
-		return err
-	}
-
-	roundPNG, err := encodeAndroidIconPNG(192, 0.88, true, true)
-	if err != nil {
-		return err
-	}
-	if err := os.WriteFile(filepath.Join(xxxhdpiDir, "ic_launcher_round.png"), roundPNG, 0644); err != nil {
-		return err
-	}
-
-	xmlBytes := []byte(buildAndroidAdaptiveIconXML())
-	if err := os.WriteFile(filepath.Join(anydpiDir, "ic_launcher.xml"), xmlBytes, 0644); err != nil {
-		return err
-	}
-	if err := os.WriteFile(filepath.Join(anydpiDir, "ic_launcher_round.xml"), xmlBytes, 0644); err != nil {
-		return err
-	}
-	return nil
-}
-
-func writeMacOSAppIconICNS(outPath string) error {
-	pngData, err := encodeIconPNG(512)
-	if err != nil {
-		return err
-	}
-
-	var icnsBuf bytes.Buffer
-	icnsBuf.WriteString("icns")
-	_ = binary.Write(&icnsBuf, binary.BigEndian, uint32(16+len(pngData)))
-	icnsBuf.WriteString("ic09")
-	_ = binary.Write(&icnsBuf, binary.BigEndian, uint32(8+len(pngData)))
-	icnsBuf.Write(pngData)
-
-	return os.WriteFile(outPath, icnsBuf.Bytes(), 0644)
-}
-
-func encodeIconDIB(size int) []byte {
-	img := renderIcon(size)
-	andRowBytes := ((size + 31) / 32) * 4
-	xorSize := size * size * 4
-	andSize := andRowBytes * size
-
-	var buf bytes.Buffer
-	_ = binary.Write(&buf, binary.LittleEndian, uint32(40))              // biSize
-	_ = binary.Write(&buf, binary.LittleEndian, int32(size))             // biWidth
-	_ = binary.Write(&buf, binary.LittleEndian, int32(size*2))           // biHeight (XOR + AND)
-	_ = binary.Write(&buf, binary.LittleEndian, uint16(1))               // biPlanes
-	_ = binary.Write(&buf, binary.LittleEndian, uint16(32))              // biBitCount
-	_ = binary.Write(&buf, binary.LittleEndian, uint32(0))               // biCompression (BI_RGB)
-	_ = binary.Write(&buf, binary.LittleEndian, uint32(xorSize+andSize)) // biSizeImage
-	_ = binary.Write(&buf, binary.LittleEndian, int32(0))                // biXPelsPerMeter
-	_ = binary.Write(&buf, binary.LittleEndian, int32(0))                // biYPelsPerMeter
-	_ = binary.Write(&buf, binary.LittleEndian, uint32(0))               // biClrUsed
-	_ = binary.Write(&buf, binary.LittleEndian, uint32(0))               // biClrImportant
-
-	for y := size - 1; y >= 0; y-- {
-		for x := 0; x < size; x++ {
-			c := img.RGBAAt(x, y)
-			buf.WriteByte(c.B)
-			buf.WriteByte(c.G)
-			buf.WriteByte(c.R)
-			buf.WriteByte(c.A)
-		}
-	}
-
-	andRow := make([]byte, andRowBytes)
-	for y := size - 1; y >= 0; y-- {
-		for i := range andRow {
-			andRow[i] = 0
-		}
-		for x := 0; x < size; x++ {
-			if img.RGBAAt(x, y).A < 128 {
-				andRow[x>>3] |= 0x80 >> (uint(x) & 7)
-			}
-		}
-		buf.Write(andRow)
-	}
-	return buf.Bytes()
-}
-
-type winIconFrame struct {
-	sizeByte byte
-	data     []byte
-}
-
-func buildIconFrames() ([]winIconFrame, error) {
-	png256, err := encodeIconPNG(256)
-	if err != nil {
-		return nil, err
-	}
-	return []winIconFrame{
-		{sizeByte: 0, data: png256},
-		{sizeByte: 64, data: encodeIconDIB(64)},
-		{sizeByte: 48, data: encodeIconDIB(48)},
-		{sizeByte: 32, data: encodeIconDIB(32)},
-		{sizeByte: 24, data: encodeIconDIB(24)},
-		{sizeByte: 16, data: encodeIconDIB(16)},
-	}, nil
-}
-
-func writeWindowsAppIconICO(outPath string) error {
-	frames, err := buildIconFrames()
-	if err != nil {
-		return err
-	}
-
-	var icoBuf bytes.Buffer
-	_ = binary.Write(&icoBuf, binary.LittleEndian, uint16(0))
-	_ = binary.Write(&icoBuf, binary.LittleEndian, uint16(1))
-	_ = binary.Write(&icoBuf, binary.LittleEndian, uint16(len(frames)))
-
-	offset := uint32(6 + 16*len(frames))
-	for _, fr := range frames {
-		icoBuf.WriteByte(fr.sizeByte)
-		icoBuf.WriteByte(fr.sizeByte)
-		icoBuf.WriteByte(0)
-		icoBuf.WriteByte(0)
-		_ = binary.Write(&icoBuf, binary.LittleEndian, uint16(1))
-		_ = binary.Write(&icoBuf, binary.LittleEndian, uint16(32))
-		_ = binary.Write(&icoBuf, binary.LittleEndian, uint32(len(fr.data)))
-		_ = binary.Write(&icoBuf, binary.LittleEndian, offset)
-		offset += uint32(len(fr.data))
-	}
-	for _, fr := range frames {
-		icoBuf.Write(fr.data)
-	}
-	return os.WriteFile(outPath, icoBuf.Bytes(), 0644)
-}
-
-// writeWindowsResourceSYSO generates an amd64 COFF .syso object containing the .rsrc section
-// with RT_ICON (3) and RT_GROUP_ICON (14) so Go's linker embeds the icon directly into Mojra.exe.
-func writeWindowsResourceSYSO(outPath string) error {
-	return writeWindowsResourceSYSOForArch(outPath, "amd64")
-}
-
-func writeWindowsResourceSYSOForArch(outPath, goarch string) error {
-	var machine uint16
-	var relocType uint16
-	switch goarch {
-	case "amd64", "":
-		machine = 0x8664   // IMAGE_FILE_MACHINE_AMD64
-		relocType = 0x0003 // IMAGE_REL_AMD64_ADDR32NB
-	case "arm64":
-		machine = 0xAA64   // IMAGE_FILE_MACHINE_ARM64
-		relocType = 0x0002 // IMAGE_REL_ARM64_ADDR32NB
-	case "386":
-		machine = 0x014c   // IMAGE_FILE_MACHINE_I386
-		relocType = 0x0007 // IMAGE_REL_I386_DIR32NB
-	default:
-		return fmt.Errorf("nieobsługiwana architektura PE .syso: %s", goarch)
-	}
-
-	frames, err := buildIconFrames()
-	if err != nil {
-		return err
-	}
-	nIcons := len(frames) // 4
-
-	var grpBuf bytes.Buffer
-	_ = binary.Write(&grpBuf, binary.LittleEndian, uint16(0))
-	_ = binary.Write(&grpBuf, binary.LittleEndian, uint16(1))
-	_ = binary.Write(&grpBuf, binary.LittleEndian, uint16(nIcons))
-	for i, fr := range frames {
-		grpBuf.WriteByte(fr.sizeByte)
-		grpBuf.WriteByte(fr.sizeByte)
-		grpBuf.WriteByte(0)
-		grpBuf.WriteByte(0)
-		_ = binary.Write(&grpBuf, binary.LittleEndian, uint16(1))
-		_ = binary.Write(&grpBuf, binary.LittleEndian, uint16(32))
-		_ = binary.Write(&grpBuf, binary.LittleEndian, uint32(len(fr.data)))
-		_ = binary.Write(&grpBuf, binary.LittleEndian, uint16(i+1))
-	}
-	grpData := grpBuf.Bytes()
-	manifestData := []byte(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0" xmlns:asmv3="urn:schemas-microsoft-com:asm.v3">
-  <assemblyIdentity type="win32" name="Mojra.App" version="1.0.0.0"/>
-  <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
-    <security>
-      <requestedPrivileges>
-        <requestedExecutionLevel level="asInvoker" uiAccess="false"/>
-      </requestedPrivileges>
-    </security>
-  </trustInfo>
-  <compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">
-    <application>
-      <supportedOS Id="{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}"/>
-    </application>
-  </compatibility>
-  <asmv3:application>
-    <asmv3:windowsSettings>
-      <dpiAware xmlns="http://schemas.microsoft.com/SMI/2005/WindowsSettings">true/pm</dpiAware>
-      <dpiAwareness xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">PerMonitorV2, PerMonitor</dpiAwareness>
-    </asmv3:windowsSettings>
-  </asmv3:application>
-</assembly>`)
-
-	// Directory offsets:
-	// 0..40: Level 1 (Root: RT_ICON=3, RT_GROUP_ICON=14, RT_MANIFEST=24)
-	// iconL2Off: Level 2 for RT_ICON (IDs 1..nIcons)
-	// grpL2Off: Level 2 for RT_GROUP_ICON (ID 1)
-	// manL2Off: Level 2 for RT_MANIFEST (ID 1)
-	// iconL3Base: nIcons Level 3 directories (24B each) for RT_ICON
-	// grpL3Off: Level 3 directory for RT_GROUP_ICON
-	// manL3Off: Level 3 directory for RT_MANIFEST
-	// dataEntriesOff: IMAGE_RESOURCE_DATA_ENTRY x (nIcons+2)
-	iconL2Off := 40
-	grpL2Off := iconL2Off + 16 + 8*nIcons
-	manL2Off := grpL2Off + 24
-	iconL3Base := manL2Off + 24
-	grpL3Off := iconL3Base + 24*nIcons
-	manL3Off := grpL3Off + 24
-	dataEntriesOff := manL3Off + 24
-	totalDataEntries := nIcons + 2
-	payloadStart := dataEntriesOff + 16*totalDataEntries
-
-	curOff := payloadStart
-	frameOffsets := make([]int, nIcons)
-	for i, fr := range frames {
-		frameOffsets[i] = curOff
-		curOff += (len(fr.data) + 7) &^ 7
-	}
-	grpDataOffset := curOff
-	curOff += (len(grpData) + 7) &^ 7
-	manDataOffset := curOff
-	rsrcSize := manDataOffset + ((len(manifestData) + 7) &^ 7)
-
-	rsrc := make([]byte, rsrcSize)
-	putDir := func(off int, idEntries uint16) {
-		binary.LittleEndian.PutUint16(rsrc[off+14:], idEntries)
-	}
-	putEntry := func(off int, id uint32, target uint32, isSubdir bool) {
-		binary.LittleEndian.PutUint32(rsrc[off:], id)
-		if isSubdir {
-			target |= 0x80000000
-		}
-		binary.LittleEndian.PutUint32(rsrc[off+4:], target)
-	}
-
-	// Level 1 (RT_ICON=3, RT_GROUP_ICON=14, RT_MANIFEST=24)
-	putDir(0, 3)
-	putEntry(16, 3, uint32(iconL2Off), true)
-	putEntry(24, 14, uint32(grpL2Off), true)
-	putEntry(32, 24, uint32(manL2Off), true)
-
-	// Level 2
-	putDir(iconL2Off, uint16(nIcons))
-	for i := 0; i < nIcons; i++ {
-		putEntry(iconL2Off+16+8*i, uint32(i+1), uint32(iconL3Base+24*i), true)
-	}
-	putDir(grpL2Off, 1)
-	putEntry(grpL2Off+16, 1, uint32(grpL3Off), true)
-	putDir(manL2Off, 1)
-	putEntry(manL2Off+16, 1, uint32(manL3Off), true)
-
-	// Level 3 & Data Entries for RT_ICON
-	for i, fr := range frames {
-		l3 := iconL3Base + 24*i
-		de := dataEntriesOff + 16*i
-		putDir(l3, 1)
-		putEntry(l3+16, 0x0409, uint32(de), false)
-		binary.LittleEndian.PutUint32(rsrc[de:], uint32(frameOffsets[i]))
-		binary.LittleEndian.PutUint32(rsrc[de+4:], uint32(len(fr.data)))
-		copy(rsrc[frameOffsets[i]:], fr.data)
-	}
-
-	// Level 3 & Data Entry for RT_GROUP_ICON
-	grpDE := dataEntriesOff + 16*nIcons
-	putDir(grpL3Off, 1)
-	putEntry(grpL3Off+16, 0x0409, uint32(grpDE), false)
-	binary.LittleEndian.PutUint32(rsrc[grpDE:], uint32(grpDataOffset))
-	binary.LittleEndian.PutUint32(rsrc[grpDE+4:], uint32(len(grpData)))
-	copy(rsrc[grpDataOffset:], grpData)
-
-	// Level 3 & Data Entry for RT_MANIFEST
-	manDE := dataEntriesOff + 16*(nIcons+1)
-	putDir(manL3Off, 1)
-	putEntry(manL3Off+16, 0x0409, uint32(manDE), false)
-	binary.LittleEndian.PutUint32(rsrc[manDE:], uint32(manDataOffset))
-	binary.LittleEndian.PutUint32(rsrc[manDE+4:], uint32(len(manifestData)))
-	copy(rsrc[manDataOffset:], manifestData)
-
-	rawOffset := uint32(60)
-	relocOffset := rawOffset + uint32(rsrcSize)
-	symOffset := relocOffset + uint32(10*totalDataEntries)
-
-	var coff bytes.Buffer
-	_ = binary.Write(&coff, binary.LittleEndian, machine)
-	_ = binary.Write(&coff, binary.LittleEndian, uint16(1))
-	_ = binary.Write(&coff, binary.LittleEndian, uint32(0))
-	_ = binary.Write(&coff, binary.LittleEndian, symOffset)
-	_ = binary.Write(&coff, binary.LittleEndian, uint32(1))
-	_ = binary.Write(&coff, binary.LittleEndian, uint16(0))
-	_ = binary.Write(&coff, binary.LittleEndian, uint16(0))
-
-	var secName [8]byte
-	copy(secName[:], ".rsrc")
-	coff.Write(secName[:])
-	_ = binary.Write(&coff, binary.LittleEndian, uint32(rsrcSize))
-	_ = binary.Write(&coff, binary.LittleEndian, uint32(0))
-	_ = binary.Write(&coff, binary.LittleEndian, uint32(rsrcSize))
-	_ = binary.Write(&coff, binary.LittleEndian, rawOffset)
-	_ = binary.Write(&coff, binary.LittleEndian, relocOffset)
-	_ = binary.Write(&coff, binary.LittleEndian, uint32(0))
-	_ = binary.Write(&coff, binary.LittleEndian, uint16(totalDataEntries))
-	_ = binary.Write(&coff, binary.LittleEndian, uint16(0))
-	_ = binary.Write(&coff, binary.LittleEndian, uint32(0x40000040))
-
-	coff.Write(rsrc)
-
-	for i := 0; i < totalDataEntries; i++ {
-		de := uint32(dataEntriesOff + 16*i)
-		_ = binary.Write(&coff, binary.LittleEndian, de)
-		_ = binary.Write(&coff, binary.LittleEndian, uint32(0))
-		_ = binary.Write(&coff, binary.LittleEndian, relocType)
-	}
-
-	coff.Write(secName[:])
-	_ = binary.Write(&coff, binary.LittleEndian, uint32(0))
-	_ = binary.Write(&coff, binary.LittleEndian, int16(1))
-	_ = binary.Write(&coff, binary.LittleEndian, uint16(0))
-	coff.WriteByte(3)
-	coff.WriteByte(0)
-
-	_ = binary.Write(&coff, binary.LittleEndian, uint32(4))
-
-	return os.WriteFile(outPath, coff.Bytes(), 0644)
-}
-
-func zipDirRecursive(srcDir, outZipPath, rootPrefix string) error {
-	_ = os.Remove(outZipPath)
-	zf, err := os.Create(outZipPath)
-	if err != nil {
-		return err
-	}
-	defer zf.Close()
-
-	zw := zip.NewWriter(zf)
-	err = filepath.WalkDir(srcDir, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			return nil
-		}
-		rel, err := filepath.Rel(srcDir, path)
-		if err != nil {
-			return err
-		}
-		zipName := filepath.ToSlash(filepath.Join(rootPrefix, rel))
-		info, err := d.Info()
-		if err != nil {
-			return err
-		}
-		hdr, err := zip.FileInfoHeader(info)
-		if err != nil {
-			return err
-		}
-		hdr.Name = zipName
-		hdr.Method = zip.Deflate
-		w, err := zw.CreateHeader(hdr)
-		if err != nil {
-			return err
-		}
-		in, err := os.Open(path)
-		if err != nil {
-			return err
-		}
-		defer in.Close()
-		_, err = io.Copy(w, in)
-		return err
-	})
-	if err != nil {
-		_ = zw.Close()
-		return err
-	}
-	return zw.Close()
 }
 
 func packCmd(args []string) {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "Podaj identyfikator książki, np.: mojra pack <book-id>")
+		fmt.Fprintln(os.Stderr, msgPackMissingArg)
 		os.Exit(1)
 	}
 	bookID := book.SanitizeBookID(args[0])
 	rootDir := resolveRepoRootDir()
-	srcDir := filepath.Join(rootDir, "books", bookID)
-	distDir := filepath.Join(rootDir, "dist")
+	srcDir := filepath.Join(rootDir, booksDirName, bookID)
+	distDir := filepath.Join(rootDir, distDirName)
 	_ = os.MkdirAll(distDir, 0755)
-	outZip := filepath.Join(distDir, bookID+".playbook")
+	outZip := filepath.Join(distDir, bookID+playbookExt)
 
 	if err := book.PackBookToZip(srcDir, outZip); err != nil {
-		fmt.Fprintf(os.Stderr, "Błąd pakowania .playbook: %v\n", err)
+		fmt.Fprintf(os.Stderr, msgPackErr, err)
 		os.Exit(1)
 	}
-	fmt.Printf("✓ Spakowano książkę do archiwum: %s\n", outZip)
+	fmt.Printf(msgPackSaved, outZip)
 }
 
 func addCmd(args []string) {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "Podaj ścieżkę na dysku lub adres URL, np.: mojra add /ścieżka/do/książki lub mojra add https://example.com/ksiazka.playbook")
+		fmt.Fprintln(os.Stderr, msgAddMissingArg)
 		os.Exit(1)
 	}
 	rootDir := resolveRootDir()
@@ -2803,24 +441,24 @@ func addCmd(args []string) {
 			continue
 		}
 		lower := strings.ToLower(trimmed)
-		if strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://") {
+		if strings.HasPrefix(lower, httpPrefix) || strings.HasPrefix(lower, httpsPrefix) {
 			b, err := book.DownloadBookFromURL(booksDir, trimmed)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Błąd pobierania książki z URL (%s): %v\n", trimmed, err)
+				fmt.Fprintf(os.Stderr, msgAddDownloadErr, trimmed, err)
 				os.Exit(1)
 			}
 			settings.AddExternalBook(b.RootPath)
 			settings.ActiveBookID = b.ID
 			if err := book.SaveAppSettings(savesDir, settings); err != nil {
-				fmt.Fprintf(os.Stderr, "Błąd zapisu ustawień: %v\n", err)
+				fmt.Fprintf(os.Stderr, msgSaveSettingsErr, err)
 			}
-			fmt.Printf("✓ Pobrano i dodano książkę do biblioteki: %s (%s)\n", b.Title, b.RootPath)
+			fmt.Printf(msgAddDownloaded, b.Title, b.RootPath)
 			continue
 		}
 
 		resolved, err := book.ResolveDiskBookPaths(trimmed)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Błąd dodawania książki z dysku (%s): %v\n", trimmed, err)
+			fmt.Fprintf(os.Stderr, msgAddDiskErr, trimmed, err)
 			os.Exit(1)
 		}
 		for _, p := range resolved {
@@ -2829,66 +467,114 @@ func addCmd(args []string) {
 			}
 			if b, err := book.LoadBookFromPath(p); err == nil && b != nil {
 				settings.ActiveBookID = b.ID
-				fmt.Printf("✓ Dodano książkę z dysku (bez kopiowania): %s -> %s\n", b.Title, p)
+				fmt.Printf(msgAddDiskSuccess, b.Title, p)
 			}
 		}
 		if err := book.SaveAppSettings(savesDir, settings); err != nil {
-			fmt.Fprintf(os.Stderr, "Błąd zapisu ustawień: %v\n", err)
+			fmt.Fprintf(os.Stderr, msgSaveSettingsErr, err)
 		}
 	}
 }
 
+func saveAuditReportOutput(rootDir, defaultLogFile, outPath, savedFmt string, printToStdout, forceDefaultLog bool, data []byte) {
+	if printToStdout {
+		os.Stdout.Write(data)
+	}
+	if outPath == "" || forceDefaultLog {
+		if p, err := audit.WriteAuditLog(rootDir, defaultLogFile, data); err == nil {
+			fmt.Printf(savedFmt, p)
+		}
+	} else if err := os.WriteFile(outPath, data, 0644); err == nil {
+		fmt.Printf(savedFmt, outPath)
+	}
+}
+
 func auditCmd(args []string) {
-	fs := flag.NewFlagSet("audit", flag.ExitOnError)
-	category := fs.String("category", "", "Filtruj po kategorii (np. DEAD_CODE, GHOST_CALL, UNUSED_TPL_VAR, HARDCODED_GEOMETRY, DOM_ID_IN_GO, SUSPICIOUS_STRING, AST_DUPLICATE)")
-	lang := fs.String("lang", "", "Filtruj po języku: js, go, tpl")
-	onlyJS := fs.Bool("js", false, "Skanuj i wyświetl wyłącznie wyniki dla plików JavaScript (app/js/*.js)")
-	onlyGo := fs.Bool("go", false, "Skanuj i wyświetl wyłącznie wyniki dla plików Go (*.go)")
-	onlyTpl := fs.Bool("tpl", false, "Skanuj i wyświetl wyłącznie wyniki dla szablonów (*.tpl / *.tss)")
-	outPath := fs.String("out", "", "Opcjonalna ścieżka zapisu raportu do pliku")
-	strict := fs.Bool("strict", false, "Zwróć kod wyjścia 1 jeśli wykryto jakiekolwiek problemy")
+	fs := flag.NewFlagSet(cmdAudit, flag.ExitOnError)
+	staticMode := fs.Bool(flagAuditStaticName, false, flagAuditStaticDesc)
+	archMode := fs.Bool(flagAuditArchName, false, flagAuditArchDesc)
+	magicMode := fs.Bool(flagAuditMagicName, false, flagAuditMagicDesc)
+	stringsMode := fs.Bool(flagAuditStringsName, false, flagAuditStringsDesc)
+	category := fs.String(flagAuditCategoryName, "", flagAuditCategoryDesc)
+	severity := fs.String(flagAuditSeverityName, "", flagAuditSeverityDesc)
+	lang := fs.String(flagAuditLangName, "", flagAuditLangDesc)
+	onlyJS := fs.Bool(flagAuditJSName, false, flagAuditJSDesc)
+	onlyGo := fs.Bool(flagAuditGoName, false, flagAuditGoDesc)
+	onlyTpl := fs.Bool(flagAuditTplName, false, flagAuditTplDesc)
+	onlyTSS := fs.Bool(flagAuditTSSName, false, flagAuditTSSDesc)
+	outPath := fs.String(flagAuditOutName, "", flagAuditOutDesc)
+	strict := fs.Bool(flagAuditStrictName, false, flagAuditStrictDesc)
 	_ = fs.Parse(args)
 
 	filterLang := strings.ToLower(strings.TrimSpace(*lang))
-	if *onlyJS {
-		filterLang = "js"
-	} else if *onlyGo {
-		filterLang = "go"
-	} else if *onlyTpl {
-		filterLang = "tpl"
+	langFlags := []struct {
+		enabled bool
+		code    string
+	}{
+		{*onlyJS, langJS},
+		{*onlyGo, langGo},
+		{*onlyTSS, langTSS},
+		{*onlyTpl, langTpl},
+	}
+	for _, lf := range langFlags {
+		if lf.enabled {
+			filterLang = lf.code
+			break
+		}
 	}
 
 	filter := *category
+	filterSev := strings.TrimSpace(*severity)
 	for _, posArg := range fs.Args() {
 		lower := strings.ToLower(strings.TrimSpace(posArg))
-		if filterLang == "" && (lower == "js" || lower == "javascript" || lower == "go" || lower == "golang" || lower == "tpl") {
+		if filterLang == "" && auditLangAliases[lower] != "" {
 			filterLang = lower
+		} else if filterSev == "" && auditSevAliases[lower] {
+			filterSev = lower
 		} else if filter == "" {
 			filter = posArg
 		}
 	}
 
+	isMagic := *magicMode || *stringsMode
+	runAll := !*staticMode && !*archMode && !isMagic
 	rootDir := resolveRepoRootDir()
-	findings, err := audit.Run(rootDir)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Błąd audytu kodu: %v\n", err)
-		os.Exit(1)
-	}
+	staticCount := 0
 
-	var buf bytes.Buffer
-	count := audit.PrintReportWithLang(&buf, findings, filter, filterLang)
-	os.Stdout.Write(buf.Bytes())
-
-	if *outPath != "" {
-		if err := os.WriteFile(*outPath, buf.Bytes(), 0644); err != nil {
-			fmt.Fprintf(os.Stderr, "Błąd zapisu raportu do %s: %v\n", *outPath, err)
+	if *staticMode || runAll {
+		findings, err := audit.Run(rootDir)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, msgAuditStaticErr, err)
 			os.Exit(1)
 		}
-		fmt.Printf("\n✓ Zapisano raport audytu do: %s\n", *outPath)
+		var buf bytes.Buffer
+		staticCount = audit.PrintReportWithOptions(&buf, findings, filter, filterLang, filterSev)
+		saveAuditReportOutput(rootDir, auditStaticLogFile, *outPath, msgAuditStaticSaved, true, false, buf.Bytes())
 	}
 
-	if *strict && count > 0 {
+	if *archMode || runAll {
+		archFindings, err := audit.RunArch(rootDir)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, msgAuditArchErr, err)
+			os.Exit(1)
+		}
+		var buf bytes.Buffer
+		audit.PrintArchReportWithLang(&buf, archFindings, filter, filterLang, filterSev)
+		saveAuditReportOutput(rootDir, auditArchLogFile, *outPath, msgAuditArchSaved, *archMode, runAll, buf.Bytes())
+	}
+
+	if isMagic || runAll {
+		magicFindings, err := audit.RunMagic(rootDir)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, msgAuditMagicErr, err)
+			os.Exit(1)
+		}
+		var buf bytes.Buffer
+		audit.PrintMagicReportWithLang(&buf, magicFindings, filter, filterLang, filterSev)
+		saveAuditReportOutput(rootDir, auditStringsLogFile, *outPath, msgAuditMagicSaved, isMagic, runAll, buf.Bytes())
+	}
+
+	if (*staticMode || *strict) && staticCount > 0 {
 		os.Exit(1)
 	}
 }
-

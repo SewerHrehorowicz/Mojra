@@ -21,16 +21,53 @@ type Finding struct {
 	File     string
 	Line     int
 	FuncName string
+	Symbol   string
 	Category string
+	Severity string // "ERROR", "WARNING", "INFO"
 	Message  string
+	Score    int
 }
 
 func (f Finding) String() string {
+	normalizeFinding(&f)
 	fn := f.FuncName
 	if fn == "" {
 		fn = "<pkg>"
 	}
-	return fmt.Sprintf("%s:%d | %s | %s | %s", f.File, f.Line, fn, f.Category, f.Message)
+	return fmt.Sprintf("[%s] %s:%d | %s | %s | %s", f.Severity, f.File, f.Line, fn, f.Category, f.Message)
+}
+
+func normalizeFinding(f *Finding) {
+	if f.Symbol == "" && f.FuncName != "" {
+		f.Symbol = f.FuncName
+	}
+	if f.FuncName == "" && f.Symbol != "" {
+		f.FuncName = f.Symbol
+	}
+	switch strings.ToUpper(strings.TrimSpace(f.Severity)) {
+	case "ERROR", "ERR":
+		f.Severity = "ERROR"
+	case "WARNING", "WARN":
+		f.Severity = "WARNING"
+	case "INFO":
+		f.Severity = "INFO"
+	default:
+		f.Severity = defaultCategorySeverity(f.Category, f.Message)
+	}
+}
+
+func defaultCategorySeverity(cat, msg string) string {
+	switch cat {
+	case "DEAD_CODE":
+		if strings.Contains(msg, "wyłącznie w testach") || strings.Contains(msg, "metoda-wydmuszka") {
+			return "INFO"
+		}
+		return "WARNING"
+	case "UNUSED_TPL_VAR", "AST_DUPLICATE", "JS_DUPLICATE", "JS_UNUSED_PARAM", "JS_DEAD_PROP", "HOT_PATH_ALLOC", "FIELD_CONTRACT", "TPL_DUPLICATE":
+		return "WARNING"
+	default:
+		return "ERROR"
+	}
 }
 
 type parsedGoFile struct {
@@ -40,29 +77,48 @@ type parsedGoFile struct {
 	isTest  bool
 	file    *ast.File
 	src     []byte
+	lines   []string
 }
 
-// Run executes all static analysis passes on the repository rooted at rootDir.
-func Run(rootDir string) ([]Finding, error) {
-	fset := token.NewFileSet()
-	var goFiles []*parsedGoFile
+type parsedTextFile struct {
+	relPath string
+	absPath string
+	ext     string
+	src     string
+	lines   []string
+}
 
-	walkDirs := []string{"internal", "cmd"}
+type workspaceIndex struct {
+	rootDir  string
+	fset     *token.FileSet
+	goFiles  []*parsedGoFile
+	tplFiles []parsedTextFile
+	jsFiles  []parsedTextFile
+	cssFiles []parsedTextFile
+	svgFiles []parsedTextFile
+}
+
+func loadWorkspaceIndex(rootDir string) (*workspaceIndex, error) {
+	idx := &workspaceIndex{
+		rootDir: rootDir,
+		fset:    token.NewFileSet(),
+	}
+
+	walkDirs := []string{"internal", "cmd", "app", "www", "apps", "common"}
 	for _, sub := range walkDirs {
 		base := filepath.Join(rootDir, sub)
 		if _, err := os.Stat(base); err != nil {
 			continue
 		}
 		err := filepath.WalkDir(base, func(path string, d os.DirEntry, err error) error {
-			if err != nil || d.IsDir() || !strings.HasSuffix(path, ".go") {
+			if err != nil {
 				return err
 			}
-			raw, rErr := os.ReadFile(path)
-			if rErr != nil {
-				return rErr
-			}
-			pf, pErr := parser.ParseFile(fset, path, raw, parser.ParseComments)
-			if pErr != nil {
+			if d.IsDir() {
+				name := d.Name()
+				if name == ".git" || name == "dist" || name == "build" || name == "logs" || name == "node_modules" {
+					return filepath.SkipDir
+				}
 				return nil
 			}
 			rel, _ := filepath.Rel(rootDir, path)
@@ -70,20 +126,68 @@ func Run(rootDir string) ([]Finding, error) {
 			if strings.HasPrefix(rel, "internal/audit/") {
 				return nil
 			}
-			goFiles = append(goFiles, &parsedGoFile{
-				relPath: rel,
-				absPath: path,
-				pkgName: pf.Name.Name,
-				isTest:  strings.HasSuffix(rel, "_test.go"),
-				file:    pf,
-				src:     raw,
-			})
+			ext := strings.ToLower(filepath.Ext(path))
+			switch ext {
+			case ".go":
+				raw, rErr := os.ReadFile(path)
+				if rErr != nil {
+					return rErr
+				}
+				pf, pErr := parser.ParseFile(idx.fset, path, raw, parser.ParseComments)
+				if pErr != nil {
+					return nil
+				}
+				srcStr := string(raw)
+				idx.goFiles = append(idx.goFiles, &parsedGoFile{
+					relPath: rel,
+					absPath: path,
+					pkgName: pf.Name.Name,
+					isTest:  strings.HasSuffix(rel, "_test.go"),
+					file:    pf,
+					src:     raw,
+					lines:   strings.Split(srcStr, "\n"),
+				})
+			case ".tpl", ".js", ".tss", ".css", ".svg":
+				raw, rErr := os.ReadFile(path)
+				if rErr != nil {
+					return rErr
+				}
+				srcStr := string(raw)
+				tf := parsedTextFile{
+					relPath: rel,
+					absPath: path,
+					ext:     ext,
+					src:     srcStr,
+					lines:   strings.Split(srcStr, "\n"),
+				}
+				switch ext {
+				case ".tpl":
+					idx.tplFiles = append(idx.tplFiles, tf)
+				case ".js":
+					idx.jsFiles = append(idx.jsFiles, tf)
+				case ".tss", ".css":
+					idx.cssFiles = append(idx.cssFiles, tf)
+				case ".svg":
+					idx.svgFiles = append(idx.svgFiles, tf)
+				}
+			}
 			return nil
 		})
 		if err != nil {
 			return nil, err
 		}
 	}
+	return idx, nil
+}
+
+// Run executes all static analysis passes on the repository rooted at rootDir.
+func Run(rootDir string) ([]Finding, error) {
+	idx, err := loadWorkspaceIndex(rootDir)
+	if err != nil {
+		return nil, err
+	}
+	fset := idx.fset
+	goFiles := idx.goFiles
 
 	var findings []Finding
 	findings = append(findings, checkDeadGoFuncsAndStructs(fset, goFiles)...)
@@ -95,6 +199,10 @@ func Run(rootDir string) ([]Finding, error) {
 	findings = append(findings, checkASTDuplicatesAndAntiPatterns(fset, goFiles)...)
 	findings = append(findings, checkSecurityLoopsAndReliability(rootDir, fset, goFiles)...)
 	findings = append(findings, checkTSSSelectorLists(rootDir)...)
+
+	for i := range findings {
+		normalizeFinding(&findings[i])
+	}
 
 	sort.SliceStable(findings, func(i, j int) bool {
 		if findings[i].Category != findings[j].Category {
@@ -109,6 +217,19 @@ func Run(rootDir string) ([]Finding, error) {
 	return findings, nil
 }
 
+// WriteAuditLog writes an audit report buffer to <rootDir>/logs/<fileName>.
+func WriteAuditLog(rootDir, fileName string, content []byte) (string, error) {
+	logsDir := filepath.Join(rootDir, "logs")
+	if err := os.MkdirAll(logsDir, 0755); err != nil {
+		return "", err
+	}
+	outPath := filepath.Join(logsDir, fileName)
+	if err := os.WriteFile(outPath, content, 0644); err != nil {
+		return "", err
+	}
+	return outPath, nil
+}
+
 // PrintReport writes a formatted audit report with category counts to w.
 func PrintReport(w io.Writer, findings []Finding, filterCategory string) int {
 	return PrintReportWithLang(w, findings, filterCategory, "")
@@ -116,24 +237,28 @@ func PrintReport(w io.Writer, findings []Finding, filterCategory string) int {
 
 // PrintReportWithLang writes a formatted audit report filtered by optional category and language ("js", "go", "tpl").
 func PrintReportWithLang(w io.Writer, findings []Finding, filterCategory, filterLang string) int {
-	filter := strings.ToUpper(strings.TrimSpace(filterCategory))
-	lang := strings.ToLower(strings.TrimSpace(filterLang))
+	return PrintReportWithOptions(w, findings, filterCategory, filterLang, "")
+}
+
+// PrintReportWithOptions writes a formatted static audit report filtered by category, language, and severity.
+func PrintReportWithOptions(w io.Writer, findings []Finding, filterCategory, filterLang, filterSeverity string) int {
 	counts := make(map[string]int)
+	sevCounts := make(map[string]int)
 	var filtered []Finding
 	for _, f := range findings {
-		if lang != "" && !matchesLanguageFilter(f.File, lang) {
-			continue
-		}
-		if filter != "" && !strings.Contains(strings.ToUpper(f.Category), filter) {
+		normalizeFinding(&f)
+		if !MatchesFilters(f, filterCategory, filterLang, filterSeverity) {
 			continue
 		}
 		filtered = append(filtered, f)
 		counts[f.Category]++
+		sevCounts[f.Severity]++
 	}
 
 	fmt.Fprintf(w, "================================================================================\n")
 	fmt.Fprintf(w, " MOJRA STATIC CODE AUDIT (%d wykrytych miejsc)\n", len(filtered))
-	fmt.Fprintf(w, " Format: plik:linia | funkcja | KATEGORIA | opis\n")
+	fmt.Fprintf(w, " SEVERITY: ERROR=%d | WARNING=%d | INFO=%d\n", sevCounts["ERROR"], sevCounts["WARNING"], sevCounts["INFO"])
+	fmt.Fprintf(w, " Format: [SEVERITY] plik:linia | funkcja | KATEGORIA | opis\n")
 	fmt.Fprintf(w, "================================================================================\n\n")
 
 	for _, f := range filtered {
@@ -156,13 +281,36 @@ func PrintReportWithLang(w io.Writer, findings []Finding, filterCategory, filter
 	return len(filtered)
 }
 
+// MatchesFilters reports whether a finding matches optional category, language, and severity filters.
+func MatchesFilters(f Finding, filterCategory, filterLang, filterSeverity string) bool {
+	normalizeFinding(&f)
+	if filterLang != "" && !matchesLanguageFilter(f.File, strings.ToLower(strings.TrimSpace(filterLang))) {
+		return false
+	}
+	if filterCategory != "" && !strings.Contains(strings.ToUpper(f.Category), strings.ToUpper(strings.TrimSpace(filterCategory))) {
+		return false
+	}
+	sev := strings.ToUpper(strings.TrimSpace(filterSeverity))
+	if sev == "WARN" {
+		sev = "WARNING"
+	} else if sev == "ERR" {
+		sev = "ERROR"
+	}
+	if sev != "" && sev != "ALL" && f.Severity != sev {
+		return false
+	}
+	return true
+}
+
 func matchesLanguageFilter(file, lang string) bool {
 	switch lang {
 	case "js", "javascript":
 		return strings.HasSuffix(file, ".js")
 	case "go", "golang":
 		return strings.HasSuffix(file, ".go")
-	case "tpl", "html", "tss", "css":
+	case "tss", "css":
+		return strings.HasSuffix(file, ".tss") || strings.HasSuffix(file, ".css")
+	case "tpl", "html":
 		return strings.HasSuffix(file, ".tpl") || strings.HasSuffix(file, ".tss") || strings.HasSuffix(file, ".css")
 	default:
 		return true
@@ -495,12 +643,12 @@ func checkUnusedActionsAndTplVars(rootDir string, fset *token.FileSet, goFiles [
 
 	// Check actionSpecs entries vs .tpl and .js usage
 	for _, pf := range goFiles {
-		if pf.relPath != "internal/gui/actions_dispatch.go" {
+		if pf.relPath != "internal/gui/actions_dispatch.go" && pf.relPath != "internal/actions/actions_dispatch.go" {
 			continue
 		}
 		ast.Inspect(pf.file, func(n ast.Node) bool {
 			vs, ok := n.(*ast.ValueSpec)
-			if !ok || len(vs.Names) == 0 || vs.Names[0].Name != "actionSpecs" || len(vs.Values) == 0 {
+			if !ok || len(vs.Names) == 0 || (vs.Names[0].Name != "actionSpecs" && vs.Names[0].Name != "ActionSpecs") || len(vs.Values) == 0 {
 				return true
 			}
 			cl, ok := vs.Values[0].(*ast.CompositeLit)
@@ -512,31 +660,41 @@ func checkUnusedActionsAndTplVars(rootDir string, fset *token.FileSet, goFiles [
 				if !ok {
 					continue
 				}
-				lit, ok := kv.Key.(*ast.BasicLit)
-				if !ok || lit.Kind != token.STRING {
+				var actName string
+				var keyPos token.Pos
+				if lit, ok := kv.Key.(*ast.BasicLit); ok && lit.Kind == token.STRING {
+					actName, _ = strconv.Unquote(lit.Value)
+					keyPos = lit.Pos()
+				} else if sel, ok := kv.Key.(*ast.SelectorExpr); ok {
+					actName = sel.Sel.Name
+					keyPos = sel.Pos()
+				} else if ident, ok := kv.Key.(*ast.Ident); ok {
+					actName = ident.Name
+					keyPos = ident.Pos()
+				}
+				if actName == "" {
 					continue
 				}
-				actName, _ := strconv.Unquote(lit.Value)
 				if !strings.Contains(tplText, actName) && !strings.Contains(jsText, actName) {
 					// Check if referenced in ConfirmPendingAction in Go
 					usedInConfirm := false
 					for _, gf := range goFiles {
-						if gf.isTest || gf.relPath == pf.relPath {
+						if gf.isTest || gf.relPath == pf.relPath || strings.HasPrefix(gf.relPath, "internal/gui/action/") || gf.relPath == "internal/actions/action.go" {
 							continue
 						}
-						if strings.Contains(string(gf.src), `"`+actName+`"`) {
+						if strings.Contains(string(gf.src), `"`+actName+`"`) || strings.Contains(string(gf.src), "action."+actName) || strings.Contains(string(gf.src), actName) {
 							usedInConfirm = true
 							break
 						}
 					}
 					if !usedInConfirm {
-						pos := fset.Position(lit.Pos())
+						pos := fset.Position(keyPos)
 						out = append(out, Finding{
 							File:     pf.relPath,
 							Line:     pos.Line,
-							FuncName: "actionSpecs",
+							FuncName: "ActionSpecs",
 							Category: "DEAD_CODE",
-							Message:  fmt.Sprintf("akcja serwera %q w actionSpecs nie występuje w żadnym .tpl ani .js", actName),
+							Message:  fmt.Sprintf("akcja serwera %q w ActionSpecs nie występuje w żadnym .tpl ani .js", actName),
 						})
 					}
 				}
@@ -545,10 +703,10 @@ func checkUnusedActionsAndTplVars(rootDir string, fset *token.FileSet, goFiles [
 		})
 	}
 
-	// Check vars["key"] in internal/gui/render*.go vs .tpl usage
+	// Check vars["key"] in internal/views/view_*.go vs .tpl usage
 	varsIndexRe := regexp.MustCompile(`\bvars\["([A-Za-z0-9_]+)"\]\s*=`)
 	for _, pf := range goFiles {
-		if pf.isTest || !strings.HasPrefix(pf.relPath, "internal/gui/render") {
+		if pf.isTest || (!strings.HasPrefix(pf.relPath, "internal/gui/view_") && !strings.HasPrefix(pf.relPath, "internal/views/view_")) {
 			continue
 		}
 		lines := strings.Split(string(pf.src), "\n")

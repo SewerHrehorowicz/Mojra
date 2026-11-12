@@ -105,6 +105,26 @@ func NewContext(vars map[string]any) *RenderContext {
 	return &RenderContext{Vars: vars}
 }
 
+func NewRenderContext(vars map[string]any) *RenderContext {
+	return NewContext(vars)
+}
+
+func (c *RenderContext) WithOverlay(vars map[string]any) *RenderContext {
+	if c == nil {
+		return NewContext(vars)
+	}
+	return &RenderContext{
+		Vars:      vars,
+		parent:    c,
+		slotNodes: c.slotNodes,
+		slotCtx:   c.slotCtx,
+	}
+}
+
+func (c *RenderContext) WithStruct(v any) *RenderContext {
+	return c.WithVar(".", v)
+}
+
 // WithVar returns a lightweight child RenderContext binding key=val without copying parent maps.
 func (c *RenderContext) WithVar(key string, val any) *RenderContext {
 	if c == nil {

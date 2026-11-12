@@ -727,17 +727,6 @@ func BuildPlayerOnlyApp(appDir, outDir string) error {
 	return BundleJSFiles(JSPlayerModuleFiles(appDir), filepath.Join(outDir, "app.js"))
 }
 
-func TestBuildDeckPDF(t *testing.T) {
-	rootDir := filepath.Join("..", "..")
-	if err := BuildWWW(rootDir); err != nil {
-		t.Fatalf("BuildWWW error: %v", err)
-	}
-	if FindHeadlessPDFBrowser() != "" {
-		if _, err := BuildDeckPDF(rootDir, ""); err != nil {
-			t.Fatalf("BuildDeckPDF error: %v", err)
-		}
-	}
-}
 
 
 

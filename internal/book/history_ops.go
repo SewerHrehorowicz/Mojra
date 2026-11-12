@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 )
@@ -423,6 +424,14 @@ func compactHistoryRevisions(bookRoot string, h *BookHistory, now int64, cache m
 	return compacted
 }
 
+func computeBookHistoryMetrics(b *Book) (int, int) {
+	if b == nil {
+		return 0, 0
+	}
+	bd := AnalyzeScreenplay(b)
+	return len(b.Scenes), bd.TotalEighths
+}
+
 // RecordBookHistoryStep records an unnamed edit step after a book mutation, coalescing rapid identical keys.
 func RecordBookHistoryStep(b *Book, label, kind, coalesceKey, selectedSceneID string) error {
 	if b == nil || b.IsPacked || strings.TrimSpace(b.RootPath) == "" {
@@ -471,6 +480,7 @@ func RecordBookHistoryStep(b *Book, label, kind, coalesceKey, selectedSceneID st
 			selectedSceneID = b.Scenes[0].ID
 		}
 	}
+	scenesCount, totalEighths := computeBookHistoryMetrics(b)
 
 	branchIdxs := h.ActiveBranchRevisions()
 	if curIdx >= 0 && len(branchIdxs) > 0 && curIdx == branchIdxs[len(branchIdxs)-1] {
@@ -509,6 +519,8 @@ func RecordBookHistoryStep(b *Book, label, kind, coalesceKey, selectedSceneID st
 				curRev.Kind = cleanKind
 				curRev.SelectedSceneID = selectedSceneID
 				curRev.CoalesceKey = cleanCoalesce
+				curRev.ScenesCount = scenesCount
+				curRev.TotalEighths = totalEighths
 				curRev.Files = filesMap
 				h.syncBranchesMetadata()
 				if err := SaveBookHistory(b, h); err != nil {
@@ -541,6 +553,8 @@ func RecordBookHistoryStep(b *Book, label, kind, coalesceKey, selectedSceneID st
 		Label:           cleanLabel,
 		SelectedSceneID: selectedSceneID,
 		CoalesceKey:     cleanCoalesce,
+		ScenesCount:     scenesCount,
+		TotalEighths:    totalEighths,
 		Files:           filesMap,
 	}
 	h.Revisions = append(h.Revisions, newRev)
@@ -632,6 +646,7 @@ func SaveNamedBookVersion(b *Book, versionName, selectedSceneID string) (*Histor
 	revID := fmt.Sprintf("r%d", h.NextSeq)
 	h.NextSeq++
 
+	scenesCount, totalEighths := computeBookHistoryMetrics(b)
 	newVer := HistoryRevision{
 		ID:              revID,
 		Branch:          activeBr,
@@ -641,6 +656,8 @@ func SaveNamedBookVersion(b *Book, versionName, selectedSceneID string) (*Histor
 		Named:           true,
 		Label:           cleanName,
 		SelectedSceneID: selectedSceneID,
+		ScenesCount:     scenesCount,
+		TotalEighths:    totalEighths,
 		Files:           filesMap,
 	}
 	keptRevs = append(keptRevs, newVer)
@@ -762,6 +779,8 @@ func RestoreBookHistoryRevision(b *Book, revID string) (selectedSceneID string, 
 			Named:           false,
 			Label:           "Przywrócono wersję: " + targetRev.Label,
 			SelectedSceneID: targetRev.SelectedSceneID,
+			ScenesCount:     targetRev.ScenesCount,
+			TotalEighths:    targetRev.TotalEighths,
 			Files:           cloneFileHashMap(targetRev.Files),
 		}
 		h.Revisions = append(h.Revisions, restoredStep)
@@ -782,6 +801,21 @@ func RestoreBookHistoryRevision(b *Book, revID string) (selectedSceneID string, 
 	return targetRev.SelectedSceneID, targetRev.Label, nil
 }
 
+type historySnapMetrics struct {
+	scenes  int
+	eighths int
+}
+
+var (
+	historyMetricsMu    sync.RWMutex
+	historyMetricsCache = make(map[string]historySnapMetrics)
+)
+
+const (
+	historyHoverSummaryFmt        = "%s • %d scen • %s"
+	historyHoverBranchFallbackFmt = "%s • %d scen"
+)
+
 // BuildHistoryHoverSummaries computes concise hover hints ("<branch> • <N> scen • <pages/delta>")
 // for all revisions and branches in h, deduplicating snapshot parsing by file-hash signature.
 func BuildHistoryHoverSummaries(b *Book, h *BookHistory) (revHints map[string]string, branchHints map[string]string) {
@@ -791,14 +825,14 @@ func BuildHistoryHoverSummaries(b *Book, h *BookHistory) (revHints map[string]st
 		return revHints, branchHints
 	}
 
-	type snapMetrics struct {
-		scenes  int
-		eighths int
-	}
-	metricsBySig := make(map[string]snapMetrics)
-	computeMetrics := func(rev HistoryRevision) snapMetrics {
+	dirty := false
+	computeMetrics := func(revIdx int) historySnapMetrics {
+		rev := h.Revisions[revIdx]
+		if rev.ScenesCount > 0 {
+			return historySnapMetrics{scenes: rev.ScenesCount, eighths: rev.TotalEighths}
+		}
 		if len(rev.Files) == 0 {
-			return snapMetrics{scenes: len(b.Scenes), eighths: len(b.Scenes)}
+			return historySnapMetrics{scenes: len(b.Scenes), eighths: len(b.Scenes)}
 		}
 		keys := make([]string, 0, len(rev.Files))
 		for k := range rev.Files {
@@ -813,32 +847,46 @@ func BuildHistoryHoverSummaries(b *Book, h *BookHistory) (revHints map[string]st
 			sig.WriteByte(';')
 		}
 		sigStr := sig.String()
-		if m, ok := metricsBySig[sigStr]; ok {
+		historyMetricsMu.RLock()
+		m, ok := historyMetricsCache[sigStr]
+		historyMetricsMu.RUnlock()
+		if ok {
+			if m.scenes > 0 {
+				h.Revisions[revIdx].ScenesCount = m.scenes
+				h.Revisions[revIdx].TotalEighths = m.eighths
+				dirty = true
+			}
 			return m
 		}
 		snapBook, err := loadBookFromHistoryRevision(b.RootPath, rev)
 		if err != nil || snapBook == nil {
-			m := snapMetrics{scenes: len(b.Scenes), eighths: len(b.Scenes)}
-			metricsBySig[sigStr] = m
-			return m
+			return historySnapMetrics{scenes: len(b.Scenes), eighths: len(b.Scenes)}
 		}
 		bd := AnalyzeScreenplay(snapBook)
-		m := snapMetrics{
+		m = historySnapMetrics{
 			scenes:  len(snapBook.Scenes),
 			eighths: bd.TotalEighths,
 		}
-		metricsBySig[sigStr] = m
+		if m.scenes > 0 {
+			h.Revisions[revIdx].ScenesCount = m.scenes
+			h.Revisions[revIdx].TotalEighths = m.eighths
+			dirty = true
+		}
+		historyMetricsMu.Lock()
+		historyMetricsCache[sigStr] = m
+		historyMetricsMu.Unlock()
 		return m
 	}
 
-	baseMetrics := computeMetrics(h.Revisions[0])
+	baseMetrics := computeMetrics(0)
 	if curIdx := h.CursorIndex(); curIdx >= 0 && curIdx < len(h.Revisions) {
-		baseMetrics = computeMetrics(h.Revisions[curIdx])
+		baseMetrics = computeMetrics(curIdx)
 	}
 
-	for _, rev := range h.Revisions {
+	for i := range h.Revisions {
+		rev := h.Revisions[i]
 		brName := normalizeRevisionBranch(rev.Branch)
-		m := computeMetrics(rev)
+		m := computeMetrics(i)
 		deltaEighths := m.eighths - baseMetrics.eighths
 		var pagesPart string
 		if deltaEighths > 0 {
@@ -848,9 +896,12 @@ func BuildHistoryHoverSummaries(b *Book, h *BookHistory) (revHints map[string]st
 		} else {
 			pagesPart = FormatEighths(m.eighths)
 		}
-		hint := fmt.Sprintf("%s • %d scen • %s", brName, m.scenes, pagesPart)
+		hint := fmt.Sprintf(historyHoverSummaryFmt, brName, m.scenes, pagesPart)
 		revHints[rev.ID] = hint
 		branchHints[brName] = hint
+	}
+	if dirty {
+		_ = SaveBookHistory(b, h)
 	}
 	for _, br := range h.Branches {
 		brName := normalizeRevisionBranch(br.Name)
@@ -861,7 +912,7 @@ func BuildHistoryHoverSummaries(b *Book, h *BookHistory) (revHints map[string]st
 			}
 		}
 		if _, ok := branchHints[brName]; !ok {
-			branchHints[brName] = fmt.Sprintf("%s • %d scen", brName, len(b.Scenes))
+			branchHints[brName] = fmt.Sprintf(historyHoverBranchFallbackFmt, brName, len(b.Scenes))
 		}
 	}
 	return revHints, branchHints

@@ -21,10 +21,19 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"mojra/internal/logging"
 )
 
-// LoadBooksFromDirectory scans booksDir for unpacked book folders and packed .stbook/.zip archives.
-// If a directory exists alongside a .stbook archive with the same ID, the unpacked directory takes precedence
+const (
+	extPlaybook           = ".playbook"
+	extZip                = ".zip"
+	rebindHashIDFormat    = "%s-%s"
+	rebindHashSeqIDFormat = "%s-%s-%d"
+)
+
+// LoadBooksFromDirectory scans booksDir for unpacked book folders and packed .playbook/.zip archives.
+// If a directory exists alongside a .playbook archive with the same ID, the unpacked directory takes precedence
 // so the user can edit it live in the Node Studio.
 func LoadBooksFromDirectory(booksDir string) ([]*Book, error) {
 	if err := os.MkdirAll(booksDir, 0755); err != nil {
@@ -36,35 +45,84 @@ func LoadBooksFromDirectory(booksDir string) ([]*Book, error) {
 		return nil, err
 	}
 
-	byID := make(map[string]*Book)
-	var order []string
-
-	// First pass: unpacked directories
+	var dirEntries []string
 	for _, e := range entries {
 		if !e.IsDir() || strings.HasPrefix(e.Name(), ".") {
 			continue
 		}
-		dirPath := filepath.Join(booksDir, e.Name())
-		b, err := LoadBookFromDir(dirPath)
-		if err != nil {
+		dirEntries = append(dirEntries, e.Name())
+	}
+
+	loadedDirs := make([]*Book, len(dirEntries))
+	if len(dirEntries) > 0 {
+		var wg sync.WaitGroup
+		wg.Add(len(dirEntries))
+		for i, dirName := range dirEntries {
+			go func(idx int, name string) {
+				defer wg.Done()
+				tBook := time.Now()
+				dirPath := filepath.Join(booksDir, name)
+				b, loadErr := LoadBookFromDir(dirPath)
+				if loadErr != nil || b == nil {
+					return
+				}
+				logging.Active.MarkStep(logging.StageLoadBookItem, tBook, b.ID)
+				loadedDirs[idx] = b
+			}(i, dirName)
+		}
+		wg.Wait()
+	}
+
+	byID := make(map[string]*Book, len(entries))
+	var order []string
+	for _, b := range loadedDirs {
+		if b == nil {
 			continue
 		}
 		byID[b.ID] = b
 		order = append(order, b.ID)
 	}
 
-	// Second pass: packed .playbook, .stbook, or .zip files (only if not already loaded as an unpacked folder)
+	// Second pass: packed .playbook or .zip files (only if not already loaded as an unpacked folder)
+	var zipEntries []string
 	for _, e := range entries {
 		if e.IsDir() || strings.HasPrefix(e.Name(), ".") {
 			continue
 		}
-		lower := strings.ToLower(e.Name())
+		name := e.Name()
+		lower := strings.ToLower(name)
 		if !isPackedBookArchiveName(lower) {
 			continue
 		}
-		zipPath := filepath.Join(booksDir, e.Name())
-		b, err := LoadBookFromZip(zipPath)
-		if err != nil {
+		stem := SanitizeBookID(strings.TrimSuffix(name, filepath.Ext(name)))
+		if _, exists := byID[stem]; exists {
+			continue
+		}
+		zipEntries = append(zipEntries, name)
+	}
+
+	loadedZips := make([]*Book, len(zipEntries))
+	if len(zipEntries) > 0 {
+		var wg sync.WaitGroup
+		wg.Add(len(zipEntries))
+		for i, zipName := range zipEntries {
+			go func(idx int, name string) {
+				defer wg.Done()
+				tBook := time.Now()
+				zipPath := filepath.Join(booksDir, name)
+				b, loadErr := LoadBookFromZip(zipPath)
+				if loadErr != nil || b == nil {
+					return
+				}
+				logging.Active.MarkStep(logging.StageLoadBookItem, tBook, b.ID)
+				loadedZips[idx] = b
+			}(i, zipName)
+		}
+		wg.Wait()
+	}
+
+	for _, b := range loadedZips {
+		if b == nil {
 			continue
 		}
 		if _, exists := byID[b.ID]; !exists {
@@ -124,10 +182,10 @@ func RebindBookID(b *Book, newID string) {
 }
 
 func isPackedBookArchiveName(lower string) bool {
-	return strings.HasSuffix(lower, ".playbook") || strings.HasSuffix(lower, ".stbook") || strings.HasSuffix(lower, ".zip")
+	return strings.HasSuffix(lower, ".playbook") || strings.HasSuffix(lower, ".zip")
 }
 
-// LoadBookFromPath loads either an unpacked book directory or a packed .playbook/.stbook/.zip archive from any path on disk.
+// LoadBookFromPath loads either an unpacked book directory or a packed .playbook/.zip archive from any path on disk.
 func LoadBookFromPath(bookPath string) (*Book, error) {
 	info, err := os.Stat(bookPath)
 	if err != nil {
@@ -158,43 +216,66 @@ func LoadLibraryBooks(booksDir string, externalPaths []string) ([]*Book, error) 
 		byID[b.ID] = b
 		seenRoots[canonicalPathKey(b.RootPath)] = true
 		if !b.IsPacked {
-			seenRoots[canonicalPathKey(filepath.Join(booksDir, b.ID+".playbook"))] = true
-			seenRoots[canonicalPathKey(filepath.Join(booksDir, b.ID+".stbook"))] = true
-			seenRoots[canonicalPathKey(filepath.Join(booksDir, b.ID+".zip"))] = true
+			seenRoots[canonicalPathKey(filepath.Join(booksDir, b.ID+extPlaybook))] = true
+			seenRoots[canonicalPathKey(filepath.Join(booksDir, b.ID+extZip))] = true
 		}
 		out = append(out, b)
 	}
 
+	var validExtPaths []string
 	for _, rawExt := range externalPaths {
-		absPath, err := ExpandLocalPath(rawExt)
-		if err != nil {
+		absPath, expandErr := ExpandLocalPath(rawExt)
+		if expandErr != nil {
 			continue
 		}
 		rootKey := canonicalPathKey(absPath)
 		if seenRoots[rootKey] {
 			continue
 		}
-		b, err := LoadBookFromPath(absPath)
-		if err != nil || b == nil {
+		seenRoots[rootKey] = true
+		validExtPaths = append(validExtPaths, absPath)
+	}
+
+	loadedExt := make([]*Book, len(validExtPaths))
+	if len(validExtPaths) > 0 {
+		var wg sync.WaitGroup
+		wg.Add(len(validExtPaths))
+		for i, extPath := range validExtPaths {
+			go func(idx int, p string) {
+				defer wg.Done()
+				tBook := time.Now()
+				b, loadErr := LoadBookFromPath(p)
+				if loadErr != nil || b == nil {
+					return
+				}
+				logging.Active.MarkStep(logging.StageLoadBookItem, tBook, b.ID)
+				loadedExt[idx] = b
+			}(i, extPath)
+		}
+		wg.Wait()
+	}
+
+	for i, absPath := range validExtPaths {
+		b := loadedExt[i]
+		if b == nil {
 			continue
 		}
 		b.IsExternal = !isPathDirectlyInDir(absPath, booksDir)
 		if _, exists := byID[b.ID]; exists {
-			candidateID := fmt.Sprintf("%s-%s", b.ID, shortPathHash(absPath))
-			for i := 2; byID[candidateID] != nil; i++ {
-				candidateID = fmt.Sprintf("%s-%s-%d", b.ID, shortPathHash(absPath), i)
+			candidateID := fmt.Sprintf(rebindHashIDFormat, b.ID, shortPathHash(absPath))
+			for seq := 2; byID[candidateID] != nil; seq++ {
+				candidateID = fmt.Sprintf(rebindHashSeqIDFormat, b.ID, shortPathHash(absPath), seq)
 			}
 			RebindBookID(b, candidateID)
 		}
 		byID[b.ID] = b
-		seenRoots[rootKey] = true
 		out = append(out, b)
 	}
 
 	return out, nil
 }
 
-// LoadPackedBooks scans booksDir and externalPaths for packed .playbook, .stbook, and .zip archives,
+// LoadPackedBooks scans booksDir and externalPaths for packed .playbook and .zip archives,
 // returning all packed archives even when an unpacked working copy exists on disk.
 func LoadPackedBooks(booksDir string, externalPaths []string) []*Book {
 	var out []*Book
@@ -495,11 +576,11 @@ func ensureFallbackEmptyScene(b *Book, warnMsg, fallbackText string) {
 	}
 }
 
-// ValidateBookZip checks whether a .stbook or .zip archive is a valid zip containing Mojra .playtxt files.
+// ValidateBookZip checks whether a .playbook or .zip archive is a valid zip containing Mojra .playtxt files.
 func ValidateBookZip(zipPath string) error {
 	zr, err := zip.OpenReader(zipPath)
 	if err != nil {
-		return fmt.Errorf("nieprawidłowe archiwum ZIP / .stbook: %w", err)
+		return fmt.Errorf("nieprawidłowe archiwum ZIP / .playbook: %w", err)
 	}
 	defer zr.Close()
 
@@ -523,7 +604,7 @@ func ValidateBookZip(zipPath string) error {
 	return fmt.Errorf("archiwum nie zawiera plików opowieści (.playtxt / story.playtxt / book.playtxt)")
 }
 
-// ResolveDiskBookPaths validates and resolves a disk path into one or more book paths (folders or .stbook/.zip files) without copying them.
+// ResolveDiskBookPaths validates and resolves a disk path into one or more book paths (folders or .playbook/.zip files) without copying them.
 func ResolveDiskBookPaths(rawPath string) ([]string, error) {
 	absPath, err := ExpandLocalPath(rawPath)
 	if err != nil {
@@ -555,7 +636,7 @@ func ResolveDiskBookPaths(rawPath string) ([]string, error) {
 		return []string{absPath}, nil
 	}
 
-	// Check if the chosen folder is a parent directory containing multiple book folders or .playbook/.stbook/.zip files
+	// Check if the chosen folder is a parent directory containing multiple book folders or .playbook/.zip files
 	entries, err := os.ReadDir(absPath)
 	if err != nil {
 		return nil, err
@@ -619,11 +700,11 @@ func isBlockedSSRFIp(ip net.IP) bool {
 	return false
 }
 
-// DownloadBookFromURL downloads a .stbook or .zip archive (or plain .txt story) from an HTTP/HTTPS URL and stores it as a .stbook package in booksDir.
+// DownloadBookFromURL downloads a .playbook or .zip archive (or plain .txt story) from an HTTP/HTTPS URL and stores it as a .playbook package in booksDir.
 func DownloadBookFromURL(booksDir, rawURL string) (*Book, error) {
 	trimmedURL := strings.TrimSpace(rawURL)
 	if trimmedURL == "" {
-		return nil, fmt.Errorf("podaj adres URL do książki (.stbook lub .zip)")
+		return nil, fmt.Errorf("podaj adres URL do książki (.playbook lub .zip)")
 	}
 	parsedURL, err := url.Parse(trimmedURL)
 	if err != nil || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") || parsedURL.Host == "" {
@@ -695,7 +776,7 @@ func DownloadBookFromURL(booksDir, rawURL string) (*Book, error) {
 		return nil, fmt.Errorf("serwer zwrócił błąd HTTP %d (%s)", resp.StatusCode, resp.Status)
 	}
 
-	tmpFile, err := os.CreateTemp(booksDir, ".stbook-download-*.tmp")
+	tmpFile, err := os.CreateTemp(booksDir, ".playbook-download-*.tmp")
 	if err != nil {
 		return nil, err
 	}
@@ -728,7 +809,7 @@ func DownloadBookFromURL(booksDir, rawURL string) (*Book, error) {
 				return nil, err
 			}
 		} else {
-			return nil, fmt.Errorf("pobrany plik nie jest prawidłowym archiwum książki (.stbook / .zip): %v", err)
+			return nil, fmt.Errorf("pobrany plik nie jest prawidłowym archiwum książki (.playbook / .zip): %v", err)
 		}
 	}
 
@@ -743,11 +824,7 @@ func DownloadBookFromURL(booksDir, rawURL string) (*Book, error) {
 		bookID = fmt.Sprintf("%s-%s", bookID, shortPathHash(trimmedURL))
 	}
 
-	outExt := ".stbook"
-	if urlExt == ".playbook" {
-		outExt = ".playbook"
-	}
-	finalZipPath := filepath.Join(booksDir, bookID+outExt)
+	finalZipPath := filepath.Join(booksDir, bookID+".playbook")
 	_ = os.Remove(finalZipPath)
 	if err := os.Rename(tmpPath, finalZipPath); err != nil {
 		return nil, fmt.Errorf("błąd zapisu książki w bibliotece: %w", err)
@@ -800,7 +877,6 @@ func chooseDownloadedBookID(urlStem, urlExt string, preview *Book) string {
 		"latest":   true,
 		"release":  true,
 		"zip":      true,
-		"stbook":   true,
 		"playbook": true,
 	}
 	if preview != nil && preview.Title != "" {
@@ -808,7 +884,7 @@ func chooseDownloadedBookID(urlStem, urlExt string, preview *Book) string {
 		if genericStems[cleanStem] && titleID != "" && titleID != "book" {
 			return titleID
 		}
-		if urlExt != ".playbook" && urlExt != ".stbook" && urlExt != ".zip" && titleID != "" && titleID != "book" {
+		if urlExt != ".playbook" && urlExt != ".zip" && titleID != "" && titleID != "book" {
 			return titleID
 		}
 	}
@@ -880,6 +956,7 @@ func LoadBookFromDir(bookDir string) (*Book, error) {
 	var storyFiles []string
 	var audioFiles []string
 	var imageFiles []string
+	storyContents := make(map[string]string, len(entries))
 
 	for _, e := range entries {
 		if e.IsDir() || e.Type()&os.ModeSymlink != 0 || isHiddenNonEditorFile(e.Name()) {
@@ -904,6 +981,7 @@ func LoadBookFromDir(bookDir string) (*Book, error) {
 				storyFiles = append(storyFiles, name)
 			} else if raw, err := readSafeBookTextFile(bookDir, name); err == nil && looksLikePlainTextStory(raw) {
 				storyFiles = append(storyFiles, name)
+				storyContents[name] = raw
 			}
 		}
 	}
@@ -947,10 +1025,14 @@ func LoadBookFromDir(bookDir string) (*Book, error) {
 
 	var totalDirTextBytes int
 	for _, sf := range storyFiles {
-		raw, err := readSafeBookTextFile(bookDir, sf)
-		if err != nil {
-			b.Warnings = append(b.Warnings, fmt.Sprintf("Nie można odczytać pliku %s: %v", sf, err))
-			continue
+		raw, ok := storyContents[sf]
+		if !ok {
+			var err error
+			raw, err = readSafeBookTextFile(bookDir, sf)
+			if err != nil {
+				b.Warnings = append(b.Warnings, fmt.Sprintf("Nie można odczytać pliku %s: %v", sf, err))
+				continue
+			}
 		}
 		if totalDirTextBytes+len(raw) > MaxZipTotalTextBytes {
 			b.Warnings = append(b.Warnings, fmt.Sprintf("Pominięto plik %s: przekroczono łączny limit rozmiaru tekstu (32 MB)", sf))
@@ -970,7 +1052,7 @@ func LoadBookFromDir(bookDir string) (*Book, error) {
 	return b, nil
 }
 
-// LoadBookFromZip loads a packed .stbook or .zip archive, supporting media files in subdirectories.
+// LoadBookFromZip loads a packed .playbook or .zip archive, supporting media files in subdirectories.
 func LoadBookFromZip(zipPath string) (*Book, error) {
 	zr, err := zip.OpenReader(zipPath)
 	if err != nil {
@@ -999,7 +1081,7 @@ func loadBookFromZipFiles(files []*zip.File, stem, zipPath string, extractMediaB
 		ID:             bookID,
 		Title:          stem,
 		Author:         "Nieznany Autor",
-		Description:    "Interaktywna opowieść (pakiet .stbook).",
+		Description:    "Interaktywna opowieść (pakiet .playbook).",
 		IsPacked:       true,
 		RootPath:       zipPath,
 		PackedMedia:    make(map[string]PackedMediaEntry),
@@ -1080,7 +1162,7 @@ func loadBookFromZipFiles(files []*zip.File, stem, zipPath string, extractMediaB
 	}
 
 	ensureFallbackEmptyScene(b,
-		"Błąd parsowania archiwum .stbook: nie znaleziono żadnych scen w plikach .playtxt.",
+		"Błąd parsowania archiwum .playbook: nie znaleziono żadnych scen w plikach .playtxt.",
 		"Archiwum książki nie zawierało żadnych poprawnych scen.",
 	)
 
@@ -1117,7 +1199,7 @@ func readValidatedZipMediaBytes(f *zip.File, relSlash string, totalBytes *int64)
 	return data, nil
 }
 
-// UnpackBookZip extracts a packed .stbook or .zip archive into targetDir so it can be edited in Node Studio.
+// UnpackBookZip extracts a packed .playbook or .zip archive into targetDir so it can be edited in Node Studio.
 func UnpackBookZip(zipPath, targetDir string) error {
 	zr, err := zip.OpenReader(zipPath)
 	if err != nil {
@@ -1395,7 +1477,113 @@ func DefaultProjectsDir() string {
 	return filepath.Join(DefaultAppDataDir(), "projects")
 }
 
-// ServeBookMedia streams an audio or raster image file from either an unpacked directory or a .stbook archive,
+// FindBookByID loads library books from booksDir and externalPaths and returns the book matching bookID.
+func FindBookByID(booksDir string, externalPaths []string, bookID string) (*Book, error) {
+	if booksDir != "" && bookID != "" {
+		if b, err := LoadBookFromDir(filepath.Join(booksDir, bookID)); err == nil && b != nil && b.ID == bookID {
+			return b, nil
+		}
+		if b, err := LoadBookFromZip(filepath.Join(booksDir, bookID+ExportSuffixPlaybook)); err == nil && b != nil && b.ID == bookID {
+			return b, nil
+		}
+	}
+	books, err := LoadLibraryBooks(booksDir, externalPaths)
+	if err != nil {
+		return nil, err
+	}
+	for _, b := range books {
+		if b.ID == bookID {
+			return b, nil
+		}
+	}
+	return nil, fmt.Errorf("book %q not found", bookID)
+}
+
+// ResolveNewBookDir returns the configured or default directory for creating new book projects.
+func ResolveNewBookDir(settings *AppSettings) string {
+	if settings != nil && strings.TrimSpace(settings.NewBookDir) != "" {
+		if expanded, err := ExpandLocalPath(settings.NewBookDir); err == nil && expanded != "" {
+			return expanded
+		}
+	}
+	return DefaultProjectsDir()
+}
+
+// ResolveExportDir returns the configured or default export directory for b.
+func (b *Book) ResolveExportDir(settings *AppSettings) string {
+	if b != nil {
+		if strings.TrimSpace(b.ExportDir) != "" {
+			if expanded, err := ExpandLocalPath(b.ExportDir); err == nil && expanded != "" {
+				return expanded
+			}
+		}
+		if settings != nil {
+			if saved := strings.TrimSpace(settings.GetBookExportDir(b.ID)); saved != "" {
+				if expanded, err := ExpandLocalPath(saved); err == nil && expanded != "" {
+					return expanded
+				}
+			}
+		}
+	}
+	if settings != nil && strings.TrimSpace(settings.ExportDir) != "" {
+		if expanded, err := ExpandLocalPath(settings.ExportDir); err == nil && expanded != "" {
+			return expanded
+		}
+	}
+	return DefaultExportDir()
+}
+
+// PersistExportDir updates the export directory for b and persists it in settings.ini.
+func (b *Book) PersistExportDir(savesDir string, settings *AppSettings, dir string) {
+	if b != nil {
+		b.ExportDir = dir
+	}
+	if settings != nil {
+		if b != nil {
+			settings.SetBookExportDir(b.ID, dir)
+		}
+		if dir != "" {
+			settings.ExportDir = dir
+		}
+		_ = SaveAppSettings(savesDir, settings)
+	}
+}
+
+// ReloadFromDisk reloads the book from its RootPath or from booksDir while preserving external/export/ID pool metadata.
+func (b *Book) ReloadFromDisk(booksDir string, settings *AppSettings) *Book {
+	if b == nil {
+		return nil
+	}
+	prevID := b.ID
+	prevExt := b.IsExternal
+	prevExportDir := b.ExportDir
+	var extPaths []string
+	if settings != nil {
+		extPaths = settings.ExternalBooks
+		if prevExportDir == "" {
+			prevExportDir = settings.GetBookExportDir(prevID)
+		}
+	}
+	if b.RootPath != "" {
+		if reloaded, err := LoadBookFromPath(b.RootPath); err == nil && reloaded != nil {
+			reloaded.IsExternal = prevExt
+			reloaded.ExportDir = prevExportDir
+			reloaded.CopySceneIDPoolStateFrom(b)
+			if prevID != "" && reloaded.ID != prevID {
+				RebindBookID(reloaded, prevID)
+			}
+			return reloaded
+		}
+	}
+	if reloaded, err := FindBookByID(booksDir, extPaths, prevID); err == nil && reloaded != nil {
+		reloaded.ExportDir = prevExportDir
+		reloaded.CopySceneIDPoolStateFrom(b)
+		return reloaded
+	}
+	return b
+}
+
+// ServeBookMedia streams an audio or raster image file from either an unpacked directory or a .playbook archive,
 // supporting safe subdirectory paths (e.g. "images/scene.png" or "voice/scene.ogg").
 func ServeBookMedia(w http.ResponseWriter, r *http.Request, b *Book, rawRelPath string) {
 	decoded, err := url.PathUnescape(rawRelPath)

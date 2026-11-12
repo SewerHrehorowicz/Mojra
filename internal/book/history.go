@@ -25,6 +25,11 @@ const (
 	HistoryCompactionBucketSec = 300
 	HistoryLargeDeltaChars     = 300
 	HistoryLargeDeltaLines     = 6
+
+	histKeyScenes      = "scenes"
+	histKeyEighths     = "eighths"
+	histLineScenesFmt  = "scenes: %d\n"
+	histLineEighthsFmt = "eighths: %d\n"
 )
 
 var validHexHashRegexp = regexp.MustCompile(`^[a-f0-9]{64}$`)
@@ -74,7 +79,17 @@ type HistoryRevision struct {
 	Label           string
 	SelectedSceneID string
 	CoalesceKey     string
+	ScenesCount     int
+	TotalEighths    int
 	Files           map[string]string
+}
+
+// HistoryPreview holds the read-only revision preview snapshot for a book in Studio.
+type HistoryPreview struct {
+	RevisionID      string
+	RevisionLabel   string
+	LiveBook        *Book
+	SelectedSceneID string
 }
 
 // BookHistory holds the parsed state of books/<id>/.history/history.txt.
@@ -84,6 +99,100 @@ type BookHistory struct {
 	NextSeq      int
 	Branches     []HistoryBranch
 	Revisions    []HistoryRevision
+	Preview      *HistoryPreview
+
+	cachedBookID  string
+	cachedModNano int64
+	cachedSize    int64
+}
+
+// IsPreview reports whether a read-only history revision preview is currently active.
+func (h *BookHistory) IsPreview(studioBook *Book) bool {
+	return h != nil && h.Preview != nil && h.Preview.RevisionID != "" && studioBook != nil && !studioBook.IsPacked
+}
+
+// ExitPreview exits the read-only history preview, restores the live Studio book, and returns the saved SelectedSceneID.
+func (h *BookHistory) ExitPreview(booksDir string, settings *AppSettings, studioBook **Book) string {
+	if h == nil || h.Preview == nil || h.Preview.RevisionID == "" {
+		return ""
+	}
+	prev := h.Preview
+	h.Preview = nil
+	h.cachedBookID = ""
+	h.cachedModNano = 0
+	h.cachedSize = 0
+	if prev.LiveBook != nil && studioBook != nil {
+		*studioBook = prev.LiveBook
+	}
+	if studioBook != nil && *studioBook != nil {
+		*studioBook = (*studioBook).ReloadFromDisk(booksDir, settings)
+	}
+	return prev.SelectedSceneID
+}
+
+// InvalidateCache clears the mtime-cached parsed BookHistory snapshot metadata.
+func (h *BookHistory) InvalidateCache() {
+	if h == nil {
+		return
+	}
+	h.cachedBookID = ""
+	h.cachedModNano = 0
+	h.cachedSize = 0
+}
+
+// RefreshFromDisk updates the in-memory BookHistory revisions/branches in-place when disk mtime/size changes, preserving Preview.
+func (h *BookHistory) RefreshFromDisk(studioBook *Book) *BookHistory {
+	if h == nil || studioBook == nil || studioBook.IsPacked || strings.TrimSpace(studioBook.RootPath) == "" {
+		return nil
+	}
+	indexPath := BookHistoryIndexPath(studioBook.RootPath)
+	info, statErr := os.Stat(indexPath)
+	var modNano, size int64
+	if statErr == nil {
+		modNano = info.ModTime().UnixNano()
+		size = info.Size()
+	}
+	if h.cachedBookID != "" &&
+		h.cachedBookID == studioBook.ID &&
+		h.cachedModNano == modNano &&
+		h.cachedSize == size {
+		return h
+	}
+	loaded, err := LoadBookHistory(studioBook)
+	if err != nil || loaded == nil {
+		return nil
+	}
+	h.ActiveBranch = loaded.ActiveBranch
+	h.Cursor = loaded.Cursor
+	h.NextSeq = loaded.NextSeq
+	h.Branches = loaded.Branches
+	h.Revisions = loaded.Revisions
+	h.cachedBookID = studioBook.ID
+	h.cachedModNano = modNano
+	h.cachedSize = size
+	return h
+}
+
+// EnsureBaseline captures the initial baseline before the first edit if not in preview mode.
+func (h *BookHistory) EnsureBaseline(studioBook *Book, selectedSceneID string) {
+	if h == nil || h.IsPreview(studioBook) || studioBook == nil || studioBook.IsPacked {
+		return
+	}
+	if err := EnsureBookHistoryBaseline(studioBook, selectedSceneID); err != nil {
+		return
+	}
+	h.InvalidateCache()
+}
+
+// RecordStep records a history step after an editor mutation and invalidates the history cache.
+func (h *BookHistory) RecordStep(studioBook *Book, label, kind, coalesceKey, selectedSceneID string) {
+	if h == nil || h.IsPreview(studioBook) || studioBook == nil || studioBook.IsPacked {
+		return
+	}
+	if err := RecordBookHistoryStep(studioBook, label, kind, coalesceKey, selectedSceneID); err != nil {
+		return
+	}
+	h.InvalidateCache()
 }
 
 func bookHistoryDir(bookRoot string) string {
@@ -427,6 +536,14 @@ func ParseHistoryFile(content string) *BookHistory {
 			current.Label = SanitizePlainText(val)
 		case "scene":
 			current.SelectedSceneID = SanitizePlainText(val)
+		case histKeyScenes:
+			if v, err := strconv.Atoi(val); err == nil && v >= 0 {
+				current.ScenesCount = v
+			}
+		case histKeyEighths:
+			if v, err := strconv.Atoi(val); err == nil && v >= 0 {
+				current.TotalEighths = v
+			}
 		case "coalesce":
 			current.CoalesceKey = SanitizePlainText(val)
 		case "file":
@@ -494,6 +611,10 @@ func SerializeHistoryFile(h *BookHistory) string {
 		}
 		sb.WriteString(fmt.Sprintf("label: %s\n", SanitizePlainText(rev.Label)))
 		sb.WriteString(fmt.Sprintf("scene: %s\n", SanitizePlainText(rev.SelectedSceneID)))
+		if rev.ScenesCount > 0 {
+			fmt.Fprintf(&sb, histLineScenesFmt, rev.ScenesCount)
+			fmt.Fprintf(&sb, histLineEighthsFmt, rev.TotalEighths)
+		}
 		if !rev.Named && rev.CoalesceKey != "" {
 			sb.WriteString(fmt.Sprintf("coalesce: %s\n", SanitizePlainText(rev.CoalesceKey)))
 		}
@@ -521,15 +642,7 @@ func LoadBookHistory(b *Book) (*BookHistory, error) {
 		}
 		return &BookHistory{NextSeq: 1}, err
 	}
-	h := ParseHistoryFile(string(raw))
-	branchIdxs := h.ActiveBranchRevisions()
-	if curIdx := h.CursorIndex(); curIdx >= 0 && len(branchIdxs) > 0 && curIdx == branchIdxs[len(branchIdxs)-1] {
-		if compactHistoryRevisions(b.RootPath, h, time.Now().Unix(), nil) {
-			_ = SaveBookHistory(b, h)
-			PruneUnreferencedBlobs(b, h)
-		}
-	}
-	return h, nil
+	return ParseHistoryFile(string(raw)), nil
 }
 
 // SaveBookHistory writes books/<id>/.history/history.txt atomically.
@@ -779,6 +892,7 @@ func EnsureBookHistoryBaseline(b *Book, selectedSceneID string) error {
 		}
 	}
 	now := time.Now().Unix()
+	scenesCount, totalEighths := computeBookHistoryMetrics(b)
 	rev := HistoryRevision{
 		ID:              "r1",
 		Branch:          "main",
@@ -787,6 +901,8 @@ func EnsureBookHistoryBaseline(b *Book, selectedSceneID string) error {
 		Named:           true,
 		Label:           "Stan początkowy",
 		SelectedSceneID: selectedSceneID,
+		ScenesCount:     scenesCount,
+		TotalEighths:    totalEighths,
 		Files:           filesMap,
 	}
 	h.ActiveBranch = "main"

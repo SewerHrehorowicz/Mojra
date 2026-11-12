@@ -10,7 +10,7 @@ header.topbar#topbar
                     aria-label: "Playbook Studio"
                     svg.brand-mark src: /icons/studio.svg
                 span.topbar-divider
-                span.brand-logo.topbar-book-title#editor-book-title {editor_book_title}
+                span.brand-logo.topbar-book-title#editor-book-title {editor_book.title}
             {else}
                 svg.brand-mark src: /icons/studio.svg
                 span.brand-logo "Playbook Studio"

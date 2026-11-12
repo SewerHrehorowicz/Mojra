@@ -1,5 +1,25 @@
 # Mojra Architecture & Unbreakable Rules for AI Agents
 
+prompt template that proven to be useful:
+
+implementuj <plan>.md zgodnie z @AGENTS.md nie lap za szerokiego kontekstu, nie czytaj calego repo, kontekst byl przygotowany juz to the point
+
+-> this allowed to cut down cost from 5-10$ to about 0.5$! (but might be one off)
+
+## 0. Architectural constraints
+- strings in function bodies are strictly forbidden, excect of 1-2 char separators or whitespaces
+- keep data structured in data objects (struct, mini-module, const), not as a map of strings; magic strings always point to deeper archotectural problem
+- no pass-through functions, they are forbidden
+- no duped funcionalities, before implementing check if you have the thing in project already
+- use project graph you keep in project root in standarized format (not json); read from it to discover project quickly, write to it after changing anything that is relevant each time
+- separation of concerns - app is a set of subsystems that communicate wit each other; state handles app state in memory; views handle preparing data for templates; actions handle url actions & dispatching them to views etc
+- no stuffing many fields in one struct just to pass arch tests
+- do not think twice over same thing, if you already analyzed and formulated plan, act on it
+- during refactors existing files, for each task formulate simple step-by-step plan in *.md, inline in chat in one copyable window, and include:
+  - what is there and what are problems
+  - what are solutions
+  - file by file, method my method or line by line (if relevant) describe proposed changes, where it goes (if mixed responsibility), how to rename it
+
 ## 1. ALWAYS Keep the Top Bar (`header.topbar#topbar`) Visible — NEVER VIOLATE
 - **THE TOP BAR MUST ALWAYS REMAIN VISIBLE AND INTERACTIVE IN EVERY VIEW AND MODAL**:
   - `header.topbar#topbar` (`app/templates/topbar.tpl`, included at the top of `app/templates/app_shell.tpl`) contains the `Mojra` brand logotype and symbol (`app/icons/mojra.svg`), the primary navigation tabs (`Biblioteka`, active book `<Title>`, `Playbook Studio`), and the global window/UI controls (imageless mode, UI zoom, dark/light theme, fullscreen, and quit `✕`).
@@ -84,10 +104,10 @@
 - **All-or-Nothing Narration Policy**:
   - When `narrated: false`, clear all scene audio fields, omit `voice:` from serialized `.playtxt` files, return HTTP `403` on audio requests, and render `#reader-progress-footer` instead of `#audio-deck`.
   - When `narrated: true`, emit a parser warning for every scene missing a valid audio file.
-- **Zero-Copy External Books & Read-Only `.playbook` / `.stbook` Archives**:
+- **Zero-Copy External Books & Read-Only `.playbook` Archives**:
   - `AddBookFromDisk` registers external paths in `settings.ini` (`ExternalBooks`) without copying files into `books/`.
-  - `.playbook` / `.stbook` / `.zip` archives (`b.IsPacked == true`) are read-only; reject all mutations in `internal/book/mutator.go` and editor actions.
-  - Production bundles (`packageBooksForDist`) must ship only `.stbook` archives inside `dist/.../books/` and never copy raw unpacked source folders.
+  - `.playbook` / `.zip` archives (`b.IsPacked == true`) are read-only; reject all mutations in `internal/book/mutator.go` and editor actions.
+  - Production bundles (`packageBooksForDist`) must ship only `.playbook` archives inside `dist/.../books/` and never copy raw unpacked source folders.
 - **Graph-First Ordering & SSRF Protection**:
   - Order chapters and multi-file scenes by BFS graph reachability from `StartSceneID` (`orderChaptersAndScenesByGraph`), never by numeric filename prefixes (`01_...`).
   - `DownloadBookFromURL` must block loopback (outside `go test`), private, link-local, multicast, and CGNAT IPs in `net.Dialer.DialContext` and cap downloads at 250 MB.

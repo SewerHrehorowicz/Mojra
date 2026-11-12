@@ -484,8 +484,8 @@ aside.editor-context-panel#editor-context-panel .hidden?: {is_context_panel_hidd
                     input.node-inline-title#book-settings-title-input
                         type: text
                         name: title
-                        value: "{editor_book_title}"
-                        data-old-title: "{editor_book_title}"
+                        value: "{book.title}"
+                        data-old-title: "{book.title}"
                         placeholder: "{editor_title_placeholder}"
                         disabled?: {is_history_preview}
                         readonly?: {is_history_preview}
@@ -585,7 +585,7 @@ aside.editor-context-panel#editor-context-panel .hidden?: {is_context_panel_hidd
                             input.node-meta-input
                                 type: text
                                 name: author
-                                value: "{active_book_author}"
+                                value: "{book.author}"
                                 placeholder: "{editor_author_placeholder}"
                                 disabled?: {is_history_preview}
                                 readonly?: {is_history_preview}
@@ -594,7 +594,7 @@ aside.editor-context-panel#editor-context-panel .hidden?: {is_context_panel_hidd
                             input.node-meta-input#book-settings-license-input
                                 type: text
                                 name: license
-                                value: "{active_book_license}"
+                                value: "{book.license}"
                                 placeholder: "{t_license_placeholder}"
                                 disabled?: {is_history_preview}
                                 readonly?: {is_history_preview}
@@ -606,14 +606,14 @@ aside.editor-context-panel#editor-context-panel .hidden?: {is_context_panel_hidd
                                 placeholder: "{editor_description_placeholder}"
                                 disabled?: {is_history_preview}
                                 readonly?: {is_history_preview}
-                                {active_book_description}
+                                {book.description}
                         .node-meta-row
                             span.node-meta-key {t_folder_dir_key}
                             .node-media-picker-row
                                 input.node-meta-input
                                     type: text
                                     name: book_save_dir
-                                    value: "{active_book_save_dir}"
+                                    value: "{book.root_path}"
                                     placeholder: "{default_new_book_dir}"
                                     readonly: true
                                 {if not is_history_preview}
@@ -628,7 +628,7 @@ aside.editor-context-panel#editor-context-panel .hidden?: {is_context_panel_hidd
                                 input.node-meta-input
                                     type: text
                                     name: export_dir
-                                    value: "{active_book_export_dir}"
+                                    value: "{book.export_dir}"
                                     placeholder: "{default_export_dir}"
                                     disabled?: {is_history_preview}
                                     readonly?: {is_history_preview}

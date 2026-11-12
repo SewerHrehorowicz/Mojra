@@ -10,6 +10,10 @@ const (
 	VarKindBool = "bool"
 	VarKindInt  = "int"
 	VarKindEnum = "enum"
+
+	varValTrue  = "true"
+	varValFalse = "false"
+	varValTak   = "tak"
 )
 
 // SanitizeVarName normalizes a variable or enum identifier (lowercase ASCII/Unicode letters, digits, underscores).
@@ -317,6 +321,48 @@ func EnsureSaveVariables(b *Book, current map[string]string) map[string]string {
 		clean := SanitizeVarName(k)
 		if clean != "" {
 			out[clean] = v
+		}
+	}
+	return out
+}
+
+// UpdateTestVariable mutates a single variable inside the scene text preview test map.
+func UpdateTestVariable(vars map[string]string, b *Book, varName, val, deltaStr string, isToggle bool) map[string]string {
+	out := EnsureSaveVariables(b, vars)
+	if varName == "" || b == nil {
+		return out
+	}
+	if isToggle {
+		if out[varName] == varValTrue {
+			out[varName] = varValFalse
+		} else {
+			out[varName] = varValTrue
+		}
+		return out
+	}
+	if cleanDelta := strings.TrimSpace(deltaStr); cleanDelta != "" {
+		if delta, err := strconv.Atoi(cleanDelta); err == nil {
+			cur, _ := strconv.Atoi(out[varName])
+			out[varName] = strconv.Itoa(cur + delta)
+			return out
+		}
+	}
+	if vDef := b.FindVariable(varName); vDef != nil {
+		switch vDef.Kind {
+		case VarKindBool:
+			if strings.EqualFold(val, varValTrue) || strings.EqualFold(val, varValTak) || val == "1" {
+				out[varName] = varValTrue
+			} else {
+				out[varName] = varValFalse
+			}
+		case VarKindInt:
+			if iv, err := strconv.Atoi(val); err == nil {
+				out[varName] = strconv.Itoa(iv)
+			}
+		case VarKindEnum:
+			if opt := SanitizeEnumOption(val); opt != "" {
+				out[varName] = opt
+			}
 		}
 	}
 	return out
