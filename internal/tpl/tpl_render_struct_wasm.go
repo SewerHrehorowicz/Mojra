@@ -2,6 +2,10 @@
 
 package tpl
 
+func chunkTemplateName(_ any) string {
+	return ""
+}
+
 func lookupStructField(_ any, _ string) (any, bool) {
 	return nil, false
 }

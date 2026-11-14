@@ -140,10 +140,23 @@ func hasLeadingDoctype(nodes []*Node) bool {
 	return len(nodes) > 0 && nodes[0].Kind == NodeDoctype
 }
 
-// TemplateChunk binds a template name to its strongly typed view data (struct or map).
+// TemplateChunk pairs presentational TemplateData (for .tpl HTML rendering) with optional ScriptData (for controller hydration).
 type TemplateChunk struct {
-	Template string
-	Data     any
+	Template     string
+	Data         any
+	TemplateData any
+	ScriptData   any
+}
+
+// Resolve returns the template name and presentational data root for this chunk.
+func (c TemplateChunk) Resolve() (string, any) {
+	if c.TemplateData != nil {
+		if c.Template != "" {
+			return c.Template, c.TemplateData
+		}
+		return chunkTemplateName(c.TemplateData), c.TemplateData
+	}
+	return c.Template, c.Data
 }
 
 // RenderTemplateTo streams a named template directly into w using a pooled buffer.
@@ -327,12 +340,13 @@ func renderNodesToBuffer(buf *bytes.Buffer, nodes []*Node, components map[string
 			if subVal, exists := lookupRootVar(curCtx, n.Tag); exists && subVal != nil {
 				switch typed := subVal.(type) {
 				case TemplateChunk:
-					if typed.Template != "" {
-						if comp, ok := components[typed.Template]; ok && len(comp.Nodes) > 0 && sp+1 < len(stackBuf) {
+					tplName, tplData := typed.Resolve()
+					if tplName != "" {
+						if comp, ok := components[tplName]; ok && len(comp.Nodes) > 0 && sp+1 < len(stackBuf) {
 							sp++
 							stackBuf[sp] = renderStackFrame{
 								nodes:  comp.Nodes,
-								ctx:    curCtx.WithVar(".", typed.Data),
+								ctx:    curCtx.WithVar(".", tplData),
 								indent: curIndent,
 							}
 						}
@@ -340,15 +354,15 @@ func renderNodesToBuffer(buf *bytes.Buffer, nodes []*Node, components map[string
 					continue
 				case []TemplateChunk:
 					for i := len(typed) - 1; i >= 0; i-- {
-						ch := typed[i]
-						if ch.Template == "" {
+						tplName, tplData := typed[i].Resolve()
+						if tplName == "" {
 							continue
 						}
-						if comp, ok := components[ch.Template]; ok && len(comp.Nodes) > 0 && sp+1 < len(stackBuf) {
+						if comp, ok := components[tplName]; ok && len(comp.Nodes) > 0 && sp+1 < len(stackBuf) {
 							sp++
 							stackBuf[sp] = renderStackFrame{
 								nodes:  comp.Nodes,
-								ctx:    curCtx.WithVar(".", ch.Data),
+								ctx:    curCtx.WithVar(".", tplData),
 								indent: curIndent,
 							}
 						}
@@ -790,6 +804,19 @@ func writeElementAttrs(buf *bytes.Buffer, n *Node, ctx *RenderContext) {
 	}
 
 	writeResolvedClassAndID(buf, allClasses, allCondClasses, resolvedID, ctx)
+
+	if n.Tag == "button" {
+		hasType := false
+		for _, a := range n.Attrs {
+			if a.Key == "type" {
+				hasType = true
+				break
+			}
+		}
+		if !hasType {
+			buf.WriteString(` type="button"`)
+		}
+	}
 
 	for _, a := range n.Attrs {
 		if a.Key == "class" || a.Key == "id" {
@@ -1542,7 +1569,8 @@ func isTruthy(v any) bool {
 	case []string:
 		return len(t) > 0
 	case TemplateChunk:
-		return t.Template != ""
+		tplName, _ := t.Resolve()
+		return tplName != ""
 	case []TemplateChunk:
 		return len(t) > 0
 	}
@@ -1652,14 +1680,4 @@ func writeEscapedHTML(buf *bytes.Buffer, s string) {
 	if last < len(s) {
 		buf.WriteString(s[last:])
 	}
-}
-
-func escapeHTMLText(s string) string {
-	if !hasHTMLSpecialChars(s) {
-		return s
-	}
-	var buf bytes.Buffer
-	buf.Grow(len(s) + 8)
-	writeEscapedHTML(&buf, s)
-	return buf.String()
 }

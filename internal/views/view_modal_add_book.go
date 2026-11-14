@@ -1,13 +1,18 @@
 package views
 
-import "mojra/internal/state"
+import (
+	"mojra/internal/state"
+	"mojra/internal/tpl"
+)
 
-type modalAddBookView struct {
-	ShowAddBookModal bool `tpl:"show_add_book_modal"`
+type modalAddBookTemplate struct {
+	ShowAddBookModal bool
 }
 
-func ViewModalAddBook(s *state.AppState) *modalAddBookView {
-	return &modalAddBookView{
-		ShowAddBookModal: s.Modals.AddBook,
+func ViewModalAddBook(s *state.AppState) tpl.TemplateChunk {
+	return tpl.TemplateChunk{
+		TemplateData: &modalAddBookTemplate{
+			ShowAddBookModal: s.Modals.AddBook,
+		},
 	}
 }

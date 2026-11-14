@@ -1,62 +1,61 @@
-aside.editor-context-panel#editor-context-panel .hidden?: {is_context_panel_hidden}
-    {if has_selected_node}
-        form.editor-context-form#editor-context-form .hidden?: {is_node_inspector_hidden}
-            action: SaveScene
-            data-context-scene-id: "{selected_node.id}"
-            data-book-vars: "{book_vars_spec}"
+aside.editor-context-panel#editor-context-panel .hidden?: {IsContextPanelHidden}
+    {if HasSelectedNode}
+        form.editor-context-form#editor-context-form .hidden?: {IsNodeInspectorHidden}
+            data-context-scene-id: "{SelectedNode.ID}"
+            data-book-vars: "{BookVarsSpec}"
             input
                 type: hidden
                 name: scene_id
-                value: "{selected_node.id}"
+                value: "{SelectedNode.ID}"
             input
                 type: hidden
                 name: source_file
-                value: "{selected_node.source_file}"
+                value: "{SelectedNode.SourceFile}"
             input
                 type: hidden
                 name: choice_count
-                value: "{selected_node.port_count}"
+                value: "{SelectedNode.PortCount}"
 
             .context-panel-section
                 .custom-select.node-chapter-select
+                    data-select-root: "true"
                     .node-chapter-input-wrap
-                        input.node-inline-chapter.custom-select-input
+                        input.node-inline-chapter
                             type: text
                             name: chapter
-                            value: "{selected_node.chapter}"
+                            value: "{SelectedNode.Chapter}"
                             placeholder: "{t_chapter_placeholder}"
-                            disabled?: {is_history_preview}
-                            readonly?: {is_history_preview}
-                        {if not is_history_preview}
+                            disabled?: {IsHistoryPreview}
+                            readonly?: {IsHistoryPreview}
+                        {if not IsHistoryPreview}
                             button.node-chapter-caret-btn
-                                type: button
                                 data-select-toggle: "true"
                                 svg.custom-select-caret src: /icons/chevron-down.svg
                     .custom-select-menu.hidden
-                        {for ch_opt in selected_node.chapter_options}
-                            button.custom-select-option .active?: {ch_opt.is_active}
-                                type: button
-                                data-select-value: "{ch_opt.value}"
-                                data-select-label: "{ch_opt.label}"
-                                {ch_opt.label}
+                        data-select-menu: "true"
+                        {for ch_opt in SelectedNode.ChapterOptions}
+                            button.custom-select-option .active?: {ch_opt.IsActive}
+                                data-select-value: "{ch_opt.Value}"
+                                data-select-label: "{ch_opt.Label}"
+                                {ch_opt.Label}
 
             .context-panel-section
                 .node-title-row
-                    {if selected_node.is_start_scene}
+                    {if SelectedNode.IsStartScene}
                         span.node-start-indicator
                             data-hint: "{t_start_scene_badge_hint}"
                             svg.scene-star-icon src: /icons/star.svg
-                    {elif selected_node.is_chapter_entry}
+                    {elif SelectedNode.IsChapterEntry}
                         span.node-start-indicator.node-chapter-entry-indicator
                             data-hint: "{t_chapter_entry_hint}"
                             svg.scene-star-icon src: /icons/star.svg
                     input.node-inline-title
                         type: text
                         name: name
-                        value: "{selected_node.name}"
+                        value: "{SelectedNode.Name}"
                         placeholder: "{t_scene_name_opt_placeholder}"
-                        disabled?: {is_history_preview}
-                        readonly?: {is_history_preview}
+                        disabled?: {IsHistoryPreview}
+                        readonly?: {IsHistoryPreview}
 
             .context-panel-section
                 .node-meta-fields
@@ -65,159 +64,141 @@ aside.editor-context-panel#editor-context-panel .hidden?: {is_context_panel_hidd
                         input.node-meta-input#context-scene-id-input
                             type: text
                             name: explicit_id
-                            value: "{selected_node.explicit_id}"
+                            value: "{SelectedNode.ExplicitID}"
                             placeholder: "{t_scene_id_placeholder}"
                             spellcheck: "false"
                             autocorrect: "off"
                             autocapitalize: "off"
                             autocomplete: "off"
-                            disabled?: {is_history_preview}
-                            readonly?: {is_history_preview}
-                    {if has_book_variables}
-                        .node-meta-row.node-meta-row-effects .is-empty-rule?: {!selected_node.has_effects}
+                            disabled?: {IsHistoryPreview}
+                            readonly?: {IsHistoryPreview}
+                    {if HasBookVariables}
+                        .node-meta-row.node-meta-row-effects .is-empty-rule?: {!SelectedNode.HasEffects}
                             span.node-meta-key "set:"
-                            .syn-input-wrap .is-invalid?: {selected_node.is_effects_invalid}
-                                data-hint?: {selected_node.effects_error_hint}
+                            .syn-input-wrap .is-invalid?: {SelectedNode.IsEffectsInvalid}
+                                data-hint?: {SelectedNode.EffectsErrorHint}
                                 input.node-meta-input.syn-inner-input
                                     type: text
                                     name: scene_effects
-                                    value: "{selected_node.effects}"
+                                    value: "{SelectedNode.Effects}"
                                     placeholder: "odkryta_prawda = true; sumienie++"
                                     spellcheck: "false"
                                     autocorrect: "off"
                                     autocapitalize: "off"
                                     autocomplete: "off"
-                                    data-hint?: {selected_node.effects_error_hint}
-                                    disabled?: {is_history_preview}
-                                    readonly?: {is_history_preview}
-                    {if is_screenplay_mode}
+                                    data-hint?: {SelectedNode.EffectsErrorHint}
+                                    disabled?: {IsHistoryPreview}
+                                    readonly?: {IsHistoryPreview}
+                    {if IsScreenplayMode}
                         .node-meta-row
                             span.node-meta-key {t_sp_scene_key}
                             input.node-meta-input.node-slugline-input
                                 type: text
                                 name: slugline
-                                value: "{selected_node.slugline}"
+                                value: "{SelectedNode.Slugline}"
                                 placeholder: "{t_slugline_placeholder}"
-                                disabled?: {is_history_preview}
-                                readonly?: {is_history_preview}
-                            {if selected_node.script_length_label}
-                                span.node-script-length-badge {selected_node.script_length_label}
-                        {if not is_history_preview}
+                                disabled?: {IsHistoryPreview}
+                                readonly?: {IsHistoryPreview}
+                            {if SelectedNode.ScriptLengthLabel}
+                                span.node-script-length-badge {SelectedNode.ScriptLengthLabel}
+                        {if not IsHistoryPreview}
                             .slugline-helper-pills
-                                {for p in slugline_prefix_pills}
+                                {for p in SluglinePrefixPills}
                                     button.slugline-pill-btn
-                                        type: button
-                                        action: ApplySluglineToken
-                                        data-scene: "{selected_node.id}"
-                                        data-prefix: "{p.token}"
-                                        {p.token}
-                                {for t in slugline_time_pills}
+                                        data-scene: "{SelectedNode.ID}"
+                                        data-prefix: "{p}"
+                                        {p}
+                                {for t in SluglineTimePills}
                                     button.slugline-pill-btn
-                                        type: button
-                                        action: ApplySluglineToken
-                                        data-scene: "{selected_node.id}"
-                                        data-time: "{t.token}"
-                                        {t.token}
+                                        data-scene: "{SelectedNode.ID}"
+                                        data-time: "{t}"
+                                        {t}
                         .node-meta-row.node-meta-row-textarea
                             span.node-meta-key {t_desc_key}
                             textarea.node-meta-input.node-meta-textarea
                                 name: synopsis
                                 rows: 1
                                 placeholder: "{t_synopsis_placeholder}"
-                                disabled?: {is_history_preview}
-                                readonly?: {is_history_preview}
-                                {selected_node.synopsis}
-                    {if not is_screenplay_mode}
+                                disabled?: {IsHistoryPreview}
+                                readonly?: {IsHistoryPreview}
+                                {SelectedNode.Synopsis}
+                    {if not IsScreenplayMode}
                         .node-meta-row
                             span.node-meta-key "image:"
-                            .custom-select.node-media-select
-                                input.custom-select-input
-                                    type: hidden
-                                    name: explicit_image
-                                    value: "{selected_node.current_image}"
+                            .custom-select.node-media-select.node-image-select
+                                data-select-root: "true"
                                 button.custom-select-trigger
-                                    type: button
                                     data-select-toggle: "true"
-                                    disabled?: {is_history_preview}
-                                    span.custom-select-label {selected_node.current_image_label}
+                                    disabled?: {IsHistoryPreview}
+                                    span.custom-select-label {SelectedNode.CurrentImageLabel}
                                     svg.custom-select-caret src: /icons/chevron-down.svg
                                 .custom-select-menu.hidden
-                                    {for img_opt in selected_node.image_options}
-                                        button.custom-select-option .active?: {img_opt.is_active}
-                                            type: button
-                                            data-select-value: "{img_opt.value}"
-                                            data-select-label: "{img_opt.label}"
-                                            {img_opt.label}
-                            {if not is_history_preview}
+                                    data-select-menu: "true"
+                                    {for img_opt in SelectedNode.ImageOptions}
+                                        button.custom-select-option .active?: {img_opt.IsActive}
+                                            data-select-value: "{img_opt.Value}"
+                                            data-select-label: "{img_opt.Label}"
+                                            {img_opt.Label}
+                            {if not IsHistoryPreview}
                                 button.node-icon-btn.node-media-add-btn
-                                    type: button
-                                    action: BrowseAddBookMedia
                                     data-kind: image
-                                    data-scene: "{selected_node.id}"
+                                    data-scene: "{SelectedNode.ID}"
                                     svg.media-plus-icon src: /icons/plus.svg
-                    {if book_narrated}
-                        {if not is_history_preview}
-                            {if selected_node.has_voice_sections}
-                                .voice-rec-sections.inspector-voice-rec-sections .hidden?: {!voice_recorder_open}
+                    {if BookNarrated}
+                        {if not IsHistoryPreview}
+                            {if SelectedNode.HasVoiceSections}
+                                .voice-rec-sections.inspector-voice-rec-sections .hidden?: {!VoiceRecorderOpen}
                                     .voice-rec-sections-tabs
-                                        {for vsec in selected_node.voice_sections}
-                                            button.voice-rec-section-btn .active?: {vsec.is_active} .is-recorded?: {vsec.has_audio}
-                                                type: button
-                                                action: SelectSceneVoiceSection
-                                                data-scene: "{selected_node.id}"
-                                                data-voice-section: "{vsec.key}"
-                                                span.voice-rec-section-dot .is-recorded?: {vsec.has_audio}
-                                                span.voice-rec-section-label {vsec.inspector_label}
+                                        {for vsec in SelectedNode.VoiceSections}
+                                            button.voice-rec-section-btn .active?: {vsec.IsActive} .is-recorded?: {vsec.HasAudio}
+                                                data-scene: "{SelectedNode.ID}"
+                                                data-voice-section: "{vsec.Key}"
+                                                span.voice-rec-section-dot .is-recorded?: {vsec.HasAudio}
+                                                span.voice-rec-section-label {vsec.InspectorLabel}
                         .node-meta-row
                             span.node-meta-key "voice:"
-                            .custom-select.node-media-select
-                                input.custom-select-input
-                                    type: hidden
-                                    name: explicit_voice
-                                    value: "{selected_node.current_voice}"
+                            .custom-select.node-media-select.node-voice-select
+                                data-select-root: "true"
                                 button.custom-select-trigger
-                                    type: button
                                     data-select-toggle: "true"
-                                    disabled?: {is_history_preview}
-                                    span.custom-select-label {selected_node.current_voice_label}
+                                    disabled?: {IsHistoryPreview}
+                                    span.custom-select-label {SelectedNode.CurrentVoiceLabel}
                                     svg.custom-select-caret src: /icons/chevron-down.svg
                                 .custom-select-menu.hidden
-                                    {for voice_opt in selected_node.voice_options}
-                                        button.custom-select-option .active?: {voice_opt.is_active}
-                                            type: button
-                                            data-select-value: "{voice_opt.value}"
-                                            data-select-label: "{voice_opt.label}"
-                                            {voice_opt.label}
-                            {if not is_history_preview}
+                                    data-select-menu: "true"
+                                    {for voice_opt in SelectedNode.VoiceOptions}
+                                        button.custom-select-option .active?: {voice_opt.IsActive}
+                                            data-select-value: "{voice_opt.Value}"
+                                            data-select-label: "{voice_opt.Label}"
+                                            {voice_opt.Label}
+                            {if not IsHistoryPreview}
                                 button.node-icon-btn.node-media-add-btn
-                                    type: button
-                                    action: BrowseAddBookMedia
                                     data-kind: audio
-                                    data-scene: "{selected_node.id}"
+                                    data-scene: "{SelectedNode.ID}"
                                     svg.media-plus-icon src: /icons/plus.svg
-                                button.node-icon-btn.node-media-add-btn.icon-toggle-btn.voice-rec-toggle-btn#btn-inspector-voice-recorder .active?: {voice_recorder_open}
-                                    type: button
-                                    action: ToggleSceneVoiceRecorder
-                                    data-scene: "{selected_node.id}"
+                                button.node-icon-btn.node-media-add-btn.icon-toggle-btn.voice-rec-toggle-btn#btn-inspector-voice-recorder .active?: {VoiceRecorderOpen}
+                                    data-scene: "{SelectedNode.ID}"
                                     svg.media-plus-icon src: /icons/mic.svg
-                        {if not is_history_preview}
-                            .voice-rec-strip#inspector-voice-rec-strip .hidden?: {!voice_recorder_open}
-                                data-scene: "{selected_node.id}"
-                                data-voice-section: "{selected_node.active_voice_section_key}"
-                                data-voice-url: "{selected_node.current_voice_url}"
-                                data-voice-file: "{selected_node.current_voice}"
-                                data-trim-start: "{selected_node.voice_trim_start}"
-                                data-trim-end: "{selected_node.voice_trim_end}"
+                        {if not IsHistoryPreview}
+                            .voice-rec-strip#inspector-voice-rec-strip .hidden?: {!VoiceRecorderOpen}
+                                data-voice-strip: "true"
+                                data-voice-open: "{VoiceRecorderOpen}"
+                                data-scene: "{SelectedNode.ID}"
+                                data-voice-section: "{SelectedNode.ActiveVoiceSectionKey}"
+                                data-voice-url: "{SelectedNode.CurrentVoiceURL}"
+                                data-voice-file: "{SelectedNode.CurrentVoice}"
+                                data-trim-start: "{SelectedNode.VoiceTrimStart}"
+                                data-trim-end: "{SelectedNode.VoiceTrimEnd}"
                                 button.voice-rec-transport-btn
-                                    type: button
                                     data-voice-transport: "true"
-                                    svg.voice-rec-icon.voice-rec-icon-play .hidden?: {!selected_node.has_voice_file} src: /icons/voice-play.svg
-                                    svg.voice-rec-icon.voice-rec-icon-mic .hidden?: {selected_node.has_voice_file} src: /icons/mic.svg
-                                    svg.voice-rec-icon.voice-rec-icon-pause.hidden src: /icons/voice-pause.svg
-                                    svg.voice-rec-icon.voice-rec-icon-stop.hidden src: /icons/voice-stop.svg
+                                    svg.voice-rec-icon.voice-rec-icon-play .hidden?: {!SelectedNode.HasVoiceFile} data-voice-icon: "play" src: /icons/voice-play.svg
+                                    svg.voice-rec-icon.voice-rec-icon-mic .hidden?: {SelectedNode.HasVoiceFile} data-voice-icon: "mic" src: /icons/mic.svg
+                                    svg.voice-rec-icon.voice-rec-icon-pause.hidden data-voice-icon: "pause" src: /icons/voice-pause.svg
+                                    svg.voice-rec-icon.voice-rec-icon-stop.hidden data-voice-icon: "stop" src: /icons/voice-stop.svg
                                 .voice-rec-waveform-wrap
                                     data-voice-waveform-wrap: "true"
                                     canvas.voice-rec-waveform-canvas
+                                        data-voice-canvas: "true"
                                         width: "216"
                                         height: "28"
                                     span.voice-rec-playhead
@@ -228,398 +209,360 @@ aside.editor-context-panel#editor-context-panel .hidden?: {is_context_panel_hidd
                                         data-voice-trim: "end"
                                 span.voice-rec-timer
                                     data-voice-timer: "true"
-                                    {selected_node.voice_duration_label}
-                                button.voice-rec-action-btn.voice-rec-cut-btn .is-disabled?: {!selected_node.has_voice_trim}
-                                    type: button
+                                    {SelectedNode.VoiceDurationLabel}
+                                button.voice-rec-action-btn.voice-rec-cut-btn .is-disabled?: {!SelectedNode.HasVoiceTrim}
                                     data-voice-trim-destructive: "true"
-                                    data-scene: "{selected_node.id}"
-                                    data-voice-section: "{selected_node.active_voice_section_key}"
+                                    data-scene: "{SelectedNode.ID}"
+                                    data-voice-section: "{SelectedNode.ActiveVoiceSectionKey}"
                                     data-hint: "{t_voice_trim_destructive_hint}"
-                                    disabled?: {!selected_node.has_voice_trim}
+                                    disabled?: {!SelectedNode.HasVoiceTrim}
                                     svg.voice-rec-btn-icon src: /icons/scissors.svg
-                                button.voice-rec-action-btn.voice-rec-rerecord-btn .hidden?: {!selected_node.has_voice_file}
-                                    type: button
+                                button.voice-rec-action-btn.voice-rec-rerecord-btn .hidden?: {!SelectedNode.HasVoiceFile}
                                     data-voice-record-start: "true"
                                     svg.voice-rec-btn-icon src: /icons/mic.svg
-                                button.voice-rec-action-btn.voice-rec-delete-btn .hidden?: {!selected_node.has_voice_file}
-                                    type: button
-                                    action: DeleteSceneVoice
-                                    data-scene: "{selected_node.id}"
-                                    data-voice-section: "{selected_node.active_voice_section_key}"
+                                button.voice-rec-action-btn.voice-rec-delete-btn .hidden?: {!SelectedNode.HasVoiceFile}
+                                    data-voice-delete: "true"
+                                    data-scene: "{SelectedNode.ID}"
+                                    data-voice-section: "{SelectedNode.ActiveVoiceSectionKey}"
                                     svg.voice-rec-btn-icon src: /icons/trash.svg
 
             .context-panel-section
-                button.btn.btn-sm.node-edit-text-btn
-                    type: button
-                    action: OpenSceneTextModal
-                    data-scene: "{selected_node.id}"
+                button.btn.btn-sm.node-edit-text-btn.btn-open-scene-text
+                    data-scene: "{SelectedNode.ID}"
                     data-hint: "{t_open_scene_text_hint}"
-                    {if is_history_preview}
+                    {if IsHistoryPreview}
                         "{t_preview_content_btn}"
                     {else}
                         "{t_edit_content_btn}"
-                button.btn.btn-sm.node-edit-text-btn
-                    type: button
-                    action: PlayFromScene
-                    data-scene: "{selected_node.id}"
+                button.btn.btn-sm.node-edit-text-btn.btn-play-from-scene
+                    data-scene: "{SelectedNode.ID}"
                     data-hint: "{t_play_from_scene_hint}"
                     "{t_play_from_scene_btn}"
 
-            {if selected_node.has_node_warnings}
+            {if SelectedNode.HasNodeWarnings}
                 ul.node-warnings-list
-                    {for nw in selected_node.node_warnings}
-                        li {nw.text}
+                    {for nw in SelectedNode.NodeWarnings}
+                        li {nw}
 
             .context-panel-section.context-choices-section
                 .context-choices-list
-                    {for pt in selected_node.inspector_ports}
-                        .context-choice-item .is-rule-expanded?: {pt.is_rule_open} .has-active-rule?: {pt.has_rule}
-                            {if not is_history_preview}
+                    {for pt in SelectedNode.InspectorPorts}
+                        .context-choice-item .is-rule-expanded?: {pt.IsRuleOpen} .has-active-rule?: {pt.HasRule}
+                            {if not IsHistoryPreview}
                                 span.choice-drag-grip
                                     data-choice-grip: "true"
-                                    data-choice-idx: "{pt.idx}"
+                                    data-choice-idx: "{pt.Idx}"
                                     svg.choice-grip-icon src: /icons/grip.svg
                             .choice-triple-stack
-                                .choice-triple-row.choice-triple-exit .is-invalid?: {pt.is_exit_invalid}
-                                    data-hint?: {pt.exit_error_hint}
+                                .choice-triple-row.choice-triple-exit .is-invalid?: {pt.IsExitInvalid}
+                                    data-hint?: {pt.ExitErrorHint}
                                     span.choice-row-key "exit:"
                                     input.choice-exit-input
                                         type: text
-                                        name: "choice_target_{pt.idx}"
-                                        data-choice-idx: "{pt.idx}"
-                                        value: "{pt.selected_value}"
+                                        name: "choice_target_{pt.Idx}"
+                                        data-choice-idx: "{pt.Idx}"
+                                        value: "{pt.SelectedValue}"
                                         placeholder: "{t_exit_target_placeholder}"
                                         spellcheck: "false"
                                         autocorrect: "off"
                                         autocapitalize: "off"
                                         autocomplete: "off"
-                                        data-hint?: {pt.exit_error_hint}
-                                        disabled?: {is_history_preview}
-                                        readonly?: {is_history_preview}
+                                        data-hint?: {pt.ExitErrorHint}
+                                        disabled?: {IsHistoryPreview}
+                                        readonly?: {IsHistoryPreview}
                                 .choice-triple-row.choice-triple-label
                                     span.choice-row-key "text:"
                                     textarea.node-meta-input.node-meta-textarea.node-choice-label
-                                        name: "choice_label_{pt.idx}"
-                                        data-choice-idx: "{pt.idx}"
+                                        name: "choice_label_{pt.Idx}"
+                                        data-choice-idx: "{pt.Idx}"
                                         rows: 1
                                         placeholder: "{t_choice_text_placeholder}"
-                                        disabled?: {is_history_preview}
-                                        readonly?: {is_history_preview}
-                                        {pt.raw_label}
-                                {if pt.is_rule_open}
-                                    .choice-triple-row.choice-triple-cond .is-empty-rule?: {!pt.has_condition} .is-invalid?: {pt.is_cond_invalid}
-                                        data-hint?: {pt.cond_error_hint}
+                                        disabled?: {IsHistoryPreview}
+                                        readonly?: {IsHistoryPreview}
+                                        {pt.RawLabel}
+                                {if pt.IsRuleOpen}
+                                    .choice-triple-row.choice-triple-cond .is-empty-rule?: {!pt.HasCondition} .is-invalid?: {pt.IsCondInvalid}
+                                        data-hint?: {pt.CondErrorHint}
                                         span.choice-row-key "if:"
                                         input.choice-rule-input
                                             type: text
-                                            name: "choice_cond_{pt.idx}"
-                                            data-choice-idx: "{pt.idx}"
-                                            value: "{pt.condition}"
+                                            name: "choice_cond_{pt.Idx}"
+                                            data-choice-idx: "{pt.Idx}"
+                                            value: "{pt.Condition}"
                                             placeholder: ""
                                             spellcheck: "false"
                                             autocorrect: "off"
                                             autocapitalize: "off"
                                             autocomplete: "off"
-                                            data-hint?: {pt.cond_error_hint}
-                                            disabled?: {is_history_preview}
-                                            readonly?: {is_history_preview}
-                                    .choice-triple-row.choice-triple-eff .is-empty-rule?: {!pt.has_effects} .is-invalid?: {pt.is_eff_invalid}
-                                        data-hint?: {pt.eff_error_hint}
+                                            data-hint?: {pt.CondErrorHint}
+                                            disabled?: {IsHistoryPreview}
+                                            readonly?: {IsHistoryPreview}
+                                    .choice-triple-row.choice-triple-eff .is-empty-rule?: {!pt.HasEffects} .is-invalid?: {pt.IsEffInvalid}
+                                        data-hint?: {pt.EffErrorHint}
                                         span.choice-row-key "set:"
                                         input.choice-rule-input
                                             type: text
-                                            name: "choice_effects_{pt.idx}"
-                                            data-choice-idx: "{pt.idx}"
-                                            value: "{pt.effects}"
+                                            name: "choice_effects_{pt.Idx}"
+                                            data-choice-idx: "{pt.Idx}"
+                                            value: "{pt.Effects}"
                                             placeholder: ""
                                             spellcheck: "false"
                                             autocorrect: "off"
                                             autocapitalize: "off"
                                             autocomplete: "off"
-                                            data-hint?: {pt.eff_error_hint}
-                                            disabled?: {is_history_preview}
-                                            readonly?: {is_history_preview}
+                                            data-hint?: {pt.EffErrorHint}
+                                            disabled?: {IsHistoryPreview}
+                                            readonly?: {IsHistoryPreview}
                                 {else}
                                     input
                                         type: hidden
-                                        name: "choice_cond_{pt.idx}"
-                                        value: "{pt.condition}"
+                                        name: "choice_cond_{pt.Idx}"
+                                        value: "{pt.Condition}"
                                     input
                                         type: hidden
-                                        name: "choice_effects_{pt.idx}"
-                                        value: "{pt.effects}"
-                            {if not is_history_preview}
+                                        name: "choice_effects_{pt.Idx}"
+                                        value: "{pt.Effects}"
+                            {if not IsHistoryPreview}
                                 button.node-icon-btn.node-choice-btn.node-choice-remove
-                                    type: button
-                                    action: PromptRemoveChoice
-                                    data-scene: "{selected_node.id}"
-                                    data-choice-idx: "{pt.idx}"
+                                    data-scene: "{SelectedNode.ID}"
+                                    data-choice-idx: "{pt.Idx}"
                                     svg.choice-trash-icon src: /icons/trash.svg
-                .syn-autocomplete-dropdown#inspector-syn-autocomplete-dropdown .hidden?: {!show_syntax_help_popover}
-                        {if show_syntax_help_popover}
+                .syn-autocomplete-dropdown#inspector-syn-autocomplete-dropdown .hidden?: {!ShowSyntaxHelpPopover}
+                        {if ShowSyntaxHelpPopover}
                             .syn-dropdown-help-box#syntax-help-popover
                                 .syntax-help-section
-                                    {for sh in syntax_help_cond_rows}
+                                    {for sh in SyntaxHelpCondRows}
                                         .syntax-help-row
-                                            span.syntax-help-code {sh.code}
-                                            span.syntax-help-desc {sh.desc}
+                                            span.syntax-help-code {sh.Value}
+                                            span.syntax-help-desc {sh.Label}
                         .syn-dropdown-list
-                            {for vsug in book_var_suggestions}
+                            {for vsug in BookVarSuggestions}
                                 button.syn-dropdown-item
-                                    type: button
                                     data-syn-kind: "var"
-                                    data-syn-var-name: "{vsug.name}"
-                                    span.syn-dropdown-var-name {vsug.name}
-                                    span.syn-dropdown-var-meta {vsug.kind}
-                            {for esug in book_enum_suggestions}
+                                    data-syn-var-name: "{vsug.Name}"
+                                    span.syn-dropdown-var-name {vsug.Name}
+                                    span.syn-dropdown-var-meta {vsug.Kind}
+                            {for esug in BookEnumSuggestions}
                                 button.syn-dropdown-item.hidden
-                                    type: button
                                     data-syn-kind: "enum_val"
-                                    data-syn-enum-var: "{esug.var_name}"
-                                    data-syn-var-name: "{esug.value}"
-                                    span.syn-dropdown-var-name {esug.value}
-                                    span.syn-dropdown-var-meta {esug.meta}
-                            {for tsug in book_target_suggestions}
+                                    data-syn-enum-var: "{esug.VarName}"
+                                    data-syn-var-name: "{esug.Value}"
+                                    span.syn-dropdown-var-name {esug.Value}
+                                    span.syn-dropdown-var-meta {esug.Meta}
+                            {for tsug in BookTargetSuggestions}
                                 button.syn-dropdown-item.hidden
-                                    type: button
                                     data-syn-kind: "target"
-                                    data-syn-var-name: "{tsug.value}"
-                                    span.syn-dropdown-var-name {tsug.value}
-                                    span.syn-dropdown-var-meta {tsug.meta}
-                {if not is_history_preview}
+                                    data-syn-var-name: "{tsug.Value}"
+                                    span.syn-dropdown-var-name {tsug.Value}
+                                    span.syn-dropdown-var-meta {tsug.Meta}
+                {if not IsHistoryPreview}
                     button.btn.btn-sm.node-add-choice-btn
-                        type: button
-                        action: AddChoice
-                        data-scene: "{selected_node.id}"
+                        data-scene: "{SelectedNode.ID}"
                         "{t_add_choice_btn}"
 
-            {if not is_history_preview}
+            {if not IsHistoryPreview}
                 .context-danger-zone
-                    button.btn.btn-sm.context-delete-btn
-                        type: button
-                        action: PromptDeleteScene
-                        data-scene: "{selected_node.id}"
+                    button.btn.btn-sm.context-delete-btn.btn-prompt-delete-scene
+                        data-scene: "{SelectedNode.ID}"
                         svg.btn-icon src: /icons/trash.svg
                         span {t_delete_scene_btn}
 
-    {if selected_chapter}
-        form.editor-chapter-form#editor-chapter-form .hidden?: {!has_selected_chapter}
-            action: SaveChapterSettings
-            data-context-chapter: "{selected_chapter.name}"
+    {if SelectedChapter}
+        form.editor-chapter-form#editor-chapter-form .hidden?: {!HasSelectedChapter}
+            data-context-chapter: "{SelectedChapter.Name}"
             input
                 type: hidden
                 name: old_chapter
-                value: "{selected_chapter.name}"
+                value: "{SelectedChapter.Name}"
             input
                 type: hidden
                 name: chapter
-                value: "{selected_chapter.name}"
+                value: "{SelectedChapter.Name}"
             .history-panel-header
-                {if is_screenplay_mode}
+                {if IsScreenplayMode}
                     span.history-panel-title {t_act_settings_title}
                 {else}
                     span.history-panel-title {t_chapter_settings_title}
-                button.node-close-btn
-                    type: button
-                    action: CloseBookSettings
+                button.node-close-btn.btn-close-book-settings
                     svg.node-close-icon src: /icons/close.svg
             .history-panel-body
                 .context-panel-section
                     input.node-inline-title.chapter-group-title-input
                         type: text
                         name: new_chapter
-                        value: "{selected_chapter.name}"
-                        data-old-chapter: "{selected_chapter.name}"
+                        value: "{SelectedChapter.Name}"
+                        data-old-chapter: "{SelectedChapter.Name}"
                         placeholder: "{t_chapter_name_placeholder}"
-                        disabled?: {is_history_preview}
-                        readonly?: {is_history_preview}
+                        disabled?: {IsHistoryPreview}
+                        readonly?: {IsHistoryPreview}
                 .context-panel-section
                     .node-meta-fields
                         .node-meta-row
                             span.node-meta-key {t_entry_key}
                             .custom-select.node-media-select.chapter-start-scene-select
-                                input.custom-select-input
-                                    type: hidden
-                                    name: start_scene
-                                    value: "{selected_chapter.start_scene_id}"
+                                data-select-root: "true"
                                 button.custom-select-trigger
-                                    type: button
                                     data-select-toggle: "true"
-                                    disabled?: {is_history_preview}
-                                    span.custom-select-label {selected_chapter.start_scene_label}
+                                    disabled?: {IsHistoryPreview}
+                                    span.custom-select-label {SelectedChapter.StartSceneLabel}
                                     svg.custom-select-caret src: /icons/chevron-down.svg
                                 .custom-select-menu.hidden
-                                    {for ch_st_opt in selected_chapter.start_scene_options}
-                                        button.custom-select-option .active?: {ch_st_opt.is_active}
-                                            type: button
-                                            data-select-value: "{ch_st_opt.value}"
-                                            data-select-label: "{ch_st_opt.label}"
-                                            {ch_st_opt.label}
+                                    data-select-menu: "true"
+                                    {for ch_st_opt in SelectedChapter.StartSceneOptions}
+                                        button.custom-select-option .active?: {ch_st_opt.IsActive}
+                                            data-select-value: "{ch_st_opt.Value}"
+                                            data-select-label: "{ch_st_opt.Label}"
+                                            {ch_st_opt.Label}
                 .context-panel-section
                     .breakdown-metrics-grid
                         .breakdown-metric-cell
                             span.breakdown-metric-label {t_metric_scenes}
-                            span.breakdown-metric-value {selected_chapter.scene_count}
+                            span.breakdown-metric-value {SelectedChapter.SceneCount}
                         .breakdown-metric-cell
                             span.breakdown-metric-label {t_metric_length}
-                            span.breakdown-metric-value {selected_chapter.length_stat}
+                            span.breakdown-metric-value {SelectedChapter.LengthStat}
                         .breakdown-metric-cell
                             span.breakdown-metric-label {t_metric_branches}
-                            span.breakdown-metric-value {selected_chapter.branch_count}
+                            span.breakdown-metric-value {SelectedChapter.BranchCount}
                         .breakdown-metric-cell
                             span.breakdown-metric-label {t_metric_exits}
-                            span.breakdown-metric-value {selected_chapter.exit_count}
+                            span.breakdown-metric-value {SelectedChapter.ExitCount}
 
-    {if has_editor_book}
-        form.editor-book-form#editor-book-form .hidden?: {!book_settings_open}
-            action: SaveBookSettings
+    {if HasEditorBook}
+        form.editor-book-form#editor-book-form .hidden?: {!BookSettingsOpen}
             .history-panel-header
-                span.history-panel-title {editor_settings_hint}
-                button.node-close-btn
-                    type: button
-                    action: CloseBookSettings
+                span.history-panel-title {EditorSettingsHint}
+                button.node-close-btn.btn-close-book-settings
                     svg.node-close-icon src: /icons/close.svg
             .history-panel-body
                 .context-panel-section
                     input.node-inline-title#book-settings-title-input
                         type: text
                         name: title
-                        value: "{book.title}"
-                        data-old-title: "{book.title}"
-                        placeholder: "{editor_title_placeholder}"
-                        disabled?: {is_history_preview}
-                        readonly?: {is_history_preview}
+                        value: "{Book.Title}"
+                        data-old-title: "{Book.Title}"
+                        placeholder: "{EditorTitlePlaceholder}"
+                        disabled?: {IsHistoryPreview}
+                        readonly?: {IsHistoryPreview}
                 .context-panel-section
                     .node-meta-fields
-                        {if is_screenplay_mode}
+                        {if IsScreenplayMode}
                             .node-meta-row.node-meta-row-radio
                                 span.node-meta-key {t_standard_key}
                                 .form-radio-group
-                                    {for std_opt in script_standard_options}
-                                        label.form-radio-option .active?: {std_opt.is_active} .is-disabled?: {is_history_preview}
-                                            data-hint: "{std_opt.label}"
+                                    {for std_opt in ScriptStandardOptions}
+                                        label.form-radio-option .active?: {std_opt.IsActive} .is-disabled?: {IsHistoryPreview}
+                                            data-standard: "{std_opt.Value}"
+                                            data-hint: "{std_opt.Label}"
                                             input.form-radio-input
                                                 type: radio
                                                 name: standard
-                                                value: "{std_opt.value}"
-                                                checked?: {std_opt.is_active}
-                                                disabled?: {is_history_preview}
-                                            span.form-radio-label {std_opt.label}
+                                                value: "{std_opt.Value}"
+                                                checked?: {std_opt.IsActive}
+                                                disabled?: {IsHistoryPreview}
+                                            span.form-radio-label {std_opt.Label}
                                             span.form-radio-sq
                         .node-meta-row
-                            {if is_screenplay_mode}
+                            {if IsScreenplayMode}
                                 span.node-meta-key {t_act_key}
                             {else}
                                 span.node-meta-key {t_chapter_key}
                             .custom-select.node-media-select.book-start-chapter-select#book-start-chapter-select
-                                input.custom-select-input
-                                    type: hidden
-                                    name: start_chapter
-                                    value: "{book_start_chapter_name}"
+                                data-select-root: "true"
                                 button.custom-select-trigger
-                                    type: button
                                     data-select-toggle: "true"
-                                    disabled?: {is_history_preview}
-                                    span.custom-select-label {book_start_chapter_name}
+                                    disabled?: {IsHistoryPreview}
+                                    span.custom-select-label {BookStartChapterName}
                                     svg.custom-select-caret src: /icons/chevron-down.svg
                                 .custom-select-menu.hidden
-                                    {for bk_ch_opt in book_start_chapter_options}
-                                        button.custom-select-option .active?: {bk_ch_opt.is_active}
-                                            type: button
-                                            data-select-value: "{bk_ch_opt.value}"
-                                            data-select-label: "{bk_ch_opt.label}"
-                                            {bk_ch_opt.label}
+                                    data-select-menu: "true"
+                                    {for bk_ch_opt in BookStartChapterOptions}
+                                        button.custom-select-option .active?: {bk_ch_opt.IsActive}
+                                            data-select-value: "{bk_ch_opt.Value}"
+                                            data-select-label: "{bk_ch_opt.Label}"
+                                            {bk_ch_opt.Label}
                         .node-meta-row
                             span.node-meta-key "start:"
                             .custom-select.node-media-select.book-start-scene-select#book-start-scene-select
-                                input.custom-select-input
-                                    type: hidden
-                                    name: start_scene
-                                    value: "{book_start_scene_id}"
+                                data-select-root: "true"
+                                data-select-name: "start_scene"
                                 button.custom-select-trigger
-                                    type: button
                                     data-select-toggle: "true"
-                                    disabled?: {is_history_preview}
-                                    span.custom-select-label {book_start_scene_label}
+                                    disabled?: {IsHistoryPreview}
+                                    span.custom-select-label {BookStartSceneLabel}
                                     svg.custom-select-caret src: /icons/chevron-down.svg
                                 .custom-select-menu.hidden
-                                    {for bk_st_opt in book_start_scene_options}
-                                        button.custom-select-option .active?: {bk_st_opt.is_active}
-                                            type: button
-                                            data-select-value: "{bk_st_opt.value}"
-                                            data-select-label: "{bk_st_opt.label}"
-                                            {bk_st_opt.label}
-                        {if not is_screenplay_mode}
+                                    data-select-menu: "true"
+                                    {for bk_st_opt in BookStartSceneOptions}
+                                        button.custom-select-option .active?: {bk_st_opt.IsActive}
+                                            data-select-value: "{bk_st_opt.Value}"
+                                            data-select-label: "{bk_st_opt.Label}"
+                                            {bk_st_opt.Label}
+                        {if not IsScreenplayMode}
                             .node-meta-row
                                 span.node-meta-key {t_narration_key}
-                                button.book-setting-toggle-btn .active?: {book_narrated} .is-disabled?: {is_history_preview}
-                                    type: button
-                                    action: ToggleBookNarrated
-                                    data-hint: "{book_narrated_label}"
-                                    disabled?: {is_history_preview}
+                                button.book-setting-toggle-btn.btn-toggle-book-narrated .active?: {BookNarrated} .is-disabled?: {IsHistoryPreview}
+                                    data-hint: "{BookNarratedLabel}"
+                                    disabled?: {IsHistoryPreview}
                                     span.toggle-right
                                         span.toggle-switch
                                             span.toggle-thumb
-                                        {if book_narrated}
+                                        {if BookNarrated}
                                             svg.action-icon src: /icons/mic.svg
                                         {else}
                                             svg.action-icon src: /icons/mic-off.svg
-                                    span.custom-select-label {book_narrated_short_label}
+                                    span.custom-select-label {BookNarratedShortLabel}
                             .node-meta-row
                                 span.node-meta-key {t_images_key}
-                                button.book-setting-toggle-btn .active?: {!book_imageless} .is-disabled?: {is_history_preview}
-                                    type: button
-                                    action: ToggleBookImageless
-                                    data-hint: "{book_imageless_label}"
-                                    disabled?: {is_history_preview}
+                                button.book-setting-toggle-btn.btn-toggle-book-imageless .active?: {!BookImageless} .is-disabled?: {IsHistoryPreview}
+                                    data-hint: "{BookImagelessLabel}"
+                                    disabled?: {IsHistoryPreview}
                                     span.toggle-right
                                         span.toggle-switch
                                             span.toggle-thumb
-                                        {if book_imageless}
+                                        {if BookImageless}
                                             svg.action-icon src: /icons/image-off.svg
                                         {else}
                                             svg.action-icon src: /icons/image.svg
-                                    span.custom-select-label {book_imageless_short_label}
+                                    span.custom-select-label {BookImagelessShortLabel}
                         .node-meta-row
                             span.node-meta-key {t_author_key}
                             input.node-meta-input
                                 type: text
                                 name: author
-                                value: "{book.author}"
-                                placeholder: "{editor_author_placeholder}"
-                                disabled?: {is_history_preview}
-                                readonly?: {is_history_preview}
+                                value: "{Book.Author}"
+                                placeholder: "{EditorAuthorPlaceholder}"
+                                disabled?: {IsHistoryPreview}
+                                readonly?: {IsHistoryPreview}
                         .node-meta-row
                             span.node-meta-key {t_license_key}
                             input.node-meta-input#book-settings-license-input
                                 type: text
                                 name: license
-                                value: "{book.license}"
+                                value: "{Book.License}"
                                 placeholder: "{t_license_placeholder}"
-                                disabled?: {is_history_preview}
-                                readonly?: {is_history_preview}
+                                disabled?: {IsHistoryPreview}
+                                readonly?: {IsHistoryPreview}
                         .node-meta-row.node-meta-row-textarea
                             span.node-meta-key {t_desc_key}
                             textarea.node-meta-input.node-meta-textarea
                                 name: description
                                 rows: 1
-                                placeholder: "{editor_description_placeholder}"
-                                disabled?: {is_history_preview}
-                                readonly?: {is_history_preview}
-                                {book.description}
+                                placeholder: "{EditorDescriptionPlaceholder}"
+                                disabled?: {IsHistoryPreview}
+                                readonly?: {IsHistoryPreview}
+                                {Book.Description}
                         .node-meta-row
                             span.node-meta-key {t_folder_dir_key}
                             .node-media-picker-row
                                 input.node-meta-input
                                     type: text
                                     name: book_save_dir
-                                    value: "{book.root_path}"
-                                    placeholder: "{default_new_book_dir}"
+                                    value: "{Book.RootPath}"
+                                    placeholder: "{DefaultNewBookDir}"
                                     readonly: true
-                                {if not is_history_preview}
-                                    button.node-icon-btn.node-folder-btn
-                                        type: button
-                                        action: BrowseBookSaveFolder
+                                {if not IsHistoryPreview}
+                                    button.node-icon-btn.node-folder-btn.btn-browse-book-save-folder
                                         data-hint: "{t_change_project_dir_hint}"
                                         svg.folder-browse-icon src: /icons/folder.svg
                         .node-meta-row
@@ -628,14 +571,12 @@ aside.editor-context-panel#editor-context-panel .hidden?: {is_context_panel_hidd
                                 input.node-meta-input
                                     type: text
                                     name: export_dir
-                                    value: "{book.export_dir}"
-                                    placeholder: "{default_export_dir}"
-                                    disabled?: {is_history_preview}
-                                    readonly?: {is_history_preview}
-                                {if not is_history_preview}
-                                    button.node-icon-btn.node-folder-btn
-                                        type: button
-                                        action: BrowseBookExportFolder
+                                    value: "{Book.ExportDir}"
+                                    placeholder: "{DefaultExportDir}"
+                                    disabled?: {IsHistoryPreview}
+                                    readonly?: {IsHistoryPreview}
+                                {if not IsHistoryPreview}
+                                    button.node-icon-btn.node-folder-btn.btn-browse-book-export-folder
                                         data-hint: "{t_change_export_dir_hint}"
                                         svg.folder-browse-icon src: /icons/folder.svg
 
@@ -643,23 +584,19 @@ aside.editor-context-panel#editor-context-panel .hidden?: {is_context_panel_hidd
         .context-panel-section
             label.node-micro-label#multi-select-count-label {t_selected_scenes_label}
             .context-multi-scene-list#context-multi-scene-list
-                {for ms in multi_scene_items}
+                {for ms in MultiSceneItems}
                     .context-multi-scene-item.hidden
-                        data-multi-scene-id: "{ms.id}"
+                        data-multi-scene-id: "{ms.Value}"
                         button.context-multi-scene-select-btn
-                            type: button
-                            data-multi-select-scene: "{ms.id}"
-                            span.context-multi-scene-title {ms.title}
-                            span.context-multi-scene-meta {ms.chapter}
+                            data-multi-select-scene: "{ms.Value}"
+                            span.context-multi-scene-title {ms.Label}
+                            span.context-multi-scene-meta {ms.Meta}
                         button.node-icon-btn.context-multi-scene-deselect-btn
-                            type: button
-                            data-multi-deselect-scene: "{ms.id}"
+                            data-multi-deselect-scene: "{ms.Value}"
                             "✕"
-        {if not is_history_preview}
+        {if not IsHistoryPreview}
             .context-danger-zone
                 button.btn.btn-sm.context-delete-btn#btn-delete-selected-scenes
-                    type: button
-                    action: PromptDeleteScenes
                     data-scenes: ""
                     svg.btn-icon src: /icons/trash.svg
                     span#btn-delete-selected-scenes-label {t_delete_selected_scenes}

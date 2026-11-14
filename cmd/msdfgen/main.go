@@ -63,8 +63,8 @@ const (
 	errOverflowFmt = "msdf 512x512 font atlas overflow at font %d rune %q (y=%d, gh=%d)"
 	errGenFailed   = "msdfgen error: %v\n"
 
-	jsHeaderPrefix = "window.__STUDIO_MSDF_DATA = \""
-	jsHeaderSuffix = "\";\n"
+	jsHeaderPrefix = "\"use strict\";\n\nconst MsdfMetrics = {\n  data: \""
+	jsHeaderSuffix = "\"\n};\nDispatcher.register(\"MsdfMetrics\", MsdfMetrics);\n"
 	metricRowFmt   = "%d|%s|%.5f|%.5f|%.5f|%.5f|%.2f|%.2f|%.2f|%.2f|%.2f"
 	escBackslash   = "\\\\"
 	escQuote       = "\\\""

@@ -89,9 +89,10 @@ html lang: pl
                             p.wasm-splash-desc "Mroczna, rozgałęziona opowieść o prostodusznym Krzysiu, który wstępuje do Policji Rzecznej pod komendą kapitana Arvo i wyrusza w górę umierającej rzeki na swój krwawy chrzest bojowy."
                             button.wasm-splash-play-btn#btn-wasm-play
                                 type: button
-                                data-wasm-play: "true"
-                                data-wasm-src: mojra.wasm
-                                data-book-id: nie-boj-sie-policji-rzecznej
+                                action: bootWasm
+                                kind: PlayerController
+                                param-wasm-src: mojra.wasm
+                                param-book-id: nie-boj-sie-policji-rzecznej
                                 aria-label: "Odtwórz"
                                 svg.wasm-splash-play-icon src: /icons/play.svg
 

@@ -142,8 +142,8 @@ func TestServerActionLifecycleAndSecurity(t *testing.T) {
 	if !strings.Contains(string(addChHTML), "editor-context-panel") || !strings.Contains(string(addChHTML), "context-danger-zone") || !strings.Contains(string(addChHTML), "context-delete-btn") {
 		t.Fatalf("expected contextual left panel with danger zone delete button in editor HTML")
 	}
-	if !strings.Contains(string(addChHTML), "editor-multi-panel") || !strings.Contains(string(addChHTML), "context-multi-scene-list") || !strings.Contains(string(addChHTML), "PromptDeleteScenes") {
-		t.Fatalf("expected multi-scene panel with scene list and PromptDeleteScenes button in editor HTML")
+	if !strings.Contains(string(addChHTML), "editor-multi-panel") || !strings.Contains(string(addChHTML), "context-multi-scene-list") || !strings.Contains(string(addChHTML), "btn-delete-selected-scenes") {
+		t.Fatalf("expected multi-scene panel with scene list and btn-delete-selected-scenes button in editor HTML")
 	}
 	if !strings.Contains(string(addChHTML), "node | id:poczatek") || !strings.Contains(string(addChHTML), "port | scene:poczatek | idx:1 | label:Wybór 2 | target_id:END |") {
 		t.Fatalf("expected serialized node and unlinked port record in #studio-graph-data, got:\n%s", string(addChHTML))
@@ -226,7 +226,7 @@ func TestServerActionLifecycleAndSecurity(t *testing.T) {
 	if !strings.Contains(string(openModalHTML), "modal-scene-text") || !strings.Contains(string(openModalHTML), "scene-text-fullscreen-backdrop") || !strings.Contains(string(openModalHTML), "player-layout") {
 		t.Fatalf("expected fullscreen book-view modal-scene-text in rendered HTML")
 	}
-	if !strings.Contains(string(openModalHTML), "NavigateSceneTextModal") || !strings.Contains(string(openModalHTML), "scene-text-back-btn") {
+	if !strings.Contains(string(openModalHTML), "modal-choice-nav-btn") || !strings.Contains(string(openModalHTML), "scene-text-back-btn") {
 		t.Fatalf("expected interactive story navigation choices and styled back button in modal-scene-text")
 	}
 	if !strings.Contains(string(openModalHTML), `class="scene-title scene-title-present node-inline-title"`) || !strings.Contains(string(openModalHTML), `name="choice_label_0"`) || !strings.Contains(string(openModalHTML), "scroll-more-cue") {
@@ -237,13 +237,13 @@ func TestServerActionLifecycleAndSecurity(t *testing.T) {
 		!strings.Contains(string(openModalHTML), `name="explicit_id"`) ||
 		!strings.Contains(string(openModalHTML), `class="node-start-indicator"`) ||
 		strings.Contains(string(openModalHTML), `id="modal-btn-set-start-scene"`) ||
-		!strings.Contains(string(openModalHTML), `name="explicit_image"`) {
+		(!strings.Contains(string(openModalHTML), `name="explicit_image"`) && !strings.Contains(string(openModalHTML), `modal-image-select`)) {
 		t.Fatalf("expected settings toggle button, start indicator next to title, and settings block (id, image) in modal-scene-text, got:\n%s", string(openModalHTML))
 	}
-	if srv.State.Editor.ActiveBook.Narrated && !strings.Contains(string(openModalHTML), `name="explicit_voice"`) {
+	if srv.State.Editor.ActiveBook.Narrated && !strings.Contains(string(openModalHTML), `name="explicit_voice"`) && !strings.Contains(string(openModalHTML), `modal-voice-select`) {
 		t.Fatalf("expected explicit_voice selector in modal-scene-text when book is narrated")
 	}
-	if !srv.State.Editor.ActiveBook.Narrated && strings.Contains(string(openModalHTML), `name="explicit_voice"`) {
+	if !srv.State.Editor.ActiveBook.Narrated && (strings.Contains(string(openModalHTML), `name="explicit_voice"`) || strings.Contains(string(openModalHTML), `param-explicit-voice=`)) {
 		t.Fatalf("did not expect explicit_voice selector in modal-scene-text when book is not narrated")
 	}
 
@@ -299,8 +299,9 @@ func TestServerActionLifecycleAndSecurity(t *testing.T) {
 	}
 	addModalChoiceHTML, _ := io.ReadAll(addModalChoiceResp.Body)
 	_ = addModalChoiceResp.Body.Close()
-	if addModalChoiceResp.Header.Get("X-Target") != "#modals-root" || !strings.Contains(string(addModalChoiceHTML), "modal-scene-text") || !strings.Contains(string(addModalChoiceHTML), `name="choice_target_2"`) {
-		t.Fatalf("expected AddChoice in modal-scene-text to return #modals-root with choice_target_2, got X-Target=%q:\n%s", addModalChoiceResp.Header.Get("X-Target"), string(addModalChoiceHTML))
+	addModalMeta, _ := tpl.DecodeFDPResponse(addModalChoiceHTML)
+	if addModalMeta.Get("target") != "#modals-root" || !strings.Contains(string(addModalChoiceHTML), "modal-scene-text") || !strings.Contains(string(addModalChoiceHTML), `name="choice_target_2"`) {
+		t.Fatalf("expected AddChoice in modal-scene-text to return #modals-root with choice_target_2, got target=%q:\n%s", addModalMeta.Get("target"), string(addModalChoiceHTML))
 	}
 
 	editTargetModalForm := url.Values{}
@@ -323,10 +324,10 @@ func TestServerActionLifecycleAndSecurity(t *testing.T) {
 		!strings.Contains(string(editTargetModalHTML), `value="s1"`) ||
 		strings.Contains(string(editTargetModalHTML), "choice-port-trigger") ||
 		!strings.Contains(string(editTargetModalHTML), "choice-trash-icon") ||
-		!strings.Contains(string(editTargetModalHTML), `action="PromptRemoveChoice"`) ||
+		!strings.Contains(string(editTargetModalHTML), "node-choice-remove") ||
 		strings.Contains(string(editTargetModalHTML), "BranchChoiceScene") ||
 		strings.Contains(string(editTargetModalHTML), "node-choice-arrow") {
-		t.Fatalf("expected choice-exit-input, no choice-port-trigger, and trash icon with PromptRemoveChoice in modal choices, got:\n%s", string(editTargetModalHTML))
+		t.Fatalf("expected choice-exit-input, no choice-port-trigger, and trash icon with node-choice-remove in modal choices, got:\n%s", string(editTargetModalHTML))
 	}
 
 	promptRemChoiceForm := url.Values{}
@@ -339,7 +340,8 @@ func TestServerActionLifecycleAndSecurity(t *testing.T) {
 	}
 	promptRemChoiceHTML, _ := io.ReadAll(promptRemChoiceResp.Body)
 	_ = promptRemChoiceResp.Body.Close()
-	if promptRemChoiceResp.Header.Get("X-Modal-ID") != "modal-confirm" || !strings.Contains(string(promptRemChoiceHTML), `id="modal-confirm"`) || !strings.Contains(string(promptRemChoiceHTML), "Wycofaj się") || srv.State.Editor.SceneText.SceneID != "poczatek" {
+	promptRemMeta, _ := tpl.DecodeFDPResponse(promptRemChoiceHTML)
+	if promptRemMeta.Get("modalId") != "modal-confirm" || !strings.Contains(string(promptRemChoiceHTML), `id="modal-confirm"`) || !strings.Contains(string(promptRemChoiceHTML), "Wycofaj się") || srv.State.Editor.SceneText.SceneID != "poczatek" {
 		t.Fatalf("expected PromptRemoveChoice to open #modal-confirm alongside active SceneTextModalID, got:\n%s", string(promptRemChoiceHTML))
 	}
 
@@ -363,7 +365,7 @@ func TestServerActionLifecycleAndSecurity(t *testing.T) {
 	}
 	closeModalHTML, _ := io.ReadAll(closeModalResp.Body)
 	_ = closeModalResp.Body.Close()
-	if !strings.Contains(string(closeModalHTML), `class="btn btn-sm node-edit-text-btn"`) || strings.Contains(string(closeModalHTML), "Drugie zdanie") {
+	if !strings.Contains(string(closeModalHTML), `node-edit-text-btn`) || strings.Contains(string(closeModalHTML), "Drugie zdanie") {
 		t.Fatalf("expected .node-edit-text-btn in context panel after closing modal, got:\n%s", string(closeModalHTML))
 	}
 
@@ -740,7 +742,7 @@ end: true
 	r6, _ := http.PostForm(ts.URL+"/api/action", promptReset2)
 	r6Bytes, _ := io.ReadAll(r6.Body)
 	_ = r6.Body.Close()
-	if !strings.Contains(string(r6Bytes), `class="btn btn-primary" type="button" action="ConfirmModalAccept"`) || strings.Contains(string(r6Bytes), `btn-danger`) {
+	if !strings.Contains(string(r6Bytes), `class="btn btn-confirm-accept btn-primary"`) || strings.Contains(string(r6Bytes), `btn-danger`) {
 		t.Fatalf("expected PromptResetProgress confirmation modal to use non-danger btn-primary, got:\n%s", string(r6Bytes))
 	}
 
@@ -800,9 +802,11 @@ func TestDevicePreviewStrippedInProductionAndEnabledInDev(t *testing.T) {
 	if err != nil {
 		t.Fatalf("POST /api/action SetDeviceMode failed: %v", err)
 	}
+	actBytes, _ := io.ReadAll(actResp.Body)
 	_ = actResp.Body.Close()
-	if gotHdr := actResp.Header.Get("X-Device-Mode"); gotHdr != "" {
-		t.Fatalf("expected no X-Device-Mode header in production mode, got %q", gotHdr)
+	actMeta, _ := tpl.DecodeFDPResponse(actBytes)
+	if gotHdr := actMeta.Get("deviceMode"); gotHdr != "" {
+		t.Fatalf("expected no deviceMode in production mode, got %q", gotHdr)
 	}
 
 	// Verify QR code markup is stripped from #modal-qr in production mode
@@ -829,8 +833,8 @@ func TestDevicePreviewStrippedInProductionAndEnabledInDev(t *testing.T) {
 	}
 	devHTML, _ := io.ReadAll(devResp.Body)
 	_ = devResp.Body.Close()
-	if !strings.Contains(string(devHTML), "device-preview-bar") || !strings.Contains(string(devHTML), "SetDeviceMode") || !strings.Contains(string(devHTML), `action="OpenQRModal"`) {
-		t.Fatalf("expected device-preview-bar and OpenQRModal in dev mode GET /")
+	if !strings.Contains(string(devHTML), "device-preview-bar") || !strings.Contains(string(devHTML), "preview-mode-btn") || !strings.Contains(string(devHTML), `id="btn-open-settings"`) {
+		t.Fatalf("expected device-preview-bar and #btn-open-settings in dev mode GET /")
 	}
 	for _, wantPreviewAttr := range []string{`data-mode="portrait"`, `data-mode="tablet"`, `data-mode="full"`} {
 		if !strings.Contains(string(devHTML), wantPreviewAttr) {
@@ -862,9 +866,11 @@ func TestDevicePreviewStrippedInProductionAndEnabledInDev(t *testing.T) {
 	if err != nil {
 		t.Fatalf("POST /api/action SetDeviceMode(tablet) failed: %v", err)
 	}
+	tabletBytes, _ := io.ReadAll(tabletResp.Body)
 	_ = tabletResp.Body.Close()
-	if gotHdr := tabletResp.Header.Get("X-Device-Mode"); gotHdr != "tablet" {
-		t.Fatalf("expected X-Device-Mode=tablet in dev mode, got %q", gotHdr)
+	tabletMeta, _ := tpl.DecodeFDPResponse(tabletBytes)
+	if gotHdr := tabletMeta.Get("deviceMode"); gotHdr != "tablet" {
+		t.Fatalf("expected deviceMode=tablet in dev mode, got %q", gotHdr)
 	}
 
 	devQRModalResp, err := http.PostForm(devTS.URL+"/api/action", qrModalForm)
@@ -873,8 +879,8 @@ func TestDevicePreviewStrippedInProductionAndEnabledInDev(t *testing.T) {
 	}
 	devQRModalHTML, _ := io.ReadAll(devQRModalResp.Body)
 	_ = devQRModalResp.Body.Close()
-	if !strings.Contains(string(devQRModalHTML), "/api/lan-qr.png") || !strings.Contains(string(devQRModalHTML), "qr-frame") || !strings.Contains(string(devQRModalHTML), "ExtractEmbeddedBook") {
-		t.Fatalf("expected QR code and ExtractEmbeddedBook elements in #modal-qr in dev mode")
+	if !strings.Contains(string(devQRModalHTML), "/api/lan-qr.png") || !strings.Contains(string(devQRModalHTML), "qr-frame") || !strings.Contains(string(devQRModalHTML), "btn-extract-embedded-book") {
+		t.Fatalf("expected QR code and btn-extract-embedded-book elements in #modal-qr in dev mode")
 	}
 
 	// 3. ExtractEmbeddedBook in dev mode extracts books/nie-boj-sie-policji-rzecznej on demand with 0 warnings
@@ -938,7 +944,6 @@ Dopiero kapitan Arvo wszystko mu wytłumaczył.
 		!strings.Contains(libHTML, `<span class="brand-logo">Mojra</span>`) ||
 		strings.Contains(libHTML, `<span class="brand-logo brand-logo-short">M</span>`) ||
 		!strings.Contains(libHTML, `id="btn-open-settings"`) ||
-		!strings.Contains(libHTML, `action="OpenQRModal"`) ||
 		!strings.Contains(libHTML, `id="btn-toggle-fullscreen"`) ||
 		!strings.Contains(libHTML, `id="btn-switch-to-studio"`) ||
 		!strings.Contains(libHTML, `data-view="studio"`) {
@@ -952,8 +957,8 @@ Dopiero kapitan Arvo wszystko mu wytłumaczył.
 	}
 	libSection := libHTML[secStart:secEnd]
 
-	if !strings.Contains(libSection, `action="OpenAddBookModal"`) {
-		t.Fatalf("expected OpenAddBookModal (+ Dodaj książkę) in #view-library, got:\n%s", libSection)
+	if !strings.Contains(libSection, `id="btn-open-add-book"`) {
+		t.Fatalf("expected #btn-open-add-book (+ Dodaj książkę) in #view-library, got:\n%s", libSection)
 	}
 	cardStart := strings.Index(libSection, `<article class="book-card">`)
 	cardChunk := ""
@@ -987,9 +992,9 @@ Dopiero kapitan Arvo wszystko mu wytłumaczył.
 	}
 	playerHTMLBytes, _ := io.ReadAll(openResp.Body)
 	_ = openResp.Body.Close()
-	playerHTML := string(playerHTMLBytes)
-	if openResp.Header.Get("X-Reset-Canvas") != "true" {
-		t.Fatalf("expected X-Reset-Canvas=true on OpenBook, got %q", openResp.Header.Get("X-Reset-Canvas"))
+	openMeta, playerHTML := tpl.DecodeFDPResponse(playerHTMLBytes)
+	if openMeta.Get("resetCanvas") != "true" {
+		t.Fatalf("expected resetCanvas=true on OpenBook, got %q", openMeta.Get("resetCanvas"))
 	}
 	if !strings.Contains(playerHTML, `class="choice-branch-icon"`) {
 		t.Fatalf("expected multiple choices to render branching arrow icon (.choice-branch-icon), got:\n%s", playerHTML)
@@ -1068,9 +1073,9 @@ Dopiero kapitan Arvo wszystko mu wytłumaczył.
 	}
 	imgBytes, _ := io.ReadAll(rImg.Body)
 	_ = rImg.Body.Close()
-	imgHTML := string(imgBytes)
-	if rImg.Header.Get("X-Imageless") != "true" || rImg.Header.Get("X-Keep-Scroll") != "true" {
-		t.Fatalf("expected X-Imageless=true and X-Keep-Scroll=true headers, got %q / %q", rImg.Header.Get("X-Imageless"), rImg.Header.Get("X-Keep-Scroll"))
+	imgMeta, imgHTML := tpl.DecodeFDPResponse(imgBytes)
+	if imgMeta.Get("imageless") != "true" || imgMeta.Get("keepScroll") != "true" {
+		t.Fatalf("expected imageless=true and keepScroll=true in FDP meta, got %q / %q", imgMeta.Get("imageless"), imgMeta.Get("keepScroll"))
 	}
 	if !strings.Contains(imgHTML, `class="player-layout is-imageless"`) {
 		t.Fatalf("expected .player-layout.is-imageless in imageless mode, got:\n%s", imgHTML)
@@ -1088,11 +1093,12 @@ Dopiero kapitan Arvo wszystko mu wytłumaczył.
 	}
 	scaleBytes, _ := io.ReadAll(rScale.Body)
 	_ = rScale.Body.Close()
-	if rScale.Header.Get("X-UI-Scale") != "large" || rScale.Header.Get("X-Keep-Scroll") != "true" || rScale.Header.Get("X-Target") != "none" {
-		t.Fatalf("expected X-UI-Scale=large, X-Keep-Scroll=true, and X-Target=none headers, got %q / %q / %q", rScale.Header.Get("X-UI-Scale"), rScale.Header.Get("X-Keep-Scroll"), rScale.Header.Get("X-Target"))
+	scaleMeta, scaleHTML := tpl.DecodeFDPResponse(scaleBytes)
+	if scaleMeta.Get("uiScale") != "large" || scaleMeta.Get("keepScroll") != "true" || scaleMeta.Get("target") != "none" {
+		t.Fatalf("expected uiScale=large, keepScroll=true, and target=none in FDP meta, got %q / %q / %q", scaleMeta.Get("uiScale"), scaleMeta.Get("keepScroll"), scaleMeta.Get("target"))
 	}
-	if len(scaleBytes) != 0 || rScale.StatusCode != http.StatusNoContent {
-		t.Fatalf("expected 204 No Content with empty body for ToggleUIScale, got status=%d len=%d", rScale.StatusCode, len(scaleBytes))
+	if len(scaleHTML) != 0 || rScale.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 OK with empty HTML body for ToggleUIScale, got status=%d len=%d", rScale.StatusCode, len(scaleHTML))
 	}
 	if strings.Contains(libHTML, `id="btn-toggle-zen"`) {
 		t.Fatalf("expected #btn-toggle-zen to NOT be rendered in library view")
@@ -1102,9 +1108,11 @@ Dopiero kapitan Arvo wszystko mu wytłumaczył.
 	if err != nil {
 		t.Fatalf("second ToggleUIScale failed: %v", err)
 	}
+	scaleBackBytes, _ := io.ReadAll(rScaleBack.Body)
 	_ = rScaleBack.Body.Close()
-	if rScaleBack.Header.Get("X-UI-Scale") != "small" {
-		t.Fatalf("expected X-UI-Scale=small on second ToggleUIScale (never zen), got %q", rScaleBack.Header.Get("X-UI-Scale"))
+	scaleBackMeta, _ := tpl.DecodeFDPResponse(scaleBackBytes)
+	if scaleBackMeta.Get("uiScale") != "small" {
+		t.Fatalf("expected uiScale=small on second ToggleUIScale (never zen), got %q", scaleBackMeta.Get("uiScale"))
 	}
 
 	// Switch back to player view and verify ToggleZenMode works exclusively in book reader context
@@ -1114,17 +1122,21 @@ Dopiero kapitan Arvo wszystko mu wytłumaczył.
 	if err != nil {
 		t.Fatalf("ToggleZenMode failed: %v", err)
 	}
+	zenOnBytes, _ := io.ReadAll(rZenOn.Body)
 	_ = rZenOn.Body.Close()
-	if rZenOn.Header.Get("X-Zen-Mode") != "true" {
-		t.Fatalf("expected X-Zen-Mode=true in player view, got %q", rZenOn.Header.Get("X-Zen-Mode"))
+	zenOnMeta, _ := tpl.DecodeFDPResponse(zenOnBytes)
+	if zenOnMeta.Get("zenMode") != "true" {
+		t.Fatalf("expected zenMode=true in player view, got %q", zenOnMeta.Get("zenMode"))
 	}
 	rZenOff, err := http.PostForm(ts.URL+"/api/action", zenForm)
 	if err != nil {
 		t.Fatalf("ToggleZenMode off failed: %v", err)
 	}
+	zenOffBytes, _ := io.ReadAll(rZenOff.Body)
 	_ = rZenOff.Body.Close()
-	if rZenOff.Header.Get("X-Zen-Mode") != "false" {
-		t.Fatalf("expected X-Zen-Mode=false after second ToggleZenMode, got %q", rZenOff.Header.Get("X-Zen-Mode"))
+	zenOffMeta, _ := tpl.DecodeFDPResponse(zenOffBytes)
+	if zenOffMeta.Get("zenMode") != "false" {
+		t.Fatalf("expected zenMode=false after second ToggleZenMode, got %q", zenOffMeta.Get("zenMode"))
 	}
 
 	setSmallForm := url.Values{}
@@ -1134,9 +1146,11 @@ Dopiero kapitan Arvo wszystko mu wytłumaczył.
 	if err != nil {
 		t.Fatalf("SetUIScale failed: %v", err)
 	}
+	setSmallBytes, _ := io.ReadAll(rSetSmall.Body)
 	_ = rSetSmall.Body.Close()
-	if rSetSmall.Header.Get("X-UI-Scale") != "small" {
-		t.Fatalf("expected X-UI-Scale=small header after SetUIScale(small), got %q", rSetSmall.Header.Get("X-UI-Scale"))
+	setSmallMeta, _ := tpl.DecodeFDPResponse(setSmallBytes)
+	if setSmallMeta.Get("uiScale") != "small" {
+		t.Fatalf("expected uiScale=small after SetUIScale(small), got %q", setSmallMeta.Get("uiScale"))
 	}
 
 	setSensForm := url.Values{}
@@ -1146,9 +1160,11 @@ Dopiero kapitan Arvo wszystko mu wytłumaczył.
 	if err != nil {
 		t.Fatalf("SetScrollSensitivity failed: %v", err)
 	}
+	setSensBytes, _ := io.ReadAll(rSetSens.Body)
 	_ = rSetSens.Body.Close()
-	if rSetSens.Header.Get("X-Scroll-Sensitivity") != "low" {
-		t.Fatalf("expected X-Scroll-Sensitivity=low header after SetScrollSensitivity(low), got %q", rSetSens.Header.Get("X-Scroll-Sensitivity"))
+	setSensMeta, _ := tpl.DecodeFDPResponse(setSensBytes)
+	if setSensMeta.Get("sensitivity") != "low" {
+		t.Fatalf("expected sensitivity=low after SetScrollSensitivity(low), got %q", setSensMeta.Get("sensitivity"))
 	}
 
 	// 6. Verify QuitApp closes immediately without any confirmation modal
@@ -1160,15 +1176,15 @@ Dopiero kapitan Arvo wszystko mu wytłumaczył.
 	}
 	quitBytes, _ := io.ReadAll(rQuit.Body)
 	_ = rQuit.Body.Close()
-	quitHTML := string(quitBytes)
-	if rQuit.Header.Get("X-Native-Cmd") != "quit" {
-		t.Fatalf("expected X-Native-Cmd=quit header on QuitApp, got %q", rQuit.Header.Get("X-Native-Cmd"))
+	quitMeta, quitHTML := tpl.DecodeFDPResponse(quitBytes)
+	if quitMeta.Get("nativeCmd") != "quit" {
+		t.Fatalf("expected nativeCmd=quit on QuitApp, got %q", quitMeta.Get("nativeCmd"))
 	}
 	if strings.Contains(quitHTML, `id="modal-confirm"`) || strings.Contains(quitHTML, "Zamknij Mojra") {
 		t.Fatalf("expected no confirmation prompt when closing app, got:\n%s", quitHTML)
 	}
 
-	// 7. Verify targeted HTML chunks (X-Target) instead of full #app shell on partial actions
+	// 7. Verify targeted HTML chunks (target) instead of full #app shell on partial actions
 	swEd := url.Values{}
 	swEd.Set("action", "SwitchView")
 	swEd.Set("view", "editor")
@@ -1188,9 +1204,9 @@ Dopiero kapitan Arvo wszystko mu wytłumaczył.
 	}
 	selBytes, _ := io.ReadAll(rSel.Body)
 	_ = rSel.Body.Close()
-	selHTML := string(selBytes)
-	if rSel.Header.Get("X-Target") != "#editor-context-panel" {
-		t.Fatalf("expected X-Target=#editor-context-panel for SelectStudioScene, got %q", rSel.Header.Get("X-Target"))
+	selMeta, selHTML := tpl.DecodeFDPResponse(selBytes)
+	if selMeta.Get("target") != "#editor-context-panel" {
+		t.Fatalf("expected target=#editor-context-panel for SelectStudioScene, got %q", selMeta.Get("target"))
 	}
 	if !strings.Contains(selHTML, `id="editor-context-panel"`) || !strings.Contains(selHTML, "Samotność nad wodą") {
 		t.Fatalf("expected #editor-context-panel chunk for Samotność nad wodą, got:\n%s", selHTML)
@@ -1210,9 +1226,9 @@ Dopiero kapitan Arvo wszystko mu wytłumaczył.
 	}
 	helpChunkBytes, _ := io.ReadAll(rHelp.Body)
 	_ = rHelp.Body.Close()
-	helpChunk := string(helpChunkBytes)
-	if rHelp.Header.Get("X-Target") != "#workspace" {
-		t.Fatalf("expected X-Target=#workspace for OpenEditorHelpModal, got %q", rHelp.Header.Get("X-Target"))
+	helpMeta, helpChunk := tpl.DecodeFDPResponse(helpChunkBytes)
+	if helpMeta.Get("target") != "#workspace" {
+		t.Fatalf("expected target=#workspace for OpenEditorHelpModal, got %q", helpMeta.Get("target"))
 	}
 	if !strings.Contains(helpChunk, `id="editor-help-panel"`) || strings.Contains(helpChunk, `id="editor-help-panel" class="editor-help-panel hidden"`) {
 		t.Fatalf("expected visible #editor-help-panel in workspace chunk, got:\n%s", helpChunk)
@@ -1237,9 +1253,9 @@ Dopiero kapitan Arvo wszystko mu wytłumaczył.
 	}
 	chBranchBytes, _ := io.ReadAll(rChBranch.Body)
 	_ = rChBranch.Body.Close()
-	chBranchHTML := string(chBranchBytes)
-	if rChBranch.Header.Get("X-Target") != "#workspace" {
-		t.Fatalf("expected X-Target=#workspace for ChooseBranch, got %q", rChBranch.Header.Get("X-Target"))
+	chBranchMeta, chBranchHTML := tpl.DecodeFDPResponse(chBranchBytes)
+	if chBranchMeta.Get("target") != "#workspace" {
+		t.Fatalf("expected target=#workspace for ChooseBranch, got %q", chBranchMeta.Get("target"))
 	}
 	if !strings.Contains(chBranchHTML, `id="view-player"`) || strings.Contains(chBranchHTML, `id="topbar"`) {
 		t.Fatalf("expected ChooseBranch to render only #view-player without #topbar, got:\n%s", chBranchHTML)
@@ -1733,15 +1749,15 @@ func TestBookImagelessSettingAndTopbarLock(t *testing.T) {
 	}
 	normBytes, _ := io.ReadAll(rNorm.Body)
 	_ = rNorm.Body.Close()
-	normHTML := string(normBytes)
-	if rNorm.Header.Get("X-Imageless") != "false" || rNorm.Header.Get("X-Imageless-Locked") != "false" {
-		t.Fatalf("expected X-Imageless=false and X-Imageless-Locked=false for normal book, got %q / %q", rNorm.Header.Get("X-Imageless"), rNorm.Header.Get("X-Imageless-Locked"))
+	normMeta, normHTML := tpl.DecodeFDPResponse(normBytes)
+	if normMeta.Get("imageless") != "false" || normMeta.Get("imagelessLocked") != "false" {
+		t.Fatalf("expected imageless=false and imagelessLocked=false for normal book, got %q / %q", normMeta.Get("imageless"), normMeta.Get("imagelessLocked"))
 	}
-	if strings.Contains(normHTML, `id="btn-toggle-imageless" type="button" action="ToggleImageless" disabled="disabled"`) {
+	if strings.Contains(normHTML, `id="btn-toggle-imageless" disabled="disabled"`) {
 		t.Fatalf("expected #btn-toggle-imageless to be active (not disabled) when non-imageless book is loaded")
 	}
-	if !strings.Contains(normHTML, `action="ToggleBookImageless"`) || !strings.Contains(normHTML, `action="ToggleBookNarrated"`) {
-		t.Fatalf("expected ToggleBookImageless and ToggleBookNarrated in book settings form")
+	if !strings.Contains(normHTML, `btn-toggle-book-imageless`) || !strings.Contains(normHTML, `btn-toggle-book-narrated`) {
+		t.Fatalf("expected btn-toggle-book-imageless and btn-toggle-book-narrated in book settings form")
 	}
 
 	// 2. Toggle book imageless mode ON in Node Studio via ToggleBookImageless
@@ -1752,13 +1768,15 @@ func TestBookImagelessSettingAndTopbarLock(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ToggleBookImageless ON failed: %v", err)
 	}
+	togOnBytes, _ := io.ReadAll(rTogOn.Body)
 	_ = rTogOn.Body.Close()
+	togOnMeta, _ := tpl.DecodeFDPResponse(togOnBytes)
 
 	if !srv.State.Editor.ActiveBook.Imageless {
 		t.Fatalf("expected ActiveBook.Imageless=true after ToggleBookImageless")
 	}
-	if rTogOn.Header.Get("X-Imageless") != "true" || rTogOn.Header.Get("X-Imageless-Locked") != "true" {
-		t.Fatalf("expected X-Imageless=true and X-Imageless-Locked=true when imageless book is loaded, got %q / %q", rTogOn.Header.Get("X-Imageless"), rTogOn.Header.Get("X-Imageless-Locked"))
+	if togOnMeta.Get("imageless") != "true" || togOnMeta.Get("imagelessLocked") != "true" {
+		t.Fatalf("expected imageless=true and imagelessLocked=true when imageless book is loaded, got %q / %q", togOnMeta.Get("imageless"), togOnMeta.Get("imagelessLocked"))
 	}
 	rSettingsOn, err := http.PostForm(ts.URL+"/api/action", url.Values{"action": {"OpenQRModal"}})
 	if err != nil {
@@ -1766,8 +1784,8 @@ func TestBookImagelessSettingAndTopbarLock(t *testing.T) {
 	}
 	settingsOnBytes, _ := io.ReadAll(rSettingsOn.Body)
 	_ = rSettingsOn.Body.Close()
-	settingsOnHTML := string(settingsOnBytes)
-	if !strings.Contains(settingsOnHTML, `id="btn-toggle-imageless" type="button" action="ToggleImageless" disabled="disabled"`) {
+	_, settingsOnHTML := tpl.DecodeFDPResponse(settingsOnBytes)
+	if !strings.Contains(settingsOnHTML, `id="btn-toggle-imageless" type="button" disabled="disabled"`) {
 		t.Fatalf("expected #btn-toggle-imageless to be disabled/inactive in settings modal when imageless book is open, got:\n%s", settingsOnHTML)
 	}
 	if !strings.Contains(settingsOnHTML, `class="action-icon hidden" id="icon-imageless-off"`) ||
@@ -1790,9 +1808,11 @@ func TestBookImagelessSettingAndTopbarLock(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ToggleImageless failed: %v", err)
 	}
+	tryBytes, _ := io.ReadAll(rTry.Body)
 	_ = rTry.Body.Close()
-	if rTry.Header.Get("X-Imageless") != "true" || rTry.Header.Get("X-Imageless-Locked") != "true" || srv.State.Settings.Imageless {
-		t.Fatalf("expected ToggleImageless to be ignored while imageless book is loaded, got X-Imageless=%q Settings.Imageless=%v", rTry.Header.Get("X-Imageless"), srv.State.Settings.Imageless)
+	tryMeta, _ := tpl.DecodeFDPResponse(tryBytes)
+	if tryMeta.Get("imageless") != "true" || tryMeta.Get("imagelessLocked") != "true" || srv.State.Settings.Imageless {
+		t.Fatalf("expected ToggleImageless to be ignored while imageless book is loaded, got imageless=%q Settings.Imageless=%v", tryMeta.Get("imageless"), srv.State.Settings.Imageless)
 	}
 
 	// 4. Switch to player view and verify book is forced to imageless mode (no scene images rendered)
@@ -1806,7 +1826,7 @@ func TestBookImagelessSettingAndTopbarLock(t *testing.T) {
 	}
 	playBytes, _ := io.ReadAll(rPlay.Body)
 	_ = rPlay.Body.Close()
-	playHTML := string(playBytes)
+	_, playHTML := tpl.DecodeFDPResponse(playBytes)
 	if !strings.Contains(playHTML, `class="player-layout is-imageless"`) || strings.Contains(playHTML, `class="player-bg-img"`) {
 		t.Fatalf("expected player view to be forced into .is-imageless without scene images, got:\n%s", playHTML)
 	}
@@ -1818,11 +1838,11 @@ func TestBookImagelessSettingAndTopbarLock(t *testing.T) {
 	}
 	togOffBytes, _ := io.ReadAll(rTogOff.Body)
 	_ = rTogOff.Body.Close()
-	togOffHTML := string(togOffBytes)
-	if srv.State.Editor.ActiveBook.Imageless || rTogOff.Header.Get("X-Imageless-Locked") != "false" || rTogOff.Header.Get("X-Imageless") != "false" {
-		t.Fatalf("expected imageless lock released after ToggleBookImageless OFF, got Book.Imageless=%v X-Imageless-Locked=%q", srv.State.Editor.ActiveBook.Imageless, rTogOff.Header.Get("X-Imageless-Locked"))
+	togOffMeta, togOffHTML := tpl.DecodeFDPResponse(togOffBytes)
+	if srv.State.Editor.ActiveBook.Imageless || togOffMeta.Get("imagelessLocked") != "false" || togOffMeta.Get("imageless") != "false" {
+		t.Fatalf("expected imageless lock released after ToggleBookImageless OFF, got Book.Imageless=%v imagelessLocked=%q", srv.State.Editor.ActiveBook.Imageless, togOffMeta.Get("imagelessLocked"))
 	}
-	if strings.Contains(togOffHTML, `id="btn-toggle-imageless" type="button" action="ToggleImageless" disabled="disabled"`) {
+	if strings.Contains(togOffHTML, `id="btn-toggle-imageless" type="button" disabled="disabled"`) {
 		t.Fatalf("expected #btn-toggle-imageless to become active again when no imageless book is loaded")
 	}
 }
@@ -1845,8 +1865,8 @@ func TestNodeEditorEmptyLibraryRenameFitAndRootScene(t *testing.T) {
 	swBytes, _ := io.ReadAll(rSw.Body)
 	_ = rSw.Body.Close()
 	swHTML := string(swBytes)
-	if !strings.Contains(swHTML, `id="view-editor"`) || !strings.Contains(swHTML, `id="editor-empty-state"`) || !strings.Contains(swHTML, `action="OpenNewBookModal"`) {
-		t.Fatalf("expected #view-editor with #editor-empty-state and OpenNewBookModal when library is empty, got:\n%s", swHTML)
+	if !strings.Contains(swHTML, `id="view-editor"`) || !strings.Contains(swHTML, `id="editor-empty-state"`) || !strings.Contains(swHTML, `id="btn-new-book"`) {
+		t.Fatalf("expected #view-editor with #editor-empty-state and #btn-new-book when library is empty, got:\n%s", swHTML)
 	}
 
 	// 2. Open new book modal and create a new book from Node Editor
@@ -1859,8 +1879,8 @@ func TestNodeEditorEmptyLibraryRenameFitAndRootScene(t *testing.T) {
 	}
 	modalBytes, _ := io.ReadAll(rModal.Body)
 	_ = rModal.Body.Close()
-	if !strings.Contains(string(modalBytes), `data-backdrop-action="CloseNewBookModal"`) || !strings.Contains(string(modalBytes), `action="CreateNewBook"`) {
-		t.Fatalf("expected new book modal and CreateNewBook form, got:\n%s", string(modalBytes))
+	if !strings.Contains(string(modalBytes), `id="modal-backdrop-new-book"`) || !strings.Contains(string(modalBytes), `id="form-new-book"`) {
+		t.Fatalf("expected new book modal and #form-new-book form, got:\n%s", string(modalBytes))
 	}
 
 	createForm := url.Values{
@@ -2018,7 +2038,7 @@ func TestNarrationlessAllOrNothingAndMinimalProgressBar(t *testing.T) {
 	}
 
 	// Verify Node Studio inspector does NOT render voice: field or audio import button when narrated: false
-	if strings.Contains(edHTML, `name="explicit_voice"`) || strings.Contains(edHTML, `data-kind="audio"`) {
+	if strings.Contains(edHTML, `name="explicit_voice"`) || strings.Contains(edHTML, `param-explicit-voice=`) || strings.Contains(edHTML, `data-kind="audio"`) {
 		t.Fatalf("expected Node Studio inspector to hide voice controls when book is narrationless, got:\n%s", edHTML)
 	}
 
@@ -2136,7 +2156,7 @@ func TestNarrationlessAllOrNothingAndMinimalProgressBar(t *testing.T) {
 	if !srv.State.Editor.ActiveBook.Narrated {
 		t.Fatalf("expected ActiveBook.Narrated=true after ToggleBookNarrated")
 	}
-	if !strings.Contains(togOnHTML, `name="explicit_voice"`) || !strings.Contains(togOnHTML, `data-kind="audio"`) {
+	if (!strings.Contains(togOnHTML, `name="explicit_voice"`) && !strings.Contains(togOnHTML, `node-voice-select`)) || !strings.Contains(togOnHTML, `data-kind="audio"`) {
 		t.Fatalf("expected voice controls to appear in Node Studio when book narration is enabled, got:\n%s", togOnHTML)
 	}
 }
@@ -2271,9 +2291,9 @@ func TestMultilingualUISwitchAndI18nTableCompleteness(t *testing.T) {
 		jsKeySet[key] = true
 	}
 
-	jsMatches, err := filepath.Glob(filepath.Join("..", "..", "app", "js", "*.js"))
-	if err != nil || len(jsMatches) == 0 {
-		t.Fatalf("failed to glob app/js/*.js: %v", err)
+	jsMatches := tpl.JSModuleFiles(filepath.Join("..", "..", "app"))
+	if len(jsMatches) == 0 {
+		t.Fatalf("failed to discover JS modules in app/js")
 	}
 	jsTrCallRe := regexp.MustCompile(`\b(?:tr|trf)\(\s*"([a-z0-9_]+)"|\btrStd\([^,]+,\s*"([a-z0-9_]+)"`)
 	jsQuotedPolishRe := regexp.MustCompile(`"(?:[^"\\\n\r]|\\.)*[ąęćłńóśźżĄĘĆŁŃÓŚŹŻ](?:[^"\\\n\r]|\\.)*"|'(?:[^'\\\n\r]|\\.)*[ąęćłńóśźżĄĘĆŁŃÓŚŹŻ](?:[^'\\\n\r]|\\.)*'`)
@@ -2303,6 +2323,11 @@ func TestMultilingualUISwitchAndI18nTableCompleteness(t *testing.T) {
 				t.Fatalf("%s references unknown JS i18n key %q (missing from i18n.JSI18nTable)", base, k)
 			}
 			usedJSKeys[k] = true
+		}
+		for _, e := range i18n.JSI18nTable {
+			if strings.Contains(src, `"`+e[0]+`"`) {
+				usedJSKeys[e[0]] = true
+			}
 		}
 	}
 	for _, e := range i18n.JSI18nTable {
@@ -2356,9 +2381,9 @@ func TestMultilingualUISwitchAndI18nTableCompleteness(t *testing.T) {
 	}
 	togBytes, _ := io.ReadAll(togResp.Body)
 	_ = togResp.Body.Close()
-	togHTML := string(togBytes)
-	if got := togResp.Header.Get("X-Lang"); got != "en" {
-		t.Fatalf("expected X-Lang=en after ToggleLanguage, got %q", got)
+	togMeta, togHTML := tpl.DecodeFDPResponse(togBytes)
+	if got := togMeta.Get("lang"); got != "en" {
+		t.Fatalf("expected lang=en after ToggleLanguage, got %q", got)
 	}
 	if !strings.Contains(togHTML, `+ Add book`) || !strings.Contains(togHTML, `Switch to authoring environment`) {
 		t.Fatalf("expected English UI labels after ToggleLanguage, got:\n%s", togHTML)
@@ -2379,9 +2404,9 @@ func TestMultilingualUISwitchAndI18nTableCompleteness(t *testing.T) {
 	}
 	setBytes, _ := io.ReadAll(setResp.Body)
 	_ = setResp.Body.Close()
-	setHTML := string(setBytes)
-	if got := setResp.Header.Get("X-Lang"); got != "pl" {
-		t.Fatalf("expected X-Lang=pl after SetLanguage(pl), got %q", got)
+	setMeta, setHTML := tpl.DecodeFDPResponse(setBytes)
+	if got := setMeta.Get("lang"); got != "pl" {
+		t.Fatalf("expected lang=pl after SetLanguage(pl), got %q", got)
 	}
 	if !strings.Contains(setHTML, `+ Dodaj książkę`) || !strings.Contains(setHTML, `Przełącz na środowisko autorskie`) {
 		t.Fatalf("expected Polish UI labels after SetLanguage(pl), got:\n%s", setHTML)

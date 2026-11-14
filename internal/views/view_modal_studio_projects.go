@@ -4,41 +4,37 @@ import (
 	"mojra/internal/book"
 	"mojra/internal/i18n"
 	"mojra/internal/state"
+	"mojra/internal/tpl"
 )
 
-type studioProjectModalItem struct {
-	Book      *book.Book `tpl:"*"`
-	KindBadge string     `tpl:"kind_badge"`
-	IsCurrent bool       `tpl:"is_current"`
+type modalStudioProjectsTemplate struct {
+	ShowStudioProjectModal bool
+	HasStudioProjects      bool
+	StudioProjects         []book.Book
 }
 
-type modalStudioProjectsView struct {
-	ShowStudioProjectModal bool                     `tpl:"show_studio_project_modal"`
-	HasStudioProjects      bool                     `tpl:"has_studio_projects"`
-	StudioProjects         []studioProjectModalItem `tpl:"studio_projects"`
-}
-
-func ViewModalStudioProjects(s *state.AppState) *modalStudioProjectsView {
-	var items []studioProjectModalItem
+func ViewModalStudioProjects(s *state.AppState) tpl.TemplateChunk {
+	var items []book.Book
 	if s.Modals.StudioProjects && !s.Config.StandaloneMode {
 		allBooks := s.Library.Books
-		items = make([]studioProjectModalItem, 0, len(allBooks))
+		items = make([]book.Book, 0, len(allBooks))
 		for _, b := range allBooks {
 			kindBadge := tr(s, i18n.TrProjectKindBadge)
 			if b.IsPacked {
 				kindBadge = tr(s, i18n.TrPlaybookReadonlyBadge)
 			}
 			isCurrent := s.Editor.ActiveBook != nil && s.Editor.ActiveBook.ID == b.ID && !b.IsPacked
-			items = append(items, studioProjectModalItem{
-				Book:      b,
-				KindBadge: kindBadge,
-				IsCurrent: isCurrent,
-			})
+			item := *b
+			item.KindBadge = kindBadge
+			item.IsCurrent = isCurrent
+			items = append(items, item)
 		}
 	}
-	return &modalStudioProjectsView{
-		ShowStudioProjectModal: s.Modals.StudioProjects,
-		HasStudioProjects:      len(items) > 0,
-		StudioProjects:         items,
+	return tpl.TemplateChunk{
+		TemplateData: &modalStudioProjectsTemplate{
+			ShowStudioProjectModal: s.Modals.StudioProjects,
+			HasStudioProjects:      len(items) > 0,
+			StudioProjects:         items,
+		},
 	}
 }

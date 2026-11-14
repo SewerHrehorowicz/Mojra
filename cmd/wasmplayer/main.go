@@ -7,14 +7,12 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math/rand"
-	"net/url"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall/js"
 
 	"mojra"
-	"mojra/internal/actions"
 	"mojra/internal/book"
 	"mojra/internal/i18n"
 	"mojra/internal/tpl"
@@ -122,19 +120,26 @@ func wasmBoot(_ js.Value, args []js.Value) any {
 		}
 	}
 
-	playerHTML := rt.renderTemplate("player_view")
+	playerHTML, playerChunk := rt.renderTemplateChunk("player_view")
 	modalsHTML := rt.renderTemplate("confirm_modal")
 
-	respVals := url.Values{}
-	respVals.Set("X-Book-ID", b.ID)
-	respVals.Set("X-Imageless", strconv.FormatBool(b.Imageless))
-	respVals.Set("X-Imageless-Locked", strconv.FormatBool(b.Imageless))
-	respVals.Set("X-Audio-Speed", fmt.Sprintf("%.2g", rt.save.PlaybackSpeed))
-	respVals.Set("X-Auto-Choice", strconv.FormatBool(rt.save.AutoChoice))
-	respVals.Set("X-Auto-Delay", fmt.Sprintf("%.2g", book.NormalizeAutoChoiceDelay(rt.save.AutoChoiceDelay)))
-	respVals.Set("X-Save-Hex", hex.EncodeToString(book.EncodeSaveStateBytes(rt.save)))
-	respVals.Set("html", `<main class="workspace" id="workspace">`+playerHTML+`</main><div class="modals-root" id="modals-root">`+modalsHTML+`</div><div class="toast hidden" id="toast-banner"></div><div class="ui-tooltip hidden" id="ui-tooltip"></div>`)
-	return string(actions.EncodeWFPForm(respVals))
+	playerScript, _ := playerChunk.ScriptData.(map[string]any)
+	if playerScript == nil {
+		playerScript = make(map[string]any, 4)
+	}
+	playerScript["bookId"] = b.ID
+	playerScript["imageless"] = b.Imageless
+	playerScript["imagelessLocked"] = b.Imageless
+	playerChunk.ScriptData = playerScript
+
+	fullHTML := `<main class="workspace" id="workspace">` + playerHTML + `</main><div class="modals-root" id="modals-root">` + modalsHTML + `</div><div class="toast hidden" id="toast-banner"></div><div class="ui-tooltip hidden" id="ui-tooltip"></div>`
+	var out bytes.Buffer
+	_ = tpl.WriteFDPResponse(&out, tpl.FDPFrameMeta{
+		SaveHex: hex.EncodeToString(book.EncodeSaveStateBytes(rt.save)),
+	}, []byte(fullHTML), playerChunk)
+	vals, htmlBody := tpl.DecodeFDPResponse(out.Bytes())
+	vals.Set("html", htmlBody)
+	return string(tpl.EncodeFDPForm(vals))
 }
 
 func wasmAction(_ js.Value, args []js.Value) any {
@@ -142,8 +147,8 @@ func wasmAction(_ js.Value, args []js.Value) any {
 		return ""
 	}
 	rawReq := args[0].String()
-	form := make(url.Values, 8)
-	if !actions.DecodeWFPFormBytes([]byte(rawReq), form) {
+	form, _ := tpl.DecodeFDPResponse([]byte(rawReq))
+	if len(form) == 0 {
 		return ""
 	}
 	action := strings.TrimSpace(form.Get("action"))
@@ -162,7 +167,6 @@ func wasmAction(_ js.Value, args []js.Value) any {
 	target := "#workspace"
 	tplName := "player_view"
 	keepScroll := false
-	status := "200"
 	var toast string
 
 	switch action {
@@ -173,7 +177,6 @@ func wasmAction(_ js.Value, args []js.Value) any {
 		target = "none"
 		tplName = ""
 		keepScroll = true
-		status = "204"
 
 	case "ChooseBranch":
 		if idx, err := strconv.Atoi(form.Get("choice_idx")); err == nil {
@@ -241,7 +244,6 @@ func wasmAction(_ js.Value, args []js.Value) any {
 		target = "none"
 		tplName = ""
 		keepScroll = true
-		status = "204"
 
 	case "CycleAudioSpeed":
 		steps := []float64{0.75, 1.0, 1.25, 1.5, 2.0}
@@ -256,14 +258,12 @@ func wasmAction(_ js.Value, args []js.Value) any {
 		target = "none"
 		tplName = ""
 		keepScroll = true
-		status = "204"
 
 	case "ToggleAutoChoice":
 		rt.save.AutoChoice = !rt.save.AutoChoice
 		target = "none"
 		tplName = ""
 		keepScroll = true
-		status = "204"
 
 	case "PromptRewindStep":
 		if stepIdx, err := strconv.Atoi(form.Get("step")); err == nil && stepIdx >= 0 && stepIdx < len(rt.save.History) {
@@ -346,7 +346,6 @@ func wasmAction(_ js.Value, args []js.Value) any {
 		target = "none"
 		tplName = ""
 		keepScroll = true
-		status = "204"
 
 	case "FocusHistoryStep":
 		if stepIdx, err := strconv.Atoi(form.Get("step")); err == nil && stepIdx >= 0 && stepIdx < len(rt.save.History) {
@@ -356,7 +355,6 @@ func wasmAction(_ js.Value, args []js.Value) any {
 		target = "none"
 		tplName = ""
 		keepScroll = true
-		status = "204"
 
 	case "FocusPresent":
 		rt.focusedHistoryIdx = -1
@@ -364,31 +362,41 @@ func wasmAction(_ js.Value, args []js.Value) any {
 		target = "none"
 		tplName = ""
 		keepScroll = true
-		status = "204"
 	}
 
 	var renderedHTML string
+	var chunk tpl.TemplateChunk
 	if tplName != "" {
-		renderedHTML = rt.renderTemplate(tplName)
+		renderedHTML, chunk = rt.renderTemplateChunk(tplName)
+	} else {
+		speed := rt.save.PlaybackSpeed
+		if speed <= 0 {
+			speed = 1
+		}
+		autoChoiceLabel := "Auto-Wybór: WYŁ"
+		if rt.save.AutoChoice {
+			autoChoiceLabel = "Auto-Wybór: WŁ"
+		}
+		chunk = tpl.TemplateChunk{
+			ScriptData: map[string]any{
+				"audioSpeed":        speed,
+				"autoChoiceEnabled": rt.save.AutoChoice,
+				"autoChoiceLabel":   autoChoiceLabel,
+				"autoChoiceDelayMs": int(book.NormalizeAutoChoiceDelay(rt.save.AutoChoiceDelay) * 1000),
+				"imageless":         rt.book.Imageless,
+				"imagelessLocked":   rt.book.Imageless,
+			},
+		}
 	}
 
-	respVals := url.Values{}
-	respVals.Set("status", status)
-	respVals.Set("X-Target", target)
-	respVals.Set("X-Keep-Scroll", strconv.FormatBool(keepScroll))
-	respVals.Set("X-Imageless", strconv.FormatBool(rt.book.Imageless))
-	respVals.Set("X-Imageless-Locked", strconv.FormatBool(rt.book.Imageless))
-	respVals.Set("X-Audio-Speed", fmt.Sprintf("%.2g", rt.save.PlaybackSpeed))
-	respVals.Set("X-Auto-Choice", strconv.FormatBool(rt.save.AutoChoice))
-	respVals.Set("X-Auto-Delay", fmt.Sprintf("%.2g", book.NormalizeAutoChoiceDelay(rt.save.AutoChoiceDelay)))
-	respVals.Set("X-Save-Hex", hex.EncodeToString(book.EncodeSaveStateBytes(rt.save)))
-	if toast != "" {
-		respVals.Set("X-Toast", toast)
-	}
-	if renderedHTML != "" {
-		respVals.Set("html", renderedHTML)
-	}
-	return string(actions.EncodeWFPForm(respVals))
+	var out bytes.Buffer
+	_ = tpl.WriteFDPResponse(&out, tpl.FDPFrameMeta{
+		Target:     target,
+		KeepScroll: keepScroll,
+		Toast:      toast,
+		SaveHex:    hex.EncodeToString(book.EncodeSaveStateBytes(rt.save)),
+	}, []byte(renderedHTML), chunk)
+	return out.String()
 }
 
 func (r *wasmPlayerRuntime) currentScene() *book.Scene {
@@ -451,22 +459,32 @@ func (r *wasmPlayerRuntime) executeChoiceTransition(fromScene *book.Scene, choic
 }
 
 func (r *wasmPlayerRuntime) renderTemplate(name string) string {
-	if r.templates == nil {
-		return ""
-	}
-	if _, ok := r.templates[name]; !ok {
-		return ""
-	}
-	vars := make(map[string]any, 24)
-	r.populateContext(vars)
-	var buf bytes.Buffer
-	if err := tpl.RenderTemplateTo(&buf, name, r.templates, tpl.NewContext(vars)); err != nil {
-		return ""
-	}
-	return buf.String()
+	htmlStr, _ := r.renderTemplateChunk(name)
+	return htmlStr
 }
 
-func (r *wasmPlayerRuntime) populateContext(vars map[string]any) {
+func (r *wasmPlayerRuntime) renderTemplateChunk(name string) (string, tpl.TemplateChunk) {
+	if r.templates == nil {
+		return "", tpl.TemplateChunk{}
+	}
+	if _, ok := r.templates[name]; !ok {
+		return "", tpl.TemplateChunk{}
+	}
+	vars := make(map[string]any, 24)
+	scriptVars := make(map[string]any, 8)
+	r.populateContext(vars, scriptVars)
+	var buf bytes.Buffer
+	if err := tpl.RenderTemplateTo(&buf, name, r.templates, tpl.NewContext(vars)); err != nil {
+		return "", tpl.TemplateChunk{}
+	}
+	return buf.String(), tpl.TemplateChunk{
+		Template:     name,
+		TemplateData: vars,
+		ScriptData:   scriptVars,
+	}
+}
+
+func (r *wasmPlayerRuntime) populateContext(vars, scriptVars map[string]any) {
 	i18n.PopulateI18nContext(vars, i18n.LangPL)
 	vars["lang"] = "pl"
 	vars["lang_upper"] = "PL"
@@ -483,19 +501,22 @@ func (r *wasmPlayerRuntime) populateContext(vars map[string]any) {
 	isScreenplay := b.IsScreenplay()
 	normStd := b.NormalizedStandard()
 	imageless := b.Imageless
-	vars["imageless_mode"] = imageless
-	vars["is_screenplay_mode"] = isScreenplay
-	vars["is_history_preview"] = false
+	vars["ImagelessMode"] = imageless
+	vars["IsScreenplayMode"] = isScreenplay
+	vars["IsHistoryPreview"] = false
+	scriptVars["bookId"] = b.ID
+	scriptVars["imagelessMode"] = imageless
 
 	histCount := len(r.save.History)
 	r.save.Variables = book.EnsureSaveVariables(b, r.save.Variables)
 	curVars := r.save.Variables
-	vars["has_history"] = histCount > 0
+	vars["HasHistory"] = histCount > 0
 
 	lastImageURL := ""
 	if histCount > 0 {
-		histList := make([]map[string]any, 0, histCount)
-		for idx, entry := range r.save.History {
+		histChunks := make([]tpl.TemplateChunk, 0, histCount)
+		histTicks := make([]string, 0, histCount)
+		for _, entry := range r.save.History {
 			pastScene := findSceneByID(b, entry.SceneID)
 			if pastScene == nil {
 				continue
@@ -503,122 +524,76 @@ func (r *wasmPlayerRuntime) populateContext(vars map[string]any) {
 			if !imageless && pastScene.ImageURL != "" {
 				lastImageURL = pastScene.ImageURL
 			}
-			pastImgURL := ""
-			if !imageless && pastScene.ImageURL != "" {
-				pastImgURL = pastScene.ImageURL
-			}
-			pastHeaderMeta := b.Title
-			if pastScene.Chapter != "" {
-				pastHeaderMeta = b.Title + " • " + pastScene.Chapter
-			}
 			pastVars := entry.Variables
 			if len(pastVars) == 0 {
 				pastVars = curVars
 			}
-			var pastBlocks []map[string]any
-			if isScreenplay {
-				pastBlocks = buildWasmScreenplayBlocks(pastScene, pastVars, b, pastScene.OrderIndex+1, normStd)
-			}
-			pastQueue := book.EvaluateSceneAudioQueue(pastScene, pastVars, b)
-			pastQueueSpec, _, pastQueueDurLbl := book.EncodeSceneAudioQueue(pastQueue)
-			pastAudioURL := pastScene.AudioURL
-			pastTrimStart, pastTrimEnd := pastScene.NormalizedVoiceTrim()
-			if len(pastQueue) > 0 {
-				pastAudioURL = pastQueue[0].AudioURL
-				pastTrimStart, pastTrimEnd = book.NormalizedVoiceTrimValues(pastQueue[0].TrimStart, pastQueue[0].TrimEnd)
-			}
-			histList = append(histList, map[string]any{
-				"idx":                  idx,
-				"header_meta":          pastHeaderMeta,
-				"name":                 pastScene.Name,
-				"slugline":             pastScene.Slugline,
-				"rail_title":           pastScene.DisplayName(),
-				"has_title":            strings.TrimSpace(pastScene.Name) != "",
-				"prose":                book.EvaluateSceneProseText(pastScene, pastVars, b),
-				"screenplay_blocks":    pastBlocks,
-				"has_image":            pastImgURL != "",
-				"image_url":            pastImgURL,
-				"bg_image_url":         lastImageURL,
-				"audio_url":            pastAudioURL,
-				"audio_queue":          pastQueueSpec,
-				"audio_duration_label": pastQueueDurLbl,
-				"audio_trim_start":     fmt.Sprintf("%.4f", pastTrimStart),
-				"audio_trim_end":       fmt.Sprintf("%.4f", pastTrimEnd),
-			})
+			histChunks = append(histChunks, buildWasmSceneChunk(b, pastScene, pastVars, normStd, imageless, false))
+			histTicks = append(histTicks, pastScene.DisplayName())
 		}
-		vars["history_items"] = histList
+		vars["HistoryScenes"] = histChunks
+		vars["HistoryTicks"] = histTicks
 	}
 
-	hasMultipleChoices := len(curScene.Choices) > 1
-	curChoices := make([]map[string]any, 0, len(curScene.Choices))
-	for idx, ch := range curScene.Choices {
-		condMet := book.EvaluateCondition(ch.Condition, curVars, b)
-		if !condMet && !ch.ShowWhenLocked {
-			continue
-		}
-		label := ch.Label
-		if !hasMultipleChoices {
-			label = "Dalej"
-		}
-		arrow := "»"
-		if ch.IsEnding {
-			arrow = "KONIEC"
-		}
-		isImplicitNext := !hasMultipleChoices && !ch.IsEnding && ch.TargetSceneID != "END"
-		curChoices = append(curChoices, map[string]any{
-			"idx":         idx,
-			"label":       label,
-			"arrow":       arrow,
-			"is_branch":   hasMultipleChoices && !ch.IsEnding,
-			"is_implicit": isImplicitNext,
-			"is_locked":   !condMet && ch.ShowWhenLocked,
-		})
-	}
-
-	curImgURL := ""
 	if !imageless && curScene.ImageURL != "" {
-		curImgURL = curScene.ImageURL
 		lastImageURL = curScene.ImageURL
 	}
 	curHeaderMeta := b.Title
 	if curScene.Chapter != "" {
 		curHeaderMeta = b.Title + " • " + curScene.Chapter
 	}
-	var curBlocks []map[string]any
-	if isScreenplay {
-		curBlocks = buildWasmScreenplayBlocks(curScene, curVars, b, curScene.OrderIndex+1, normStd)
-	}
 	curQueue := book.EvaluateSceneAudioQueue(curScene, curVars, b)
-	curQueueSpec, _, curQueueDurLbl := book.EncodeSceneAudioQueue(curQueue)
-	curAudioURL := curScene.AudioURL
-	curTrimStart, curTrimEnd := curScene.NormalizedVoiceTrim()
-	if len(curQueue) > 0 {
-		curAudioURL = curQueue[0].AudioURL
-		curTrimStart, curTrimEnd = book.NormalizedVoiceTrimValues(curQueue[0].TrimStart, curQueue[0].TrimEnd)
+	if len(curQueue) == 0 && curScene.AudioURL != "" {
+		ts, te := curScene.NormalizedVoiceTrim()
+		curQueue = []book.VoiceQueueItem{{
+			AudioURL:  curScene.AudioURL,
+			TrimStart: ts,
+			TrimEnd:   te,
+		}}
 	}
-	vars["current_scene"] = map[string]any{
-		"name":                 curScene.Name,
-		"slugline":             curScene.Slugline,
-		"rail_title":           curScene.DisplayName(),
-		"has_title":            strings.TrimSpace(curScene.Name) != "",
-		"header_meta":          curHeaderMeta,
-		"prose":                book.EvaluateSceneProseText(curScene, curVars, b),
-		"screenplay_blocks":    curBlocks,
-		"has_image":            curImgURL != "",
-		"image_url":            curImgURL,
-		"has_bg_image":         !imageless && lastImageURL != "",
-		"bg_image_url":         lastImageURL,
-		"audio_url":            curAudioURL,
-		"audio_queue":          curQueueSpec,
-		"audio_duration_label": curQueueDurLbl,
-		"audio_trim_start":     fmt.Sprintf("%.4f", curTrimStart),
-		"audio_trim_end":       fmt.Sprintf("%.4f", curTrimEnd),
-		"is_terminal":          len(curScene.Choices) == 0 || curScene.ExplicitEnd,
-		"choices":              curChoices,
-	}
+	curQueueSpec, curQueueDurSec, curQueueDurLbl := book.EncodeSceneAudioQueue(curQueue)
+	resumeIdx, resumeOffsetSec := book.ResolveAudioQueueResume(curQueue, curQueueDurSec, r.save.AudioTime)
+	vars["HeaderMeta"] = curHeaderMeta
+	vars["RailTitle"] = curScene.DisplayName()
+	vars["HasBgImage"] = !imageless && lastImageURL != ""
+	vars["BgImageURL"] = lastImageURL
+	vars["CurrentScene"] = buildWasmSceneChunk(b, curScene, curVars, normStd, imageless, true)
+	vars["ShowAudioDeck"] = b.Narrated
+	vars["PrefetchMediaURLs"] = ""
 
-	vars["show_audio_deck"] = b.Narrated
-	vars["prefetch_media_urls"] = ""
+	autoChoiceLabel := "Auto-Wybór: WYŁ"
+	if r.save.AutoChoice {
+		autoChoiceLabel = "Auto-Wybór: WŁ"
+	}
+	autoDelay := book.NormalizeAutoChoiceDelay(r.save.AutoChoiceDelay)
+	speed := r.save.PlaybackSpeed
+	if speed <= 0 {
+		speed = 1
+	}
+	audioDeckData := map[string]any{
+		"AudioDurationLabel": curQueueDurLbl,
+		"AudioSpeed":         fmt.Sprintf("%.2g", speed),
+		"AutoChoiceEnabled":  r.save.AutoChoice,
+		"AutoChoiceLabel":    autoChoiceLabel,
+	}
+	if b.Narrated {
+		vars["AudioDeck"] = tpl.TemplateChunk{
+			Template:     "audio_deck",
+			TemplateData: audioDeckData,
+			ScriptData: map[string]any{
+				"audioQueue":         curQueueSpec,
+				"audioTotalDuration": curQueueDurSec,
+				"resumeIndex":        resumeIdx,
+				"resumeOffsetSec":    resumeOffsetSec,
+				"audioSpeed":         speed,
+				"autoChoiceEnabled":  r.save.AutoChoice,
+				"autoChoiceLabel":    autoChoiceLabel,
+				"autoChoiceDelayMs":  int(autoDelay * 1000),
+				"canAutoAdvance":     !curScene.ExplicitEnd && len(curScene.Choices) > 0,
+				"noAudioToast":       "Ta scena nie posiada przypisanego pliku audio.",
+			},
+		}
+	}
 
 	visited := make(map[string]bool)
 	for _, h := range r.save.History {
@@ -636,26 +611,87 @@ func (r *wasmPlayerRuntime) populateContext(vars map[string]any) {
 	if progressPct > 100 {
 		progressPct = 100
 	}
-	vars["book_progress_pct"] = progressPct
-	vars["audio_resume_time"] = fmt.Sprintf("%.1f", r.save.AudioTime)
-	vars["audio_speed"] = fmt.Sprintf("%.2g", r.save.PlaybackSpeed)
-	vars["auto_choice_enabled"] = r.save.AutoChoice
-	if r.save.AutoChoice {
-		vars["auto_choice_label"] = "Auto-Wybór: WŁ"
-	} else {
-		vars["auto_choice_label"] = "Auto-Wybór: WYŁ"
-	}
-	autoDelay := book.NormalizeAutoChoiceDelay(r.save.AutoChoiceDelay)
-	vars["auto_choice_delay"] = fmt.Sprintf("%.2g", autoDelay)
+	vars["BookProgressPct"] = progressPct
 	vars["is_auto_delay_1"] = autoDelay <= 1.25
 	vars["is_auto_delay_2"] = autoDelay > 1.25 && autoDelay <= 2.5
 	vars["is_auto_delay_3"] = autoDelay > 2.5 && autoDelay <= 4.0
 	vars["is_auto_delay_5"] = autoDelay > 4.0
 
-	vars["show_confirm_modal"] = r.confirmPendingAction != ""
-	vars["confirm_title"] = r.confirmTitle
-	vars["confirm_message"] = r.confirmMessage
-	vars["confirm_is_danger"] = false
+	vars["ShowConfirmModal"] = r.confirmPendingAction != ""
+	vars["ConfirmTitle"] = r.confirmTitle
+	vars["ConfirmMessage"] = r.confirmMessage
+	vars["ConfirmIsDanger"] = false
+}
+
+func buildWasmSceneChunk(b *book.Book, sc *book.Scene, vars map[string]string, normStd string, imageless, isPresent bool) tpl.TemplateChunk {
+	imgURL := ""
+	if !imageless && sc.ImageURL != "" {
+		imgURL = sc.ImageURL
+	}
+	isScreenplay := b.IsScreenplay()
+	sceneNum := sc.OrderIndex + 1
+	showSceneNum := false
+	var blocks []map[string]any
+	if isScreenplay {
+		blocks = buildWasmScreenplayBlocks(sc, vars, b, sceneNum, normStd)
+		showSceneNum = (normStd == "pl" || normStd == "eu") && sceneNum > 0
+	}
+	hasMultiple := len(sc.Choices) > 1
+	hasTitle := strings.TrimSpace(sc.Name) != ""
+	hasImage := imgURL != ""
+	isTerminal := len(sc.Choices) == 0 || sc.ExplicitEnd
+	var choices []map[string]any
+	if isPresent {
+		choices = make([]map[string]any, 0, len(sc.Choices))
+		for _, ch := range sc.Choices {
+			condMet := book.EvaluateCondition(ch.Condition, vars, b)
+			if !condMet && !ch.ShowWhenLocked {
+				continue
+			}
+			label := ch.Label
+			if !hasMultiple {
+				label = "Dalej"
+			}
+			choices = append(choices, map[string]any{
+				"Label":          label,
+				"ShowWhenLocked": !condMet && ch.ShowWhenLocked,
+				"IsEnding":       ch.IsEnding,
+			})
+		}
+	}
+	var scriptData any
+	if isPresent {
+		scriptData = map[string]any{
+			"isPresent":        isPresent,
+			"isScreenplayMode": isScreenplay,
+			"hasTitle":         hasTitle,
+			"hasImage":         hasImage,
+			"imageUrl":         imgURL,
+			"isTerminal":       isTerminal,
+			"isBranching":      hasMultiple,
+		}
+	}
+	return tpl.TemplateChunk{
+		Template: "scene_view",
+		TemplateData: map[string]any{
+			"IsPresent":        isPresent,
+			"IsScreenplayMode": isScreenplay,
+			"SceneNum":         sceneNum,
+			"ShowSceneNum":     showSceneNum,
+			"Name":             sc.Name,
+			"Slugline":         sc.Slugline,
+			"RailTitle":        sc.DisplayName(),
+			"HasTitle":         hasTitle,
+			"Prose":            book.EvaluateSceneProseText(sc, vars, b),
+			"ScreenplayBlocks": blocks,
+			"HasImage":         hasImage,
+			"ImageURL":         imgURL,
+			"IsTerminal":       isTerminal,
+			"IsBranching":      hasMultiple,
+			"Choices":          choices,
+		},
+		ScriptData: scriptData,
+	}
 }
 
 func buildWasmScreenplayBlocks(sc *book.Scene, state map[string]string, b *book.Book, sceneNum int, standard string) []map[string]any {
@@ -673,26 +709,11 @@ func buildWasmScreenplayBlocks(sc *book.Scene, state map[string]string, b *book.
 	if len(blocks) == 0 {
 		return nil
 	}
-	numbered := normStd == "pl" || normStd == "eu"
-	renderedPrimarySlug := false
 	out := make([]map[string]any, 0, len(blocks))
 	for _, blk := range blocks {
-		showNum := false
-		if blk.Kind == book.BlockSlugline && !renderedPrimarySlug {
-			renderedPrimarySlug = true
-			showNum = numbered && sceneNum > 0
-		}
 		out = append(out, map[string]any{
-			"kind":             string(blk.Kind),
-			"text":             blk.Text,
-			"scene_num":        sceneNum,
-			"show_scene_num":   showNum,
-			"is_slugline":      blk.Kind == book.BlockSlugline,
-			"is_action":        blk.Kind == book.BlockAction,
-			"is_character":     blk.Kind == book.BlockCharacter,
-			"is_parenthetical": blk.Kind == book.BlockParenthetical,
-			"is_dialogue":      blk.Kind == book.BlockDialogue,
-			"is_transition":    blk.Kind == book.BlockTransition,
+			"Kind": string(blk.Kind),
+			"Text": blk.Text,
 		})
 	}
 	return out

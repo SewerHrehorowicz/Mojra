@@ -28,7 +28,29 @@ const (
 	NodeText
 	NodeProse
 	NodeSVG
+	NodeEvent
 )
+
+const (
+	tplKwEventColon    = "event:"
+	tplEventAttrPrefix = "event-"
+	errEmptyEventFmt   = "tpl compile error in %s.tpl:%d: empty event:"
+	errOrphanEventFmt  = "tpl compile error in %s.tpl:%d: event: must be indented under an element"
+)
+
+var tplControlPrefixes = []string{
+	"def:",
+	"if:",
+	"elif:",
+	"else:",
+	"for:",
+	"with:",
+	"raw:",
+	"prose:",
+	"svg:",
+	"event:",
+	"doctype ",
+}
 
 type CondClass struct {
 	Name string
@@ -55,6 +77,7 @@ type Node struct {
 	LoopIdx     string
 	LoopVal     string
 	RawSVG      string
+	TargetNode  *Node
 	Children    []*Node
 	Indent      int
 	Line        int
@@ -247,8 +270,45 @@ func ParseTemplateString(source, name string) (*ParsedTemplate, error) {
 			}
 			continue
 		}
+		if len(stack) > 0 && stack[len(stack)-1].Kind == NodeEvent && isAttrOrCondClassContinuation(trimmed) {
+			evNode := stack[len(stack)-1]
+			if err := parseEventTokensIntoNode(evNode.TargetNode, evNode.Tag, trimmed, name, lineNum); err != nil {
+				return nil, err
+			}
+			continue
+		}
 
 		switch {
+		case strings.HasPrefix(trimmed, tplKwEventColon):
+			rest := strings.TrimSpace(trimmed[len(tplKwEventColon):])
+			evtName, nextPos := nextTPLToken(rest, 0)
+			if evtName == "" {
+				return nil, fmt.Errorf(errEmptyEventFmt, name, lineNum)
+			}
+			var targetEl *Node
+			for i := len(stack) - 1; i >= 0; i-- {
+				if stack[i].Kind == NodeElement || stack[i].Kind == NodeComponent {
+					targetEl = stack[i]
+					break
+				}
+			}
+			if targetEl == nil {
+				return nil, fmt.Errorf(errOrphanEventFmt, name, lineNum)
+			}
+			stack = append(stack, &Node{
+				Kind:       NodeEvent,
+				Tag:        evtName,
+				TargetNode: targetEl,
+				Indent:     indent,
+				Line:       lineNum,
+				File:       name,
+			})
+			if inlineRest := strings.TrimSpace(rest[nextPos:]); inlineRest != "" {
+				if err := parseEventTokensIntoNode(targetEl, evtName, inlineRest, name, lineNum); err != nil {
+					return nil, err
+				}
+			}
+
 		case strings.EqualFold(trimmed, "doctype html"):
 			if err := appendNode(&Node{Kind: NodeDoctype, Indent: indent, Line: lineNum, File: name}); err != nil {
 				return nil, err
@@ -603,8 +663,8 @@ func isAttrOrCondClassContinuation(trimmed string) bool {
 	if strings.HasPrefix(trimmed, "@") || strings.HasPrefix(trimmed, `"`) || strings.HasPrefix(trimmed, "$") || strings.HasPrefix(trimmed, "(") || strings.HasPrefix(trimmed, "{") {
 		return false
 	}
-	for _, kw := range []string{"def:", "if:", "elif:", "else:", "for:", "with:", "raw:", "prose:", "svg:", "doctype "} {
-		if strings.HasPrefix(trimmed, kw) || trimmed == "else:" {
+	for _, kw := range tplControlPrefixes {
+		if strings.HasPrefix(trimmed, kw) {
 			return false
 		}
 	}
@@ -616,6 +676,22 @@ func isAttrOrCondClassContinuation(trimmed string) bool {
 		return false
 	}
 	return strings.HasSuffix(firstTok, ":") || strings.Contains(firstTok, "=") || strings.Contains(firstTok, ":")
+}
+
+func parseEventTokensIntoNode(targetEl *Node, evtName, rest, fileName string, lineNum int) error {
+	var tmp Node
+	if err := parseTokensIntoNode(&tmp, rest, fileName, lineNum); err != nil {
+		return err
+	}
+	prefix := tplEventAttrPrefix + evtName + "-"
+	for _, a := range tmp.Attrs {
+		targetEl.Attrs = append(targetEl.Attrs, AttrPair{
+			Key:         prefix + a.Key,
+			Val:         a.Val,
+			Conditional: a.Conditional,
+		})
+	}
+	return nil
 }
 
 func nextTPLToken(s string, start int) (string, int) {

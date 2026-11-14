@@ -9,24 +9,143 @@ import (
 	"mojra/internal/book"
 	"mojra/internal/i18n"
 	"mojra/internal/state"
+	"mojra/internal/tpl"
 )
 
-type sceneMediaOptionsView struct {
-	curImg        string
-	curImgLabel   string
-	imgOptions    []map[string]any
-	curVoice      string
-	curVoiceLabel string
-	voiceOptions  []map[string]any
+type editorContextPanelTemplate struct {
+	HasEditorBook                 bool
+	Book                          *book.Book
+	DefaultNewBookDir             string
+	DefaultExportDir              string
+	IsScreenplayMode              bool
+	ScriptStandard                string
+	EditorTitlePlaceholder        string
+	EditorAuthorPlaceholder       string
+	EditorDescriptionPlaceholder  string
+	EditorChapterTitlePlaceholder string
+	EditorSettingsHint            string
+	IsHistoryPreview              bool
+	HistoryPreviewAttr            string
+	HistoryPreviewID              string
+	HistoryPreviewLabel           string
+	BookNarrated                  bool
+	BookNarratedLabel             string
+	BookNarratedShortLabel        string
+	BookImageless                 bool
+	BookImagelessLabel            string
+	BookImagelessShortLabel       string
+	HasBookVariables              bool
+	BookVarsSpec                  string
+	BookVarSuggestions            []book.VariableDef
+	BookEnumSuggestions           []book.SelectOption
+	BookTargetSuggestions         []book.SelectOption
+	SyntaxHelpCondRows            []book.SelectOption
+	SelectedSceneID               string
+	SelectedSceneTitle            string
+	SelectedNode                  *book.EditorNodeView
+	HasSelectedNode               bool
+	VoiceRecorderOpen             bool
+	ScriptStandardOptions         []book.SelectOption
+	SluglinePrefixPills           []string
+	SluglineTimePills             []string
+	MultiSceneItems               []book.SelectOption
+	BookSettingsOpen              bool
+	BookStartChapterName          string
+	BookStartChapterOptions       []book.SelectOption
+	BookStartSceneID              string
+	BookStartSceneLabel           string
+	BookStartSceneOptions         []book.SelectOption
+	SelectedChapter               *book.Chapter
+	HasSelectedChapter            bool
+	IsNodeInspectorHidden         bool
+	IsContextPanelHidden          bool
+	ShowEditorHelpPanel           bool
+	ShowSyntaxHelpPopover         bool
 }
 
-func ViewEditorContextPanel(s *state.AppState) map[string]any {
-	vars := make(map[string]any, 64)
-	populateEditorCommonVars(s, vars, false)
-	if s.Editor.HasActiveBook() && len(s.Editor.ActiveBook.Scenes) > 0 {
-		populateEditorSelectedNodeOnly(s, vars)
+type editorContextPanelScript struct {
+	selectedSceneId string
+	bookVarsSpec    string
+	isScreenplay    bool
+	scriptStandard  string
+}
+
+func populateEditorCommonFields(s *state.AppState, v *editorContextPanelTemplate) {
+	b := s.Editor.ActiveBook
+	hasEditorBook := s.Editor.HasActiveBook()
+	v.HasEditorBook = hasEditorBook
+	v.Book = b
+	v.DefaultNewBookDir = book.ResolveNewBookDir(s.Settings)
+	v.DefaultExportDir = b.ResolveExportDir(s.Settings)
+	v.ScriptStandard = "pl"
+	v.HistoryPreviewAttr = attrFalse
+	if hasEditorBook {
+		v.IsScreenplayMode = b.IsScreenplay()
+		v.ScriptStandard = b.NormalizedStandard()
 	}
-	return vars
+	if v.IsScreenplayMode {
+		v.EditorTitlePlaceholder = tr(s, i18n.TrEditorSpTitlePlaceholder)
+		v.EditorAuthorPlaceholder = tr(s, i18n.TrEditorSpAuthorPlaceholder)
+		v.EditorDescriptionPlaceholder = tr(s, i18n.TrEditorSpDescPlaceholder)
+		v.EditorChapterTitlePlaceholder = tr(s, i18n.TrEditorActTitlePlaceholder)
+		v.EditorSettingsHint = tr(s, i18n.TrEditorSpSettingsHint)
+	} else {
+		v.EditorTitlePlaceholder = tr(s, i18n.TrEditorBookTitlePlaceholder)
+		v.EditorAuthorPlaceholder = tr(s, i18n.TrEditorBookAuthorPlaceholder)
+		v.EditorDescriptionPlaceholder = tr(s, i18n.TrEditorBookDescPlaceholder)
+		v.EditorChapterTitlePlaceholder = tr(s, i18n.TrEditorChapterTitlePlaceholder)
+		v.EditorSettingsHint = tr(s, i18n.TrEditorBookSettingsHint)
+	}
+
+	v.IsHistoryPreview = !s.Config.StandaloneMode && s.Editor.History.IsPreview(b)
+	if v.IsHistoryPreview {
+		v.HistoryPreviewAttr = attrTrue
+		if s.Editor.History.Preview != nil {
+			v.HistoryPreviewID = s.Editor.History.Preview.RevisionID
+			v.HistoryPreviewLabel = s.Editor.History.Preview.RevisionLabel
+		}
+	}
+
+	if hasEditorBook && len(b.Scenes) > 0 {
+		v.BookNarrated = !b.IsScreenplay() && b.Narrated
+		if v.BookNarrated {
+			v.BookNarratedLabel = tr(s, i18n.TrBookNarratedReqLabel)
+			v.BookNarratedShortLabel = tr(s, i18n.TrRequiredLabel)
+		} else {
+			v.BookNarratedLabel = tr(s, i18n.TrBookNarratedOffLabel)
+			v.BookNarratedShortLabel = tr(s, i18n.TrDisabledLabel)
+		}
+		v.BookImageless = b.Imageless
+		if b.Imageless {
+			v.BookImagelessLabel = tr(s, i18n.TrBookImagelessOnLabel)
+			v.BookImagelessShortLabel = tr(s, i18n.TrNoImagesLabel)
+		} else {
+			v.BookImagelessLabel = tr(s, i18n.TrBookImagelessOffLabel)
+			v.BookImagelessShortLabel = tr(s, i18n.TrWithImagesLabel)
+		}
+	} else {
+		v.BookNarratedLabel = tr(s, i18n.TrBookNarratedOffLabel)
+		v.BookNarratedShortLabel = tr(s, i18n.TrDisabledLabel)
+		v.BookImagelessLabel = tr(s, i18n.TrBookImagelessOffLabel)
+		v.BookImagelessShortLabel = tr(s, i18n.TrWithImagesLabel)
+	}
+}
+
+func ViewEditorContextPanel(s *state.AppState) tpl.TemplateChunk {
+	v := &editorContextPanelTemplate{}
+	populateEditorCommonFields(s, v)
+	if s.Editor.HasActiveBook() && len(s.Editor.ActiveBook.Scenes) > 0 {
+		populateEditorSelectedNodeOnly(s, v)
+	}
+	return tpl.TemplateChunk{
+		TemplateData: v,
+		ScriptData: &editorContextPanelScript{
+			selectedSceneId: v.SelectedSceneID,
+			bookVarsSpec:    v.BookVarsSpec,
+			isScreenplay:    v.IsScreenplayMode,
+			scriptStandard:  v.ScriptStandard,
+		},
+	}
 }
 
 func buildChoiceTargetOptions(s *state.AppState, sc *book.Scene, ch book.Choice) string {
@@ -44,8 +163,6 @@ func buildChoiceTargetOptions(s *state.AppState, sc *book.Scene, ch book.Choice)
 	}
 
 	matchedOption := false
-
-	// 1. Same-chapter scenes
 	for _, cand := range b.Scenes {
 		candCh := strings.TrimSpace(cand.Chapter)
 		if candCh == "" {
@@ -68,7 +185,6 @@ func buildChoiceTargetOptions(s *state.AppState, sc *book.Scene, ch book.Choice)
 		}
 	}
 
-	// 2. Forward chapters (one-way chapter transitions: chapter:<id>)
 	for _, chItem := range b.Chapters {
 		chRef := chItem.ReferenceKey()
 		optVal := "chapter:" + chRef
@@ -82,7 +198,6 @@ func buildChoiceTargetOptions(s *state.AppState, sc *book.Scene, ch book.Choice)
 		}
 	}
 
-	// 3. END
 	if ch.IsEnding || strings.EqualFold(ch.Target, "END") {
 		matchedOption = true
 		selectedVal = "END"
@@ -93,7 +208,7 @@ func buildChoiceTargetOptions(s *state.AppState, sc *book.Scene, ch book.Choice)
 	return selectedVal
 }
 
-func buildSceneMediaOptions(s *state.AppState, sc *book.Scene, buildMenus bool) sceneMediaOptionsView {
+func buildSceneMediaOptions(s *state.AppState, sc *book.Scene, buildMenus bool) (string, string, []book.SelectOption, string, string, []book.SelectOption) {
 	b := s.Editor.ActiveBook
 	curImg := sc.ExplicitImage
 	if curImg == "" && sc.ImageFile != "" {
@@ -104,13 +219,13 @@ func buildSceneMediaOptions(s *state.AppState, sc *book.Scene, buildMenus bool) 
 	if curImg != "" {
 		curImgLabel = curImg
 	}
-	var imgOptions []map[string]any
+	var imgOptions []book.SelectOption
 	if buildMenus && b != nil {
-		imgOptions = make([]map[string]any, 0, len(b.ImageFiles)+2)
-		imgOptions = append(imgOptions, map[string]any{
-			"value":     "",
-			"label":     noneLabel,
-			"is_active": curImg == "",
+		imgOptions = make([]book.SelectOption, 0, len(b.ImageFiles)+2)
+		imgOptions = append(imgOptions, book.SelectOption{
+			Value:    "",
+			Label:    noneLabel,
+			IsActive: curImg == "",
 		})
 		matchedImg := curImg == ""
 		for _, imgFile := range b.ImageFiles {
@@ -119,30 +234,30 @@ func buildSceneMediaOptions(s *state.AppState, sc *book.Scene, buildMenus bool) 
 				matchedImg = true
 				curImgLabel = imgFile
 			}
-			imgOptions = append(imgOptions, map[string]any{
-				"value":     imgFile,
-				"label":     imgFile,
-				"is_active": isAct,
+			imgOptions = append(imgOptions, book.SelectOption{
+				Value:    imgFile,
+				Label:    imgFile,
+				IsActive: isAct,
 			})
 		}
 		if !matchedImg && curImg != "" {
 			curImgLabel = "⚠ " + curImg
-			imgOptions = append(imgOptions, map[string]any{
-				"value":     curImg,
-				"label":     "⚠ " + curImg,
-				"is_active": true,
+			imgOptions = append(imgOptions, book.SelectOption{
+				Value:    curImg,
+				Label:    "⚠ " + curImg,
+				IsActive: true,
 			})
 		}
-		imgOptions = append(imgOptions, map[string]any{
-			"value":     "__browse_disk__",
-			"label":     tr(s, i18n.TrAddImageFromDiskOpt),
-			"is_active": false,
+		imgOptions = append(imgOptions, book.SelectOption{
+			Value:    "__browse_disk__",
+			Label:    tr(s, i18n.TrAddImageFromDiskOpt),
+			IsActive: false,
 		})
 	}
 
 	curVoice := ""
 	curVoiceLabel := noneLabel
-	var voiceOptions []map[string]any
+	var voiceOptions []book.SelectOption
 	if b != nil && b.Narrated {
 		curVoice = sc.ExplicitVoice
 		if curVoice == "" && sc.AudioFile != "" {
@@ -152,11 +267,11 @@ func buildSceneMediaOptions(s *state.AppState, sc *book.Scene, buildMenus bool) 
 			curVoiceLabel = curVoice
 		}
 		if buildMenus {
-			voiceOptions = make([]map[string]any, 0, len(b.AudioFiles)+3)
-			voiceOptions = append(voiceOptions, map[string]any{
-				"value":     "",
-				"label":     noneLabel,
-				"is_active": curVoice == "",
+			voiceOptions = make([]book.SelectOption, 0, len(b.AudioFiles)+3)
+			voiceOptions = append(voiceOptions, book.SelectOption{
+				Value:    "",
+				Label:    noneLabel,
+				IsActive: curVoice == "",
 			})
 			matchedVoice := curVoice == ""
 			for _, audioFile := range b.AudioFiles {
@@ -165,38 +280,31 @@ func buildSceneMediaOptions(s *state.AppState, sc *book.Scene, buildMenus bool) 
 					matchedVoice = true
 					curVoiceLabel = audioFile
 				}
-				voiceOptions = append(voiceOptions, map[string]any{
-					"value":     audioFile,
-					"label":     audioFile,
-					"is_active": isAct,
+				voiceOptions = append(voiceOptions, book.SelectOption{
+					Value:    audioFile,
+					Label:    audioFile,
+					IsActive: isAct,
 				})
 			}
 			if !matchedVoice && curVoice != "" {
 				curVoiceLabel = "⚠ " + curVoice
-				voiceOptions = append(voiceOptions, map[string]any{
-					"value":     curVoice,
-					"label":     "⚠ " + curVoice,
-					"is_active": true,
+				voiceOptions = append(voiceOptions, book.SelectOption{
+					Value:    curVoice,
+					Label:    "⚠ " + curVoice,
+					IsActive: true,
 				})
 			}
-			voiceOptions = append(voiceOptions, map[string]any{
-				"value":     "__browse_disk__",
-				"label":     tr(s, i18n.TrAddAudioFromDiskOpt),
-				"is_active": false,
+			voiceOptions = append(voiceOptions, book.SelectOption{
+				Value:    "__browse_disk__",
+				Label:    tr(s, i18n.TrAddAudioFromDiskOpt),
+				IsActive: false,
 			})
 		}
 	}
-	return sceneMediaOptionsView{
-		curImg:        curImg,
-		curImgLabel:   curImgLabel,
-		imgOptions:    imgOptions,
-		curVoice:      curVoice,
-		curVoiceLabel: curVoiceLabel,
-		voiceOptions:  voiceOptions,
-	}
+	return curImg, curImgLabel, imgOptions, curVoice, curVoiceLabel, voiceOptions
 }
 
-func buildSceneVoiceSectionsView(s *state.AppState, sc *book.Scene) (hasMultiple bool, activeSec book.VoiceSection, sectionItems []map[string]any) {
+func buildSceneVoiceSectionsView(s *state.AppState, sc *book.Scene) (hasMultiple bool, activeSec book.VoiceSection, sectionItems []book.VoiceSection) {
 	if sc == nil {
 		return false, book.VoiceSection{Key: "01", TrimStart: 0, TrimEnd: 1, DurationLabel: "0:00"}, nil
 	}
@@ -218,28 +326,22 @@ func buildSceneVoiceSectionsView(s *state.AppState, sc *book.Scene) (hasMultiple
 	activeSec = sections[activeIdx]
 	s.Editor.SelectedVoiceSectionKey = activeSec.Key
 
-	sectionItems = make([]map[string]any, len(sections))
+	sectionItems = make([]book.VoiceSection, len(sections))
 	for i, sec := range sections {
 		isActive := i == activeIdx
 		inspLabel := sec.ShortLabel
 		if isActive {
 			inspLabel = sec.Label
 		}
-		sectionItems[i] = map[string]any{
-			"key":             sec.Key,
-			"kind":            sec.Kind,
-			"label":           sec.Label,
-			"inspector_label": inspLabel,
-			"audio_url":       sec.AudioURL,
-			"duration_label":  sec.DurationLabel,
-			"has_audio":       sec.HasAudio,
-			"is_active":       isActive,
-		}
+		secItem := sec
+		secItem.InspectorLabel = inspLabel
+		secItem.IsActive = isActive
+		sectionItems[i] = secItem
 	}
 	return hasMultiple, activeSec, sectionItems
 }
 
-func buildEditorNodeMap(s *state.AppState, sc *book.Scene, isSelected bool) map[string]any {
+func buildEditorNodeView(s *state.AppState, sc *book.Scene, isSelected bool) *book.EditorNodeView {
 	b := s.Editor.ActiveBook
 	isStart := false
 	isChapterEntry := false
@@ -269,7 +371,7 @@ func buildEditorNodeMap(s *state.AppState, sc *book.Scene, isSelected bool) map[
 			},
 		}
 	}
-	inspectorPorts := make([]map[string]any, 0, len(inspectorChoices))
+	inspectorPorts := make([]book.Choice, 0, len(inspectorChoices))
 	for chIdx, ch := range inspectorChoices {
 		lbl := ch.Label
 		if lbl == "" && !hasChoices {
@@ -279,49 +381,39 @@ func buildEditorNodeMap(s *state.AppState, sc *book.Scene, isSelected bool) map[
 		if isSelected {
 			selectedVal = buildChoiceTargetOptions(s, sc, ch)
 		}
-
-		portMap, _ := buildChoiceRuleViewMap(s, sc, chIdx, ch, selectedVal)
-		portMap["raw_label"] = lbl
-		inspectorPorts = append(inspectorPorts, portMap)
+		portView, _ := buildChoiceRuleView(s, sc, chIdx, ch, selectedVal)
+		portView.RawLabel = lbl
+		inspectorPorts = append(inspectorPorts, portView)
 	}
 
-	media := buildSceneMediaOptions(s, sc, isSelected)
-	curImg := media.curImg
-	curImgLabel := media.curImgLabel
-	imgOptions := media.imgOptions
-	curVoice := media.curVoice
-	curVoiceLabel := media.curVoiceLabel
-	voiceOptions := media.voiceOptions
+	curImg, curImgLabel, imgOptions, curVoice, curVoiceLabel, voiceOptions := buildSceneMediaOptions(s, sc, isSelected)
 
-	nodeWarns := make([]map[string]any, 0, len(sc.Warnings))
-	for _, w := range sc.Warnings {
-		nodeWarns = append(nodeWarns, map[string]any{"text": w})
-	}
+	nodeWarns := append([]string(nil), sc.Warnings...)
 
 	curChName := strings.TrimSpace(sc.Chapter)
 	if curChName == "" && b != nil {
 		curChName = b.DefaultChapterName()
 	}
-	var chapterOptions []map[string]any
+	var chapterOptions []book.SelectOption
 	if isSelected && b != nil {
-		chapterOptions = make([]map[string]any, 0, len(b.Chapters)+1)
+		chapterOptions = make([]book.SelectOption, 0, len(b.Chapters)+1)
 		matchedCh := false
 		for _, chItem := range b.Chapters {
 			isAct := strings.EqualFold(curChName, strings.TrimSpace(chItem.Name))
 			if isAct {
 				matchedCh = true
 			}
-			chapterOptions = append(chapterOptions, map[string]any{
-				"value":     chItem.Name,
-				"label":     chItem.Name,
-				"is_active": isAct,
+			chapterOptions = append(chapterOptions, book.SelectOption{
+				Value:    chItem.Name,
+				Label:    chItem.Name,
+				IsActive: isAct,
 			})
 		}
 		if !matchedCh && curChName != "" {
-			chapterOptions = append(chapterOptions, map[string]any{
-				"value":     curChName,
-				"label":     curChName,
-				"is_active": true,
+			chapterOptions = append(chapterOptions, book.SelectOption{
+				Value:    curChName,
+				Label:    curChName,
+				IsActive: true,
 			})
 		}
 	}
@@ -351,12 +443,16 @@ func buildEditorNodeMap(s *state.AppState, sc *book.Scene, isSelected bool) map[
 	hasVoiceTrim := hasVoiceFile && sc.HasVoiceTrim()
 	hasVoiceSections := false
 	activeVoiceSecKey := "01"
-	var voiceSectionItems []map[string]any
+	var activeVoiceSecFile, activeVoiceSecText, activeVoiceSecHeader string
+	var voiceSectionItems []book.VoiceSection
 
 	if isSelected {
 		hasMultiSec, activeSec, secItems := buildSceneVoiceSectionsView(s, sc)
 		hasVoiceSections = hasMultiSec
 		activeVoiceSecKey = activeSec.Key
+		activeVoiceSecFile = activeSec.TargetFile
+		activeVoiceSecText = activeSec.Text
+		activeVoiceSecHeader = activeSec.HeaderTitle
 		voiceSectionItems = secItems
 		if hasMultiSec {
 			curVoice = activeSec.AudioFile
@@ -380,8 +476,7 @@ func buildEditorNodeMap(s *state.AppState, sc *book.Scene, isSelected bool) map[
 			hasVoiceFile = activeSec.HasAudio
 			hasVoiceTrim = activeSec.HasTrim
 			for i := range voiceOptions {
-				val, _ := voiceOptions[i]["value"].(string)
-				voiceOptions[i]["is_active"] = strings.EqualFold(val, curVoice)
+				voiceOptions[i].IsActive = strings.EqualFold(voiceOptions[i].Value, curVoice)
 			}
 		}
 	}
@@ -391,83 +486,80 @@ func buildEditorNodeMap(s *state.AppState, sc *book.Scene, isSelected bool) map[
 		portCount = len(inspectorChoices)
 	}
 
-	return map[string]any{
-		"id":                        sc.ID,
-		"explicit_id":               sc.ExplicitID,
-		"current_image":             curImg,
-		"current_image_label":       curImgLabel,
-		"image_options":             imgOptions,
-		"current_voice":             curVoice,
-		"current_voice_label":       curVoiceLabel,
-		"current_voice_url":         voiceURL,
-		"voice_duration_label":      voiceDurLabel,
-		"voice_trim_start":          fmt.Sprintf("%.4f", trimStart),
-		"voice_trim_end":            fmt.Sprintf("%.4f", trimEnd),
-		"has_voice_file":            hasVoiceFile,
-		"has_voice_trim":            hasVoiceTrim,
-		"voice_options":             voiceOptions,
-		"has_voice_sections":        hasVoiceSections,
-		"active_voice_section_key":  activeVoiceSecKey,
-		"voice_sections":            voiceSectionItems,
-		"name":                      sc.Name,
-		"slugline":                  sc.Slugline,
-		"synopsis":                  sc.Synopsis,
-		"effects":                   scEffectsVal,
-		"has_effects":               scEffectsVal != "",
-		"is_effects_invalid":        scEffectsErr != "",
-		"effects_error_hint":        scEffectsErr,
-		"script_length_label":       scriptLengthLabel,
-		"chapter":                   curChName,
-		"chapter_options":           chapterOptions,
-		"source_file":               sc.SourceFile,
-		"is_start_scene":            isStart,
-		"is_chapter_entry":          isChapterEntry,
-		"has_node_warnings":         len(sc.Warnings) > 0,
-		"node_warnings":             nodeWarns,
-		"inspector_ports":           inspectorPorts,
-		"port_count":                portCount,
+	return &book.EditorNodeView{
+		ID:                       sc.ID,
+		ExplicitID:               sc.ExplicitID,
+		CurrentImage:             curImg,
+		CurrentImageLabel:        curImgLabel,
+		ImageOptions:             imgOptions,
+		CurrentVoice:             curVoice,
+		CurrentVoiceLabel:        curVoiceLabel,
+		CurrentVoiceURL:          voiceURL,
+		VoiceDurationLabel:       voiceDurLabel,
+		VoiceTrimStart:           fmt.Sprintf("%.4f", trimStart),
+		VoiceTrimEnd:             fmt.Sprintf("%.4f", trimEnd),
+		HasVoiceFile:             hasVoiceFile,
+		HasVoiceTrim:             hasVoiceTrim,
+		VoiceOptions:             voiceOptions,
+		HasVoiceSections:         hasVoiceSections,
+		ActiveVoiceSectionKey:    activeVoiceSecKey,
+		ActiveVoiceSectionFile:   activeVoiceSecFile,
+		ActiveVoiceSectionText:   activeVoiceSecText,
+		ActiveVoiceSectionHeader: activeVoiceSecHeader,
+		VoiceSections:            voiceSectionItems,
+		Name:                     sc.Name,
+		Slugline:                 sc.Slugline,
+		Synopsis:                 sc.Synopsis,
+		Effects:                  scEffectsVal,
+		HasEffects:               scEffectsVal != "",
+		IsEffectsInvalid:         scEffectsErr != "",
+		EffectsErrorHint:         scEffectsErr,
+		ScriptLengthLabel:        scriptLengthLabel,
+		Chapter:                  curChName,
+		ChapterOptions:           chapterOptions,
+		SourceFile:               sc.SourceFile,
+		IsStartScene:             isStart,
+		IsChapterEntry:           isChapterEntry,
+		HasNodeWarnings:          len(sc.Warnings) > 0,
+		NodeWarnings:             nodeWarns,
+		InspectorPorts:           inspectorPorts,
+		PortCount:                portCount,
 	}
 }
 
-func populateEditorBookAndChapterSettings(s *state.AppState, vars map[string]any) {
+func populateEditorBookAndChapterSettings(s *state.AppState, v *editorContextPanelTemplate) {
 	b := s.Editor.ActiveBook
 	if b == nil {
-		vars["book_settings_open"] = false
-		vars["has_selected_chapter"] = false
-		vars["is_node_inspector_hidden"] = false
-		vars["multi_scene_items"] = nil
 		return
 	}
 
-	isScreenplay := b.IsScreenplay()
 	normStd := b.NormalizedStandard()
 	_, stdOpts := buildScriptStandardOptions(normStd)
 	prefixPills, timePills := buildSluglineHelperPills(normStd)
 
-	vars["is_screenplay_mode"] = isScreenplay
-	vars["voice_recorder_open"] = s.Modals.VoiceRecorder
-	vars["script_standard"] = normStd
-	vars["script_standard_options"] = stdOpts
-	vars["slugline_prefix_pills"] = prefixPills
-	vars["slugline_time_pills"] = timePills
+	v.IsScreenplayMode = b.IsScreenplay()
+	v.ScriptStandard = normStd
+	v.VoiceRecorderOpen = s.Modals.VoiceRecorder
+	v.ScriptStandardOptions = stdOpts
+	v.SluglinePrefixPills = prefixPills
+	v.SluglineTimePills = timePills
 
-	multiSceneItems := make([]map[string]any, 0, len(b.Scenes))
+	v.MultiSceneItems = make([]book.SelectOption, 0, len(b.Scenes))
 	for _, sc := range b.Scenes {
 		scCh := strings.TrimSpace(sc.Chapter)
 		if scCh == "" {
 			scCh = b.DefaultChapterName()
 		}
-		multiSceneItems = append(multiSceneItems, map[string]any{
-			"id":      sc.ID,
-			"title":   sc.DisplayName(),
-			"chapter": scCh,
+		v.MultiSceneItems = append(v.MultiSceneItems, book.SelectOption{
+			Value: sc.ID,
+			Label: sc.DisplayName(),
+			Meta:  scCh,
 		})
 	}
-	vars["multi_scene_items"] = multiSceneItems
 
 	bookSettingsOpen := s.Editor.RightPanel == state.PanelBook
-	vars["book_settings_open"] = bookSettingsOpen
-	vars["book"] = b
+	v.BookSettingsOpen = bookSettingsOpen
+	v.Book = b
 
 	startSceneID := b.StartSceneID
 	if startSceneID == "" && len(b.Scenes) > 0 {
@@ -485,24 +577,22 @@ func populateEditorBookAndChapterSettings(s *state.AppState, vars map[string]any
 		startChapterName = strings.TrimSpace(b.Chapters[0].Name)
 	}
 
-	startChapterOptions := make([]map[string]any, 0, len(b.Chapters))
+	v.BookStartChapterOptions = make([]book.SelectOption, 0, len(b.Chapters))
 	for _, ch := range b.Chapters {
 		chName := strings.TrimSpace(ch.Name)
 		if chName == "" {
 			continue
 		}
-		isActCh := strings.EqualFold(chName, startChapterName)
-		startChapterOptions = append(startChapterOptions, map[string]any{
-			"value":     chName,
-			"label":     ch.DisplayName(),
-			"is_active": isActCh,
+		v.BookStartChapterOptions = append(v.BookStartChapterOptions, book.SelectOption{
+			Value:    chName,
+			Label:    ch.DisplayName(),
+			IsActive: strings.EqualFold(chName, startChapterName),
 		})
 	}
-	vars["book_start_chapter_name"] = startChapterName
-	vars["book_start_chapter_options"] = startChapterOptions
+	v.BookStartChapterName = startChapterName
 
 	startSceneLabel := ""
-	startSceneOptions := make([]map[string]any, 0, len(b.Scenes))
+	v.BookStartSceneOptions = make([]book.SelectOption, 0, len(b.Scenes))
 	for _, sc := range b.Scenes {
 		scCh := strings.TrimSpace(sc.Chapter)
 		if scCh == "" {
@@ -516,18 +606,17 @@ func populateEditorBookAndChapterSettings(s *state.AppState, vars map[string]any
 		if isStart {
 			startSceneLabel = optLabel
 		}
-		startSceneOptions = append(startSceneOptions, map[string]any{
-			"value":     sc.ID,
-			"label":     optLabel,
-			"is_active": isStart,
+		v.BookStartSceneOptions = append(v.BookStartSceneOptions, book.SelectOption{
+			Value:    sc.ID,
+			Label:    optLabel,
+			IsActive: isStart,
 		})
 	}
-	if startSceneLabel == "" && len(startSceneOptions) > 0 {
-		startSceneLabel, _ = startSceneOptions[0]["label"].(string)
+	if startSceneLabel == "" && len(v.BookStartSceneOptions) > 0 {
+		startSceneLabel = v.BookStartSceneOptions[0].Label
 	}
-	vars["book_start_scene_id"] = startSceneID
-	vars["book_start_scene_label"] = startSceneLabel
-	vars["book_start_scene_options"] = startSceneOptions
+	v.BookStartSceneID = startSceneID
+	v.BookStartSceneLabel = startSceneLabel
 
 	var selCh *book.Chapter
 	if s.Editor.SelectedChapter != "" {
@@ -558,21 +647,21 @@ func populateEditorBookAndChapterSettings(s *state.AppState, vars map[string]any
 			chStartID = chScenes[0].ID
 		}
 		chStartLabel := ""
-		chStartOptions := make([]map[string]any, 0, len(chScenes))
+		chStartOptions := make([]book.SelectOption, 0, len(chScenes))
 		for _, sc := range chScenes {
 			isChStart := strings.EqualFold(sc.ID, chStartID)
 			optLabel := sc.DisplayName()
 			if isChStart {
 				chStartLabel = optLabel
 			}
-			chStartOptions = append(chStartOptions, map[string]any{
-				"value":     sc.ID,
-				"label":     optLabel,
-				"is_active": isChStart,
+			chStartOptions = append(chStartOptions, book.SelectOption{
+				Value:    sc.ID,
+				Label:    optLabel,
+				IsActive: isChStart,
 			})
 		}
 		if chStartLabel == "" && len(chStartOptions) > 0 {
-			chStartLabel, _ = chStartOptions[0]["label"].(string)
+			chStartLabel = chStartOptions[0].Label
 		}
 
 		branchCount := 0
@@ -602,27 +691,40 @@ func populateEditorBookAndChapterSettings(s *state.AppState, vars map[string]any
 		if b.IsScreenplay() {
 			lengthStat = book.FormatEighths(totalEighths)
 		}
-		vars["selected_chapter"] = map[string]any{
-			"name":                chName,
-			"start_scene_id":      chStartID,
-			"start_scene_label":   chStartLabel,
-			"start_scene_options": chStartOptions,
-			"scene_count":         len(chScenes),
-			"length_stat":         lengthStat,
-			"branch_count":        branchCount,
-			"exit_count":          exitCount,
+		v.SelectedChapter = &book.Chapter{
+			Name:              chName,
+			StartSceneID:      chStartID,
+			StartSceneLabel:   chStartLabel,
+			StartSceneOptions: chStartOptions,
+			SceneCount:        len(chScenes),
+			LengthStat:        lengthStat,
+			BranchCount:       branchCount,
+			ExitCount:         exitCount,
 		}
 	}
-	vars["has_selected_chapter"] = hasSelectedChapter
-	vars["is_node_inspector_hidden"] = true
-	isContextPanelHidden := !bookSettingsOpen && !hasSelectedChapter
-	vars["is_context_panel_hidden"] = isContextPanelHidden
-	vars["show_editor_help_panel"] = s.Editor.RightPanel == state.PanelHelp
-	vars["show_syntax_help_popover"] = s.Editor.SceneText.SyntaxHelpOpen
-	populateEditorVariablesContext(s, vars)
+	v.HasSelectedChapter = hasSelectedChapter
+	v.IsNodeInspectorHidden = true
+	v.IsContextPanelHidden = !bookSettingsOpen && !hasSelectedChapter
+	v.ShowEditorHelpPanel = s.Editor.RightPanel == state.PanelHelp
+	v.ShowSyntaxHelpPopover = s.Editor.SceneText.SyntaxHelpOpen
+
+	var selScene *book.Scene
+	if b != nil {
+		selScene = b.FindScene(s.Editor.SelectedSceneID)
+	}
+	v.HasBookVariables = b != nil && len(b.Variables) > 0
+	v.BookVarsSpec = book.EncodeBookVariablesSpec(b)
+	v.BookVarSuggestions = buildBookVarSuggestions(b)
+	v.BookEnumSuggestions = buildBookEnumValueSuggestions(b)
+	v.BookTargetSuggestions = buildBookTargetSuggestions(s, selScene)
+	v.SyntaxHelpCondRows = []book.SelectOption{
+		{Value: "if: odkryta_prawda && sumienie >= 2", Label: "bool / int / enum (&&, ||, !, ==, !=, >=, <=)"},
+		{Value: "set: odkryta_prawda = true; sumienie++", Label: tr(s, i18n.TrSyntaxHelpSetDesc)},
+		{Value: "exit: ogien_w_kaplicy", Label: tr(s, i18n.TrSyntaxHelpSetDesc)},
+	}
 }
 
-func buildChoiceRuleViewMap(s *state.AppState, sc *book.Scene, idx int, ch book.Choice, selectedVal string) (map[string]any, bool) {
+func buildChoiceRuleView(s *state.AppState, sc *book.Scene, idx int, ch book.Choice, selectedVal string) (book.Choice, bool) {
 	b := s.Editor.ActiveBook
 	sceneID := ""
 	if sc != nil {
@@ -656,35 +758,35 @@ func buildChoiceRuleViewMap(s *state.AppState, sc *book.Scene, idx int, ch book.
 	if hasEff {
 		effErrHint = book.ExplainEffectsExprErrorLang(ch.Effects, b, s.Settings.Language)
 	}
-	return map[string]any{
-		"idx":             idx,
-		"selected_value":  selectedVal,
-		"condition":       condInputVal,
-		"effects":         effInputVal,
-		"has_condition":   hasCond,
-		"has_effects":     hasEff,
-		"has_rule":        hasRule,
-		"is_rule_open":    isRuleOpen,
-		"is_exit_invalid": exitErrHint != "",
-		"exit_error_hint": exitErrHint,
-		"is_cond_invalid": condErrHint != "",
-		"is_eff_invalid":  effErrHint != "",
-		"cond_error_hint": condErrHint,
-		"eff_error_hint":  effErrHint,
-	}, hasCond
+	out := ch
+	out.Idx = idx
+	out.SceneID = sceneID
+	out.SelectedValue = selectedVal
+	out.Condition = condInputVal
+	out.Effects = effInputVal
+	out.HasCondition = hasCond
+	out.HasEffects = hasEff
+	out.HasRule = hasRule
+	out.IsRuleOpen = isRuleOpen
+	out.IsExitInvalid = exitErrHint != ""
+	out.ExitErrorHint = exitErrHint
+	out.IsCondInvalid = condErrHint != ""
+	out.IsEffInvalid = effErrHint != ""
+	out.CondErrorHint = condErrHint
+	out.EffErrorHint = effErrHint
+	return out, hasCond
 }
 
-func populateEditorSelectedNodeOnly(s *state.AppState, vars map[string]any) {
+func populateEditorSelectedNodeOnly(s *state.AppState, v *editorContextPanelTemplate) {
 	b := s.Editor.ActiveBook
 	selected := b.FindScene(s.Editor.SelectedSceneID)
 	if selected == nil {
 		selected = b.Scenes[0]
 		s.Editor.SelectedSceneID = selected.ID
 	}
-	vars["selected_scene_id"] = selected.ID
-	vars["selected_scene_title"] = selected.DisplayName()
-	selectedNodeMap := buildEditorNodeMap(s, selected, true)
-	vars["selected_node"] = selectedNodeMap
-	vars["has_selected_node"] = selectedNodeMap != nil
-	populateEditorBookAndChapterSettings(s, vars)
+	v.SelectedSceneID = selected.ID
+	v.SelectedSceneTitle = selected.DisplayName()
+	v.SelectedNode = buildEditorNodeView(s, selected, true)
+	v.HasSelectedNode = v.SelectedNode != nil
+	populateEditorBookAndChapterSettings(s, v)
 }

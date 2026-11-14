@@ -329,7 +329,7 @@ func postChaosWFP(t *testing.T, sb *chaosSandbox, step int, elDesc string, vals 
 		payload = rawBodyOverride
 		reqSummary = fmt.Sprintf("raw_bytes=%d %q", len(rawBodyOverride), string(rawBodyOverride[:minInt(len(rawBodyOverride), 80)]))
 	} else {
-		payload = actions.EncodeWFPForm(vals)
+		payload = tpl.EncodeFDPForm(vals)
 		var pairs []string
 		for k, v := range vals {
 			if len(v) > 0 {
@@ -345,7 +345,7 @@ func postChaosWFP(t *testing.T, sb *chaosSandbox, step int, elDesc string, vals 
 		sb.Logger.Flush(true, err.Error())
 		t.Fatalf("step %d: NewRequest failed: %v", step, err)
 	}
-	req.Header.Set("Content-Type", "text/x-wfp;charset=UTF-8")
+	req.Header.Set("Content-Type", tpl.ContentTypeFDP)
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
@@ -358,6 +358,7 @@ func postChaosWFP(t *testing.T, sb *chaosSandbox, step int, elDesc string, vals 
 	defer resp.Body.Close()
 	bodyBytes, _ := io.ReadAll(resp.Body)
 	bodyStr := string(bodyBytes)
+	fdpMeta, _ := tpl.DecodeFDPResponse(bodyBytes)
 	dur := time.Since(start)
 
 	sb.Server.State.Mu.Lock()
@@ -365,7 +366,7 @@ func postChaosWFP(t *testing.T, sb *chaosSandbox, step int, elDesc string, vals 
 	modal := activeModalLabelLocked(sb.Server)
 	sb.Server.State.Mu.Unlock()
 
-	domSummary := verifyChaosStepOracles(t, sb, step, vals.Get("action"), resp.StatusCode, resp.Header, bodyStr)
+	domSummary := verifyChaosStepOracles(t, sb, step, vals.Get("action"), resp.StatusCode, fdpMeta, bodyStr)
 	sb.Logger.LogStep(
 		step,
 		view,
@@ -373,10 +374,10 @@ func postChaosWFP(t *testing.T, sb *chaosSandbox, step int, elDesc string, vals 
 		elDesc,
 		reqSummary,
 		resp.StatusCode,
-		resp.Header.Get("X-Target"),
-		resp.Header.Get("X-Theme"),
-		resp.Header.Get("X-UI-Scale"),
-		resp.Header.Get("X-Toast"),
+		fdpMeta.Get("target"),
+		fdpMeta.Get("theme"),
+		fdpMeta.Get("uiScale"),
+		fdpMeta.Get("toast"),
 		domSummary,
 		dur,
 	)
@@ -406,7 +407,7 @@ func activeModalLabelLocked(s *Server) string {
 }
 
 // verifyChaosStepOracles checks all 4 invariant groups after every single request.
-func verifyChaosStepOracles(t *testing.T, sb *chaosSandbox, step int, action string, status int, hdr http.Header, body string) string {
+func verifyChaosStepOracles(t *testing.T, sb *chaosSandbox, step int, action string, status int, fdpMeta url.Values, body string) string {
 	t.Helper()
 	fail := func(format string, args ...any) {
 		msg := fmt.Sprintf("step %d (action=%q): "+format, append([]any{step, action}, args...)...)
@@ -421,13 +422,13 @@ func verifyChaosStepOracles(t *testing.T, sb *chaosSandbox, step int, action str
 		fail("unexpected HTTP status %d; body=%q", status, body[:minInt(len(body), 300)])
 	}
 
-	// Oracle 2 & 3: WFP & HTML-Over-The-Wire contract + Topbar Invariant
-	target := hdr.Get("X-Target")
+	// Oracle 2 & 3: FDP & HTML-Over-The-Wire contract + Topbar Invariant
+	target := fdpMeta.Get("target")
 	if status == http.StatusOK {
 		switch target {
-		case "#app", "#workspace", "#modals-root", "#editor-context-panel":
+		case "#app", "#workspace", "#modals-root", "#editor-context-panel", "none":
 		default:
-			fail("invalid X-Target header %q on 200 OK", target)
+			fail("invalid target %q on 200 OK", target)
 		}
 		if target == "#app" {
 			if !strings.Contains(body, `id="topbar"`) || !strings.Contains(body, `<header class="topbar"`) {
@@ -455,7 +456,7 @@ func verifyChaosStepOracles(t *testing.T, sb *chaosSandbox, step int, action str
 			}
 		}
 	} else if status == http.StatusNoContent && target != "" && target != "none" {
-		fail("expected X-Target 'none' or empty on 204 No Content, got %q", target)
+		fail("expected target 'none' or empty on 204 No Content, got %q", target)
 	}
 
 	// Oracle 4: Disk round-trip consistency (.playtxt, scene IDs, implicit Dalej, narrated: false, .sav magic)
@@ -654,18 +655,19 @@ func TestAuthoringSceneIDGenerationAndReroutingInvariants(t *testing.T) {
 	sb := newIsolatedChaosServer(t, seed, steps)
 
 	step := 1
-	send := func(el string, kv ...string) http.Header {
+	send := func(el string, kv ...string) url.Values {
 		t.Helper()
 		vals := url.Values{}
 		for i := 0; i+1 < len(kv); i += 2 {
 			vals.Set(kv[i], kv[i+1])
 		}
-		status, hdr, _ := postChaosWFP(t, sb, step, el, vals, nil, nil)
+		status, _, bodyStr := postChaosWFP(t, sb, step, el, vals, nil, nil)
 		step++
 		if status != http.StatusOK && status != http.StatusNoContent {
 			t.Fatalf("step %d: expected 200/204 for %v, got %d", step-1, kv, status)
 		}
-		return hdr
+		meta, _ := tpl.DecodeFDPResponse([]byte(bodyStr))
+		return meta
 	}
 
 	// 1. Create a brand new book inside a deeply nested directory with spaces, Polish diacritics, and special chars
@@ -723,7 +725,7 @@ func TestAuthoringSceneIDGenerationAndReroutingInvariants(t *testing.T) {
 			"name", prefix,
 			"text", "SENTINEL_EDYCJA_ZNAK_PO_ZNAKU_"+prefix,
 		)
-		if newID := strings.TrimSpace(hdr.Get("X-Scene-ID")); newID != "" {
+		if newID := strings.TrimSpace(hdr.Get("sceneId")); newID != "" {
 			curID = newID
 		}
 	}
@@ -759,7 +761,7 @@ func TestAuthoringSceneIDGenerationAndReroutingInvariants(t *testing.T) {
 		"explicit_id", "zatopiona_sluza",
 		"text", "DRUGA_SCENA_Z_TYM_SAMYM_ID",
 	)
-	dedupedID := strings.TrimSpace(hdrDup.Get("X-Scene-ID"))
+	dedupedID := strings.TrimSpace(hdrDup.Get("sceneId"))
 	if dedupedID == "" || strings.EqualFold(dedupedID, curID) {
 		t.Fatalf("duplicate ID oracle failed: expected second scene to receive deduplicated ID != %q, got %q", curID, dedupedID)
 	}
@@ -983,6 +985,7 @@ func crawlAllActionSpecsDeterministically(t *testing.T, sb *chaosSandbox, runAct
 	runAction("button[action=OpenStudioProjectModal]", "action", "OpenStudioProjectModal")
 	runAction("button[action=CloseStudioProjectModal]", "action", "CloseStudioProjectModal")
 	runAction("button[action=OpenNewBookModal]", "action", "OpenNewBookModal", "mode", "book")
+	runAction(".new-book-mode-select[data-select-action=SetNewBookModalMode]", "action", "SetNewBookModalMode", "mode", "screenplay", "standard", "pl")
 	runAction("button[action=BrowseNewBookFolder]", "action", "BrowseNewBookFolder", "title", "Test", "save_path", sb.ProjectsDir)
 	runAction("button[action=CloseNewBookModal]", "action", "CloseNewBookModal")
 
@@ -1156,6 +1159,10 @@ func crawlAllActionSpecsDeterministically(t *testing.T, sb *chaosSandbox, runAct
 	runAction("button[action=CloseEditorHistoryPanel]", "action", "CloseEditorHistoryPanel")
 	runAction("button[action=ToggleEditorHistoryPanel]", "action", "ToggleEditorHistoryPanel")
 	runAction("button[action=ToggleEditorHistoryPanel]", "action", "ToggleEditorHistoryPanel")
+	runAction("button[action=ToggleStudioSearch]", "action", "ToggleStudioSearch")
+	runAction("input[action=FilterStudioSearch]", "action", "FilterStudioSearch", "q", "scena")
+	runAction("button[action=CloseStudioSearch]", "action", "CloseStudioSearch")
+	runAction("button[action=ToggleBookWarnings]", "action", "ToggleBookWarnings")
 
 	// Export Modal
 	runAction("button[action=OpenExportModal]", "action", "OpenExportModal")
@@ -1610,13 +1617,13 @@ func runConcurrentChaosBurst(t *testing.T, sb *chaosSandbox, baseStep int, burst
 				vals.Set("scene", "poczatek")
 			}
 
-			payload := actions.EncodeWFPForm(vals)
+			payload := tpl.EncodeFDPForm(vals)
 			req, err := http.NewRequest(http.MethodPost, sb.HTTPServer.URL+"/api/action", bytes.NewReader(payload))
 			if err != nil {
 				errs <- err.Error()
 				return
 			}
-			req.Header.Set("Content-Type", "text/x-wfp;charset=UTF-8")
+			req.Header.Set("Content-Type", tpl.ContentTypeFDP)
 			resp, err := sb.HTTPServer.Client().Do(req)
 			if err != nil {
 				errs <- err.Error()
@@ -1637,12 +1644,13 @@ func runConcurrentChaosBurst(t *testing.T, sb *chaosSandbox, baseStep int, burst
 	}
 
 	// Verify invariants after concurrent burst settles
-	req, _ := http.NewRequest(http.MethodPost, sb.HTTPServer.URL+"/api/action", bytes.NewReader(actions.EncodeWFPForm(url.Values{"action": {"SwitchView"}, "view": {"editor"}})))
-	req.Header.Set("Content-Type", "text/x-wfp;charset=UTF-8")
+	req, _ := http.NewRequest(http.MethodPost, sb.HTTPServer.URL+"/api/action", bytes.NewReader(tpl.EncodeFDPForm(url.Values{"action": {"SwitchView"}, "view": {"editor"}})))
+	req.Header.Set("Content-Type", tpl.ContentTypeFDP)
 	if resp, err := sb.HTTPServer.Client().Do(req); err == nil {
 		b, _ := io.ReadAll(resp.Body)
 		_ = resp.Body.Close()
-		verifyChaosStepOracles(t, sb, baseStep, "ConcurrentBurstVerify", resp.StatusCode, resp.Header, string(b))
+		meta, _ := tpl.DecodeFDPResponse(b)
+		verifyChaosStepOracles(t, sb, baseStep, "ConcurrentBurstVerify", resp.StatusCode, meta, string(b))
 	}
 }
 
@@ -1883,7 +1891,27 @@ class DOMElement {
     this.childNodes = this.children;
     return child;
   }
+  replaceChild(newChild, oldChild) {
+    const idx = this.children.indexOf(oldChild);
+    if (idx < 0) return oldChild;
+    if (newChild.parentElement) {
+      const pIdx = newChild.parentElement.children.indexOf(newChild);
+      if (pIdx >= 0) newChild.parentElement.children.splice(pIdx, 1);
+    }
+    oldChild.parentElement = null;
+    newChild.parentElement = this;
+    this.children[idx] = newChild;
+    this.childNodes = this.children;
+    return oldChild;
+  }
   get firstElementChild() { return this.children.length > 0 ? this.children[0] : null; }
+  get localName() { return (this.tagName || "").toLowerCase(); }
+  get attributes() {
+    const out = [];
+    this._attrs.forEach((value, name) => out.push({ name: name, value: value }));
+    return out;
+  }
+  get elements() { return this.querySelectorAll("input, textarea, select"); }
   get textContent() {
     let out = this._text || "";
     for (let i = 0; i < this.children.length; i++) out += this.children[i].textContent;
@@ -2125,7 +2153,7 @@ function makeEvent(type, props) {
 
 // Extract interactive elements from current DOM (buttons, custom-selects, inputs, canvas nodes)
 function extractInteractiveDOMElements(doc) {
-  const actions = doc.querySelectorAll("[action], [data-action], [data-backdrop-action]");
+  const actions = doc.querySelectorAll("button, form, [action], [data-action], [data-backdrop-action]");
   const selects = doc.querySelectorAll(".custom-select-trigger");
   const inputs = doc.querySelectorAll("input[name], textarea[name]");
   return { actions, selects, inputs };
@@ -2192,9 +2220,10 @@ function verifyDOMInvariants(doc) {
     Uint8Array, Int16Array, Float32Array, Uint32Array, DataView, ArrayBuffer, Map, Set, WeakMap, WeakSet, Promise,
     Math, Number, String, Boolean, Object, Array, RegExp, Error, Date, Infinity, NaN, parseInt, parseFloat, isNaN, console,
     performance: { now: () => Date.now() },
-    requestAnimationFrame: (cb) => { cb(Date.now()); return 1; },
-    cancelAnimationFrame: () => {},
-    setTimeout, clearTimeout,
+    requestAnimationFrame: (cb) => setTimeout(() => cb(Date.now()), 16),
+    cancelAnimationFrame: (id) => clearTimeout(id),
+    setTimeout, clearTimeout, setInterval, clearInterval,
+    Event: function(type, opts) { return makeEvent(type, opts || {}); },
     btoa: (str) => Buffer.from(str, "binary").toString("base64"),
     atob: (b64) => Buffer.from(b64, "base64").toString("binary"),
     Audio: class {
@@ -2212,7 +2241,7 @@ function verifyDOMInvariants(doc) {
       const fullURL = urlStr.startsWith("http") ? urlStr : baseURL + urlStr;
       if (opts && opts.body) {
         const bodyStr = String(opts.body);
-        const parsed = typeof win.decodeWFP === "function" ? win.decodeWFP(bodyStr) : {};
+        const parsed = vm.runInContext("typeof Fdp !== 'undefined' ? Fdp.decode(" + JSON.stringify(bodyStr) + ") : {}", win);
         if (parsed.action) dispatched.add(parsed.action);
       }
       const p = fetch(fullURL, opts);
@@ -2227,7 +2256,7 @@ function verifyDOMInvariants(doc) {
   vm.runInContext(appJSSrc, win, { filename: "app.js" });
   win.__inFlight = inFlight;
   vm.runInContext(
-    "const _origSend = sendServerAction; sendServerAction = async function(act, params) { const p = (async () => { return await _origSend(act, params); })(); __inFlight.add(p); try { return await p; } finally { __inFlight.delete(p); } }; const _origSilent = postServerActionSilent; postServerActionSilent = function(act, fd) { const p = Promise.resolve(_origSilent(act, fd)); __inFlight.add(p); p.finally(() => __inFlight.delete(p)); return p; };",
+    "const _origPost = Dispatcher.post.bind(Dispatcher); Dispatcher.post = async function(act, params, target) { const p = (async () => { return await _origPost(act, params, target); })(); __inFlight.add(p); try { return await p; } finally { __inFlight.delete(p); } };",
     win
   );
   doc.dispatchEvent(makeEvent("DOMContentLoaded", { target: doc }));
@@ -2272,10 +2301,10 @@ function verifyDOMInvariants(doc) {
   };
 
   await clickSel('#btn-switch-to-studio');
-  await clickSel('button[action="OpenNewBookModal"]');
+  await clickSel('#btn-new-book');
   const titleInp = doc.querySelector("#new-book-title");
   await typeCharByChar(titleInp, "Książka Crawler DOM — Śluza", 0);
-  await clickSel('form[action="CreateNewBook"] button[type="submit"]');
+  await clickSel('#form-new-book button[type="submit"]');
 
   // Exercise DOM extractor on Studio view
   const extracted = extractInteractiveDOMElements(doc);
@@ -2289,13 +2318,13 @@ function verifyDOMInvariants(doc) {
   await clickSel('#btn-context-add-node');
 
   // Verify every node in studioGraphState has a unique ID and is registered in nodeById
-  const graphCheck1 = vm.runInContext("(() => ({ total: studioGraphState.nodes.length, unique: studioGraphState.nodeById.size }))()", win);
+  const graphCheck1 = vm.runInContext("(() => ({ total: CanvasModel.studioGraphState.nodes.length, unique: CanvasModel.studioGraphState.nodeById.size }))()", win);
   if (graphCheck1.total < 3 || graphCheck1.total !== graphCheck1.unique) {
     throw new Error("Canvas node uniqueness invariant violated: " + JSON.stringify(graphCheck1));
   }
 
   // Click edit button on the first newly created scene ("s1") and type character-by-character into title, explicit_id, and text
-  const s1EditPt = vm.runInContext("(() => { const n = studioGraphState.nodeById.get('s1') || studioGraphState.nodes[2]; if (!n) return null; if (typeof centerCanvasCameraOnScene === 'function') centerCanvasCameraOnScene(n.id); const z = editorCanvasState.zoom; const wx = getNodeFooterBtnX(n, 'edit', false) + CARD.btnSize * 0.5; const wy = n.y + n.h - CARD.footerH + CARD.pad + CARD.btnSize * 0.5; return { id: n.id, x: Math.round(wx * z + editorCanvasState.panX), y: Math.round(wy * z + editorCanvasState.panY) }; })()", win);
+  const s1EditPt = vm.runInContext("(() => { const n = CanvasModel.studioGraphState.nodeById.get('s1') || CanvasModel.studioGraphState.nodes[2]; if (!n) return null; const z = CanvasModel.editorCanvasState.zoom; const wx = CanvasModel.getNodeFooterBtnX(n, 'edit', false) + CanvasModel.CARD.btnSize * 0.5; const wy = n.y + n.h - CanvasModel.CARD.footerH + CanvasModel.CARD.pad + CanvasModel.CARD.btnSize * 0.5; return { id: n.id, x: Math.round(wx * z + CanvasModel.editorCanvasState.panX), y: Math.round(wy * z + CanvasModel.editorCanvasState.panY) }; })()", win);
   const canvas = doc.querySelector("#studio-canvas");
   if (canvas && s1EditPt) {
     canvas.dispatchEvent(makeEvent("mousedown", { button: 0, clientX: s1EditPt.x, clientY: s1EditPt.y, target: canvas }));
@@ -2303,7 +2332,7 @@ function verifyDOMInvariants(doc) {
     await waitAll();
   }
   if (!doc.querySelector("#form-scene-text") && s1EditPt) {
-    await vm.runInContext("sendServerAction('OpenSceneTextModal', { scene: '" + s1EditPt.id + "' })", win);
+    await vm.runInContext("Dispatcher.post('OpenSceneTextModal', { scene: '" + s1EditPt.id + "' })", win);
     await waitAll();
   }
   const modalNameInp = doc.querySelector('#form-scene-text input[name="name"]');
@@ -2316,13 +2345,13 @@ function verifyDOMInvariants(doc) {
   if (modalTextInp) await typeCharByChar(modalTextInp, "Woda wdziera się przez zardzewiałe wrota śluzy.", 8);
   await waitAll();
 
+  await clickSel('#btn-collapse-scene-text');
+
   // Verify that after typing character-by-character and changing s1 -> zatopiona_komora_sluzy, all nodes remain unique and reachable
-  const graphCheck2 = vm.runInContext("(() => ({ total: studioGraphState.nodes.length, unique: studioGraphState.nodeById.size, ids: Array.from(studioGraphState.nodeById.keys()), hasRenamed: studioGraphState.nodeById.has('zatopiona_komora_sluzy'), hasStart: studioGraphState.nodeById.has('poczatek') }))()", win);
+  const graphCheck2 = vm.runInContext("(() => ({ total: CanvasModel.studioGraphState.nodes.length, unique: CanvasModel.studioGraphState.nodeById.size, ids: Array.from(CanvasModel.studioGraphState.nodeById.keys()), hasRenamed: CanvasModel.studioGraphState.nodeById.has('zatopiona_komora_sluzy'), hasStart: CanvasModel.studioGraphState.nodeById.has('poczatek') }))()", win);
   if (graphCheck2.total !== graphCheck2.unique || !graphCheck2.hasRenamed || !graphCheck2.hasStart) {
     throw new Error("Post-typing canvas node reachability invariant violated: " + JSON.stringify(graphCheck2));
   }
-
-  await clickSel('button[action="CloseSceneTextModal"]');
 
   // Exercise custom-select dropdowns in Book Settings
   await clickSel('#btn-book-settings');
@@ -2336,7 +2365,7 @@ function verifyDOMInvariants(doc) {
     }
   }
 
-  await clickSel('button.topbar-tab[action="SwitchView"][data-view="library"]');
+  await clickSel('#tab-studio-home');
 
   console.log("CRAWLER_ACTIONS=" + Array.from(dispatched).join(","));
 })().catch((err) => {

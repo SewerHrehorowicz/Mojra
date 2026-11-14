@@ -1,30 +1,32 @@
 package views
 
 import (
+	"strings"
 	"time"
 
 	"mojra/internal/book"
 	"mojra/internal/logging"
 	"mojra/internal/state"
+	"mojra/internal/tpl"
 )
 
-type libraryBookCard struct {
-	Book        *book.Book `tpl:"*"`
-	ProgressPct int        `tpl:"progress_pct"`
+type libraryTemplate struct {
+	DevMode bool
+	Books   []book.Book
 }
 
-type libraryView struct {
-	DevMode bool              `tpl:"dev_mode"`
-	Books   []libraryBookCard `tpl:"books"`
+type libraryScript struct {
+	bookIds string
 }
 
-func ViewLibrary(s *state.AppState) *libraryView {
+func ViewLibrary(s *state.AppState) tpl.TemplateChunk {
 	tLib := time.Now()
 	defer logging.Active.MarkStep(logging.StageViewLibrary, tLib, s.Config.BooksDir)
 	books := s.Library.Books
 	isHistPreview := !s.Config.StandaloneMode && s.Editor.History.IsPreview(s.Editor.ActiveBook)
 
-	cards := make([]libraryBookCard, 0, len(books))
+	cards := make([]book.Book, 0, len(books))
+	bookIDs := make([]string, 0, len(books))
 	seenTitleKeys := make(map[string]bool, len(books))
 	for _, b := range books {
 		titleKey := book.SanitizeBookID(b.Title)
@@ -58,13 +60,18 @@ func ViewLibrary(s *state.AppState) *libraryView {
 				progressPct = 100
 			}
 		}
-		cards = append(cards, libraryBookCard{
-			Book:        b,
-			ProgressPct: progressPct,
-		})
+		item := *b
+		item.ProgressPct = progressPct
+		cards = append(cards, item)
+		bookIDs = append(bookIDs, b.ID)
 	}
-	return &libraryView{
-		DevMode: s.Config.DevMode,
-		Books:   cards,
+	return tpl.TemplateChunk{
+		TemplateData: &libraryTemplate{
+			DevMode: s.Config.DevMode,
+			Books:   cards,
+		},
+		ScriptData: &libraryScript{
+			bookIds: strings.Join(bookIDs, ","),
+		},
 	}
 }

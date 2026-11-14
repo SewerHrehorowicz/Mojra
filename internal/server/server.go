@@ -45,6 +45,9 @@ const (
 )
 
 func computeFilesStamp(paths []string) uint64 {
+	if len(paths) == 0 {
+		return 0
+	}
 	h := fnvOffset64
 	for _, p := range paths {
 		st, err := os.Stat(p)
@@ -109,7 +112,7 @@ func (s *Server) ensureTemplatesLoaded() map[string]*tpl.ParsedTemplate {
 		s.assets.Templates, _ = tpl.LoadTemplatesFromDir(tplDir, cfg.EmbeddedFS)
 		if cfg.StandaloneMode && s.assets.Templates != nil {
 			delete(s.assets.Templates, "library_view")
-			delete(s.assets.Templates, "editor_view")
+			delete(s.assets.Templates, "studio_view")
 			delete(s.assets.Templates, "editor_context_panel")
 			delete(s.assets.Templates, "editor_history_panel")
 			delete(s.assets.Templates, "editor_breakdown_panel")
@@ -410,7 +413,9 @@ func (s *Server) handleRootAndAssets(w http.ResponseWriter, r *http.Request) {
 		defer s.State.Mu.Unlock()
 
 		templates := s.ensureTemplatesLoaded()
-		ctx := views.NewViewContext(views.LangOf(s.State), views.ViewAppShell(s.State))
+		appShellChunk := views.ViewAppShell(s.State)
+		_, appShellData := appShellChunk.Resolve()
+		ctx := views.NewViewContext(views.LangOf(s.State), appShellData)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-cache")
 		if err := tpl.RenderTemplateTo(w, "index", templates, ctx); err != nil {

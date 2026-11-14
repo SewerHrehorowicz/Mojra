@@ -8,9 +8,27 @@ import (
 	"mojra/internal/book"
 	"mojra/internal/i18n"
 	"mojra/internal/state"
+	"mojra/internal/tpl"
 )
 
-func buildBookModeOptions(activeMode string, lang i18n.Lang) (string, []map[string]any) {
+type editorBreakdownTemplate struct {
+	ShowEditorBreakdownPanel bool
+	IsHistoryPreview         bool
+	BreakdownTotalScenes     int
+	BreakdownTotalPages      string
+	BreakdownRuntime         string
+	BreakdownShootDays       int
+	BreakdownIntExtLabel     string
+	BreakdownDayNightLabel   string
+	BreakdownActs            []book.ActStat
+	HasBreakdownActs         bool
+	BreakdownCharacters      []book.CharacterStat
+	HasBreakdownCharacters   bool
+	BreakdownLocations       []book.LocationStat
+	HasBreakdownLocations    bool
+}
+
+func buildBookModeOptions(activeMode string, lang i18n.Lang) (string, []book.SelectOption) {
 	norm := book.NormalizeBookMode(activeMode)
 	bookLbl := i18n.T(lang, i18n.TrModeInteractiveBook)
 	spLbl := i18n.T(lang, i18n.TrModeScreenplay)
@@ -18,13 +36,13 @@ func buildBookModeOptions(activeMode string, lang i18n.Lang) (string, []map[stri
 	if norm == "screenplay" {
 		label = spLbl
 	}
-	return label, []map[string]any{
-		{"value": "book", "label": bookLbl, "is_active": norm == "book"},
-		{"value": "screenplay", "label": spLbl, "is_active": norm == "screenplay"},
+	return label, []book.SelectOption{
+		{Value: "book", Label: bookLbl, IsActive: norm == "book"},
+		{Value: "screenplay", Label: spLbl, IsActive: norm == "screenplay"},
 	}
 }
 
-func buildScriptStandardOptions(activeStd string) (string, []map[string]any) {
+func buildScriptStandardOptions(activeStd string) (string, []book.SelectOption) {
 	norm := book.NormalizeScriptStandard(activeStd)
 	label := "Polska — PISF (A4, WN./PL.)"
 	switch norm {
@@ -33,52 +51,36 @@ func buildScriptStandardOptions(activeStd string) (string, []map[string]any) {
 	case "us":
 		label = "USA (Letter, INT./EXT.)"
 	}
-	return label, []map[string]any{
-		{"value": "pl", "label": "Polska — PISF (A4, WN./PL.)", "is_active": norm == "pl"},
-		{"value": "eu", "label": "Europa (A4, INT./EXT.)", "is_active": norm == "eu"},
-		{"value": "us", "label": "USA (Letter, INT./EXT.)", "is_active": norm == "us"},
+	return label, []book.SelectOption{
+		{Value: "pl", Label: "Polska — PISF (A4, WN./PL.)", IsActive: norm == "pl"},
+		{Value: "eu", Label: "Europa (A4, INT./EXT.)", IsActive: norm == "eu"},
+		{Value: "us", Label: "USA (Letter, INT./EXT.)", IsActive: norm == "us"},
 	}
 }
 
-func buildSluglineHelperPills(standard string) ([]map[string]any, []map[string]any) {
+func buildSluglineHelperPills(standard string) ([]string, []string) {
 	if book.NormalizeScriptStandard(standard) == "pl" {
-		return []map[string]any{
-				{"token": "WN."},
-				{"token": "PL."},
-				{"token": "WN./PL."},
-			}, []map[string]any{
-				{"token": "DZIEŃ"},
-				{"token": "NOC"},
-				{"token": "ŚWIT"},
-				{"token": "ZMIERZCH"},
-			}
+		return []string{"WN.", "PL.", "WN./PL."}, []string{"DZIEŃ", "NOC", "ŚWIT", "ZMIERZCH"}
 	}
-	return []map[string]any{
-			{"token": "INT."},
-			{"token": "EXT."},
-			{"token": "INT./EXT."},
-		}, []map[string]any{
-			{"token": "DAY"},
-			{"token": "NIGHT"},
-			{"token": "DAWN"},
-			{"token": "DUSK"},
-		}
+	return []string{"INT.", "EXT.", "INT./EXT."}, []string{"DAY", "NIGHT", "DAWN", "DUSK"}
 }
 
-func populateEditorBreakdownContext(s *state.AppState, vars map[string]any) {
-	vars["show_editor_breakdown_panel"] = s.Editor.RightPanel == state.PanelBreakdown
-	if s.Editor.ActiveBook == nil {
-		vars["has_breakdown_characters"] = false
-		vars["has_breakdown_locations"] = false
-		return
+func ViewEditorBreakdown(s *state.AppState) tpl.TemplateChunk {
+	b := s.Editor.ActiveBook
+	v := &editorBreakdownTemplate{
+		ShowEditorBreakdownPanel: s.Editor.RightPanel == state.PanelBreakdown,
+		IsHistoryPreview:         !s.Config.StandaloneMode && s.Editor.History.IsPreview(b),
 	}
-	bd := s.Editor.ActiveBook.ScreenplayBreakdown()
-	vars["breakdown_total_scenes"] = bd.TotalScenes
-	vars["breakdown_total_pages"] = bd.TotalPagesFormatted
-	vars["breakdown_runtime"] = bd.EstimatedRuntimeLabel
-	vars["breakdown_shoot_days"] = bd.EstimatedShootDays
-	vars["breakdown_int_ext_label"] = fmt.Sprintf("%d (%d%%) / %d (%d%%)", bd.IntScenes, bd.IntPct, bd.ExtScenes, bd.ExtPct)
-	vars["breakdown_day_night_label"] = fmt.Sprintf("%d (%d%%) / %d (%d%%)", bd.DayScenes, bd.DayPct, bd.NightScenes, bd.NightPct)
+	if b == nil {
+		return tpl.TemplateChunk{TemplateData: v}
+	}
+	bd := b.ScreenplayBreakdown()
+	v.BreakdownTotalScenes = bd.TotalScenes
+	v.BreakdownTotalPages = bd.TotalPagesFormatted
+	v.BreakdownRuntime = bd.EstimatedRuntimeLabel
+	v.BreakdownShootDays = bd.EstimatedShootDays
+	v.BreakdownIntExtLabel = fmt.Sprintf("%d (%d%%) / %d (%d%%)", bd.IntScenes, bd.IntPct, bd.ExtScenes, bd.ExtPct)
+	v.BreakdownDayNightLabel = fmt.Sprintf("%d (%d%%) / %d (%d%%)", bd.DayScenes, bd.DayPct, bd.NightScenes, bd.NightPct)
 
 	maxActPct := 0
 	for _, a := range bd.Acts {
@@ -86,21 +88,15 @@ func populateEditorBreakdownContext(s *state.AppState, vars map[string]any) {
 			maxActPct = a.SharePct
 		}
 	}
-	actItems := make([]map[string]any, 0, len(bd.Acts))
+	v.BreakdownActs = make([]book.ActStat, 0, len(bd.Acts))
 	for _, a := range bd.Acts {
-		actItems = append(actItems, map[string]any{
-			"id":               a.ID,
-			"name":             a.Name,
-			"scene_count":      a.SceneCount,
-			"formatted_length": a.FormattedLength,
-			"share_pct":        a.SharePct,
-			"is_dominant":      maxActPct > 0 && a.SharePct == maxActPct,
-		})
+		actItem := a
+		actItem.IsDominant = maxActPct > 0 && a.SharePct == maxActPct
+		v.BreakdownActs = append(v.BreakdownActs, actItem)
 	}
-	vars["breakdown_acts"] = actItems
-	vars["has_breakdown_acts"] = len(actItems) > 0
+	v.HasBreakdownActs = len(v.BreakdownActs) > 0
 
-	charItems := make([]map[string]any, 0, len(bd.Characters))
+	v.BreakdownCharacters = make([]book.CharacterStat, 0, len(bd.Characters))
 	for _, ch := range bd.Characters {
 		firstSceneID := ""
 		if len(ch.SpeakingSceneIDs) > 0 {
@@ -108,37 +104,24 @@ func populateEditorBreakdownContext(s *state.AppState, vars map[string]any) {
 		} else if len(ch.SilentSceneIDs) > 0 {
 			firstSceneID = ch.SilentSceneIDs[0]
 		}
-		charItems = append(charItems, map[string]any{
-			"name":                ch.Name,
-			"dialogue_cues":       ch.DialogueCues,
-			"word_count":          ch.WordCount,
-			"total_scenes":        ch.TotalScenes,
-			"speaking_scenes":     len(ch.SpeakingSceneIDs),
-			"silent_scenes":       len(ch.SilentSceneIDs),
-			"estimated_call_days": ch.EstimatedCallDays,
-			"first_scene_id":      firstSceneID,
-		})
+		chItem := ch
+		chItem.SpeakingScenes = len(ch.SpeakingSceneIDs)
+		chItem.SilentScenes = len(ch.SilentSceneIDs)
+		chItem.FirstSceneID = firstSceneID
+		v.BreakdownCharacters = append(v.BreakdownCharacters, chItem)
 	}
-	vars["breakdown_characters"] = charItems
-	vars["has_breakdown_characters"] = len(charItems) > 0
+	v.HasBreakdownCharacters = len(v.BreakdownCharacters) > 0
 
-	locItems := make([]map[string]any, 0, len(bd.Locations))
+	v.BreakdownLocations = make([]book.LocationStat, 0, len(bd.Locations))
 	for _, loc := range bd.Locations {
 		firstSceneID := ""
 		if len(loc.SceneIDs) > 0 {
 			firstSceneID = loc.SceneIDs[0]
 		}
-		locItems = append(locItems, map[string]any{
-			"name":                 loc.Name,
-			"int_ext":              loc.IntExt,
-			"scene_count":          loc.SceneCount,
-			"formatted_length":     loc.FormattedLength,
-			"day_scenes":           loc.DayScenes,
-			"night_scenes":         loc.NightScenes,
-			"estimated_shoot_days": loc.EstimatedShootDays,
-			"first_scene_id":       firstSceneID,
-		})
+		locItem := loc
+		locItem.FirstSceneID = firstSceneID
+		v.BreakdownLocations = append(v.BreakdownLocations, locItem)
 	}
-	vars["breakdown_locations"] = locItems
-	vars["has_breakdown_locations"] = len(locItems) > 0
+	v.HasBreakdownLocations = len(v.BreakdownLocations) > 0
+	return tpl.TemplateChunk{TemplateData: v}
 }

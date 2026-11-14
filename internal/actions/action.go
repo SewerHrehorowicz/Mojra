@@ -26,6 +26,7 @@ const (
 	CloseEditorHelpModal      = "CloseEditorHelpModal"
 	OpenNewBookModal          = "OpenNewBookModal"
 	CloseNewBookModal         = "CloseNewBookModal"
+	SetNewBookModalMode       = "SetNewBookModalMode"
 	BrowseNewBookFolder       = "BrowseNewBookFolder"
 	OpenExportModal           = "OpenExportModal"
 	CloseExportModal          = "CloseExportModal"
@@ -159,4 +160,8 @@ const (
 	SaveSceneVoiceRecording     = "SaveSceneVoiceRecording"
 	TrimSceneVoice              = "TrimSceneVoice"
 	DeleteSceneVoice            = "DeleteSceneVoice"
+	ToggleStudioSearch          = "ToggleStudioSearch"
+	CloseStudioSearch           = "CloseStudioSearch"
+	FilterStudioSearch          = "FilterStudioSearch"
+	ToggleBookWarnings          = "ToggleBookWarnings"
 )

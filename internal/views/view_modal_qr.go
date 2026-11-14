@@ -7,6 +7,7 @@ import (
 	"mojra/internal/book"
 	"mojra/internal/i18n"
 	"mojra/internal/state"
+	"mojra/internal/tpl"
 )
 
 func resolveLANShareURL(port int) string {
@@ -31,35 +32,44 @@ func resolveLANShareURL(port int) string {
 	return fmt.Sprintf("http://127.0.0.1:%d", port)
 }
 
-type modalQRView struct {
-	ShowQRModal          bool    `tpl:"show_qr_modal"`
-	IsDark               bool    `tpl:"is_dark"`
-	ThemeToggleLabel     string  `tpl:"theme_toggle_label"`
-	Imageless            bool    `tpl:"imageless"`
-	ImagelessLocked      bool    `tpl:"imageless_locked"`
-	ImagelessToggleLabel string  `tpl:"imageless_toggle_label"`
-	IsSmallUI            bool    `tpl:"is_small_ui"`
-	IsLargeUI            bool    `tpl:"is_large_ui"`
-	IsScrollSensHigh     bool    `tpl:"is_scroll_sens_high"`
-	IsScrollSensMedium   bool    `tpl:"is_scroll_sens_medium"`
-	IsScrollSensLow      bool    `tpl:"is_scroll_sens_low"`
-	IsScrollSensOff      bool    `tpl:"is_scroll_sens_off"`
-	AutoChoiceDelay      float64 `tpl:"auto_choice_delay"`
-	IsAutoDelay1         bool    `tpl:"is_auto_delay_1"`
-	IsAutoDelay2         bool    `tpl:"is_auto_delay_2"`
-	IsAutoDelay3         bool    `tpl:"is_auto_delay_3"`
-	IsAutoDelay5         bool    `tpl:"is_auto_delay_5"`
-	DevMode              bool    `tpl:"dev_mode"`
-	LANURL               string  `tpl:"lan_url"`
+type modalQRTemplate struct {
+	ShowQRModal          bool
+	IsDark               bool
+	ThemeToggleLabel     string
+	Imageless            bool
+	ImagelessLocked      bool
+	ImagelessToggleLabel string
+	IsSmallUI            bool
+	IsLargeUI            bool
+	IsScrollSensHigh     bool
+	IsScrollSensMedium   bool
+	IsScrollSensLow      bool
+	IsScrollSensOff      bool
+	AutoChoiceDelay      float64
+	IsAutoDelay1         bool
+	IsAutoDelay2         bool
+	IsAutoDelay3         bool
+	IsAutoDelay5         bool
+	DevMode              bool
+	LANURL               string
 }
 
-func ViewModalQR(s *state.AppState) *modalQRView {
+type modalQRScript struct {
+	theme           string
+	uiScale         string
+	imageless       bool
+	imagelessLocked bool
+	sensitivity     string
+	autoChoiceDelay float64
+}
+
+func ViewModalQR(s *state.AppState) tpl.TemplateChunk {
 	theme := s.Settings.Theme
-	if theme != "light" {
-		theme = "dark"
+	if theme != themeLight {
+		theme = themeDark
 	}
 	themeLbl := tr(s, i18n.TrThemeLightLabel)
-	if theme == "light" {
+	if theme == themeLight {
 		themeLbl = tr(s, i18n.TrThemeDarkLabel)
 	}
 
@@ -77,8 +87,8 @@ func ViewModalQR(s *state.AppState) *modalQRView {
 	}
 
 	uiScale := s.Settings.UIScale
-	if uiScale != "large" {
-		uiScale = "small"
+	if uiScale != uiScaleLarge {
+		uiScale = uiScaleSmall
 	}
 	scrollSens := book.NormalizeScrollSensitivity(s.Settings.ScrollSensitivity)
 	autoDelay := book.NormalizeAutoChoiceDelay(s.Settings.AutoChoiceDelay)
@@ -88,25 +98,35 @@ func ViewModalQR(s *state.AppState) *modalQRView {
 		lanURL = resolveLANShareURL(s.Config.Port)
 	}
 
-	return &modalQRView{
-		ShowQRModal:          s.Modals.QR,
-		IsDark:               theme != "light",
-		ThemeToggleLabel:     themeLbl,
-		Imageless:            eff,
-		ImagelessLocked:      locked,
-		ImagelessToggleLabel: imagelessLbl,
-		IsSmallUI:            uiScale == "small",
-		IsLargeUI:            uiScale == "large",
-		IsScrollSensHigh:     scrollSens == "high",
-		IsScrollSensMedium:   scrollSens == "medium",
-		IsScrollSensLow:      scrollSens == "low",
-		IsScrollSensOff:      scrollSens == "off",
-		AutoChoiceDelay:      autoDelay,
-		IsAutoDelay1:         autoDelay <= 1.25,
-		IsAutoDelay2:         autoDelay > 1.25 && autoDelay <= 2.5,
-		IsAutoDelay3:         autoDelay > 2.5 && autoDelay <= 4.0,
-		IsAutoDelay5:         autoDelay > 4.0,
-		DevMode:              s.Config.DevMode,
-		LANURL:               lanURL,
+	return tpl.TemplateChunk{
+		TemplateData: &modalQRTemplate{
+			ShowQRModal:          s.Modals.QR,
+			IsDark:               theme != themeLight,
+			ThemeToggleLabel:     themeLbl,
+			Imageless:            eff,
+			ImagelessLocked:      locked,
+			ImagelessToggleLabel: imagelessLbl,
+			IsSmallUI:            uiScale == uiScaleSmall,
+			IsLargeUI:            uiScale == uiScaleLarge,
+			IsScrollSensHigh:     scrollSens == sensHigh,
+			IsScrollSensMedium:   scrollSens == sensMedium,
+			IsScrollSensLow:      scrollSens == sensLow,
+			IsScrollSensOff:      scrollSens == sensOff,
+			AutoChoiceDelay:      autoDelay,
+			IsAutoDelay1:         autoDelay <= 1.25,
+			IsAutoDelay2:         autoDelay > 1.25 && autoDelay <= 2.5,
+			IsAutoDelay3:         autoDelay > 2.5 && autoDelay <= 4.0,
+			IsAutoDelay5:         autoDelay > 4.0,
+			DevMode:              s.Config.DevMode,
+			LANURL:               lanURL,
+		},
+		ScriptData: &modalQRScript{
+			theme:           theme,
+			uiScale:         uiScale,
+			imageless:       eff,
+			imagelessLocked: locked,
+			sensitivity:     scrollSens,
+			autoChoiceDelay: autoDelay,
+		},
 	}
 }

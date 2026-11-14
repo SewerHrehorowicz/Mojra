@@ -33,6 +33,14 @@ func acceptConfirmModal(s *state.AppState) (toast, nativeCmd string) {
 	case RewindStep:
 		if stepIdx, err := strconv.Atoi(param); err == nil && s.Player.Save != nil && stepIdx >= 0 && stepIdx < len(s.Player.Save.History) {
 			targetSceneID := s.Player.Save.History[stepIdx].SceneID
+			if len(s.Player.Save.History[stepIdx].Variables) > 0 {
+				s.Player.Save.Variables = book.CloneVariablesMap(s.Player.Save.History[stepIdx].Variables)
+			} else if s.Player.Book != nil {
+				s.Player.Save.Variables = book.DefaultVariablesMap(s.Player.Book)
+				if targetSc := s.Player.Book.FindScene(targetSceneID); targetSc != nil && targetSc.Effects != "" {
+					book.ApplyEffects(targetSc.Effects, s.Player.Save.Variables, s.Player.Book)
+				}
+			}
 			s.Player.Save.History = s.Player.Save.History[:stepIdx]
 			s.Player.Save.CurrentSceneID = targetSceneID
 			s.Player.Save.AudioTime = 0

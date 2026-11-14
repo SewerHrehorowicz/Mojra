@@ -1,26 +1,23 @@
-aside.editor-history-panel#editor-history-panel .hidden?: {!show_editor_history_panel}
+aside.editor-history-panel#editor-history-panel .hidden?: {!ShowEditorHistoryPanel}
     .history-panel-header
         span.history-panel-title {t_history_panel_title}
-        button.node-close-btn
-            type: button
-            action: CloseEditorHistoryPanel
+        button.node-close-btn.btn-close-history
             svg.node-close-icon src: /icons/close.svg
 
-    form.history-compact-form
-        action: SaveHistoryVersion
+    form.history-compact-form.history-version-save-form
         input.history-version-input
             type: text
             name: version_name
-            placeholder: "{default_next_version_name}"
-            disabled?: {is_history_preview}
-        button.btn.btn-primary.btn-sm.history-version-save-btn .is-disabled?: {is_history_preview}
+            placeholder: "{DefaultNextVersionName}"
+            disabled?: {IsHistoryPreview}
+        button.btn.btn-primary.btn-sm.history-version-save-btn .is-disabled?: {IsHistoryPreview}
             type: submit
-            disabled?: {is_history_preview}
+            disabled?: {IsHistoryPreview}
             "{t_save_version_btn}"
 
     .history-active-branch-bar
         span.history-active-branch-dot
-        span.history-active-branch-name {active_branch_name}
+        span.history-active-branch-name {ActiveBranchName}
 
     .history-graph-scroll#history-graph-scroll
         .history-drop-preview-row.hidden#history-drop-preview-row
@@ -31,79 +28,79 @@ aside.editor-history-panel#editor-history-panel .hidden?: {!show_editor_history_
                 span.history-row-meta#history-drop-preview-meta
 
         .history-graph-list#history-graph-list
-            {for row in history_graph_rows}
-                .history-graph-row .is-unnamed-step?: {row.is_unnamed_step} .is-current-row?: {row.is_current} .is-active-head?: {row.is_active_head} .is-preview-row?: {row.is_preview} .is-undone-row?: {row.is_undone} .is-active-lineage?: {row.is_active_lineage} .is-inactive-branch?: {!row.is_active_lineage} .is-branch-head?: {row.is_branch_head}
-                    data-revision: "{row.id}"
-                    data-branch: "{row.branch}"
-                    data-label: "{row.label}"
+            {for row in HistoryGraphRows}
+                .history-graph-row .is-unnamed-step?: {row.IsUnnamedStep} .is-current-row?: {row.IsCurrent} .is-active-head?: {row.IsActiveHead} .is-preview-row?: {row.IsPreview} .is-undone-row?: {row.IsUndone} .is-active-lineage?: {row.IsActiveLineage} .is-inactive-branch?: {!row.IsActiveLineage} .is-branch-head?: {row.IsBranchHead}
+                    drop-zone: "true"
+                    data-revision: "{row.ID}"
+                    data-branch: "{row.Branch}"
+                    data-label: "{row.Label}"
                     .history-graph-lanes
-                        {for cell in row.lanes}
-                            .history-lane-cell .has-node?: {cell.has_node} .is-branch-rail?: {cell.is_branch_rail} .is-other-branch?: {cell.is_other_branch}
-                                data-branch?: {cell.branch}
-                                data-hint?: {cell.hover_hint}
-                                {if cell.has_rail_up}
-                                    span.history-lane-rail-up .is-active?: {cell.is_active_rail_up} .is-dashed?: {cell.is_dashed_rail_up}
-                                {if cell.has_rail_down}
-                                    span.history-lane-rail-down .is-active?: {cell.is_active_rail_down} .is-dashed?: {cell.is_dashed_rail_down}
-                                {if cell.is_fork_corner}
-                                    span.history-lane-fork.is-corner .is-active?: {cell.is_active_fork}
-                                {elif cell.has_fork_horiz}
-                                    span.history-lane-fork.is-horiz .is-active?: {cell.is_active_fork}
-                                {if cell.is_compact_in}
-                                    span.history-lane-compact.is-in .is-active?: {cell.is_active_compact}
-                                {if cell.is_compact_out}
-                                    span.history-lane-compact.is-out .is-active?: {cell.is_active_compact}
-                                {if cell.has_compact_horiz}
-                                    span.history-lane-compact.is-horiz .is-active?: {cell.is_active_compact}
-                                {if cell.has_stem_start}
+                        {for cell in row.Lanes}
+                            .history-lane-cell .has-node?: {cell.HasNode} .is-branch-rail?: {cell.IsBranchRail} .is-other-branch?: {cell.IsOtherBranch}
+                                drop-zone?: {cell.Branch}
+                                data-branch?: {cell.Branch}
+                                data-hint?: {cell.HoverHint}
+                                {if cell.HasRailUp}
+                                    span.history-lane-rail-up .is-active?: {cell.IsActiveRailUp} .is-dashed?: {cell.IsDashedRailUp}
+                                {if cell.HasRailDown}
+                                    span.history-lane-rail-down .is-active?: {cell.IsActiveRailDown} .is-dashed?: {cell.IsDashedRailDown}
+                                {if cell.IsForkCorner}
+                                    span.history-lane-fork.is-corner .is-active?: {cell.IsActiveFork}
+                                {elif cell.HasForkHoriz}
+                                    span.history-lane-fork.is-horiz .is-active?: {cell.IsActiveFork}
+                                {if cell.IsCompactIn}
+                                    span.history-lane-compact.is-in .is-active?: {cell.IsActiveCompact}
+                                {if cell.IsCompactOut}
+                                    span.history-lane-compact.is-out .is-active?: {cell.IsActiveCompact}
+                                {if cell.HasCompactHoriz}
+                                    span.history-lane-compact.is-horiz .is-active?: {cell.IsActiveCompact}
+                                {if cell.HasStemStart}
                                     span.history-lane-stem.is-start
-                                {elif cell.has_stem_through}
+                                {elif cell.HasStemThrough}
                                     span.history-lane-stem.is-through
-                                {if cell.is_other_branch}
+                                {if cell.IsOtherBranch}
                                     button.history-rail-hit
-                                        type: button
-                                        action: SwitchHistoryBranch
-                                        data-branch: "{cell.branch}"
-                                        data-hint?: {cell.hover_hint}
-                                {if cell.has_node}
-                                    {if row.is_active_branch}
-                                        button.history-rail-node .is-current-node?: {row.is_current} .is-unnamed-node?: {row.is_unnamed_step} .is-active-lineage-node?: {row.is_active_lineage}
-                                            type: button
-                                            action: PreviewHistoryRevision
-                                            data-revision: "{row.id}"
-                                            data-branch: "{row.branch}"
-                                            data-label: "{row.label}"
-                                            data-hint?: {row.hover_hint}
+                                        data-branch: "{cell.Branch}"
+                                        data-hint?: {cell.HoverHint}
+                                {if cell.HasNode}
+                                    {if row.IsActiveBranch}
+                                        button.history-rail-node.history-rail-node-active-branch .is-current-node?: {row.IsCurrent} .is-unnamed-node?: {row.IsUnnamedStep} .is-active-lineage-node?: {row.IsActiveLineage}
+                                            data-revision: "{row.ID}"
+                                            data-branch: "{row.Branch}"
+                                            data-label: "{row.Label}"
+                                            data-is-current: "{row.IsCurrent}"
+                                            data-hint?: {row.HoverHint}
                                     {else}
-                                        button.history-rail-node .is-current-node?: {row.is_current} .is-unnamed-node?: {row.is_unnamed_step} .is-active-lineage-node?: {row.is_active_lineage}
-                                            type: button
-                                            action: SwitchHistoryBranch
-                                            data-revision: "{row.id}"
-                                            data-branch: "{row.branch}"
-                                            data-label: "{row.label}"
-                                            data-hint?: {row.hover_hint}
+                                        button.history-rail-node.history-rail-node-other-branch .is-current-node?: {row.IsCurrent} .is-unnamed-node?: {row.IsUnnamedStep} .is-active-lineage-node?: {row.IsActiveLineage}
+                                            data-revision: "{row.ID}"
+                                            data-branch: "{row.Branch}"
+                                            data-label: "{row.Label}"
+                                            data-is-current: "{row.IsCurrent}"
+                                            data-hint?: {row.HoverHint}
                     span.history-row-stem
                     .history-row-box
-                        action: PreviewHistoryRevision
-                        data-revision: "{row.id}"
-                        data-branch: "{row.branch}"
-                        data-label: "{row.label}"
-                        data-hint?: {row.hover_hint}
+                        data-revision: "{row.ID}"
+                        data-branch: "{row.Branch}"
+                        data-label: "{row.Label}"
+                        data-hint?: {row.HoverHint}
                         span.history-row-grip
-                            data-history-drag-grip: "{row.id}"
+                            data-revision: "{row.ID}"
+                            data-branch: "{row.Branch}"
+                            data-label: "{row.Label}"
+                            data-is-current: "{row.IsCurrent}"
+                            data-history-drag-grip: "{row.ID}"
                             "⋮⋮"
-                        span.history-row-title {row.label}
-                        span.history-row-meta {row.meta_label}
+                        span.history-row-title {row.Label}
+                        span.history-row-meta {row.MetaLabel}
 
         .scroll-more-cue.hidden#history-scroll-more-cue
             span.scroll-more-dots "..."
 
     form.history-compact-form.history-branch-create-form
-        action: PromptCreateHistoryBranch
         input.history-version-input
             type: text
             name: branch_name
-            placeholder: "{default_next_branch_name}"
+            placeholder: "{DefaultNextBranchName}"
         button.btn.btn-sm.history-version-save-btn
             type: submit
             "{t_add_branch_btn}"

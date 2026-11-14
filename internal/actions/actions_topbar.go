@@ -6,9 +6,21 @@ import (
 	"net/http"
 	"strings"
 
+	"mojra/internal/book"
 	"mojra/internal/i18n"
 	"mojra/internal/state"
+	"mojra/internal/views"
 )
+
+func contextBookForTopbarAction(s *state.AppState) *book.Book {
+	if !s.Config.StandaloneMode && s.Settings != nil && s.Settings.ActiveView == state.ViewEditor.String() && s.Editor.ActiveBook != nil {
+		return s.Editor.ActiveBook
+	}
+	if s.Player.Book != nil {
+		return s.Player.Book
+	}
+	return s.Editor.ActiveBook
+}
 
 func toggleTheme(s *state.AppState, _ *http.Request) string {
 	if s.Settings.Theme == "light" {
@@ -25,7 +37,7 @@ func setLanguage(s *state.AppState, r *http.Request) string {
 	if reqLang != "" {
 		s.Settings.Language = i18n.NormalizeLangCode(reqLang)
 	} else {
-		next := i18n.NextLang(langOf(s))
+		next := i18n.NextLang(views.LangOf(s))
 		s.Settings.Language = i18n.SupportedLanguages[next].Code
 	}
 	_ = s.SaveSettings()
@@ -33,7 +45,7 @@ func setLanguage(s *state.AppState, r *http.Request) string {
 }
 
 func toggleImageless(s *state.AppState, _ *http.Request) string {
-	ctxBook := contextBookForHeaders(s)
+	ctxBook := contextBookForTopbarAction(s)
 	if !ctxBook.IsImageless() {
 		s.Settings.Imageless = !s.Settings.Imageless
 		_ = s.SaveSettings()

@@ -57,7 +57,10 @@ type EditorState struct {
 	SelectedVoiceSectionKey string
 	RightPanel              EditorRightPanel
 	LastRenamedFromSceneID  string
-	SceneText               EditorSceneTextState
+	SearchOpen              bool
+	SearchQuery             string
+	WarningsOpen            bool
+	SceneText               TextEditorState
 	History                 *book.BookHistory
 }
 

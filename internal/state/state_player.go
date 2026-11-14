@@ -40,11 +40,18 @@ func (p *PlayerState) SetBook(savesDir string, settings *book.AppSettings, b *bo
 		}
 	}
 	p.Save = book.LoadSaveState(savesDir, b.ID, b.StartSceneID)
+	needsPersist := false
 	if b.FindScene(p.Save.CurrentSceneID) == nil && len(b.Scenes) > 0 {
 		p.Save.CurrentSceneID = b.StartSceneID
 		if b.FindScene(p.Save.CurrentSceneID) == nil {
 			p.Save.CurrentSceneID = b.Scenes[0].ID
 		}
+		needsPersist = true
+	}
+	if book.EnsureHistoryFromStart(b, p.Save) {
+		needsPersist = true
+	}
+	if needsPersist {
 		p.PersistSave(savesDir)
 	}
 }

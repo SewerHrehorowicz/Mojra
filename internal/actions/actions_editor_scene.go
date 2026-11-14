@@ -3,7 +3,6 @@
 package actions
 
 import (
-	"encoding/base64"
 	"fmt"
 	"net/http"
 	"path/filepath"
@@ -15,122 +14,225 @@ import (
 	"mojra/internal/state"
 )
 
+const (
+	formKeyScenes          = "scenes"
+	formKeySceneIDs        = "scene_ids"
+	formKeyParent          = "parent"
+	formKeyChild           = "child"
+	formKeyTarget          = "target"
+	formKeyBefore          = "before"
+	formKeyFromIdx         = "from_idx"
+	formKeyToIdx           = "to_idx"
+	formKeyText            = "text"
+	formKeyName            = "name"
+	formKeyExplicitID      = "explicit_id"
+	formKeySlugline        = "slugline"
+	formKeySynopsis        = "synopsis"
+	formKeySceneEffects    = "scene_effects"
+	formKeyChapter         = "chapter"
+	formKeySourceFile      = "source_file"
+	formKeyExplicitEnd     = "explicit_end"
+	formKeyExplicitImage   = "explicit_image"
+	formKeyExplicitVoice   = "explicit_voice"
+	formKeyIsStartScene    = "is_start_scene"
+	formKeyChoiceLabelPfx  = "choice_label_"
+	formKeyChoiceTargetPfx = "choice_target_"
+	formKeyChoiceCondPfx   = "choice_cond_"
+	formKeyChoiceEffPfx    = "choice_effects_"
+	formKeyChoiceLabel0    = "choice_label_0"
+	formKeyChoiceTarget0   = "choice_target_0"
+	formKeyChoiceCond0     = "choice_cond_0"
+	formKeyChoiceEffects0  = "choice_effects_0"
+	formKeyPrefix          = "prefix"
+	formKeyTime            = "time"
+	formKeyKind            = "kind"
+	formKeyCharacter       = "character"
+	formKeyX               = "x"
+	formKeyY               = "y"
+	formValDialogue        = "dialogue"
+	formValParenthetical   = "parenthetical"
+	formValAction          = "action"
+	formValDialogueOff     = "dialogue_off"
+	formValDialogueVO      = "dialogue_vo"
+	formValTransitionCut   = "transition_cut"
+	formValTransitionFade  = "transition_fade"
+	formValSubslug         = "subslug"
+	formValEND             = "END"
+	formValDalej           = "Dalej"
+	formValNext            = "Next"
+	formValNextChToken     = "__next__"
+	formValChTargetPref    = "chapter:"
+	formValWybory          = "Wybór %d"
+	formValLangPL          = "pl"
+	historyScopeScene      = "scene"
+	historyScopeGraph      = "graph"
+	coalesceMajor          = "major"
+	coalesceAutoSavePref   = "autosave:"
+	coalesceSluglinePref   = "slugline:"
+	coalesceTextPref       = "text:"
+
+	msgSceneNotFound         = "Nie znaleziono sceny"
+	msgSavedInFilePrefix     = "Zapisano zmiany w pliku "
+	msgEditScenePrefix       = "Edycja sceny: "
+	msgPromotedPrimaryPrefix = "Ustawiono główną ścieżkę (primary): "
+	msgChoiceAddedPrefix     = "Dodano nowy wybór do sceny: "
+	msgChoiceRemovedPrefix   = "Usunięto wybór ze sceny: "
+	msgChoiceReorderedPrefix = "Zmieniono kolejność wyborów: "
+	msgChoiceBranchedPrefix  = "Utworzono scenę docelową: "
+	msgSceneInsertedPrefix   = "Wstawiono nową scenę: "
+	msgSceneCreatedAtPrefix  = "Dodano nową scenę: "
+	msgSceneDeletedFmt       = "Usunięto scenę: %s"
+	msgScenesDeletedMultiFmt = "Usunięto zaznaczone sceny (%d)"
+	msgSluglineUpdatedPrefix = "Zaktualizowano nagłówek sceny: "
+	msgSpBlockInsertedPrefix = "Wstawiono element scenariusza w scenie: "
+	msgDefaultBookTitle      = "Nowa Opowieść"
+	msgDefaultBookAuthor     = "Autor"
+	slugDefaultPrefixPL      = "WN."
+	slugDefaultLocPL         = "LOKACJA"
+	slugDefaultLocEN         = "LOCATION"
+	slugDefaultTimePL        = "DZIEŃ"
+	slugDefaultTimeEN        = "DAY"
+	slugFormatStr            = "%s %s - %s"
+	snippetDialogueLine      = "\nKwestia dialogowa..."
+	snippetDialogueFull      = "\n\nPOSTAĆ\nKwestia dialogowa..."
+	snippetParen             = "\n(cicho)\n"
+	snippetAction            = "\n\nOpis akcji..."
+	snippetOffPL             = "\n\nPOSTAĆ (OFF)\nKwestia spoza kadru..."
+	snippetOffEN             = "\n\nPOSTAĆ (O.S.)\nKwestia spoza kadru..."
+	snippetVO                = "\n\nPOSTAĆ (V.O.)\nKwestia narratora..."
+	snippetCutPL             = "\n\n> CIĘCIE DO:\n"
+	snippetCutEN             = "\n\n> CUT TO:\n"
+	snippetFadePL            = "\n\n> ŚCIEMNIENIE.\n"
+	snippetFadeEN            = "\n\n> FADE OUT.\n"
+	snippetSubslugPL         = "\n\nWN. LOKACJA - CIĄG DALSZY\n"
+	snippetSubslugEN         = "\n\nINT. LOCATION - CONTINUOUS\n"
+)
+
 func splitInlineChoiceLabelAndTarget(raw string) (label string, target string, hasArrow bool) {
 	cleaned := book.SanitizePlainText(raw)
 	if idx := strings.LastIndex(cleaned, "->"); idx >= 0 {
 		if idx == 0 || cleaned[idx-1] != '\\' {
-			lbl := strings.TrimSpace(cleaned[:idx])
-			tgt := strings.TrimSpace(cleaned[idx+2:])
-			return lbl, tgt, true
+			return strings.TrimSpace(cleaned[:idx]), strings.TrimSpace(cleaned[idx+2:]), true
 		}
 	}
 	return strings.TrimSpace(cleaned), "", false
 }
 
-func activeVoiceSectionKeyForRequest(s *state.AppState, sc *book.Scene, r *http.Request) string {
-	var cand string
+func resolveEditorSceneFromRequest(s *state.AppState, r *http.Request, fallbackActive bool) (string, *book.Scene) {
+	if s.Editor.ActiveBook == nil {
+		return "", nil
+	}
+	var scID string
 	if r != nil {
-		cand = strings.TrimSpace(r.FormValue("voice_section"))
-		if cand == "" {
-			cand = strings.TrimSpace(r.FormValue("isolated_voice_section"))
+		scID = strings.TrimSpace(r.FormValue(formKeyScene))
+		if scID == "" {
+			scID = strings.TrimSpace(r.FormValue(formKeySceneID))
 		}
 	}
-	if cand == "" {
-		cand = strings.TrimSpace(s.Editor.SelectedVoiceSectionKey)
+	if fallbackActive {
+		if scID == "" && s.Editor.SceneText.IsOpen() {
+			scID = s.Editor.SceneText.SceneID
+		}
+		if scID == "" {
+			scID = s.Editor.SelectedSceneID
+		}
 	}
-	return resolveSceneVoiceSectionKey(s, sc, cand)
+	return scID, s.Editor.ActiveBook.FindScene(scID)
 }
 
-func formVoiceSectionKeyForRequest(s *state.AppState, sc *book.Scene, r *http.Request) string {
-	var cand string
-	if r != nil {
-		cand = strings.TrimSpace(r.FormValue("isolated_voice_section"))
+func selectStudioScene(s *state.AppState, r *http.Request) string {
+	scID := strings.TrimSpace(r.FormValue(formKeyScene))
+	if found := s.Editor.ActiveBook.FindScene(scID); found != nil {
+		if s.Editor.SelectedSceneID != found.ID {
+			s.Editor.SelectedVoiceSectionKey = defaultVoiceSectionKey
+		}
+		s.Editor.SelectedSceneID = found.ID
+		s.Editor.SelectedChapter = ""
+		if s.Editor.RightPanel == state.PanelBook || s.Editor.RightPanel == state.PanelChapter {
+			s.Editor.RightPanel = state.PanelNone
+		}
+		if s.Editor.SceneText.IsOpen() {
+			s.Editor.SceneText.SyncSceneID(found.ID)
+		}
 	}
-	if cand == "" {
-		cand = strings.TrimSpace(s.Editor.SelectedVoiceSectionKey)
-	}
-	if cand == "" && r != nil && strings.TrimSpace(r.FormValue("action")) != SelectSceneVoiceSection {
-		cand = strings.TrimSpace(r.FormValue("voice_section"))
-	}
-	return resolveSceneVoiceSectionKey(s, sc, cand)
+	return ""
 }
 
-func resolveSceneVoiceSectionKey(s *state.AppState, sc *book.Scene, cand string) string {
-	if sc != nil {
-		secs := book.ExtractSceneVoiceSections(sc, s.Editor.ActiveBook)
-		for _, sec := range secs {
-			if strings.EqualFold(sec.Key, cand) {
-				return sec.Key
-			}
-		}
-		if len(secs) > 0 {
-			return secs[0].Key
+func selectPrimaryBranchScene(s *state.AppState, r *http.Request) string {
+	if isHistoryPreview(s) {
+		return tr(s, i18n.TrHistoryPreviewLocked)
+	}
+	b := s.Editor.ActiveBook
+	if b == nil || b.IsPacked {
+		return ""
+	}
+	target := b.FindScene(strings.TrimSpace(r.FormValue(formKeyScene)))
+	if target == nil {
+		return msgSceneNotFound
+	}
+	s.Editor.History.EnsureBaseline(b, s.Editor.SelectedSceneID)
+	for _, sc := range b.Scenes {
+		if len(sc.Choices) >= 2 {
+			sc.Choices = book.MaterializeChoicesForEdit(b, sc)
 		}
 	}
-	if cand == "" {
-		return "01"
+	if !book.PromoteSceneToPrimaryPath(b, target.ID) {
+		r.Form.Set(formFieldSilent, formValTrue)
+		return ""
 	}
-	return cand
+	return commitScenesMutation(s, msgPromotedPrimaryPrefix+target.DisplayName(), historyScopeGraph, "")
 }
 
 func hasSceneTextModalChanges(s *state.AppState, curSc *book.Scene, r *http.Request) bool {
-	if curSc == nil {
+	if curSc == nil || r == nil {
 		return false
 	}
 	b := s.Editor.ActiveBook
-	if _, hasText := r.Form["text"]; hasText {
-		if isolatedKey := strings.TrimSpace(r.FormValue("isolated_voice_section")); isolatedKey != "" {
-			if book.ReplaceSceneVoiceSectionText(curSc.Text, isolatedKey, r.FormValue("text")) != curSc.Text {
+	if _, hasText := r.Form[formKeyText]; hasText {
+		if isolatedKey := strings.TrimSpace(r.FormValue(formKeyIsolatedVoiceSection)); isolatedKey != "" {
+			if book.ReplaceSceneVoiceSectionText(curSc.Text, isolatedKey, r.FormValue(formKeyText)) != curSc.Text {
 				return true
 			}
-		} else if book.SanitizePlainText(r.FormValue("text")) != curSc.Text {
+		} else if book.SanitizePlainText(r.FormValue(formKeyText)) != curSc.Text {
 			return true
 		}
 	}
-	if _, hasName := r.Form["name"]; hasName {
-		newName := book.SanitizePlainText(r.FormValue("name"))
+	if _, hasName := r.Form[formKeyName]; hasName {
+		newName := book.SanitizePlainText(r.FormValue(formKeyName))
 		if (newName != "" || curSc.ExplicitID != "") && newName != curSc.Name {
 			return true
 		}
 	}
-	if _, hasID := r.Form["explicit_id"]; hasID {
-		if book.SanitizeSceneID(r.FormValue("explicit_id")) != curSc.ExplicitID {
-			return true
-		}
+	if _, hasID := r.Form[formKeyExplicitID]; hasID && book.SanitizeSceneID(r.FormValue(formKeyExplicitID)) != curSc.ExplicitID {
+		return true
 	}
-	if _, hasSlug := r.Form["slugline"]; hasSlug {
-		if strings.ToUpper(strings.TrimSpace(book.SanitizePlainText(r.FormValue("slugline")))) != curSc.Slugline {
-			return true
-		}
+	if _, hasSlug := r.Form[formKeySlugline]; hasSlug && strings.ToUpper(strings.TrimSpace(book.SanitizePlainText(r.FormValue(formKeySlugline)))) != curSc.Slugline {
+		return true
 	}
-	if _, hasSyn := r.Form["synopsis"]; hasSyn {
-		if strings.TrimSpace(book.SanitizePlainText(r.FormValue("synopsis"))) != curSc.Synopsis {
-			return true
-		}
+	if _, hasSyn := r.Form[formKeySynopsis]; hasSyn && strings.TrimSpace(book.SanitizePlainText(r.FormValue(formKeySynopsis))) != curSc.Synopsis {
+		return true
 	}
-	if _, hasEff := r.Form["scene_effects"]; hasEff {
-		if book.StripOuterDoubleBraces(r.FormValue("scene_effects")) != curSc.Effects {
-			return true
-		}
+	if _, hasEff := r.Form[formKeySceneEffects]; hasEff && book.StripOuterDoubleBraces(r.FormValue(formKeySceneEffects)) != curSc.Effects {
+		return true
 	}
-	if _, hasCh := r.Form["chapter"]; hasCh {
-		newCh := strings.TrimSpace(book.SanitizePlainText(r.FormValue("chapter")))
+	if _, hasCh := r.Form[formKeyChapter]; hasCh {
+		newCh := strings.TrimSpace(book.SanitizePlainText(r.FormValue(formKeyChapter)))
 		if newCh != "" && !strings.EqualFold(newCh, strings.TrimSpace(curSc.Chapter)) {
 			return true
 		}
 	}
-	if _, hasImg := r.Form["explicit_image"]; hasImg {
+	if _, hasImg := r.Form[formKeyExplicitImage]; hasImg {
 		curImg := curSc.ExplicitImage
 		if curImg == "" && curSc.ImageFile != "" {
 			curImg = curSc.ImageFile
 		}
-		if book.SanitizeRelativeMediaPath(r.FormValue("explicit_image")) != curImg {
+		if book.SanitizeRelativeMediaPath(r.FormValue(formKeyExplicitImage)) != curImg {
 			return true
 		}
 	}
 	if b != nil && b.Narrated {
-		if _, hasVoice := r.Form["explicit_voice"]; hasVoice {
-			newVoice := book.SanitizeRelativeMediaPath(r.FormValue("explicit_voice"))
+		if _, hasVoice := r.Form[formKeyExplicitVoice]; hasVoice {
+			newVoice := book.SanitizeRelativeMediaPath(r.FormValue(formKeyExplicitVoice))
 			if book.HasConditionalVoiceDirectives(curSc.Text) {
 				secKey := formVoiceSectionKeyForRequest(s, curSc, r)
 				book.ExtractSceneVoiceSections(curSc, b)
@@ -156,20 +258,20 @@ func hasSceneTextModalChanges(s *state.AppState, curSc *book.Scene, r *http.Requ
 		}
 	}
 	for i, ch := range curSc.Choices {
-		lblKey := fmt.Sprintf("choice_label_%d", i)
+		idxStr := strconv.Itoa(i)
+		lblKey, tgtKey := formKeyChoiceLabelPfx+idxStr, formKeyChoiceTargetPfx+idxStr
 		var inlineTgt string
 		var hasArrow bool
 		if _, hasLbl := r.Form[lblKey]; hasLbl {
 			var newLbl string
 			newLbl, inlineTgt, hasArrow = splitInlineChoiceLabelAndTarget(r.FormValue(lblKey))
 			if newLbl == "" {
-				newLbl = fmt.Sprintf("Wybór %d", i+1)
+				newLbl = fmt.Sprintf(formValWybory, i+1)
 			}
 			if newLbl != ch.Label {
 				return true
 			}
 		}
-		tgtKey := fmt.Sprintf("choice_target_%d", i)
 		newTgt := ""
 		if hasArrow && inlineTgt != "" {
 			newTgt = inlineTgt
@@ -179,9 +281,8 @@ func hasSceneTextModalChanges(s *state.AppState, curSc *book.Scene, r *http.Requ
 		if newTgt != "" && !strings.EqualFold(newTgt, ch.Target) && !strings.EqualFold(newTgt, ch.TargetSceneID) {
 			return true
 		}
-		condKey := fmt.Sprintf("choice_cond_%d", i)
-		if _, hasCond := r.Form[condKey]; hasCond {
-			rawCond := book.StripOuterDoubleBraces(r.FormValue(condKey))
+		if _, hasCond := r.Form[formKeyChoiceCondPfx+idxStr]; hasCond {
+			rawCond := book.StripOuterDoubleBraces(r.FormValue(formKeyChoiceCondPfx + idxStr))
 			showLocked := strings.HasPrefix(rawCond, "?")
 			if showLocked {
 				rawCond = strings.TrimSpace(rawCond[1:])
@@ -190,17 +291,13 @@ func hasSceneTextModalChanges(s *state.AppState, curSc *book.Scene, r *http.Requ
 				return true
 			}
 		}
-		effKey := fmt.Sprintf("choice_effects_%d", i)
-		if _, hasEff := r.Form[effKey]; hasEff {
-			if book.StripOuterDoubleBraces(r.FormValue(effKey)) != ch.Effects {
-				return true
-			}
+		if _, hasEff := r.Form[formKeyChoiceEffPfx+idxStr]; hasEff && book.StripOuterDoubleBraces(r.FormValue(formKeyChoiceEffPfx+idxStr)) != ch.Effects {
+			return true
 		}
 	}
 	if len(curSc.Choices) == 0 || curSc.ExplicitEnd {
-		if _, hasTgt0 := r.Form["choice_target_0"]; hasTgt0 {
-			newTgt := book.SanitizePlainText(r.FormValue("choice_target_0"))
-			if newTgt != "" && !strings.EqualFold(newTgt, "END") {
+		if _, hasTgt0 := r.Form[formKeyChoiceTarget0]; hasTgt0 {
+			if newTgt := book.SanitizePlainText(r.FormValue(formKeyChoiceTarget0)); newTgt != "" && !strings.EqualFold(newTgt, formValEND) {
 				return true
 			}
 		}
@@ -210,19 +307,17 @@ func hasSceneTextModalChanges(s *state.AppState, curSc *book.Scene, r *http.Requ
 
 func applySceneFormFields(s *state.AppState, target *book.Scene, r *http.Request) {
 	b := s.Editor.ActiveBook
-	if target == nil || b == nil {
+	if target == nil || b == nil || r == nil {
 		return
 	}
-	if formSceneID := strings.TrimSpace(r.FormValue("scene_id")); formSceneID != "" && !strings.EqualFold(formSceneID, target.ID) {
+	if formSceneID := strings.TrimSpace(r.FormValue(formKeySceneID)); formSceneID != "" && !strings.EqualFold(formSceneID, target.ID) {
 		if !(s.Editor.SceneText.InitialID != "" && strings.EqualFold(formSceneID, s.Editor.SceneText.InitialID) && strings.EqualFold(s.Editor.SceneText.SceneID, target.ID)) {
 			return
 		}
 	}
-	oldID := target.ID
-	oldName := target.Name
-	oldExplicitID := target.ExplicitID
-	if _, hasID := r.Form["explicit_id"]; hasID {
-		rawExp := strings.TrimSpace(r.FormValue("explicit_id"))
+	oldID, oldName, oldExplicitID := target.ID, target.Name, target.ExplicitID
+	if _, hasID := r.Form[formKeyExplicitID]; hasID {
+		rawExp := strings.TrimSpace(r.FormValue(formKeyExplicitID))
 		if rawExp != "" {
 			cleanExp := book.SanitizeSceneID(rawExp)
 			if cleanExp != "" && !strings.EqualFold(cleanExp, oldExplicitID) && !strings.EqualFold(cleanExp, oldID) {
@@ -237,8 +332,8 @@ func applySceneFormFields(s *state.AppState, target *book.Scene, r *http.Request
 			target.ExplicitID = oldID
 		}
 	}
-	if _, hasName := r.Form["name"]; hasName {
-		newName := book.SanitizePlainText(r.FormValue("name"))
+	if _, hasName := r.Form[formKeyName]; hasName {
+		newName := book.SanitizePlainText(r.FormValue(formKeyName))
 		if newName != "" || target.ExplicitID != "" {
 			target.Name = newName
 		}
@@ -252,53 +347,46 @@ func applySceneFormFields(s *state.AppState, target *book.Scene, r *http.Request
 			target.ExplicitID = b.NextUniqueAutoSceneID(nil)
 		}
 	}
-	if b != nil {
-		if oldName != "" && !strings.EqualFold(target.Name, oldName) {
-			b.UnbindAutoSceneName(oldName)
+	if oldName != "" && !strings.EqualFold(target.Name, oldName) {
+		b.UnbindAutoSceneName(oldName)
+	}
+	if target.ExplicitID != "" && !strings.EqualFold(target.ExplicitID, oldID) {
+		b.UnbindAutoSceneName(target.Name)
+		if book.ParseAutoSceneSeq(oldID) > 0 {
+			b.RetireSceneID(oldID)
 		}
-		if target.ExplicitID != "" && !strings.EqualFold(target.ExplicitID, oldID) {
-			b.UnbindAutoSceneName(target.Name)
-			if book.ParseAutoSceneSeq(oldID) > 0 {
-				b.RetireSceneID(oldID)
-			}
-			if book.ParseAutoSceneSeq(oldExplicitID) > 0 {
-				b.RetireSceneID(oldExplicitID)
-			}
+		if book.ParseAutoSceneSeq(oldExplicitID) > 0 {
+			b.RetireSceneID(oldExplicitID)
 		}
 	}
-	if _, hasSlug := r.Form["slugline"]; hasSlug {
-		target.Slugline = strings.ToUpper(strings.TrimSpace(book.SanitizePlainText(r.FormValue("slugline"))))
+	if _, hasSlug := r.Form[formKeySlugline]; hasSlug {
+		target.Slugline = strings.ToUpper(strings.TrimSpace(book.SanitizePlainText(r.FormValue(formKeySlugline))))
 	}
-	if _, hasSyn := r.Form["synopsis"]; hasSyn {
-		target.Synopsis = strings.TrimSpace(book.SanitizePlainText(r.FormValue("synopsis")))
+	if _, hasSyn := r.Form[formKeySynopsis]; hasSyn {
+		target.Synopsis = strings.TrimSpace(book.SanitizePlainText(r.FormValue(formKeySynopsis)))
 	}
-	if _, hasEff := r.Form["scene_effects"]; hasEff {
-		target.Effects = book.CleanEffectsExpr(r.FormValue("scene_effects"))
+	if _, hasEff := r.Form[formKeySceneEffects]; hasEff {
+		target.Effects = book.CleanEffectsExpr(r.FormValue(formKeySceneEffects))
 	}
-	if _, hasImg := r.Form["explicit_image"]; hasImg {
-		target.ExplicitImage = book.SanitizeRelativeMediaPath(r.FormValue("explicit_image"))
+	if _, hasImg := r.Form[formKeyExplicitImage]; hasImg {
+		target.ExplicitImage = book.SanitizeRelativeMediaPath(r.FormValue(formKeyExplicitImage))
 		if target.ExplicitImage == "" {
-			target.ImageFile = ""
-			target.ImageURL = ""
+			target.ImageFile, target.ImageURL = "", ""
 		}
 	}
-	if _, hasText := r.Form["text"]; hasText {
-		if isolatedKey := strings.TrimSpace(r.FormValue("isolated_voice_section")); isolatedKey != "" {
-			target.Text = book.ReplaceSceneVoiceSectionText(target.Text, isolatedKey, r.FormValue("text"))
+	if _, hasText := r.Form[formKeyText]; hasText {
+		if isolatedKey := strings.TrimSpace(r.FormValue(formKeyIsolatedVoiceSection)); isolatedKey != "" {
+			target.Text = book.ReplaceSceneVoiceSectionText(target.Text, isolatedKey, r.FormValue(formKeyText))
 		} else {
-			target.Text = book.SanitizePlainText(r.FormValue("text"))
+			target.Text = book.SanitizePlainText(r.FormValue(formKeyText))
 		}
 	}
 
 	if !b.Narrated {
-		target.ExplicitVoice = ""
-		target.VoiceTrimStart = 0
-		target.VoiceTrimEnd = 0
-		target.SectionVoices = nil
-		target.AudioFile = ""
-		target.AudioURL = ""
-	} else if _, hasVoice := r.Form["explicit_voice"]; hasVoice {
-		newVoice := book.SanitizeRelativeMediaPath(r.FormValue("explicit_voice"))
+		target.ExplicitVoice, target.VoiceTrimStart, target.VoiceTrimEnd = "", 0, 0
+		target.SectionVoices, target.AudioFile, target.AudioURL = nil, "", ""
+	} else if _, hasVoice := r.Form[formKeyExplicitVoice]; hasVoice {
+		newVoice := book.SanitizeRelativeMediaPath(r.FormValue(formKeyExplicitVoice))
 		if book.HasConditionalVoiceDirectives(target.Text) {
 			secKey := activeVoiceSectionKeyForRequest(s, target, r)
 			book.ExtractSceneVoiceSections(target, b)
@@ -320,32 +408,29 @@ func applySceneFormFields(s *state.AppState, target *book.Scene, r *http.Request
 			}
 		} else {
 			if newVoice != target.ExplicitVoice {
-				target.VoiceTrimStart = 0
-				target.VoiceTrimEnd = 0
+				target.VoiceTrimStart, target.VoiceTrimEnd = 0, 0
 			}
 			target.ExplicitVoice = newVoice
 			if target.ExplicitVoice == "" {
-				target.AudioFile = ""
-				target.AudioURL = ""
+				target.AudioFile, target.AudioURL = "", ""
 			}
 		}
 	}
 	chapterChanged := false
-	act := strings.TrimSpace(r.FormValue("action"))
-	if _, hasChapter := r.Form["chapter"]; hasChapter && act != "CreateSceneAt" && act != "CreateChapterGroup" && act != "SelectStudioChapter" && act != "PromptDeleteChapter" && act != "DeleteChapter" {
-		newCh := book.SanitizePlainText(r.FormValue("chapter"))
+	act := strings.TrimSpace(r.FormValue(formFieldAction))
+	if _, hasChapter := r.Form[formKeyChapter]; hasChapter && act != CreateSceneAt && act != CreateChapterGroup && act != SelectStudioChapter {
+		newCh := book.SanitizePlainText(r.FormValue(formKeyChapter))
 		if !strings.EqualFold(strings.TrimSpace(target.Chapter), newCh) {
 			chapterChanged = true
 		}
 		target.Chapter = newCh
 	}
-	if rawSF := r.FormValue("source_file"); rawSF != "" && !chapterChanged {
-		sf := filepath.Base(book.SanitizePlainText(rawSF))
-		if sf != "" && sf != "." {
+	if rawSF := r.FormValue(formKeySourceFile); rawSF != "" && !chapterChanged {
+		if sf := filepath.Base(book.SanitizePlainText(rawSF)); sf != "" && sf != "." {
 			target.SourceFile = sf
 		}
 	}
-	if chapterChanged && b != nil {
+	if chapterChanged {
 		if chMeta := b.FindChapter(target.Chapter); chMeta != nil {
 			target.ChapterID = chMeta.ExplicitID
 			if target.ChapterID == "" {
@@ -362,56 +447,67 @@ func applySceneFormFields(s *state.AppState, target *book.Scene, r *http.Request
 	if target.SourceFile == "" || target.SourceFile == "." || strings.EqualFold(target.SourceFile, book.DefaultStoryFile) || strings.EqualFold(target.SourceFile, book.BookDataFileName) {
 		target.SourceFile = b.ChapterFileNameFor(target.Chapter, target.ChapterID)
 	}
-	if _, hasExplicitEnd := r.Form["explicit_end"]; hasExplicitEnd {
-		target.ExplicitEnd = r.FormValue("explicit_end") == "true"
+	if _, hasExplicitEnd := r.Form[formKeyExplicitEnd]; hasExplicitEnd {
+		target.ExplicitEnd = r.FormValue(formKeyExplicitEnd) == formValTrue
 	}
 
-	resolveEditedChoiceTarget := func(tgt string) string {
-		tgt = strings.TrimSpace(tgt)
-		if tgt == "" || strings.EqualFold(tgt, "END") || strings.EqualFold(tgt, "Next") || strings.EqualFold(tgt, "Dalej") {
-			return tgt
+	applySceneFormChoices(b, target, r)
+
+	if book.RebindRenamedScene(b, target, oldID, oldName, oldExplicitID) && s.Player.Save != nil {
+		if strings.EqualFold(s.Player.Save.CurrentSceneID, oldID) || strings.EqualFold(s.Player.Save.CurrentSceneID, oldName) || strings.EqualFold(s.Player.Save.CurrentSceneID, oldExplicitID) {
+			s.Player.Save.CurrentSceneID = target.ID
 		}
-		if chRef, isCh := book.ParseChapterTarget(tgt); isCh {
-			if chRef == "__next__" {
-				for _, candCh := range b.Chapters {
-					if ok, _ := b.CanLinkChapters(target.Chapter, candCh.ReferenceKey()); ok {
-						return "chapter:" + candCh.ReferenceKey()
-					}
-				}
-				return ""
-			}
-			if targetCh := b.FindChapter(chRef); targetCh != nil {
-				if ok, _ := b.CanLinkChapters(target.Chapter, targetCh.ReferenceKey()); ok {
-					return "chapter:" + targetCh.ReferenceKey()
+	}
+	if r.FormValue(formKeyIsStartScene) == formValTrue {
+		b.StartSceneID, b.RawStart = target.ID, target.ReferenceKey()
+	}
+}
+
+func resolveEditedChoiceTarget(b *book.Book, target *book.Scene, tgt string) string {
+	tgt = strings.TrimSpace(tgt)
+	if tgt == "" || strings.EqualFold(tgt, formValEND) || strings.EqualFold(tgt, formValNext) || strings.EqualFold(tgt, formValDalej) {
+		return tgt
+	}
+	if chRef, isCh := book.ParseChapterTarget(tgt); isCh {
+		if chRef == formValNextChToken {
+			for _, candCh := range b.Chapters {
+				if ok, _ := b.CanLinkChapters(target.Chapter, candCh.ReferenceKey()); ok {
+					return formValChTargetPref + candCh.ReferenceKey()
 				}
 			}
 			return ""
 		}
-		if destSc := b.FindScene(tgt); destSc != nil {
-			if !strings.EqualFold(strings.TrimSpace(destSc.Chapter), strings.TrimSpace(target.Chapter)) {
-				targetCh := b.FindChapter(destSc.Chapter)
-				if targetCh != nil && strings.EqualFold(destSc.ID, targetCh.StartSceneID) {
-					if ok, _ := b.CanLinkChapters(target.Chapter, targetCh.ReferenceKey()); ok {
-						return "chapter:" + targetCh.ReferenceKey()
-					}
-				}
-				return ""
+		if targetCh := b.FindChapter(chRef); targetCh != nil {
+			if ok, _ := b.CanLinkChapters(target.Chapter, targetCh.ReferenceKey()); ok {
+				return formValChTargetPref + targetCh.ReferenceKey()
 			}
-			if destSc.ExplicitID != "" && strings.EqualFold(tgt, destSc.ExplicitID) {
-				return destSc.ExplicitID
-			}
-			return destSc.ReferenceKey()
 		}
-		return tgt
+		return ""
 	}
+	if destSc := b.FindScene(tgt); destSc != nil {
+		if !strings.EqualFold(strings.TrimSpace(destSc.Chapter), strings.TrimSpace(target.Chapter)) {
+			if targetCh := b.FindChapter(destSc.Chapter); targetCh != nil && strings.EqualFold(destSc.ID, targetCh.StartSceneID) {
+				if ok, _ := b.CanLinkChapters(target.Chapter, targetCh.ReferenceKey()); ok {
+					return formValChTargetPref + targetCh.ReferenceKey()
+				}
+			}
+			return ""
+		}
+		if destSc.ExplicitID != "" && strings.EqualFold(tgt, destSc.ExplicitID) {
+			return destSc.ExplicitID
+		}
+		return destSc.ReferenceKey()
+	}
+	return tgt
+}
 
+func applySceneFormChoices(b *book.Book, target *book.Scene, r *http.Request) {
 	if len(target.Choices) >= 2 {
 		updatedChoices := make([]book.Choice, 0, len(target.Choices))
 		for i, ch := range target.Choices {
-			lblKey := fmt.Sprintf("choice_label_%d", i)
-			tgtKey := fmt.Sprintf("choice_target_%d", i)
-			condKey := fmt.Sprintf("choice_cond_%d", i)
-			effKey := fmt.Sprintf("choice_effects_%d", i)
+			idxStr := strconv.Itoa(i)
+			lblKey, tgtKey := formKeyChoiceLabelPfx+idxStr, formKeyChoiceTargetPfx+idxStr
+			condKey, effKey := formKeyChoiceCondPfx+idxStr, formKeyChoiceEffPfx+idxStr
 			newLbl := ch.Label
 			var inlineTgt string
 			var hasInlineArrow bool
@@ -419,7 +515,7 @@ func applySceneFormFields(s *state.AppState, target *book.Scene, r *http.Request
 				newLbl, inlineTgt, hasInlineArrow = splitInlineChoiceLabelAndTarget(r.FormValue(lblKey))
 			}
 			if newLbl == "" {
-				newLbl = fmt.Sprintf("Wybór %d", i+1)
+				newLbl = fmt.Sprintf(formValWybory, i+1)
 			}
 			newTgt := ch.Target
 			if hasInlineArrow && inlineTgt != "" {
@@ -430,12 +526,11 @@ func applySceneFormFields(s *state.AppState, target *book.Scene, r *http.Request
 			if newTgt == "" {
 				newTgt = ch.TargetSceneID
 			}
-			newTgt = resolveEditedChoiceTarget(newTgt)
+			newTgt = resolveEditedChoiceTarget(b, target, newTgt)
 			if newTgt == "" {
 				newTgt = ch.Target
 			}
-			newCond := ch.Condition
-			showLocked := ch.ShowWhenLocked
+			newCond, showLocked := ch.Condition, ch.ShowWhenLocked
 			if _, ok := r.Form[condKey]; ok {
 				rawCond := book.StripOuterDoubleBraces(r.FormValue(condKey))
 				showLocked = strings.HasPrefix(rawCond, "?")
@@ -450,262 +545,51 @@ func applySceneFormFields(s *state.AppState, target *book.Scene, r *http.Request
 			}
 			if newTgt != "" {
 				updatedChoices = append(updatedChoices, book.Choice{
-					Label:          newLbl,
-					Target:         newTgt,
-					Condition:      newCond,
-					ShowWhenLocked: showLocked,
-					Effects:        newEff,
-					IsEnding:       strings.EqualFold(newTgt, "END"),
+					Label: newLbl, Target: newTgt, Condition: newCond, ShowWhenLocked: showLocked,
+					Effects: newEff, IsEnding: strings.EqualFold(newTgt, formValEND),
 				})
 			}
 		}
-		target.Choices = updatedChoices
-		target.ExplicitNext = ""
-		target.ExplicitEnd = false
-	} else {
-		var prevCond, prevEff string
-		var prevLocked bool
-		if len(target.Choices) == 1 {
-			prevCond = target.Choices[0].Condition
-			prevLocked = target.Choices[0].ShowWhenLocked
-			prevEff = target.Choices[0].Effects
-		}
-		if _, ok := r.Form["choice_cond_0"]; ok {
-			rawCond := book.StripOuterDoubleBraces(r.FormValue("choice_cond_0"))
-			prevLocked = strings.HasPrefix(rawCond, "?")
-			if prevLocked {
-				rawCond = strings.TrimSpace(rawCond[1:])
-			}
-			prevCond = rawCond
-		}
-		if _, ok := r.Form["choice_effects_0"]; ok {
-			prevEff = book.StripOuterDoubleBraces(r.FormValue("choice_effects_0"))
-		}
-		_, inlineTgt0, hasArrow0 := splitInlineChoiceLabelAndTarget(r.FormValue("choice_label_0"))
-		_, hasTgt0 := r.Form["choice_target_0"]
-		if hasTgt0 || (hasArrow0 && inlineTgt0 != "") {
-			tgt := book.SanitizePlainText(r.FormValue("choice_target_0"))
-			if hasArrow0 && inlineTgt0 != "" {
-				tgt = inlineTgt0
-			}
-			tgt = resolveEditedChoiceTarget(tgt)
-			if strings.EqualFold(tgt, "END") || tgt == "" {
-				target.Choices = nil
-				target.ExplicitNext = ""
-				target.ExplicitEnd = true
-			} else {
-				target.ExplicitEnd = false
-				target.ExplicitNext = tgt
-				target.Choices = []book.Choice{
-					{
-						Label:          "Dalej",
-						Target:         tgt,
-						Condition:      prevCond,
-						ShowWhenLocked: prevLocked,
-						Effects:        prevEff,
-						IsImplicit:     true,
-					},
-				}
-			}
-		} else if len(target.Choices) == 1 {
-			target.Choices[0].Condition = prevCond
-			target.Choices[0].ShowWhenLocked = prevLocked
-			target.Choices[0].Effects = prevEff
-		}
+		target.Choices, target.ExplicitNext, target.ExplicitEnd = updatedChoices, "", false
+		return
 	}
 
-	if !strings.EqualFold(oldName, target.Name) || !strings.EqualFold(oldExplicitID, target.ExplicitID) {
-		if target.ExplicitID != "" {
-			target.ID = target.ExplicitID
-		}
-		newID := target.ID
-		newRef := target.ReferenceKey()
-		oldNorm := book.NormalizeLookupKey(oldName)
-		matchesOldRef := func(val string) bool {
-			v := strings.TrimSpace(val)
-			if v == "" {
-				return false
-			}
-			if oldID != "" && strings.EqualFold(v, oldID) {
-				return true
-			}
-			if oldExplicitID != "" && strings.EqualFold(v, oldExplicitID) {
-				return true
-			}
-			if oldName != "" && (strings.EqualFold(v, oldName) || (oldNorm != "" && book.NormalizeLookupKey(v) == oldNorm)) {
-				return true
-			}
-			return false
-		}
-		if b.Layout != nil {
-			var pos book.NodePosition
-			foundPos := false
-			for _, k := range []string{oldExplicitID, strings.ToLower(oldExplicitID), oldName, oldNorm, oldID, strings.ToLower(oldID)} {
-				if k != "" {
-					if found, ok := b.Layout[k]; ok {
-						pos = found
-						foundPos = true
-						break
-					}
-				}
-			}
-			if foundPos {
-				for _, k := range []string{oldExplicitID, strings.ToLower(oldExplicitID), oldName, oldNorm, oldID, strings.ToLower(oldID)} {
-					if k != "" {
-						delete(b.Layout, k)
-					}
-				}
-				book.StoreSceneNodePosition(b, target, pos)
-			}
-		}
-		if b.WirePins != nil && oldID != "" && newID != "" && !strings.EqualFold(oldID, newID) {
-			remappedPins := make(map[string][]book.WirePin, len(b.WirePins))
-			for wk, pins := range b.WirePins {
-				parts := strings.Split(wk, "|")
-				if len(parts) == 3 {
-					if matchesOldRef(parts[0]) {
-						parts[0] = newID
-					}
-					if matchesOldRef(parts[2]) {
-						parts[2] = newID
-					}
-					wk = strings.Join(parts, "|")
-				}
-				remappedPins[wk] = pins
-			}
-			b.WirePins = remappedPins
-		}
-		if b.HasEditorView {
-			if err := book.SaveBookEditorStateToDisk(b); err != nil {
-				b.Warnings = append(b.Warnings, err.Error())
-			}
-		}
-		if matchesOldRef(b.StartSceneID) || matchesOldRef(b.RawStart) {
-			b.RawStart = newRef
-			b.StartSceneID = newID
-		}
-		for i := range b.Chapters {
-			ch := &b.Chapters[i]
-			if matchesOldRef(ch.StartSceneID) || matchesOldRef(ch.ExplicitStart) {
-				if ch.ExplicitStart != "" {
-					ch.ExplicitStart = newRef
-				}
-				ch.StartSceneID = newID
-			}
-		}
-		for _, other := range b.Scenes {
-			if matchesOldRef(other.ExplicitNext) {
-				other.ExplicitNext = newRef
-			}
-			for i := range other.Choices {
-				if !other.Choices[i].IsChapterLink && !strings.EqualFold(other.Choices[i].Target, "Next") && !strings.EqualFold(other.Choices[i].Target, "END") {
-					if matchesOldRef(other.Choices[i].Target) || matchesOldRef(other.Choices[i].TargetSceneID) {
-						other.Choices[i].Target = newRef
-						other.Choices[i].TargetSceneID = newID
-					}
-				} else if other.Choices[i].IsImplicit && matchesOldRef(other.Choices[i].TargetSceneID) {
-					other.Choices[i].TargetSceneID = newID
-				}
-			}
-		}
-		if s.Player.Save != nil && matchesOldRef(s.Player.Save.CurrentSceneID) {
-			s.Player.Save.CurrentSceneID = newID
-		}
+	var prevCond, prevEff string
+	var prevLocked bool
+	if len(target.Choices) == 1 {
+		prevCond, prevLocked, prevEff = target.Choices[0].Condition, target.Choices[0].ShowWhenLocked, target.Choices[0].Effects
 	}
-	if r.FormValue("is_start_scene") == "true" {
-		b.StartSceneID = target.ID
-		b.RawStart = target.ReferenceKey()
-	}
-}
-
-func materializeChoicesForEdit(b *book.Book, sc *book.Scene) []book.Choice {
-	var list []book.Choice
-	for _, ch := range sc.Choices {
-		tgt := ch.Target
-		if ch.IsImplicit && !ch.IsChapterLink && (strings.EqualFold(tgt, "Next") || strings.EqualFold(tgt, "Dalej") || tgt == "") {
-			if tSc := b.FindScene(ch.TargetSceneID); tSc != nil {
-				tgt = tSc.ReferenceKey()
-			}
+	if _, ok := r.Form[formKeyChoiceCond0]; ok {
+		rawCond := book.StripOuterDoubleBraces(r.FormValue(formKeyChoiceCond0))
+		prevLocked = strings.HasPrefix(rawCond, "?")
+		if prevLocked {
+			rawCond = strings.TrimSpace(rawCond[1:])
 		}
-		lbl := ch.Label
-		if lbl == "" {
-			lbl = "Dalej"
+		prevCond = rawCond
+	}
+	if _, ok := r.Form[formKeyChoiceEffects0]; ok {
+		prevEff = book.StripOuterDoubleBraces(r.FormValue(formKeyChoiceEffects0))
+	}
+	_, inlineTgt0, hasArrow0 := splitInlineChoiceLabelAndTarget(r.FormValue(formKeyChoiceLabel0))
+	_, hasTgt0 := r.Form[formKeyChoiceTarget0]
+	if hasTgt0 || (hasArrow0 && inlineTgt0 != "") {
+		tgt := book.SanitizePlainText(r.FormValue(formKeyChoiceTarget0))
+		if hasArrow0 && inlineTgt0 != "" {
+			tgt = inlineTgt0
 		}
-		if tgt != "" {
-			list = append(list, book.Choice{
-				Label:           lbl,
-				Target:          tgt,
-				Condition:       ch.Condition,
-				Effects:         ch.Effects,
-				ShowWhenLocked:  ch.ShowWhenLocked,
-				TargetSceneID:   ch.TargetSceneID,
-				TargetChapterID: ch.TargetChapterID,
-				IsChapterLink:   ch.IsChapterLink,
-				IsEnding:        ch.IsEnding || strings.EqualFold(tgt, "END"),
-			})
+		tgt = resolveEditedChoiceTarget(b, target, tgt)
+		if strings.EqualFold(tgt, formValEND) || tgt == "" {
+			target.Choices, target.ExplicitNext, target.ExplicitEnd = nil, "", true
+		} else {
+			target.ExplicitEnd, target.ExplicitNext = false, tgt
+			target.Choices = []book.Choice{{
+				Label: formValDalej, Target: tgt, Condition: prevCond,
+				ShowWhenLocked: prevLocked, Effects: prevEff, IsImplicit: true,
+			}}
 		}
+	} else if len(target.Choices) == 1 {
+		target.Choices[0].Condition, target.Choices[0].ShowWhenLocked, target.Choices[0].Effects = prevCond, prevLocked, prevEff
 	}
-	return list
-}
-
-func selectStudioScene(s *state.AppState, r *http.Request) string {
-	scID := strings.TrimSpace(r.FormValue("scene"))
-	if found := s.Editor.ActiveBook.FindScene(scID); found != nil {
-		if s.Editor.SelectedSceneID != found.ID {
-			s.Editor.SelectedVoiceSectionKey = "01"
-		}
-		s.Editor.SelectedSceneID = found.ID
-		s.Editor.SelectedChapter = ""
-		if s.Editor.RightPanel == state.PanelBook || s.Editor.RightPanel == state.PanelChapter {
-			s.Editor.RightPanel = state.PanelNone
-		}
-		if s.Editor.SceneText.IsOpen() {
-			s.Editor.SceneText.SyncSceneID(found.ID)
-		}
-	}
-	return ""
-}
-
-func selectPrimaryBranchScene(s *state.AppState, r *http.Request) string {
-	if isHistoryPreview(s) {
-		return tr(s, i18n.TrHistoryPreviewLocked)
-	}
-	b := s.Editor.ActiveBook
-	if b == nil || b.IsPacked {
-		return ""
-	}
-	scID := strings.TrimSpace(r.FormValue("scene"))
-	target := b.FindScene(scID)
-	if target == nil {
-		return "Nie znaleziono sceny"
-	}
-	s.Editor.History.EnsureBaseline(b, s.Editor.SelectedSceneID)
-	for _, sc := range b.Scenes {
-		if len(sc.Choices) >= 2 {
-			sc.Choices = materializeChoicesForEdit(b, sc)
-		}
-	}
-	if !book.PromoteSceneToPrimaryPath(b, target.ID) {
-		r.Form.Set("silent", "true")
-		return ""
-	}
-	return commitScenesMutation(s, "Ustawiono główną ścieżkę (primary): "+target.DisplayName(), "graph", "")
-}
-
-func resolveEditorSceneFromRequest(s *state.AppState, r *http.Request, fallbackActive bool) (string, *book.Scene) {
-	scID := strings.TrimSpace(r.FormValue("scene"))
-	if scID == "" {
-		scID = strings.TrimSpace(r.FormValue("scene_id"))
-	}
-	if fallbackActive {
-		if scID == "" && s.Editor.SceneText.IsOpen() {
-			scID = s.Editor.SceneText.SceneID
-		}
-		if scID == "" {
-			scID = s.Editor.SelectedSceneID
-		}
-	}
-	return scID, s.Editor.ActiveBook.FindScene(scID)
 }
 
 func commitTargetSceneChoicesMutation(s *state.AppState, target *book.Scene, msgPrefix string) string {
@@ -726,7 +610,7 @@ func commitTargetSceneChoicesMutation(s *state.AppState, target *book.Scene, msg
 		s.Editor.SceneText.SyncSceneID(newID)
 	}
 	msg := msgPrefix + target.DisplayName()
-	s.Editor.History.RecordStep(s.Editor.ActiveBook, msg, "graph", "", s.Editor.SelectedSceneID)
+	s.Editor.History.RecordStep(s.Editor.ActiveBook, msg, historyScopeGraph, "", s.Editor.SelectedSceneID)
 	return msg
 }
 
@@ -741,40 +625,12 @@ func addChoiceToScene(s *state.AppState, r *http.Request) string {
 	}
 	_, target := resolveEditorSceneFromRequest(s, r, false)
 	if target == nil {
-		return "Nie znaleziono sceny"
+		return msgSceneNotFound
 	}
-
 	s.Editor.History.EnsureBaseline(b, s.Editor.SelectedSceneID)
 	applySceneFormFields(s, target, r)
-	choices := materializeChoicesForEdit(b, target)
-
-	if len(choices) == 1 && (choices[0].Label == "" || strings.EqualFold(choices[0].Label, "Dalej")) {
-		choices[0].Label = "Wybór 1"
-	}
-	if len(choices) < 2 {
-		for len(choices) < 2 {
-			newLabel := fmt.Sprintf("Wybór %d", len(choices)+1)
-			choices = append(choices, book.Choice{
-				Label:         newLabel,
-				Target:        "END",
-				TargetSceneID: "END",
-				IsEnding:      true,
-			})
-		}
-	} else {
-		newLabel := fmt.Sprintf("Wybór %d", len(choices)+1)
-		choices = append(choices, book.Choice{
-			Label:         newLabel,
-			Target:        "END",
-			TargetSceneID: "END",
-			IsEnding:      true,
-		})
-	}
-	target.Choices = choices
-	target.ExplicitNext = ""
-	target.ExplicitEnd = false
-
-	return commitTargetSceneChoicesMutation(s, target, "Dodano nowy wybór do sceny: ")
+	book.AddChoiceToScene(b, target)
+	return commitTargetSceneChoicesMutation(s, target, msgChoiceAddedPrefix)
 }
 
 func removeChoiceFromScene(s *state.AppState, r *http.Request) string {
@@ -787,16 +643,16 @@ func removeChoiceFromScene(s *state.AppState, r *http.Request) string {
 	}
 	_, target := resolveEditorSceneFromRequest(s, r, false)
 	if target == nil {
-		return "Nie znaleziono sceny"
+		return msgSceneNotFound
 	}
-	choiceIdx, err := strconv.Atoi(strings.TrimSpace(r.FormValue("choice_idx")))
+	choiceIdx, err := strconv.Atoi(strings.TrimSpace(r.FormValue(formKeyChoiceIdx)))
 	if err != nil {
 		return ""
 	}
-
 	s.Editor.History.EnsureBaseline(b, s.Editor.SelectedSceneID)
 	applySceneFormFields(s, target, r)
-	return removeChoiceOnTarget(s, target, choiceIdx)
+	book.RemoveChoiceFromScene(b, target, choiceIdx)
+	return commitTargetSceneChoicesMutation(s, target, msgChoiceRemovedPrefix)
 }
 
 func removeChoiceBySceneAndIndex(s *state.AppState, scID string, choiceIdx int) string {
@@ -809,40 +665,11 @@ func removeChoiceBySceneAndIndex(s *state.AppState, scID string, choiceIdx int) 
 	}
 	target := b.FindScene(scID)
 	if target == nil {
-		return "Nie znaleziono sceny"
+		return msgSceneNotFound
 	}
 	s.Editor.History.EnsureBaseline(b, s.Editor.SelectedSceneID)
-	return removeChoiceOnTarget(s, target, choiceIdx)
-}
-
-func removeChoiceOnTarget(s *state.AppState, target *book.Scene, choiceIdx int) string {
-	choices := materializeChoicesForEdit(s.Editor.ActiveBook, target)
-	if choiceIdx >= 0 && choiceIdx < len(choices) {
-		choices = append(choices[:choiceIdx], choices[choiceIdx+1:]...)
-	}
-	if len(choices) == 1 {
-		if choices[0].IsEnding || strings.EqualFold(choices[0].Target, "END") {
-			target.Choices = nil
-			target.ExplicitNext = ""
-			target.ExplicitEnd = true
-		} else {
-			choices[0].Label = "Dalej"
-			choices[0].IsImplicit = true
-			target.ExplicitNext = choices[0].Target
-			target.Choices = choices
-			target.ExplicitEnd = false
-		}
-	} else if len(choices) == 0 {
-		target.Choices = nil
-		target.ExplicitNext = ""
-		target.ExplicitEnd = true
-	} else {
-		target.Choices = choices
-		target.ExplicitNext = ""
-		target.ExplicitEnd = false
-	}
-
-	return commitTargetSceneChoicesMutation(s, target, "Usunięto wybór ze sceny: ")
+	book.RemoveChoiceFromScene(b, target, choiceIdx)
+	return commitTargetSceneChoicesMutation(s, target, msgChoiceRemovedPrefix)
 }
 
 func reorderChoiceOnScene(s *state.AppState, r *http.Request) string {
@@ -856,35 +683,19 @@ func reorderChoiceOnScene(s *state.AppState, r *http.Request) string {
 	}
 	_, target := resolveEditorSceneFromRequest(s, r, true)
 	if target == nil {
-		return "Nie znaleziono sceny"
+		return msgSceneNotFound
 	}
-	fromIdx, err1 := strconv.Atoi(strings.TrimSpace(r.FormValue("from_idx")))
-	toIdx, err2 := strconv.Atoi(strings.TrimSpace(r.FormValue("to_idx")))
+	fromIdx, err1 := strconv.Atoi(strings.TrimSpace(r.FormValue(formKeyFromIdx)))
+	toIdx, err2 := strconv.Atoi(strings.TrimSpace(r.FormValue(formKeyToIdx)))
 	if err1 != nil || err2 != nil || fromIdx == toIdx {
 		return ""
 	}
-
 	s.Editor.History.EnsureBaseline(b, s.Editor.SelectedSceneID)
 	applySceneFormFields(s, target, r)
-	choices := materializeChoicesForEdit(b, target)
-	if len(choices) < 2 || fromIdx < 0 || fromIdx >= len(choices) || toIdx < 0 || toIdx >= len(choices) {
+	if !book.ReorderSceneChoice(b, target, fromIdx, toIdx) {
 		return ""
 	}
-
-	moved := choices[fromIdx]
-	without := make([]book.Choice, 0, len(choices)-1)
-	without = append(without, choices[:fromIdx]...)
-	without = append(without, choices[fromIdx+1:]...)
-
-	reordered := make([]book.Choice, 0, len(choices))
-	reordered = append(reordered, without[:toIdx]...)
-	reordered = append(reordered, moved)
-	reordered = append(reordered, without[toIdx:]...)
-	target.Choices = reordered
-	target.ExplicitNext = ""
-	target.ExplicitEnd = false
-
-	return commitTargetSceneChoicesMutation(s, target, "Zmieniono kolejność wyborów: ")
+	return commitTargetSceneChoicesMutation(s, target, msgChoiceReorderedPrefix)
 }
 
 func branchSceneFromChoice(s *state.AppState, r *http.Request) string {
@@ -897,67 +708,20 @@ func branchSceneFromChoice(s *state.AppState, r *http.Request) string {
 	}
 	_, target := resolveEditorSceneFromRequest(s, r, false)
 	if target == nil {
-		return "Nie znaleziono sceny"
+		return msgSceneNotFound
 	}
-	choiceIdx, err := strconv.Atoi(strings.TrimSpace(r.FormValue("choice_idx")))
+	choiceIdx, err := strconv.Atoi(strings.TrimSpace(r.FormValue(formKeyChoiceIdx)))
 	if err != nil {
 		choiceIdx = -1
 	}
-
 	s.Editor.History.EnsureBaseline(b, s.Editor.SelectedSceneID)
 	applySceneFormFields(s, target, r)
-	choices := materializeChoicesForEdit(b, target)
-
-	newName := book.NextUniqueSceneName(b)
-	allocID := b.NextUniqueAutoSceneID(nil)
-	b.BindAutoSceneID(newName, allocID)
-	newScene := &book.Scene{
-		ID:         allocID,
-		ExplicitID: allocID,
-		Name:       newName,
-		Chapter:    target.Chapter,
-		Text:       "Nowy fragment opowieści...",
-		SourceFile: target.SourceFile,
+	newScene, brErr := book.BranchChoiceToNewScene(b, target, choiceIdx)
+	if brErr != nil {
+		return brErr.Error()
 	}
-
-	if choiceIdx >= 0 && choiceIdx < len(choices) {
-		choices[choiceIdx].Target = newScene.Name
-		choices[choiceIdx].IsEnding = false
-		if strings.TrimSpace(choices[choiceIdx].Label) == "" {
-			choices[choiceIdx].Label = "Dalej"
-		}
-	} else {
-		choices = append(choices, book.Choice{
-			Label:  fmt.Sprintf("Wybór %d", len(choices)+1),
-			Target: newScene.Name,
-		})
-	}
-	target.Choices = choices
-	target.ExplicitEnd = false
-	if len(choices) == 1 {
-		target.ExplicitNext = newScene.Name
-	}
-
-	parentIdx := len(b.Scenes) - 1
-	for i, sc := range b.Scenes {
-		if sc.ID == target.ID {
-			parentIdx = i
-			break
-		}
-	}
-	insertPos := parentIdx + 1
-	b.Scenes = append(b.Scenes[:insertPos], append([]*book.Scene{newScene}, b.Scenes[insertPos:]...)...)
-
-	book.FinalizeBook(b)
-	book.StoreSceneNodePosition(b, newScene, book.NodePosition{
-		Row:   newScene.Row,
-		Col:   newScene.Col,
-		X:     newScene.X,
-		Y:     newScene.Y,
-		HasXY: true,
-	})
-	if err := book.SaveBookScenesToDisk(b); err != nil {
-		return err.Error()
+	if newScene == nil {
+		return ""
 	}
 	reloadActiveBook(s)
 	s.Editor.SelectedChapter = ""
@@ -972,8 +736,8 @@ func branchSceneFromChoice(s *state.AppState, r *http.Request) string {
 	} else {
 		s.Editor.SelectedSceneID = newScene.ID
 	}
-	msg := "Utworzono scenę docelową: " + newScene.Name
-	s.Editor.History.RecordStep(s.Editor.ActiveBook, msg, "graph", "", s.Editor.SelectedSceneID)
+	msg := msgChoiceBranchedPrefix + newScene.Name
+	s.Editor.History.RecordStep(s.Editor.ActiveBook, msg, historyScopeGraph, "", s.Editor.SelectedSceneID)
 	return msg
 }
 
@@ -981,7 +745,7 @@ func autoSaveSceneAction(s *state.AppState, r *http.Request) string {
 	if isHistoryPreview(s) {
 		return ""
 	}
-	if msg := saveSceneFromFormWithMode(s, r, true); msg != "" && !strings.HasPrefix(msg, "Zapisano zmiany w pliku ") && msg != "Nie znaleziono sceny" {
+	if msg := saveSceneFromFormWithMode(s, r, true); msg != "" && !strings.HasPrefix(msg, msgSavedInFilePrefix) && msg != msgSceneNotFound {
 		return msg
 	}
 	return ""
@@ -991,7 +755,7 @@ func saveSceneAction(s *state.AppState, r *http.Request) string {
 	if isHistoryPreview(s) {
 		return tr(s, i18n.TrHistoryPreviewLocked)
 	}
-	if msg := saveSceneFromForm(s, r); msg != "" && !strings.HasPrefix(msg, "Zapisano zmiany w pliku ") && msg != "Nie znaleziono sceny" {
+	if msg := saveSceneFromForm(s, r); msg != "" && !strings.HasPrefix(msg, msgSavedInFilePrefix) && msg != msgSceneNotFound {
 		return msg
 	}
 	return ""
@@ -1012,7 +776,7 @@ func saveSceneFromFormWithMode(s *state.AppState, r *http.Request, isAutoSave bo
 	if b == nil {
 		return ""
 	}
-	scID := strings.TrimSpace(r.FormValue("scene_id"))
+	scID := strings.TrimSpace(r.FormValue(formKeySceneID))
 	var target *book.Scene
 	if scID != "" {
 		target = b.FindScene(scID)
@@ -1027,16 +791,13 @@ func saveSceneFromFormWithMode(s *state.AppState, r *http.Request, isAutoSave bo
 		target = b.FindScene(s.Editor.SelectedSceneID)
 	}
 	if target == nil {
-		return "Nie znaleziono sceny"
+		return msgSceneNotFound
 	}
 	prevTargetID := target.ID
-
 	s.Editor.History.EnsureBaseline(b, s.Editor.SelectedSceneID)
 	applySceneFormFields(s, target, r)
-
 	book.FinalizeBook(b)
-	newID := target.ID
-	targetLabel := target.DisplayName()
+	newID, targetLabel := target.ID, target.DisplayName()
 	if err := book.SaveBookScenesToDisk(b); err != nil {
 		return err.Error()
 	}
@@ -1051,13 +812,13 @@ func saveSceneFromFormWithMode(s *state.AppState, r *http.Request, isAutoSave bo
 		}
 	}
 	coalesceKey := ""
-	if r != nil && r.FormValue("action") == "UndoEditor" {
-		coalesceKey = "major"
+	if r != nil && r.FormValue(formFieldAction) == UndoEditor {
+		coalesceKey = coalesceMajor
 	} else if newID != "" {
-		coalesceKey = "autosave:" + newID
+		coalesceKey = coalesceAutoSavePref + newID
 	}
-	s.Editor.History.RecordStep(s.Editor.ActiveBook, "Edycja sceny: "+targetLabel, "scene", coalesceKey, s.Editor.SelectedSceneID)
-	return "Zapisano zmiany w pliku " + target.SourceFile
+	s.Editor.History.RecordStep(s.Editor.ActiveBook, msgEditScenePrefix+targetLabel, historyScopeScene, coalesceKey, s.Editor.SelectedSceneID)
+	return msgSavedInFilePrefix + target.SourceFile
 }
 
 func finishInsertedScene(s *state.AppState, inserted *book.Scene, err error) string {
@@ -1080,8 +841,8 @@ func finishInsertedScene(s *state.AppState, inserted *book.Scene, err error) str
 	if s.Editor.SceneText.IsOpen() {
 		s.Editor.SceneText.SyncSceneID(s.Editor.SelectedSceneID)
 	}
-	toast := "Wstawiono nową scenę: " + inserted.Name
-	s.Editor.History.RecordStep(s.Editor.ActiveBook, toast, "graph", "", s.Editor.SelectedSceneID)
+	toast := msgSceneInsertedPrefix + inserted.Name
+	s.Editor.History.RecordStep(s.Editor.ActiveBook, toast, historyScopeGraph, "", s.Editor.SelectedSceneID)
 	return toast
 }
 
@@ -1094,13 +855,12 @@ func insertScene(s *state.AppState, r *http.Request) string {
 		return ""
 	}
 	s.Editor.History.EnsureBaseline(b, s.Editor.SelectedSceneID)
-	parentID := strings.TrimSpace(r.FormValue("parent"))
-	childID := strings.TrimSpace(r.FormValue("child"))
+	parentID := strings.TrimSpace(r.FormValue(formKeyParent))
+	childID := strings.TrimSpace(r.FormValue(formKeyChild))
 	if parentID == "" && len(b.Scenes) > 0 {
 		parentID = b.Scenes[len(b.Scenes)-1].ID
 	}
-	newName := book.NextUniqueSceneName(b)
-	inserted, err := book.InsertSceneBetween(b, parentID, childID, newName)
+	inserted, err := book.InsertSceneBetween(b, parentID, childID, book.NextUniqueSceneName(b))
 	return finishInsertedScene(s, inserted, err)
 }
 
@@ -1113,15 +873,14 @@ func insertSceneBefore(s *state.AppState, r *http.Request) string {
 		return ""
 	}
 	s.Editor.History.EnsureBaseline(b, s.Editor.SelectedSceneID)
-	targetID := strings.TrimSpace(r.FormValue("target"))
+	targetID := strings.TrimSpace(r.FormValue(formKeyTarget))
 	if targetID == "" {
-		targetID = strings.TrimSpace(r.FormValue("before"))
+		targetID = strings.TrimSpace(r.FormValue(formKeyBefore))
 	}
 	if targetID == "" {
-		targetID = strings.TrimSpace(r.FormValue("scene"))
+		targetID = strings.TrimSpace(r.FormValue(formKeyScene))
 	}
-	newName := book.NextUniqueSceneName(b)
-	inserted, err := book.InsertSceneBefore(b, targetID, newName)
+	inserted, err := book.InsertSceneBefore(b, targetID, book.NextUniqueSceneName(b))
 	return finishInsertedScene(s, inserted, err)
 }
 
@@ -1130,41 +889,41 @@ func createSceneAt(s *state.AppState, r *http.Request) string {
 		return tr(s, i18n.TrHistoryPreviewLocked)
 	}
 	if s.Editor.ActiveBook == nil && !s.Config.StandaloneMode {
-		if createdBook, err := book.CreateNewBook(s.Config.BooksDir, "Nowa Opowieść", "Autor", false); err == nil && createdBook != nil {
+		if createdBook, err := book.CreateNewBook(s.Config.BooksDir, msgDefaultBookTitle, msgDefaultBookAuthor, false); err == nil && createdBook != nil {
 			s.Library.Put(createdBook)
 			s.Editor.SetBook(createdBook, s.Settings)
 			_ = s.SaveSettings()
 		}
 	}
-	toast := ""
 	b := s.Editor.ActiveBook
-	if b != nil && !b.IsPacked {
-		s.Editor.History.EnsureBaseline(b, s.Editor.SelectedSceneID)
-		x, errX := strconv.Atoi(strings.TrimSpace(r.FormValue("x")))
-		y, errY := strconv.Atoi(strings.TrimSpace(r.FormValue("y")))
-		hasCoords := errX == nil && errY == nil
-		targetCh := strings.TrimSpace(r.FormValue("chapter"))
-		newName := book.NextUniqueSceneName(b)
-		if created, err := book.CreateStandaloneSceneInChapter(b, newName, targetCh, x, y, hasCoords); err == nil && created != nil {
-			reloadActiveBook(s)
-			if found := s.Editor.ActiveBook.FindScene(created.Name); found != nil {
-				s.Editor.SelectedSceneID = found.ID
-			} else {
-				s.Editor.SelectedSceneID = created.ID
-			}
-			s.Editor.SelectedChapter = ""
-			if s.Editor.RightPanel == state.PanelBook || s.Editor.RightPanel == state.PanelChapter {
-				s.Editor.RightPanel = state.PanelNone
-			}
-			if s.Editor.SceneText.IsOpen() {
-				s.Editor.SceneText.SyncSceneID(s.Editor.SelectedSceneID)
-			}
-			toast = "Dodano nową scenę: " + created.Name
-			s.Editor.History.RecordStep(s.Editor.ActiveBook, toast, "graph", "", s.Editor.SelectedSceneID)
-		} else if err != nil {
-			toast = err.Error()
-		}
+	if b == nil || b.IsPacked {
+		return ""
 	}
+	s.Editor.History.EnsureBaseline(b, s.Editor.SelectedSceneID)
+	x, errX := strconv.Atoi(strings.TrimSpace(r.FormValue(formKeyX)))
+	y, errY := strconv.Atoi(strings.TrimSpace(r.FormValue(formKeyY)))
+	created, err := book.CreateStandaloneSceneInChapter(b, book.NextUniqueSceneName(b), strings.TrimSpace(r.FormValue(formKeyChapter)), x, y, errX == nil && errY == nil)
+	if err != nil {
+		return err.Error()
+	}
+	if created == nil {
+		return ""
+	}
+	reloadActiveBook(s)
+	if found := s.Editor.ActiveBook.FindScene(created.Name); found != nil {
+		s.Editor.SelectedSceneID = found.ID
+	} else {
+		s.Editor.SelectedSceneID = created.ID
+	}
+	s.Editor.SelectedChapter = ""
+	if s.Editor.RightPanel == state.PanelBook || s.Editor.RightPanel == state.PanelChapter {
+		s.Editor.RightPanel = state.PanelNone
+	}
+	if s.Editor.SceneText.IsOpen() {
+		s.Editor.SceneText.SyncSceneID(s.Editor.SelectedSceneID)
+	}
+	toast := msgSceneCreatedAtPrefix + created.Name
+	s.Editor.History.RecordStep(s.Editor.ActiveBook, toast, historyScopeGraph, "", s.Editor.SelectedSceneID)
 	return toast
 }
 
@@ -1172,7 +931,7 @@ func deleteSceneFromForm(s *state.AppState, r *http.Request) string {
 	if isHistoryPreview(s) {
 		return tr(s, i18n.TrHistoryPreviewLocked)
 	}
-	targetID := strings.TrimSpace(r.FormValue("scene"))
+	targetID := strings.TrimSpace(r.FormValue(formKeyScene))
 	if targetID == "" {
 		targetID = s.Editor.SelectedSceneID
 	}
@@ -1183,12 +942,12 @@ func deleteScenesFromForm(s *state.AppState, r *http.Request) string {
 	if isHistoryPreview(s) {
 		return tr(s, i18n.TrHistoryPreviewLocked)
 	}
-	rawIDs := strings.TrimSpace(r.FormValue("scenes"))
+	rawIDs := strings.TrimSpace(r.FormValue(formKeyScenes))
 	if rawIDs == "" {
-		rawIDs = strings.TrimSpace(r.FormValue("scene_ids"))
+		rawIDs = strings.TrimSpace(r.FormValue(formKeySceneIDs))
 	}
 	if rawIDs == "" {
-		rawIDs = strings.TrimSpace(r.FormValue("scene"))
+		rawIDs = strings.TrimSpace(r.FormValue(formKeyScene))
 	}
 	return deleteScenesByIDs(s, rawIDs)
 }
@@ -1198,66 +957,18 @@ func deleteSceneByID(s *state.AppState, sceneID string) string {
 		return tr(s, i18n.TrHistoryPreviewLocked)
 	}
 	b := s.Editor.ActiveBook
-	if b == nil || len(b.Scenes) <= 1 {
-		return "Książka musi zawierać przynajmniej jedną scenę"
-	}
-	delIdx := -1
-	var delName string
-	var delLabel string
-	for i, sc := range b.Scenes {
-		if sc.ID == sceneID {
-			delIdx = i
-			delName = sc.Name
-			delLabel = sc.DisplayName()
-			break
-		}
-	}
-	if delIdx < 0 {
+	if b == nil {
 		return ""
 	}
 	s.Editor.History.EnsureBaseline(b, s.Editor.SelectedSceneID)
-	if delSc := b.Scenes[delIdx]; delSc != nil {
-		b.UnbindAutoSceneName(delSc.Name)
-		b.RetireSceneID(delSc.ID, delSc.ExplicitID)
-	}
-	b.Scenes = append(b.Scenes[:delIdx], b.Scenes[delIdx+1:]...)
-	delete(b.Layout, sceneID)
-
-	if strings.EqualFold(b.StartSceneID, sceneID) || (delName != "" && strings.EqualFold(b.RawStart, delName)) {
-		b.RawStart = b.Scenes[0].ReferenceKey()
-		b.StartSceneID = b.Scenes[0].ID
-	}
-	for i := range b.Chapters {
-		ch := &b.Chapters[i]
-		if strings.EqualFold(ch.StartSceneID, sceneID) ||
-			strings.EqualFold(ch.ExplicitStart, sceneID) ||
-			(delName != "" && strings.EqualFold(ch.ExplicitStart, delName)) {
-			ch.ExplicitStart = ""
-		}
-	}
-
-	for _, sc := range b.Scenes {
-		var kept []book.Choice
-		for _, ch := range sc.Choices {
-			if !ch.IsImplicit && (ch.TargetSceneID == sceneID || (delName != "" && strings.EqualFold(ch.Target, delName))) {
-				continue
-			}
-			kept = append(kept, ch)
-		}
-		sc.Choices = kept
-	}
-
-	book.FinalizeBook(b)
-	if err := book.SaveBookScenesToDisk(b); err != nil {
+	deleted, err := book.DeleteScenesByIDs(b, sceneID, false)
+	if err != nil {
 		return err.Error()
 	}
-	reloadActiveBook(s)
-	if len(s.Editor.ActiveBook.Scenes) > 0 {
-		s.Editor.SelectedSceneID = s.Editor.ActiveBook.Scenes[0].ID
+	if len(deleted) == 0 {
+		return msgSceneNotFound
 	}
-	msg := "Usunięto scenę: " + delLabel
-	s.Editor.History.RecordStep(s.Editor.ActiveBook, msg, "graph", "", s.Editor.SelectedSceneID)
-	return msg
+	return finalizeScenesDeletion(s, deleted)
 }
 
 func deleteScenesByIDs(s *state.AppState, rawIDs string) string {
@@ -1265,121 +976,35 @@ func deleteScenesByIDs(s *state.AppState, rawIDs string) string {
 		return tr(s, i18n.TrHistoryPreviewLocked)
 	}
 	b := s.Editor.ActiveBook
-	if b == nil || len(b.Scenes) == 0 {
+	if b == nil {
 		return ""
 	}
-	toDeleteIDs := make(map[string]bool)
-	toDeleteExplicitIDs := make(map[string]bool)
-	toDeleteNames := make(map[string]bool)
-	var deletedScenes []*book.Scene
-
-	for _, part := range strings.Split(rawIDs, ",") {
-		idPart := strings.TrimSpace(part)
-		if idPart == "" {
-			continue
-		}
-		if sc := b.FindScene(idPart); sc != nil && !toDeleteIDs[sc.ID] {
-			toDeleteIDs[sc.ID] = true
-			if sc.ExplicitID != "" {
-				toDeleteExplicitIDs[strings.ToLower(strings.TrimSpace(sc.ExplicitID))] = true
-			}
-			if sc.Name != "" {
-				toDeleteNames[book.NormalizeLookupKey(sc.Name)] = true
-			}
-			deletedScenes = append(deletedScenes, sc)
-		}
-	}
-	if len(deletedScenes) == 0 {
-		return ""
-	}
-	if len(deletedScenes) == 1 {
-		return deleteSceneByID(s, deletedScenes[0].ID)
-	}
-
 	s.Editor.History.EnsureBaseline(b, s.Editor.SelectedSceneID)
-	firstChapter := b.Scenes[0].Chapter
-	firstChapterID := b.Scenes[0].ChapterID
-	firstSourceFile := b.Scenes[0].SourceFile
-	if firstSourceFile == "" || strings.EqualFold(firstSourceFile, book.DefaultStoryFile) || strings.EqualFold(firstSourceFile, book.BookDataFileName) {
-		firstSourceFile = b.ChapterFileNameFor(firstChapter, firstChapterID)
-	}
-
-	var remaining []*book.Scene
-	for _, sc := range b.Scenes {
-		if !toDeleteIDs[sc.ID] {
-			remaining = append(remaining, sc)
-		}
-	}
-
-	for _, sc := range deletedScenes {
-		b.UnbindAutoSceneName(sc.Name)
-		b.RetireSceneID(sc.ID, sc.ExplicitID)
-		delete(b.Layout, sc.ID)
-		if sc.ExplicitID != "" {
-			delete(b.Layout, sc.ExplicitID)
-			delete(b.Layout, strings.ToLower(sc.ExplicitID))
-		}
-		if sc.Name != "" {
-			delete(b.Layout, sc.Name)
-			delete(b.Layout, book.NormalizeLookupKey(sc.Name))
-		}
-	}
-
-	if len(remaining) == 0 {
-		fallback := &book.Scene{
-			Name:        "Nowa scena 1",
-			Chapter:     firstChapter,
-			ChapterID:   firstChapterID,
-			Text:        "Nowy fragment opowieści...",
-			SourceFile:  firstSourceFile,
-			ExplicitEnd: true,
-		}
-		remaining = []*book.Scene{fallback}
-	}
-
-	b.Scenes = remaining
-
-	for _, sc := range b.Scenes {
-		if sc.ExplicitNext != "" {
-			nextTrim := strings.TrimSpace(sc.ExplicitNext)
-			nextLower := strings.ToLower(nextTrim)
-			nextNorm := book.NormalizeLookupKey(nextTrim)
-			if toDeleteIDs[nextTrim] || (nextLower != "" && toDeleteExplicitIDs[nextLower]) || (nextNorm != "" && toDeleteNames[nextNorm]) {
-				sc.ExplicitNext = ""
-			}
-		}
-		var kept []book.Choice
-		for _, ch := range sc.Choices {
-			tgtTrim := strings.TrimSpace(ch.Target)
-			tgtLower := strings.ToLower(tgtTrim)
-			tgtNorm := book.NormalizeLookupKey(tgtTrim)
-			if !ch.IsImplicit && (toDeleteIDs[ch.TargetSceneID] || toDeleteIDs[tgtTrim] || (tgtLower != "" && toDeleteExplicitIDs[tgtLower]) || (tgtNorm != "" && toDeleteNames[tgtNorm])) {
-				continue
-			}
-			kept = append(kept, ch)
-		}
-		sc.Choices = kept
-	}
-
-	if rawStart := strings.TrimSpace(b.RawStart); rawStart != "" {
-		rawLower := strings.ToLower(rawStart)
-		rawNorm := book.NormalizeLookupKey(rawStart)
-		if toDeleteIDs[b.StartSceneID] || toDeleteIDs[rawStart] || toDeleteExplicitIDs[rawLower] || (rawNorm != "" && toDeleteNames[rawNorm]) {
-			b.RawStart = b.Scenes[0].ReferenceKey()
-			b.StartSceneID = b.Scenes[0].ID
-		}
-	}
-
-	book.FinalizeBook(b)
-	if err := book.SaveBookScenesToDisk(b); err != nil {
+	deleted, err := book.DeleteScenesByIDs(b, rawIDs, true)
+	if err != nil {
 		return err.Error()
 	}
-	reloadActiveBook(s)
-	if len(s.Editor.ActiveBook.Scenes) > 0 {
-		s.Editor.SelectedSceneID = s.Editor.ActiveBook.Scenes[0].ID
+	if len(deleted) == 0 {
+		return ""
 	}
-	msg := fmt.Sprintf("Usunięto zaznaczone sceny (%d)", len(deletedScenes))
-	s.Editor.History.RecordStep(s.Editor.ActiveBook, msg, "graph", "", s.Editor.SelectedSceneID)
+	return finalizeScenesDeletion(s, deleted)
+}
+
+func finalizeScenesDeletion(s *state.AppState, deleted []*book.Scene) string {
+	reloadActiveBook(s)
+	b := s.Editor.ActiveBook
+	s.Editor.SelectedSceneID = b.StartSceneID
+	if b.FindScene(s.Editor.SelectedSceneID) == nil && len(b.Scenes) > 0 {
+		s.Editor.SelectedSceneID = b.Scenes[0].ID
+	}
+	if s.Editor.SceneText.IsOpen() && b.FindScene(s.Editor.SceneText.SceneID) == nil {
+		s.Editor.SceneText.Close()
+	}
+	msg := fmt.Sprintf(msgScenesDeletedMultiFmt, len(deleted))
+	if len(deleted) == 1 {
+		msg = fmt.Sprintf(msgSceneDeletedFmt, deleted[0].DisplayName())
+	}
+	s.Editor.History.RecordStep(s.Editor.ActiveBook, msg, historyScopeGraph, "", s.Editor.SelectedSceneID)
 	return msg
 }
 
@@ -1405,89 +1030,86 @@ func applySluglineTokenAction(s *state.AppState, r *http.Request) string {
 		return ""
 	}
 	b := s.Editor.ActiveBook
-
 	info := book.ParseSlugline(target.Slugline)
 	prefix := info.IntExt
 	if prefix == "" {
 		if defInfo := book.ParseSlugline(book.DefaultSluglineForStandard(b.NormalizedStandard())); defInfo.IntExt != "" {
 			prefix = defInfo.IntExt
 		} else {
-			prefix = "WN."
+			prefix = slugDefaultPrefixPL
 		}
 	}
-	loc := info.Location
+	loc, tod := info.Location, info.TimeOfDay
 	if loc == "" {
-		if b.NormalizedStandard() == "pl" {
-			loc = "LOKACJA"
+		if b.NormalizedStandard() == formValLangPL {
+			loc = slugDefaultLocPL
 		} else {
-			loc = "LOCATION"
+			loc = slugDefaultLocEN
 		}
 	}
-	tod := info.TimeOfDay
 	if tod == "" {
-		if b.NormalizedStandard() == "pl" {
-			tod = "DZIEŃ"
+		if b.NormalizedStandard() == formValLangPL {
+			tod = slugDefaultTimePL
 		} else {
-			tod = "DAY"
+			tod = slugDefaultTimeEN
 		}
 	}
-
-	if newPrefix := strings.ToUpper(strings.TrimSpace(r.FormValue("prefix"))); newPrefix != "" {
+	if newPrefix := strings.ToUpper(strings.TrimSpace(r.FormValue(formKeyPrefix))); newPrefix != "" {
 		prefix = newPrefix
 	}
-	if newTime := strings.ToUpper(strings.TrimSpace(r.FormValue("time"))); newTime != "" {
+	if newTime := strings.ToUpper(strings.TrimSpace(r.FormValue(formKeyTime))); newTime != "" {
 		tod = newTime
 	}
-	target.Slugline = fmt.Sprintf("%s %s - %s", prefix, loc, tod)
-	return commitScenesMutation(s, "Zaktualizowano nagłówek sceny: "+target.Slugline, "scene", "slugline:"+target.ID)
+	target.Slugline = fmt.Sprintf(slugFormatStr, prefix, loc, tod)
+	return commitScenesMutation(s, msgSluglineUpdatedPrefix+target.Slugline, historyScopeScene, coalesceSluglinePref+target.ID)
 }
 
 func insertScreenplayBlockAction(s *state.AppState, r *http.Request) string {
+	if isHistoryPreview(s) {
+		return tr(s, i18n.TrHistoryPreviewLocked)
+	}
 	target := prepareScreenplaySceneEdit(s, r)
 	if target == nil {
 		return ""
 	}
-	b := s.Editor.ActiveBook
-
-	isPL := b.NormalizedStandard() == "pl"
-	kind := strings.ToLower(strings.TrimSpace(r.FormValue("kind")))
-	charName := strings.ToUpper(strings.TrimSpace(book.SanitizePlainText(r.FormValue("character"))))
-
-	snippet := ""
+	isPL := s.Editor.ActiveBook.NormalizedStandard() == formValLangPL
+	kind := strings.ToLower(strings.TrimSpace(r.FormValue(formKeyKind)))
+	charName := strings.ToUpper(strings.TrimSpace(book.SanitizePlainText(r.FormValue(formKeyCharacter))))
+	var snippet string
 	switch {
 	case charName != "":
-		snippet = "\n\n" + charName + "\nKwestia dialogowa..."
-	case kind == "dialogue":
-		snippet = "\n\nPOSTAĆ\nKwestia dialogowa..."
-	case kind == "parenthetical":
-		snippet = "\n(cicho)\n"
-	case kind == "action":
-		snippet = "\n\nOpis akcji..."
-	case kind == "dialogue_off":
+		snippet = "\n\n" + charName + snippetDialogueLine
+	case kind == formValDialogue:
+		snippet = snippetDialogueFull
+	case kind == formValParenthetical:
+		snippet = snippetParen
+	case kind == formValAction:
+		snippet = snippetAction
+	case kind == formValDialogueOff:
 		if isPL {
-			snippet = "\n\nPOSTAĆ (OFF)\nKwestia spoza kadru..."
+			snippet = snippetOffPL
 		} else {
-			snippet = "\n\nPOSTAĆ (O.S.)\nKwestia spoza kadru..."
+			snippet = snippetOffEN
 		}
-	case kind == "dialogue_vo":
-		snippet = "\n\nPOSTAĆ (V.O.)\nKwestia narratora..."
-	case kind == "transition_cut":
+	case kind == formValDialogueVO:
+		snippet = snippetVO
+	case kind == formValTransitionCut:
 		if isPL {
-			snippet = "\n\n> CIĘCIE DO:\n"
+			snippet = snippetCutPL
 		} else {
-			snippet = "\n\n> CUT TO:\n"
+			snippet = snippetCutEN
 		}
-	case kind == "transition_fade":
+	case kind == formValTransitionFade:
 		if isPL {
-			snippet = "\n\n> ŚCIEMNIENIE.\n"
+			snippet = snippetFadePL
 		} else {
-			snippet = "\n\n> FADE OUT.\n"
+			snippet = snippetFadeEN
 		}
-	case kind == "subslug":
+	case kind == formValSubslug:
 		if isPL {
-			snippet = "\n\nWN. LOKACJA - CIĄG DALSZY\n"
+			snippet = snippetSubslugPL
 		} else {
-			snippet = "\n\nINT. LOCATION - CONTINUOUS\n"
+			snippet = snippetSubslugEN
 		}
 	}
 	if snippet != "" {
@@ -1499,326 +1121,5 @@ func insertScreenplayBlockAction(s *state.AppState, r *http.Request) string {
 		}
 		target.HTML = ""
 	}
-	return commitScenesMutation(s, "Wstawiono element scenariusza w scenie: "+target.DisplayName(), "scene", "text:"+target.ID)
-}
-
-func resolveVoiceActionTargetScene(s *state.AppState, r *http.Request) *book.Scene {
-	_, target := resolveEditorSceneFromRequest(s, r, true)
-	return target
-}
-
-func toggleSceneVoiceRecorderAction(s *state.AppState, r *http.Request) string {
-	b := s.Editor.ActiveBook
-	if b == nil {
-		return ""
-	}
-	if target := resolveVoiceActionTargetScene(s, r); target != nil && !isHistoryPreview(s) && !b.IsPacked {
-		if hasSceneTextModalChanges(s, target, r) {
-			s.Editor.History.EnsureBaseline(b, s.Editor.SelectedSceneID)
-			applySceneFormFields(s, target, r)
-			book.FinalizeBook(b)
-			if err := book.SaveBookScenesToDisk(b); err != nil {
-				return err.Error()
-			}
-			reloadActiveBook(s)
-			s.Editor.History.RecordStep(s.Editor.ActiveBook, "Zapisano zmiany w scenie", "scene", target.ID, s.Editor.SelectedSceneID)
-		}
-	}
-	if openParam := strings.TrimSpace(r.FormValue("open")); openParam == "true" {
-		s.Modals.VoiceRecorder = true
-	} else if openParam == "false" {
-		s.Modals.VoiceRecorder = false
-	} else {
-		s.Modals.VoiceRecorder = !s.Modals.VoiceRecorder
-	}
-	return ""
-}
-
-func selectSceneVoiceSectionAction(s *state.AppState, r *http.Request) string {
-	b := s.Editor.ActiveBook
-	if b == nil {
-		return ""
-	}
-	target := resolveVoiceActionTargetScene(s, r)
-	if target != nil && !isHistoryPreview(s) && !b.IsPacked {
-		if hasSceneTextModalChanges(s, target, r) {
-			s.Editor.History.EnsureBaseline(b, s.Editor.SelectedSceneID)
-			applySceneFormFields(s, target, r)
-			book.FinalizeBook(b)
-			if err := book.SaveBookScenesToDisk(b); err != nil {
-				return err.Error()
-			}
-			reloadActiveBook(s)
-			target = resolveVoiceActionTargetScene(s, r)
-			if target != nil {
-				s.Editor.History.RecordStep(s.Editor.ActiveBook, "Zapisano zmiany w scenie", "scene", target.ID, s.Editor.SelectedSceneID)
-			}
-		}
-	}
-	secKey := strings.TrimSpace(r.FormValue("voice_section"))
-	if target != nil {
-		secs := book.ExtractSceneVoiceSections(target, s.Editor.ActiveBook)
-		for _, sec := range secs {
-			if strings.EqualFold(sec.Key, secKey) {
-				s.Editor.SelectedVoiceSectionKey = sec.Key
-				return ""
-			}
-		}
-		if len(secs) > 0 {
-			s.Editor.SelectedVoiceSectionKey = secs[0].Key
-			return ""
-		}
-	}
-	if secKey != "" {
-		s.Editor.SelectedVoiceSectionKey = secKey
-	}
-	return ""
-}
-
-type voiceCaptureCtxKey struct{}
-
-type voiceCaptureResult struct {
-	pcmLE      []byte
-	sampleRate int
-	err        error
-}
-
-func startSceneVoiceCaptureAction(s *state.AppState, r *http.Request) string {
-	if isHistoryPreview(s) {
-		return tr(s, i18n.TrHistoryPreviewLocked)
-	}
-	if s.Editor.ActiveBook == nil || s.Editor.ActiveBook.IsPacked || !s.Editor.ActiveBook.Narrated {
-		return "Brak aktywnej książki z włączoną narracją"
-	}
-	if res, ok := r.Context().Value(voiceCaptureCtxKey{}).(voiceCaptureResult); ok && res.err != nil {
-		return res.err.Error()
-	}
-	return ""
-}
-
-func pollSceneVoiceCaptureAction(_ *state.AppState, _ *http.Request) string {
-	return ""
-}
-
-func commitSceneVoiceFile(s *state.AppState, target *book.Scene, secKey, relPath string, err error, historyPrefix string) string {
-	if err != nil {
-		return err.Error()
-	}
-	if book.HasConditionalVoiceDirectives(target.Text) {
-		target.SetSectionVoiceMeta(secKey, relPath, 0, 0)
-		s.Editor.SelectedVoiceSectionKey = secKey
-	} else {
-		target.ExplicitVoice = relPath
-		target.VoiceTrimStart = 0
-		target.VoiceTrimEnd = 0
-	}
-	s.Modals.VoiceRecorder = true
-	b := s.Editor.ActiveBook
-	book.FinalizeBook(b)
-	if err := book.SaveBookScenesToDisk(b); err != nil {
-		return err.Error()
-	}
-	reloadActiveBook(s)
-	s.Editor.History.RecordStep(s.Editor.ActiveBook, historyPrefix+relPath, "scene", target.ID, s.Editor.SelectedSceneID)
-	return ""
-}
-
-func stopSceneVoiceCaptureAction(s *state.AppState, r *http.Request) string {
-	if isHistoryPreview(s) {
-		return tr(s, i18n.TrHistoryPreviewLocked)
-	}
-	res, ok := r.Context().Value(voiceCaptureCtxKey{}).(voiceCaptureResult)
-	if !ok {
-		return ""
-	}
-	if res.err != nil {
-		return res.err.Error()
-	}
-	b := s.Editor.ActiveBook
-	if b == nil || b.IsPacked || !b.Narrated {
-		return "Brak aktywnej książki z włączoną narracją"
-	}
-	target := resolveVoiceActionTargetScene(s, r)
-	if target == nil {
-		return "Nie znaleziono sceny"
-	}
-	s.Editor.History.EnsureBaseline(b, s.Editor.SelectedSceneID)
-	if hasSceneTextModalChanges(s, target, r) {
-		applySceneFormFields(s, target, r)
-	}
-	secKey := activeVoiceSectionKeyForRequest(s, target, r)
-	relPath, err := book.SaveSceneVoiceSectionPCM(b, target, secKey, res.pcmLE, res.sampleRate, 0, 1)
-	return commitSceneVoiceFile(s, target, secKey, relPath, err, "Zapisano nagranie audio: ")
-}
-
-func saveSceneVoiceRecordingAction(s *state.AppState, r *http.Request) string {
-	if isHistoryPreview(s) {
-		return tr(s, i18n.TrHistoryPreviewLocked)
-	}
-	b := s.Editor.ActiveBook
-	if b == nil {
-		return "Brak aktywnej książki"
-	}
-	if b.IsPacked {
-		return "Nie można edytować spakowanego archiwum .playbook bezpośrednio"
-	}
-	if !b.Narrated {
-		return "Książka nie posiada włączonej narracji (narrated: false)"
-	}
-	target := resolveVoiceActionTargetScene(s, r)
-	if target == nil {
-		return "Nie znaleziono sceny"
-	}
-
-	rawB64 := strings.TrimSpace(r.FormValue("pcm_b64"))
-	if rawB64 == "" {
-		return "Brak danych nagrania audio"
-	}
-	pcmLE, err := base64.StdEncoding.DecodeString(rawB64)
-	if err != nil || len(pcmLE) < 2 {
-		return "Nieprawidłowy strumień nagrania audio"
-	}
-	sampleRate, _ := strconv.Atoi(strings.TrimSpace(r.FormValue("sample_rate")))
-	if sampleRate < 8000 || sampleRate > 65535 {
-		sampleRate = 24000
-	}
-	startRatio, _ := strconv.ParseFloat(strings.TrimSpace(r.FormValue("start_ratio")), 64)
-	endRatio, _ := strconv.ParseFloat(strings.TrimSpace(r.FormValue("end_ratio")), 64)
-
-	s.Editor.History.EnsureBaseline(b, s.Editor.SelectedSceneID)
-	if hasSceneTextModalChanges(s, target, r) {
-		applySceneFormFields(s, target, r)
-	}
-	secKey := activeVoiceSectionKeyForRequest(s, target, r)
-	relPath, err := book.SaveSceneVoiceSectionPCM(b, target, secKey, pcmLE, sampleRate, startRatio, endRatio)
-	return commitSceneVoiceFile(s, target, secKey, relPath, err, "Zapisano nagranie audio: ")
-}
-
-func trimSceneVoiceAction(s *state.AppState, r *http.Request) string {
-	if isHistoryPreview(s) {
-		return tr(s, i18n.TrHistoryPreviewLocked)
-	}
-	b := s.Editor.ActiveBook
-	if b == nil || b.IsPacked || !b.Narrated {
-		return ""
-	}
-	target := resolveVoiceActionTargetScene(s, r)
-	if target == nil {
-		return ""
-	}
-	startRatio, _ := strconv.ParseFloat(strings.TrimSpace(r.FormValue("start_ratio")), 64)
-	endRatio, _ := strconv.ParseFloat(strings.TrimSpace(r.FormValue("end_ratio")), 64)
-	if startRatio < 0 || startRatio >= 1 {
-		startRatio = 0
-	}
-	if endRatio <= 0 || endRatio > 1 {
-		endRatio = 1
-	}
-	if endRatio <= startRatio+0.001 {
-		startRatio = 0
-		endRatio = 1
-	}
-
-	s.Editor.History.EnsureBaseline(b, s.Editor.SelectedSceneID)
-	if hasSceneTextModalChanges(s, target, r) {
-		applySceneFormFields(s, target, r)
-	}
-	secKey := activeVoiceSectionKeyForRequest(s, target, r)
-	s.Editor.SelectedVoiceSectionKey = secKey
-
-	isDestructive := strings.EqualFold(strings.TrimSpace(r.FormValue("destructive")), "true")
-	if !isDestructive {
-		if book.HasConditionalVoiceDirectives(target.Text) {
-			book.ExtractSceneVoiceSections(target, b)
-			var curVoice string
-			if sec := target.FindVoiceSection(secKey); sec != nil {
-				curVoice = sec.ExplicitVoice
-				if curVoice == "" {
-					curVoice = sec.AudioFile
-				}
-				if curVoice == "" {
-					curVoice = sec.TargetFile
-				}
-			}
-			target.SetSectionVoiceMeta(secKey, curVoice, startRatio, endRatio)
-		} else {
-			if startRatio <= 0.002 && endRatio >= 0.998 {
-				target.VoiceTrimStart = 0
-				target.VoiceTrimEnd = 0
-			} else {
-				target.VoiceTrimStart = startRatio
-				target.VoiceTrimEnd = endRatio
-			}
-		}
-		s.Modals.VoiceRecorder = true
-		book.FinalizeBook(b)
-		if err := book.SaveBookScenesToDisk(b); err != nil {
-			return err.Error()
-		}
-		reloadActiveBook(s)
-		s.Editor.History.RecordStep(s.Editor.ActiveBook, "Przycięto nagranie audio: "+target.DisplayName(), "scene", "voicetrim:"+target.ID+":"+secKey, s.Editor.SelectedSceneID)
-		return ""
-	}
-
-	var relPath string
-	var err error
-	if rawB64 := strings.TrimSpace(r.FormValue("pcm_b64")); rawB64 != "" {
-		pcmLE, decErr := base64.StdEncoding.DecodeString(rawB64)
-		if decErr != nil {
-			return "Nieprawidłowe dane audio do przycięcia"
-		}
-		sampleRate, _ := strconv.Atoi(strings.TrimSpace(r.FormValue("sample_rate")))
-		if sampleRate < 8000 || sampleRate > 65535 {
-			sampleRate = 24000
-		}
-		relPath, err = book.SaveSceneVoiceSectionPCM(b, target, secKey, pcmLE, sampleRate, startRatio, endRatio)
-	} else if book.HasConditionalVoiceDirectives(target.Text) {
-		book.ExtractSceneVoiceSections(target, b)
-		var curVoice string
-		if sec := target.FindVoiceSection(secKey); sec != nil {
-			curVoice = sec.ExplicitVoice
-			if curVoice == "" {
-				curVoice = sec.AudioFile
-			}
-		}
-		stemWithSec := book.SceneVoiceBaseStem(target) + "__" + secKey
-		relPath, err = book.TrimSceneVoiceFile(b, stemWithSec, curVoice, startRatio, endRatio)
-	} else {
-		curVoice := target.ExplicitVoice
-		if curVoice == "" {
-			curVoice = target.AudioFile
-		}
-		relPath, err = book.TrimSceneVoiceFile(b, target.ReferenceKey(), curVoice, startRatio, endRatio)
-	}
-	return commitSceneVoiceFile(s, target, secKey, relPath, err, "Przycięto trwale plik audio: ")
-}
-
-func deleteSceneVoiceAction(s *state.AppState, r *http.Request) string {
-	if isHistoryPreview(s) {
-		return tr(s, i18n.TrHistoryPreviewLocked)
-	}
-	b := s.Editor.ActiveBook
-	if b == nil || b.IsPacked {
-		return ""
-	}
-	target := resolveVoiceActionTargetScene(s, r)
-	if target == nil {
-		return ""
-	}
-	s.Editor.History.EnsureBaseline(b, s.Editor.SelectedSceneID)
-	if hasSceneTextModalChanges(s, target, r) {
-		applySceneFormFields(s, target, r)
-	}
-	secKey := activeVoiceSectionKeyForRequest(s, target, r)
-	s.Editor.SelectedVoiceSectionKey = secKey
-	if err := book.DeleteSceneVoiceSectionFile(b, target, secKey); err != nil {
-		return err.Error()
-	}
-	book.FinalizeBook(b)
-	if err := book.SaveBookScenesToDisk(b); err != nil {
-		return err.Error()
-	}
-	reloadActiveBook(s)
-	s.Editor.History.RecordStep(s.Editor.ActiveBook, "Usunięto nagranie audio sceny", "scene", target.ID, s.Editor.SelectedSceneID)
-	return ""
+	return commitScenesMutation(s, msgSpBlockInsertedPrefix+target.DisplayName(), historyScopeScene, coalesceTextPref+target.ID)
 }

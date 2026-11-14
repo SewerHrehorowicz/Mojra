@@ -115,7 +115,7 @@ func validateNoInlineCSSOrJS(n *Node) error {
 			if strings.EqualFold(a.Key, "src") {
 				srcVal := strings.TrimSpace(unquoteLiteral(a.Val))
 				if srcVal != "" {
-					if !strings.HasPrefix(srcVal, "/") || strings.HasPrefix(srcVal, "//") || strings.Contains(srcVal, "..") {
+					if (srcVal != "app.js" && !strings.HasPrefix(srcVal, "/")) || strings.HasPrefix(srcVal, "//") || strings.Contains(srcVal, "..") {
 						return fmt.Errorf(
 							"tpl compile error in %s.tpl:%d: external or non-root script src %q is strictly forbidden",
 							n.File, n.Line, a.Val,

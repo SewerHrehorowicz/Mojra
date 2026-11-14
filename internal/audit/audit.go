@@ -193,6 +193,7 @@ func Run(rootDir string) ([]Finding, error) {
 	findings = append(findings, checkDeadGoFuncsAndStructs(fset, goFiles)...)
 	findings = append(findings, checkJSGhostAndUnusedFuncs(rootDir)...)
 	findings = append(findings, checkJSDeepAnalysis(rootDir)...)
+	findings = append(findings, checkJSControllersAndDataContracts(rootDir, fset, goFiles)...)
 	findings = append(findings, checkUnusedActionsAndTplVars(rootDir, fset, goFiles)...)
 	findings = append(findings, checkHardcodedGeometryAndDOM(fset, goFiles)...)
 	findings = append(findings, checkSuspiciousStrings(fset, goFiles)...)
@@ -502,8 +503,7 @@ func checkDeadGoFuncsAndStructs(fset *token.FileSet, files []*parsedGoFile) []Fi
 // 2. GHOST_CALL & DEAD_CODE in JS
 func checkJSGhostAndUnusedFuncs(rootDir string) []Finding {
 	jsDir := filepath.Join(rootDir, "app", "js")
-	entries, err := os.ReadDir(jsDir)
-	if err != nil {
+	if _, err := os.Stat(jsDir); err != nil {
 		return nil
 	}
 
@@ -522,30 +522,38 @@ func checkJSGhostAndUnusedFuncs(rootDir string) []Finding {
 	funcDeclRe := regexp.MustCompile(`^\s*(?:async\s+)?function\s+([A-Za-z0-9_]+)\s*\(`)
 	typeofFnRe := regexp.MustCompile(`typeof\s+([A-Za-z0-9_]+)\s*===\s*"function"`)
 
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".js") {
-			continue
-		}
-		fullPath := filepath.Join(jsDir, e.Name())
-		raw, err := os.ReadFile(fullPath)
+	readAuditJSDir := func(dir, relPrefix string) {
+		dirEntries, err := os.ReadDir(dir)
 		if err != nil {
-			continue
+			return
 		}
-		rel := "app/js/" + e.Name()
-		src := string(raw)
-		lines := strings.Split(src, "\n")
-		allJSFiles = append(allJSFiles, struct {
-			rel   string
-			lines []string
-			full  string
-		}{rel: rel, lines: lines, full: src})
+		for _, e := range dirEntries {
+			if e.IsDir() || !strings.HasSuffix(e.Name(), ".js") {
+				continue
+			}
+			fullPath := filepath.Join(dir, e.Name())
+			raw, err := os.ReadFile(fullPath)
+			if err != nil {
+				continue
+			}
+			rel := relPrefix + e.Name()
+			src := string(raw)
+			lines := strings.Split(src, "\n")
+			allJSFiles = append(allJSFiles, struct {
+				rel   string
+				lines []string
+				full  string
+			}{rel: rel, lines: lines, full: src})
 
-		for idx, ln := range lines {
-			if m := funcDeclRe.FindStringSubmatch(ln); m != nil {
-				definedFuncs[m[1]] = jsFuncDef{file: rel, line: idx + 1, name: m[1]}
+			for idx, ln := range lines {
+				if m := funcDeclRe.FindStringSubmatch(ln); m != nil {
+					definedFuncs[m[1]] = jsFuncDef{file: rel, line: idx + 1, name: m[1]}
+				}
 			}
 		}
 	}
+	readAuditJSDir(jsDir, "app/js/")
+	readAuditJSDir(filepath.Join(jsDir, "controllers"), "app/js/controllers/")
 
 	var out []Finding
 	browserGlobals := map[string]bool{
@@ -627,12 +635,14 @@ func checkUnusedActionsAndTplVars(rootDir string, fset *token.FileSet, goFiles [
 
 	var allJSContent strings.Builder
 	jsDir := filepath.Join(rootDir, "app", "js")
-	if entries, err := os.ReadDir(jsDir); err == nil {
-		for _, e := range entries {
-			if !e.IsDir() && strings.HasSuffix(e.Name(), ".js") {
-				if raw, err := os.ReadFile(filepath.Join(jsDir, e.Name())); err == nil {
-					allJSContent.Write(raw)
-					allJSContent.WriteByte('\n')
+	for _, sub := range []string{jsDir, filepath.Join(jsDir, "controllers")} {
+		if entries, err := os.ReadDir(sub); err == nil {
+			for _, e := range entries {
+				if !e.IsDir() && strings.HasSuffix(e.Name(), ".js") {
+					if raw, err := os.ReadFile(filepath.Join(sub, e.Name())); err == nil {
+						allJSContent.Write(raw)
+						allJSContent.WriteByte('\n')
+					}
 				}
 			}
 		}
@@ -643,7 +653,7 @@ func checkUnusedActionsAndTplVars(rootDir string, fset *token.FileSet, goFiles [
 
 	// Check actionSpecs entries vs .tpl and .js usage
 	for _, pf := range goFiles {
-		if pf.relPath != "internal/gui/actions_dispatch.go" && pf.relPath != "internal/actions/actions_dispatch.go" {
+		if pf.relPath != "internal/gui/actions_dispatch.go" && pf.relPath != "internal/actions/actions_dispatch.go" && pf.relPath != "internal/actions/specs.go" {
 			continue
 		}
 		ast.Inspect(pf.file, func(n ast.Node) bool {
@@ -679,7 +689,7 @@ func checkUnusedActionsAndTplVars(rootDir string, fset *token.FileSet, goFiles [
 					// Check if referenced in ConfirmPendingAction in Go
 					usedInConfirm := false
 					for _, gf := range goFiles {
-						if gf.isTest || gf.relPath == pf.relPath || strings.HasPrefix(gf.relPath, "internal/gui/action/") || gf.relPath == "internal/actions/action.go" {
+						if gf.relPath == pf.relPath || strings.HasPrefix(gf.relPath, "internal/gui/action/") || gf.relPath == "internal/actions/action.go" {
 							continue
 						}
 						if strings.Contains(string(gf.src), `"`+actName+`"`) || strings.Contains(string(gf.src), "action."+actName) || strings.Contains(string(gf.src), actName) {

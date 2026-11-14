@@ -8,9 +8,27 @@ import (
 	"mojra/internal/book"
 	"mojra/internal/i18n"
 	"mojra/internal/state"
+	"mojra/internal/tpl"
 )
 
-func buildBookTargetSuggestions(s *state.AppState, sc *book.Scene) []map[string]any {
+type editorVariablesTemplate struct {
+	ShowEditorVariablesPanel bool
+	IsHistoryPreview         bool
+	HasBookVariables         bool
+	BookVarsSpec             string
+	BookVarSuggestions       []book.VariableDef
+	BookEnumSuggestions      []book.SelectOption
+	BookTargetSuggestions    []book.SelectOption
+	SyntaxHelpCondRows       []book.SelectOption
+	VarFlags                 []book.VariableDef
+	VarCounters              []book.VariableDef
+	VarStates                []book.VariableDef
+	HasVarFlags              bool
+	HasVarCounters           bool
+	HasVarStates             bool
+}
+
+func buildBookTargetSuggestions(s *state.AppState, sc *book.Scene) []book.SelectOption {
 	b := s.Editor.ActiveBook
 	if b == nil {
 		return nil
@@ -23,7 +41,7 @@ func buildBookTargetSuggestions(s *state.AppState, sc *book.Scene) []map[string]
 		curCh = b.DefaultChapterName()
 	}
 	curChMeta := b.FindChapter(curCh)
-	out := make([]map[string]any, 0, len(b.Scenes)+len(b.Chapters)+1)
+	out := make([]book.SelectOption, 0, len(b.Scenes)+len(b.Chapters)+1)
 	for _, cand := range b.Scenes {
 		if sc != nil && strings.EqualFold(cand.ID, sc.ID) {
 			continue
@@ -43,9 +61,9 @@ func buildBookTargetSuggestions(s *state.AppState, sc *book.Scene) []map[string]
 		if strings.EqualFold(meta, val) {
 			meta = candCh
 		}
-		out = append(out, map[string]any{
-			"value": val,
-			"meta":  meta,
+		out = append(out, book.SelectOption{
+			Value: val,
+			Meta:  meta,
 		})
 	}
 	for _, chItem := range b.Chapters {
@@ -56,24 +74,24 @@ func buildBookTargetSuggestions(s *state.AppState, sc *book.Scene) []map[string]
 		if curChMeta != nil && (strings.EqualFold(chItem.ID, curChMeta.ID) || strings.EqualFold(chRef, curChMeta.ReferenceKey())) {
 			continue
 		}
-		out = append(out, map[string]any{
-			"value": "chapter:" + chRef,
-			"meta":  chItem.DisplayName(),
+		out = append(out, book.SelectOption{
+			Value: "chapter:" + chRef,
+			Meta:  chItem.DisplayName(),
 		})
 	}
-	out = append(out, map[string]any{
-		"value": "END",
-		"meta":  tr(s, i18n.TrEndOfPathMeta),
+	out = append(out, book.SelectOption{
+		Value: "END",
+		Meta:  tr(s, i18n.TrEndOfPathMeta),
 	})
 	return out
 }
 
-func buildBookVarSuggestions(b *book.Book) []map[string]any {
+func buildBookVarSuggestions(b *book.Book) []book.VariableDef {
 	if b == nil || len(b.Variables) == 0 {
 		return nil
 	}
 	book.ResolveBookVariableTypes(b)
-	out := make([]map[string]any, 0, len(b.Variables))
+	out := make([]book.VariableDef, 0, len(b.Variables))
 	for _, v := range b.Variables {
 		kind := v.Kind
 		if kind == "" {
@@ -83,21 +101,21 @@ func buildBookVarSuggestions(b *book.Book) []map[string]any {
 		if kind == book.VarKindEnum && len(v.Options) > 0 {
 			meta = "enum: " + strings.Join(v.Options, ", ")
 		}
-		out = append(out, map[string]any{
-			"name": v.Name,
-			"kind": kind,
-			"meta": meta,
+		out = append(out, book.VariableDef{
+			Name: v.Name,
+			Kind: kind,
+			Meta: meta,
 		})
 	}
 	return out
 }
 
-func buildBookEnumValueSuggestions(b *book.Book) []map[string]any {
+func buildBookEnumValueSuggestions(b *book.Book) []book.SelectOption {
 	if b == nil || len(b.Variables) == 0 {
 		return nil
 	}
 	book.ResolveBookVariableTypes(b)
-	var out []map[string]any
+	var out []book.SelectOption
 	for _, v := range b.Variables {
 		if v.Kind != book.VarKindEnum || len(v.Options) == 0 {
 			continue
@@ -108,84 +126,82 @@ func buildBookEnumValueSuggestions(b *book.Book) []map[string]any {
 			if cleanOpt == "" {
 				continue
 			}
-			out = append(out, map[string]any{
-				"var_name": varLower,
-				"value":    cleanOpt,
-				"meta":     v.Name,
+			out = append(out, book.SelectOption{
+				VarName: varLower,
+				Value:   cleanOpt,
+				Meta:    v.Name,
 			})
 		}
 	}
 	return out
 }
 
-func populateEditorVariablesContext(s *state.AppState, vars map[string]any) {
+func ViewEditorVariables(s *state.AppState) tpl.TemplateChunk {
 	b := s.Editor.ActiveBook
-	vars["show_editor_variables_panel"] = s.Editor.RightPanel == state.PanelVariables
-	vars["has_book_variables"] = b != nil && len(b.Variables) > 0
-	vars["book_vars_spec"] = book.EncodeBookVariablesSpec(b)
-	vars["book_var_suggestions"] = buildBookVarSuggestions(b)
-	vars["book_enum_suggestions"] = buildBookEnumValueSuggestions(b)
-	vars["book_target_suggestions"] = buildBookTargetSuggestions(s, b.FindScene(s.Editor.SelectedSceneID))
-	vars["syntax_help_cond_rows"] = []map[string]any{
-		{"code": "if: odkryta_prawda && sumienie >= 2", "desc": "bool / int / enum (&&, ||, !, ==, !=, >=, <=)"},
-		{"code": "set: odkryta_prawda = true; sumienie++", "desc": tr(s, i18n.TrSyntaxHelpSetDesc)},
-		{"code": "exit: ogien_w_kaplicy", "desc": tr(s, i18n.TrSyntaxHelpSetDesc)},
+	var selScene *book.Scene
+	if b != nil {
+		selScene = b.FindScene(s.Editor.SelectedSceneID)
+	}
+	v := &editorVariablesTemplate{
+		ShowEditorVariablesPanel: s.Editor.RightPanel == state.PanelVariables,
+		IsHistoryPreview:         !s.Config.StandaloneMode && s.Editor.History.IsPreview(b),
+		HasBookVariables:         b != nil && len(b.Variables) > 0,
+		BookVarsSpec:             book.EncodeBookVariablesSpec(b),
+		BookVarSuggestions:       buildBookVarSuggestions(b),
+		BookEnumSuggestions:      buildBookEnumValueSuggestions(b),
+		BookTargetSuggestions:    buildBookTargetSuggestions(s, selScene),
+		SyntaxHelpCondRows: []book.SelectOption{
+			{Value: "if: odkryta_prawda && sumienie >= 2", Label: "bool / int / enum (&&, ||, !, ==, !=, >=, <=)"},
+			{Value: "set: odkryta_prawda = true; sumienie++", Label: tr(s, i18n.TrSyntaxHelpSetDesc)},
+			{Value: "exit: ogien_w_kaplicy", Label: tr(s, i18n.TrSyntaxHelpSetDesc)},
+		},
 	}
 	if b == nil {
-		vars["var_flags"] = nil
-		vars["var_counters"] = nil
-		vars["var_states"] = nil
-		vars["has_var_flags"] = false
-		vars["has_var_counters"] = false
-		vars["has_var_states"] = false
-		return
+		return tpl.TemplateChunk{TemplateData: v}
 	}
 	book.ResolveBookVariableTypes(b)
-	var flags, counters, states []map[string]any
-	for idx, v := range b.Variables {
-		switch v.Kind {
+	for idx, bv := range b.Variables {
+		switch bv.Kind {
 		case book.VarKindInt:
-			counters = append(counters, map[string]any{
-				"idx":     idx,
-				"name":    v.Name,
-				"int_val": v.IntVal,
+			v.VarCounters = append(v.VarCounters, book.VariableDef{
+				Idx:    idx,
+				Name:   bv.Name,
+				IntVal: bv.IntVal,
 			})
 		case book.VarKindEnum:
-			rawOpts := v.Options
-			if len(rawOpts) == 0 && v.EnumVal != "" {
-				rawOpts = []string{v.EnumVal}
+			rawOpts := bv.Options
+			if len(rawOpts) == 0 && bv.EnumVal != "" {
+				rawOpts = []string{bv.EnumVal}
 			}
-			optItems := make([]map[string]any, 0, len(rawOpts))
+			optItems := make([]book.SelectOption, 0, len(rawOpts))
 			for optIdx, optVal := range rawOpts {
-				optItems = append(optItems, map[string]any{
-					"opt_idx": optIdx,
-					"value":   optVal,
+				optItems = append(optItems, book.SelectOption{
+					OptIdx: optIdx,
+					Value:  optVal,
 				})
 			}
-			states = append(states, map[string]any{
-				"idx":            idx,
-				"name":           v.Name,
-				"options":        optItems,
-				"opt_count":      len(optItems),
-				"can_remove_opt": len(optItems) > 1,
+			v.VarStates = append(v.VarStates, book.VariableDef{
+				Idx:          idx,
+				Name:         bv.Name,
+				OptionItems:  optItems,
+				OptCount:     len(optItems),
+				CanRemoveOpt: len(optItems) > 1,
 			})
 		default:
 			lbl := "false"
-			if v.BoolVal {
+			if bv.BoolVal {
 				lbl = "true"
 			}
-			flags = append(flags, map[string]any{
-				"idx":        idx,
-				"name":       v.Name,
-				"bool_val":   v.BoolVal,
-				"bool_label": lbl,
+			v.VarFlags = append(v.VarFlags, book.VariableDef{
+				Idx:       idx,
+				Name:      bv.Name,
+				BoolVal:   bv.BoolVal,
+				BoolLabel: lbl,
 			})
 		}
 	}
-	vars["var_flags"] = flags
-	vars["var_counters"] = counters
-	vars["var_states"] = states
-	vars["has_var_flags"] = len(flags) > 0
-	vars["has_var_counters"] = len(counters) > 0
-	vars["has_var_states"] = len(states) > 0
+	v.HasVarFlags = len(v.VarFlags) > 0
+	v.HasVarCounters = len(v.VarCounters) > 0
+	v.HasVarStates = len(v.VarStates) > 0
+	return tpl.TemplateChunk{TemplateData: v}
 }

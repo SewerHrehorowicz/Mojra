@@ -11,19 +11,10 @@ import (
 	"mojra/internal/i18n"
 	"mojra/internal/logging"
 	"mojra/internal/state"
+	"mojra/internal/tpl"
 )
 
 const (
-	keyIsHistoryPreview       = "is_history_preview"
-	keyHistoryPreviewAttr     = "history_preview_attr"
-	keyHistoryPreviewID       = "history_preview_id"
-	keyHistoryPreviewLabel    = "history_preview_label"
-	keyShowEditorHistoryPanel = "show_editor_history_panel"
-	keyActiveBranchName       = "active_branch_name"
-	keyHistoryGraphRows       = "history_graph_rows"
-	keyDefaultNextVersionName = "default_next_version_name"
-	keyDefaultNextBranchName  = "default_next_branch_name"
-
 	branchMain       = "main"
 	branchBookAlias  = "book"
 	revInitialID     = "r1"
@@ -35,44 +26,16 @@ const (
 	historyMetaFmt   = "%s • %s"
 )
 
-type historyGraphLaneView struct {
-	Branch           string `tpl:"branch"`
-	HoverHint        string `tpl:"hover_hint"`
-	IsBranchRail     bool   `tpl:"is_branch_rail"`
-	IsOtherBranch    bool   `tpl:"is_other_branch"`
-	HasRailUp        bool   `tpl:"has_rail_up"`
-	HasRailDown      bool   `tpl:"has_rail_down"`
-	IsActiveRailUp   bool   `tpl:"is_active_rail_up"`
-	IsActiveRailDown bool   `tpl:"is_active_rail_down"`
-	IsDashedRailUp   bool   `tpl:"is_dashed_rail_up"`
-	IsDashedRailDown bool   `tpl:"is_dashed_rail_down"`
-	HasNode          bool   `tpl:"has_node"`
-	IsForkCorner     bool   `tpl:"is_fork_corner"`
-	HasForkHoriz     bool   `tpl:"has_fork_horiz"`
-	IsActiveFork     bool   `tpl:"is_active_fork"`
-	IsCompactIn      bool   `tpl:"is_compact_in"`
-	IsCompactOut     bool   `tpl:"is_compact_out"`
-	HasCompactHoriz  bool   `tpl:"has_compact_horiz"`
-	IsActiveCompact  bool   `tpl:"is_active_compact"`
-	HasStemStart     bool   `tpl:"has_stem_start"`
-	HasStemThrough   bool   `tpl:"has_stem_through"`
-}
-
-type historyGraphRowView struct {
-	ID              string                 `tpl:"id"`
-	Label           string                 `tpl:"label"`
-	MetaLabel       string                 `tpl:"meta_label"`
-	Branch          string                 `tpl:"branch"`
-	HoverHint       string                 `tpl:"hover_hint"`
-	IsUnnamedStep   bool                   `tpl:"is_unnamed_step"`
-	IsCurrent       bool                   `tpl:"is_current"`
-	IsActiveHead    bool                   `tpl:"is_active_head"`
-	IsPreview       bool                   `tpl:"is_preview"`
-	IsUndone        bool                   `tpl:"is_undone"`
-	IsActiveLineage bool                   `tpl:"is_active_lineage"`
-	IsActiveBranch  bool                   `tpl:"is_active_branch"`
-	IsBranchHead    bool                   `tpl:"is_branch_head"`
-	Lanes           []historyGraphLaneView `tpl:"lanes"`
+type editorHistoryTemplate struct {
+	ShowEditorHistoryPanel bool
+	IsHistoryPreview       bool
+	HistoryPreviewAttr     string
+	HistoryPreviewID       string
+	HistoryPreviewLabel    string
+	ActiveBranchName       string
+	HistoryGraphRows       []book.HistoryGraphRow
+	DefaultNextVersionName string
+	DefaultNextBranchName  string
 }
 
 func formatHistoryCompactTime(ts int64) string {
@@ -101,7 +64,7 @@ func buildHistoryGraphRows(
 	curIdx, viewedIdx int,
 	isHistPreview bool,
 	lang i18n.Lang,
-) ([]historyGraphRowView, map[string]string) {
+) ([]book.HistoryGraphRow, map[string]string) {
 	revHints, branchHints := book.BuildHistoryHoverSummaries(b, h)
 	if h == nil || len(h.Revisions) == 0 {
 		nowStr := formatHistoryCompactTime(time.Now().Unix())
@@ -112,7 +75,7 @@ func buildHistoryGraphRows(
 		defHint := i18n.Tf(lang, i18n.TrHistoryMainScenesFmt, scenesCount)
 		initLabel := i18n.T(lang, i18n.TrHistoryInitialState)
 		branchHints[branchMain] = defHint
-		row := historyGraphRowView{
+		row := book.HistoryGraphRow{
 			ID:              revInitialID,
 			Label:           initLabel,
 			MetaLabel:       revInitialID + historyMetaSep + nowStr,
@@ -126,7 +89,7 @@ func buildHistoryGraphRows(
 			IsActiveLineage: true,
 			IsActiveBranch:  true,
 			IsBranchHead:    true,
-			Lanes: []historyGraphLaneView{
+			Lanes: []book.HistoryGraphLane{
 				{
 					Branch:           branchMain,
 					HoverHint:        defHint,
@@ -151,7 +114,7 @@ func buildHistoryGraphRows(
 				},
 			},
 		}
-		return []historyGraphRowView{row}, branchHints
+		return []book.HistoryGraphRow{row}, branchHints
 	}
 
 	activeBranchName := h.NormalizedActiveBranch()
@@ -455,7 +418,7 @@ func buildHistoryGraphRows(
 	}
 
 	// 6. Build output rows and lane cells
-	outRows := make([]historyGraphRowView, 0, R)
+	outRows := make([]book.HistoryGraphRow, 0, R)
 	for r, e := range entries {
 		rev := e.rev
 		rowBranchIdx := branchIdxByName[e.branch]
@@ -531,7 +494,7 @@ func buildHistoryGraphRows(
 			}
 		}
 
-		lanes := make([]historyGraphLaneView, 0, numCols)
+		lanes := make([]book.HistoryGraphLane, 0, numCols)
 		for c := 0; c < numCols; c++ {
 			bIdx := -1
 			if c < len(branchAtCol[r]) {
@@ -573,7 +536,7 @@ func buildHistoryGraphRows(
 			hasForkHoriz := maxForkCol > nodeCol && c > nodeCol && c < maxForkCol
 			isActiveFork := activeForkCornerAtCol[c] || (maxActiveForkCol > nodeCol && c > nodeCol && c < maxActiveForkCol)
 
-			lanes = append(lanes, historyGraphLaneView{
+			lanes = append(lanes, book.HistoryGraphLane{
 				Branch:           cellBranch,
 				HoverHint:        cellHint,
 				IsBranchRail:     bIdx >= 0 && (hasRailUp || hasRailDown || isForkCorner || c == nodeCol),
@@ -615,7 +578,7 @@ func buildHistoryGraphRows(
 			rowHint = branchHints[e.branch]
 		}
 
-		outRows = append(outRows, historyGraphRowView{
+		outRows = append(outRows, book.HistoryGraphRow{
 			ID:              rev.ID,
 			Label:           rev.Label,
 			MetaLabel:       metaLabel,
@@ -636,16 +599,19 @@ func buildHistoryGraphRows(
 	return outRows, branchHints
 }
 
-func populateEditorHistoryContext(s *state.AppState, vars map[string]any) {
-	var graphRows []historyGraphRowView
+func ViewEditorHistory(s *state.AppState) tpl.TemplateChunk {
+	var graphRows []book.HistoryGraphRow
 	activeBranchName := branchMain
 	namedVersionsCount := 0
 	branchesCount := 0
 	isHistoryPanelOpen := s.Editor.RightPanel == state.PanelHistory
+	var isHistPreview bool
+	previewAttr := attrFalse
+	var previewID, previewLabel string
 
 	b := s.Editor.ActiveBook
 	if s.Editor.HasActiveBook() && b != nil && !s.Config.StandaloneMode {
-		isHistPreview := s.Editor.History.IsPreview(b)
+		isHistPreview = s.Editor.History.IsPreview(b)
 		if !b.IsPacked && (isHistoryPanelOpen || isHistPreview) {
 			if isHistoryPanelOpen && !isHistPreview {
 				s.Editor.History.EnsureBaseline(b, s.Editor.SelectedSceneID)
@@ -658,7 +624,6 @@ func populateEditorHistoryContext(s *state.AppState, vars map[string]any) {
 				branchesCount = len(h.Branches)
 				curIdx := h.CursorIndex()
 				previewIdx := -1
-				var previewID, previewLabel string
 				if h.Preview != nil {
 					previewID = h.Preview.RevisionID
 					previewLabel = h.Preview.RevisionLabel
@@ -684,15 +649,8 @@ func populateEditorHistoryContext(s *state.AppState, vars map[string]any) {
 				viewedIdx := curIdx
 				if isHistPreview {
 					viewedIdx = previewIdx
+					previewAttr = attrTrue
 				}
-				vars[keyIsHistoryPreview] = isHistPreview
-				if isHistPreview {
-					vars[keyHistoryPreviewAttr] = attrTrue
-				} else {
-					vars[keyHistoryPreviewAttr] = attrFalse
-				}
-				vars[keyHistoryPreviewID] = previewID
-				vars[keyHistoryPreviewLabel] = previewLabel
 
 				if isHistoryPanelOpen {
 					tGraph := time.Now()
@@ -718,9 +676,17 @@ func populateEditorHistoryContext(s *state.AppState, vars map[string]any) {
 		}
 	}
 
-	vars[keyShowEditorHistoryPanel] = isHistoryPanelOpen
-	vars[keyActiveBranchName] = activeBranchName
-	vars[keyHistoryGraphRows] = graphRows
-	vars[keyDefaultNextVersionName] = trf(s, i18n.TrHistoryDefaultVersionFmt, namedVersionsCount+1)
-	vars[keyDefaultNextBranchName] = trf(s, i18n.TrHistoryDefaultBranchFmt, branchesCount+1)
+	return tpl.TemplateChunk{
+		TemplateData: &editorHistoryTemplate{
+			ShowEditorHistoryPanel: isHistoryPanelOpen,
+			IsHistoryPreview:       isHistPreview,
+			HistoryPreviewAttr:     previewAttr,
+			HistoryPreviewID:       previewID,
+			HistoryPreviewLabel:    previewLabel,
+			ActiveBranchName:       activeBranchName,
+			HistoryGraphRows:       graphRows,
+			DefaultNextVersionName: trf(s, i18n.TrHistoryDefaultVersionFmt, namedVersionsCount+1),
+			DefaultNextBranchName:  trf(s, i18n.TrHistoryDefaultBranchFmt, branchesCount+1),
+		},
+	}
 }

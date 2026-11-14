@@ -1,19 +1,24 @@
 package views
 
-import "mojra/internal/state"
+import (
+	"mojra/internal/state"
+	"mojra/internal/tpl"
+)
 
-type modalConfirmView struct {
-	ShowConfirmModal bool   `tpl:"show_confirm_modal"`
-	ConfirmTitle     string `tpl:"confirm_title"`
-	ConfirmMessage   string `tpl:"confirm_message"`
-	ConfirmIsDanger  bool   `tpl:"confirm_is_danger"`
+type modalConfirmTemplate struct {
+	ShowConfirmModal bool
+	ConfirmTitle     string
+	ConfirmMessage   string
+	ConfirmIsDanger  bool
 }
 
-func ViewModalConfirm(s *state.AppState) *modalConfirmView {
-	return &modalConfirmView{
-		ShowConfirmModal: s.ModalConfirm.IsOpen(),
-		ConfirmTitle:     s.ModalConfirm.Title,
-		ConfirmMessage:   s.ModalConfirm.Message,
-		ConfirmIsDanger:  s.ModalConfirm.Danger,
+func ViewModalConfirm(s *state.AppState) tpl.TemplateChunk {
+	return tpl.TemplateChunk{
+		TemplateData: &modalConfirmTemplate{
+			ShowConfirmModal: s.ModalConfirm.IsOpen(),
+			ConfirmTitle:     s.ModalConfirm.Title,
+			ConfirmMessage:   s.ModalConfirm.Message,
+			ConfirmIsDanger:  s.ModalConfirm.Danger,
+		},
 	}
 }

@@ -503,3 +503,30 @@ func browseBookSaveFolder(s *state.AppState, r *http.Request) string {
 	s.Editor.SetBook(reloaded, s.Settings)
 	return "Przeniesiono projekt do: " + reloaded.RootPath
 }
+
+const formKeySearchQuery = "q"
+
+func toggleStudioSearchAction(s *state.AppState, _ *http.Request) string {
+	s.Editor.SearchOpen = !s.Editor.SearchOpen
+	if !s.Editor.SearchOpen {
+		s.Editor.SearchQuery = ""
+	}
+	return ""
+}
+
+func closeStudioSearchAction(s *state.AppState, _ *http.Request) string {
+	s.Editor.SearchOpen = false
+	s.Editor.SearchQuery = ""
+	return ""
+}
+
+func filterStudioSearchAction(s *state.AppState, r *http.Request) string {
+	s.Editor.SearchOpen = true
+	s.Editor.SearchQuery = strings.TrimSpace(r.FormValue(formKeySearchQuery))
+	return ""
+}
+
+func toggleBookWarningsAction(s *state.AppState, _ *http.Request) string {
+	s.Editor.WarningsOpen = !s.Editor.WarningsOpen
+	return ""
+}

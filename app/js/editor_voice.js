@@ -1,1244 +1,842 @@
 "use strict";
 
-const voiceAudioState = {
-  sceneId: "",
-  voiceSection: "01",
-  voiceUrl: "",
-  sampleRate: 24000,
-  durationSec: 0,
-  peaks: null,
-  pcmSamplesInt16: null,
-  startRatio: 0,
-  endRatio: 1,
-  playheadRatio: 0,
-  isRecording: false,
-  isSaving: false,
-  isNativeCapture: false,
-  nativePollTimer: null,
-  nativePollInFlight: false,
-  isPlaying: false,
-  recStartTime: 0,
-  recChunks: [],
-  recTotalSamples: 0,
-  recLivePeaks: [],
-  mediaStream: null,
-  audioCtx: null,
-  scriptNode: null,
-  sourceNode: null,
-  playbackAudio: null,
-  playbackCtx: null,
-  playbackBufSource: null,
-  playbackStartCtxTime: 0,
-  playbackStartRatio: 0,
-  playbackEndRatio: 1,
-  autoRecordOnNextOpenScene: "",
-  rafId: 0,
-  dragMode: "", // "start" | "end" | "playhead"
-  dragStripEl: null,
-  dragMoved: false
-};
+const EditorVoice = {
+  moduleName: "EditorVoice",
 
-const voiceDecodedCache = new Map();
+  bindings() {
+    return {
+      "[data-voice-strip]": { init: this.initStrips },
+      "[data-voice-strip] .voice-rec-transport-btn": { click: this.toggleTransport },
+      "[data-voice-strip] .voice-rec-waveform-wrap": {
+        pointerdown: this.startScrubDrag,
+        pointermove: this.moveTrimDrag,
+        pointerup: this.endTrimDrag
+      },
+      "[data-voice-strip] .voice-rec-trim-handle": {
+        pointerdown: this.startTrimDrag,
+        pointermove: this.moveTrimDrag,
+        pointerup: this.endTrimDrag
+      },
+      "[data-voice-strip] .voice-rec-cut-btn": { click: this.cutTrim },
+      "[data-voice-strip] .voice-rec-rerecord-btn": { click: this.startRecord },
+      "[data-voice-strip] .voice-rec-delete-btn": { click: Dispatcher.action("DeleteSceneVoice") }
+    };
+  },
 
-function formatVoiceSeconds(sec) {
-  const s = Math.max(0, Math.round(Number(sec) || 0));
-  const m = Math.floor(s / 60);
-  const rem = s % 60;
-  return m + ":" + (rem < 10 ? "0" + rem : String(rem));
-}
-
-function uint8ToBase64(bytes) {
-  let binary = "";
-  const chunk = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunk) {
-    const sub = bytes.subarray(i, Math.min(i + chunk, bytes.length));
-    binary += String.fromCharCode.apply(null, sub);
-  }
-  return btoa(binary);
-}
-
-function int16ArrayToLEBase64(samples, startRatio, endRatio) {
-  if (!samples || samples.length === 0) return "";
-  const total = samples.length;
-  const sIdx = Math.max(0, Math.min(total - 1, Math.floor(total * (startRatio || 0))));
-  const eIdx = Math.max(sIdx + 1, Math.min(total, Math.ceil(total * (endRatio || 1))));
-  const count = eIdx - sIdx;
-  const bytes = new Uint8Array(count * 2);
-  for (let i = 0; i < count; i++) {
-    const v = samples[sIdx + i];
-    bytes[i * 2] = v & 0xff;
-    bytes[i * 2 + 1] = (v >> 8) & 0xff;
-  }
-  return uint8ToBase64(bytes);
-}
-
-function computePeaksFromInt16(samples, numBars) {
-  const bars = Math.max(16, numBars || 160);
-  const out = new Float32Array(bars);
-  if (!samples || samples.length === 0) return out;
-  const step = samples.length / bars;
-  let globalPeak = 0.01;
-  for (let b = 0; b < bars; b++) {
-    const i0 = Math.floor(b * step);
-    const i1 = Math.max(i0 + 1, Math.min(samples.length, Math.floor((b + 1) * step)));
-    let maxAbs = 0;
-    for (let i = i0; i < i1; i++) {
-      const a = Math.abs(samples[i]) / 32768;
-      if (a > maxAbs) maxAbs = a;
+  dom: {
+    selectors: {
+      strip: "[data-voice-strip]",
+      wrap: "[data-voice-waveform-wrap]",
+      timer: "[data-voice-timer]",
+      transport: "[data-voice-transport]",
+      cut: "[data-voice-trim-destructive]"
+    },
+    attrs: {
+      state: "data-voice-state",
+      trimmed: "data-voice-trimmed",
+      open: "data-voice-open",
+      scene: "data-scene",
+      paramScene: "param-scene",
+      section: "data-voice-section",
+      paramSection: "param-voice-section",
+      url: "data-voice-url",
+      paramUrl: "param-voice-url",
+      trimStart: "data-trim-start",
+      trimEnd: "data-trim-end",
+      trimRole: "data-voice-trim"
     }
-    out[b] = maxAbs;
-    if (maxAbs > globalPeak) globalPeak = maxAbs;
-  }
-  const norm = globalPeak > 0.05 ? 1 / globalPeak : 1;
-  for (let b = 0; b < bars; b++) {
-    out[b] = Math.min(1, out[b] * norm);
-  }
-  return out;
-}
+  },
 
-function readFLACUTF8Len(view, offset) {
-  if (offset >= view.byteLength) return 0;
-  const b0 = view.getUint8(offset);
-  if ((b0 & 0x80) === 0) return 1;
-  if ((b0 & 0xe0) === 0xc0) return 2;
-  if ((b0 & 0xf0) === 0xe0) return 3;
-  if ((b0 & 0xf8) === 0xf0) return 4;
-  return 0;
-}
+  modes: {
+    idle: "idle",
+    recording: "recording",
+    ready: "ready",
+    playing: "playing"
+  },
 
-function parseFLACMono16FromArrayBuffer(buf) {
-  if (!buf || buf.byteLength < 42) return null;
-  const view = new DataView(buf);
-  if (
-    view.getUint8(0) !== 0x66 ||
-    view.getUint8(1) !== 0x4c ||
-    view.getUint8(2) !== 0x61 ||
-    view.getUint8(3) !== 0x43
-  ) {
-    return null;
-  }
-  let pos = 4;
-  let sampleRate = 24000;
-  let totalSamples = 0;
-  while (pos + 4 <= view.byteLength) {
-    const hdr = view.getUint8(pos);
-    const isLast = (hdr & 0x80) !== 0;
-    const blockType = hdr & 0x7f;
-    const blockLen =
-      (view.getUint8(pos + 1) << 16) |
-      (view.getUint8(pos + 2) << 8) |
-      view.getUint8(pos + 3);
-    pos += 4;
-    if (pos + blockLen > view.byteLength) return null;
-    if (blockType === 0 && blockLen >= 34) {
-      const srHi = view.getUint16(pos + 10, false);
-      const srLo = view.getUint8(pos + 12) >> 4;
-      const sr = (srHi << 4) | srLo;
-      if (sr > 0) sampleRate = sr;
-      const totHi = view.getUint8(pos + 13) & 0x0f;
-      const totLo = view.getUint32(pos + 14, false);
-      totalSamples = totHi * 0x100000000 + totLo;
+  handles: {
+    start: "start",
+    end: "end",
+    scrub: "scrub"
+  },
+
+  peakStatus: {
+    pending: "pending",
+    denied: "denied",
+    error: "error",
+    stopped: "stopped"
+  },
+
+  values: {
+    defaultSection: "01",
+    defaultRatioStart: "0.0000",
+    defaultRatioEnd: "1.0000",
+    trueStr: "true",
+    falseStr: "false",
+    zeroStr: "0",
+    oneStr: "1",
+    querySep: "?",
+    eventLoadedMeta: "loadedmetadata",
+    audioClosed: "closed",
+    audioSuspended: "suspended"
+  },
+
+  actions: {
+    toggleRecorder: "ToggleSceneVoiceRecorder",
+    startCapture: "StartSceneVoiceCapture",
+    pollCapture: "PollSceneVoiceCapture",
+    stopCapture: "StopSceneVoiceCapture",
+    saveRecording: "SaveSceneVoiceRecording",
+    trimVoice: "TrimSceneVoice"
+  },
+
+  i18n: {
+    stopSaveHint: "voice_stop_save_hint",
+    pauseHint: "player_pause_hint",
+    listenHint: "voice_listen_take_hint",
+    startRecHint: "voice_start_rec_hint",
+    errUnavailable: "voice_err_mic_unavailable",
+    errDenied: "voice_err_mic_permission_denied",
+    errStartFailed: "voice_err_mic_start_failed",
+    errWebAudio: "voice_err_webaudio_unsupported",
+    errAccess: "voice_err_mic_access"
+  },
+
+  audioSpec: {
+    defaultSampleRate: 24000,
+    minSampleRate: 8000,
+    maxSampleRate: 96000,
+    scriptBufferSize: 2048,
+    channels: 1,
+    minPeakSamples: 256,
+    peakRateDivisor: 25,
+    maxPeaks: 240,
+    webPeakGain: 1.35,
+    nativePeakGain: 1.4,
+    androidPollMs: 75,
+    nativePollMs: 90,
+    msPerSec: 1000,
+    minSaveSamples: 64,
+    pcmNegScale: 32768,
+    pcmPosScale: 32767,
+    b64ChunkSize: 8192,
+    minTrimGap: 0.03,
+    ratioDecimals: 4,
+    fallbackDurationSec: 5,
+    minPlaySpanSec: 0.05,
+    androidStatusOk: 1,
+    androidStatusPerm: 2,
+    minRatio: 0,
+    maxRatio: 1,
+    playheadOff: -1
+  },
+
+  playback: {
+    audio: null,
+    sourceUrl: "",
+    playing: false,
+    durationSec: 0,
+    animFrame: 0
+  },
+
+  capture: {
+    recording: false,
+    starting: false,
+    nativeMode: false,
+    nativePollTimer: null,
+    androidMode: false,
+    androidPendingPerm: false,
+    androidPollTimer: null,
+    audioCtx: null,
+    mediaStream: null,
+    sourceNode: null,
+    processorNode: null,
+    sampleRate: 24000,
+    pcmChunks: [],
+    totalSamples: 0,
+    peaks: [],
+    peakWindowMax: 0,
+    peakWindowSamples: 0,
+    rawFloatSamples: null
+  },
+
+  trimState: {
+    stripEl: null,
+    sceneId: "",
+    sectionKey: "01",
+    trimStart: 0.0,
+    trimEnd: 1.0,
+    draggingHandle: ""
+  },
+
+  resolveStripMeta(stripEl, params) {
+    const attrs = this.dom.attrs;
+    const vals = this.values;
+    const spec = this.audioSpec;
+    if (!stripEl) {
+      return {
+        sceneId: "",
+        sectionKey: vals.defaultSection,
+        audioUrl: "",
+        trimStart: spec.minRatio,
+        trimEnd: spec.maxRatio
+      };
     }
-    pos += blockLen;
-    if (isLast) break;
-  }
+    const sceneId =
+      (params && (params.scene || params.scene_id)) ||
+      stripEl.getAttribute(attrs.paramScene) ||
+      stripEl.getAttribute(attrs.scene) ||
+      "";
+    const sectionKey =
+      (params && params.voice_section) ||
+      stripEl.getAttribute(attrs.paramSection) ||
+      stripEl.getAttribute(attrs.section) ||
+      vals.defaultSection;
+    const audioUrl = (
+      (params && params.voice_url) ||
+      stripEl.getAttribute(attrs.url) ||
+      stripEl.getAttribute(attrs.paramUrl) ||
+      ""
+    ).trim();
+    const savedStart = parseFloat(stripEl.getAttribute(attrs.trimStart) || vals.zeroStr) || spec.minRatio;
+    const savedEnd = parseFloat(stripEl.getAttribute(attrs.trimEnd) || vals.oneStr);
+    const trimStart = savedStart >= spec.minRatio && savedStart < spec.maxRatio ? savedStart : spec.minRatio;
+    const trimEnd = savedEnd > trimStart && savedEnd <= spec.maxRatio ? savedEnd : spec.maxRatio;
+    return { sceneId, sectionKey, audioUrl, trimStart, trimEnd };
+  },
 
-  const estSamples =
-    totalSamples > 0 && totalSamples < 100000000
-      ? totalSamples
-      : Math.max(1024, Math.ceil((view.byteLength - pos) / 2));
-  let out = new Int16Array(estSamples);
-  let outLen = 0;
-  while (pos + 6 < view.byteLength) {
-    if (view.getUint8(pos) !== 0xff || (view.getUint8(pos + 1) & 0xfe) !== 0xf8) {
-      break;
+  syncStripState(stripEl) {
+    if (!stripEl) return;
+    const attrs = this.dom.attrs;
+    const sels = this.dom.selectors;
+    const vals = this.values;
+    const cap = this.capture;
+    const pb = this.playback;
+    const ts = this.trimState;
+    const meta = this.resolveStripMeta(stripEl, null);
+    const isThisStrip = ts.stripEl === stripEl;
+    const isRec = isThisStrip && (cap.recording || cap.starting);
+    const isPlaying = isThisStrip && pb.playing;
+    const hasFile = Boolean(
+      meta.audioUrl ||
+      (isThisStrip && cap.rawFloatSamples && cap.rawFloatSamples.length > 0) ||
+      (isThisStrip && cap.peaks && cap.peaks.length > 0 && !isRec)
+    );
+
+    const stateMode = isRec
+      ? this.modes.recording
+      : isPlaying
+        ? this.modes.playing
+        : hasFile
+          ? this.modes.ready
+          : this.modes.idle;
+    stripEl.setAttribute(attrs.state, stateMode);
+
+    const sRatio = isThisStrip ? ts.trimStart : meta.trimStart;
+    const eRatio = isThisStrip ? ts.trimEnd : meta.trimEnd;
+    const trimmed = !isRec && hasFile && EditorVoiceWaveform.isTrimActive(sRatio, eRatio);
+    stripEl.setAttribute(attrs.trimmed, trimmed ? vals.trueStr : vals.falseStr);
+
+    const cutBtn = stripEl.querySelector(sels.cut);
+    if (cutBtn) cutBtn.disabled = !trimmed;
+
+    const transportBtn = stripEl.querySelector(sels.transport);
+    if (transportBtn) {
+      const hintKey = isRec
+        ? this.i18n.stopSaveHint
+        : isPlaying
+          ? this.i18n.pauseHint
+          : hasFile
+            ? this.i18n.listenHint
+            : this.i18n.startRecHint;
+      AppShellController.setHint(transportBtn, AppShellController.tr(hintKey));
     }
-    const bsCode = (view.getUint8(pos + 2) >> 4) & 0x0f;
-    const srCode = view.getUint8(pos + 2) & 0x0f;
-    const utf8Len = readFLACUTF8Len(view, pos + 4);
-    if (utf8Len <= 0) break;
-    let cur = pos + 4 + utf8Len;
-    let blockLen = 1024;
-    if (bsCode === 0x01) {
-      blockLen = 192;
-    } else if (bsCode >= 0x02 && bsCode <= 0x05) {
-      blockLen = 576 << (bsCode - 2);
-    } else if (bsCode === 0x06) {
-      if (cur + 1 > view.byteLength) break;
-      blockLen = view.getUint8(cur) + 1;
-      cur += 1;
-    } else if (bsCode === 0x07) {
-      if (cur + 2 > view.byteLength) break;
-      blockLen = view.getUint16(cur, false) + 1;
-      cur += 2;
-    } else if (bsCode >= 0x08 && bsCode <= 0x0f) {
-      blockLen = 256 << (bsCode - 8);
+  },
+
+  stopPreview(stripEl) {
+    const pb = this.playback;
+    if (pb.audio) {
+      try { pb.audio.pause(); } catch (_) {}
     }
-    if (srCode === 0x0c) {
-      cur += 1;
-    } else if (srCode === 0x0d || srCode === 0x0e) {
-      if (cur + 2 <= view.byteLength && srCode === 0x0d) {
-        const sr = view.getUint16(cur, false);
-        if (sr > 0) sampleRate = sr;
-      }
-      cur += 2;
+    pb.playing = false;
+    if (pb.animFrame && !this.capture.recording) {
+      cancelAnimationFrame(pb.animFrame);
+      pb.animFrame = 0;
     }
-    cur += 1; // CRC-8
-    if (cur >= view.byteLength) break;
-    const subHdr = view.getUint8(cur);
-    cur += 1;
-    const subType = (subHdr >> 1) & 0x3f;
-    if (outLen + blockLen > out.length) {
-      let nextCap = Math.max(1024, out.length * 2);
-      while (nextCap < outLen + blockLen) {
-        nextCap *= 2;
-      }
-      const grown = new Int16Array(nextCap);
-      grown.set(out);
-      out = grown;
-    }
-    if (subType === 0x00) {
-      if (cur + 2 > view.byteLength) break;
-      const val = view.getInt16(cur, false);
-      cur += 2;
-      out.fill(val, outLen, outLen + blockLen);
-      outLen += blockLen;
-    } else if (subType === 0x01) {
-      if (cur + blockLen * 2 > view.byteLength) break;
-      for (let i = 0; i < blockLen; i++) {
-        out[outLen++] = view.getInt16(cur, false);
-        cur += 2;
-      }
-    } else {
-      return null;
-    }
-    cur += 2; // CRC-16
-    pos = cur;
-  }
-  if (outLen === 0) return null;
-  const int16 = outLen === out.length ? out : out.subarray(0, outLen);
-  const dur = sampleRate > 0 ? int16.length / sampleRate : 0;
-  return {
-    sampleRate: sampleRate,
-    durationSec: dur,
-    samples: int16,
-    peaks: computePeaksFromInt16(int16, 170)
-  };
-}
+    this.syncStripState(stripEl || this.trimState.stripEl);
+  },
 
-function getAllActiveVoiceStrips() {
-  return qsa(".voice-rec-strip").filter((el) => !el.classList.contains("hidden"));
-}
-
-function syncVoiceStripDOM(stripEl) {
-  if (!stripEl) return;
-  stripEl.classList.toggle("is-recording", voiceAudioState.isRecording);
-
-  const playIcon = qs(".voice-rec-icon-play", stripEl);
-  const micIcon = qs(".voice-rec-icon-mic", stripEl);
-  const pauseIcon = qs(".voice-rec-icon-pause", stripEl);
-  const stopIcon = qs(".voice-rec-icon-stop", stripEl);
-  const hasAudio = Boolean(
-    (stripEl.getAttribute("data-voice-url") || "").trim() ||
-      (voiceAudioState.voiceUrl || "").trim() ||
-      (voiceAudioState.pcmSamplesInt16 && voiceAudioState.pcmSamplesInt16.length > 0)
-  );
-  if (voiceAudioState.isRecording) {
-    if (playIcon) playIcon.classList.add("hidden");
-    if (micIcon) micIcon.classList.add("hidden");
-    if (pauseIcon) pauseIcon.classList.add("hidden");
-    if (stopIcon) stopIcon.classList.remove("hidden");
-  } else if (voiceAudioState.isPlaying) {
-    if (playIcon) playIcon.classList.add("hidden");
-    if (micIcon) micIcon.classList.add("hidden");
-    if (pauseIcon) pauseIcon.classList.remove("hidden");
-    if (stopIcon) stopIcon.classList.add("hidden");
-  } else {
-    if (playIcon) playIcon.classList.toggle("hidden", !hasAudio);
-    if (micIcon) micIcon.classList.toggle("hidden", hasAudio);
-    if (pauseIcon) pauseIcon.classList.add("hidden");
-    if (stopIcon) stopIcon.classList.add("hidden");
-  }
-
-  const startHandle = qs('.voice-rec-trim-handle[data-voice-trim="start"]', stripEl);
-  const endHandle = qs('.voice-rec-trim-handle[data-voice-trim="end"]', stripEl);
-  const playheadEl = qs(".voice-rec-playhead", stripEl);
-  const cutBtn = qs('[data-voice-trim-destructive="true"]', stripEl);
-  const hasTrim =
-    hasAudio &&
-    !voiceAudioState.isRecording &&
-    (voiceAudioState.startRatio > 0.002 || voiceAudioState.endRatio < 0.998);
-  if (cutBtn) {
-    cutBtn.classList.remove("hidden");
-    cutBtn.disabled = !hasTrim;
-    cutBtn.classList.toggle("is-disabled", !hasTrim);
-  }
-
-  if (startHandle) {
-    startHandle.style.left = (voiceAudioState.startRatio * 100).toFixed(2) + "%";
-  }
-  if (endHandle) {
-    endHandle.style.left = (voiceAudioState.endRatio * 100).toFixed(2) + "%";
-  }
-  if (playheadEl) {
-    playheadEl.style.left = (voiceAudioState.playheadRatio * 100).toFixed(2) + "%";
-  }
-
-  const timerEl = qs(".voice-rec-timer", stripEl);
-  if (timerEl) {
-    if (voiceAudioState.isRecording) {
-      const elapsed = (Date.now() - voiceAudioState.recStartTime) / 1000;
-      timerEl.textContent = formatVoiceSeconds(elapsed);
-    } else if (voiceAudioState.durationSec > 0) {
-      const trimmedDur =
-        (voiceAudioState.endRatio - voiceAudioState.startRatio) * voiceAudioState.durationSec;
-      timerEl.textContent = formatVoiceSeconds(trimmedDur);
-    }
-  }
-
-  drawVoiceRecorderCanvas(stripEl);
-}
-
-const voiceStripCanvasCache = typeof WeakMap !== "undefined" ? new WeakMap() : null;
-
-function resolveVoiceWaveformCanvas(stripEl) {
-  if (!stripEl) return null;
-  if (voiceStripCanvasCache) {
-    const cached = voiceStripCanvasCache.get(stripEl);
-    if (cached && cached.isConnected !== false) {
-      return cached;
-    }
-  }
-  const found = qs(".voice-rec-waveform-canvas", stripEl);
-  if (found && voiceStripCanvasCache) {
-    voiceStripCanvasCache.set(stripEl, found);
-  }
-  return found;
-}
-
-function drawVoiceRecorderCanvas(stripEl) {
-  const canvas = resolveVoiceWaveformCanvas(stripEl);
-  if (!canvas || typeof canvas.getContext !== "function") return;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return;
-
-  const dpr = (typeof window !== "undefined" && window.devicePixelRatio) || 1;
-  const cssW = canvas.clientWidth || Number(canvas.getAttribute("width")) || 216;
-  const cssH = canvas.clientHeight || Number(canvas.getAttribute("height")) || 28;
-  const targetW = Math.max(1, Math.round(cssW * dpr));
-  const targetH = Math.max(1, Math.round(cssH * dpr));
-  if (canvas.width !== targetW || canvas.height !== targetH) {
-    canvas.width = targetW;
-    canvas.height = targetH;
-  }
-
-  ctx.save();
-  ctx.scale(dpr, dpr);
-  ctx.clearRect(0, 0, cssW, cssH);
-
-  const isLight =
-    typeof document !== "undefined" &&
-    document.body &&
-    document.body.getAttribute("data-theme") === "light";
-  const activeColor = isLight ? "#666666" : "#7a7a7a";
-  const dimColor = isLight ? "#d4d4d4" : "#292929";
-  const step = 3;
-  const numBars = Math.max(1, Math.floor(cssW / step));
-  const midY = cssH / 2;
-
-  if (voiceAudioState.isRecording) {
-    const livePeaks = voiceAudioState.recLivePeaks;
-    const headRatio = Math.min(1, livePeaks.length / numBars);
-    voiceAudioState.playheadRatio = headRatio;
-    const headX = Math.round(headRatio * cssW);
-
-    ctx.fillStyle = dimColor;
-    ctx.fillRect(headX, Math.round(midY) - 0.5, Math.max(0, cssW - headX), 1);
-
-    ctx.fillStyle = activeColor;
-    const startIdx = Math.max(0, livePeaks.length - numBars);
-    for (let i = 0; i < livePeaks.length - startIdx; i++) {
-      const x = i * step + 1;
-      const amp = Math.max(2, Math.round(livePeaks[startIdx + i] * (cssH - 4)));
-      const half = Math.max(1, Math.floor(amp / 2));
-      ctx.fillRect(x, Math.round(midY) - half, 1, half * 2);
-    }
-    ctx.restore();
-    return;
-  }
-
-  const peaks = voiceAudioState.peaks;
-  for (let b = 0; b < numBars; b++) {
-    const ratio = numBars > 1 ? b / (numBars - 1) : 0;
-    const x = b * step + 1;
-    const inRange =
-      ratio >= voiceAudioState.startRatio - 0.001 &&
-      ratio <= voiceAudioState.endRatio + 0.001;
-    ctx.fillStyle = inRange ? activeColor : dimColor;
-
-    let normAmp = 0.08;
-    if (peaks && peaks.length > 0) {
-      const pIdx = Math.min(peaks.length - 1, Math.floor(ratio * peaks.length));
-      normAmp = peaks[pIdx];
-    }
-    const barH = Math.max(2, Math.round(normAmp * (cssH - 4)));
-    const half = Math.max(1, Math.floor(barH / 2));
-    ctx.fillRect(x, Math.round(midY) - half, 1, half * 2);
-  }
-
-  ctx.restore();
-}
-
-function syncAllVoiceStrips() {
-  getAllActiveVoiceStrips().forEach((stripEl) => {
-    syncVoiceStripDOM(stripEl);
-  });
-}
-
-async function loadVoiceStripAudio(stripEl) {
-  if (!stripEl || voiceAudioState.isRecording) return;
-  const sceneId = (stripEl.getAttribute("data-scene") || "").trim();
-  const voiceSection = (stripEl.getAttribute("data-voice-section") || "01").trim() || "01";
-  const voiceUrl = (stripEl.getAttribute("data-voice-url") || "").trim();
-  const attrStart = parseFloat(stripEl.getAttribute("data-trim-start") || "0");
-  const attrEnd = parseFloat(stripEl.getAttribute("data-trim-end") || "1");
-  let normStart = Number.isFinite(attrStart) && attrStart >= 0 && attrStart < 1 ? attrStart : 0;
-  let normEnd = Number.isFinite(attrEnd) && attrEnd > 0 && attrEnd <= 1 ? attrEnd : 1;
-  if (normEnd <= normStart + 0.002) {
-    normStart = 0;
-    normEnd = 1;
-  }
-
-  if (
-    sceneId !== voiceAudioState.sceneId ||
-    voiceSection !== voiceAudioState.voiceSection ||
-    voiceUrl !== voiceAudioState.voiceUrl
-  ) {
-    stopVoicePlayback();
-    voiceAudioState.sceneId = sceneId;
-    voiceAudioState.voiceSection = voiceSection;
-    voiceAudioState.voiceUrl = voiceUrl;
-    voiceAudioState.startRatio = normStart;
-    voiceAudioState.endRatio = normEnd;
-    voiceAudioState.playheadRatio = normStart;
-    voiceAudioState.peaks = null;
-    voiceAudioState.pcmSamplesInt16 = null;
-    voiceAudioState.durationSec = 0;
-  } else if (!voiceAudioState.dragMode) {
-    voiceAudioState.startRatio = normStart;
-    voiceAudioState.endRatio = normEnd;
-    if (voiceAudioState.playheadRatio < normStart || voiceAudioState.playheadRatio > normEnd) {
-      voiceAudioState.playheadRatio = normStart;
-    }
-  }
-
-  if (!voiceUrl) {
-    syncVoiceStripDOM(stripEl);
-    return;
-  }
-
-  if (voiceDecodedCache.has(voiceUrl)) {
-    const cached = voiceDecodedCache.get(voiceUrl);
-    voiceAudioState.sampleRate = cached.sampleRate;
-    voiceAudioState.durationSec = cached.durationSec;
-    voiceAudioState.peaks = cached.peaks;
-    voiceAudioState.pcmSamplesInt16 = cached.samples;
-    syncAllVoiceStrips();
-    return;
-  }
-
-  try {
-    const resp = await fetch(voiceUrl, { credentials: "same-origin" });
-    if (!resp.ok) {
-      syncVoiceStripDOM(stripEl);
+  togglePreview(stripEl) {
+    if (!stripEl) return;
+    const pb = this.playback;
+    const ts = this.trimState;
+    const cap = this.capture;
+    const spec = this.audioSpec;
+    if (pb.playing) {
+      this.stopPreview(stripEl);
+      EditorVoiceWaveform.draw(stripEl, ts, cap, spec.playheadOff);
       return;
     }
-    const arrayBuf = await resp.arrayBuffer();
-    let parsed = parseFLACMono16FromArrayBuffer(arrayBuf);
-    if (!parsed) {
-      const AC =
-        (typeof window !== "undefined" && (window.AudioContext || window.webkitAudioContext)) ||
-        null;
-      if (AC) {
-        const ctx = new AC();
-        const audioBuf = await ctx.decodeAudioData(arrayBuf.slice(0));
-        const ch0 = audioBuf.getChannelData(0);
-        const sr = Math.min(65535, Math.max(8000, Math.round(audioBuf.sampleRate || 24000)));
-        const int16 = new Int16Array(ch0.length);
-        for (let i = 0; i < ch0.length; i++) {
-          const s = Math.max(-1, Math.min(1, ch0[i]));
-          int16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
-        }
-        parsed = {
-          sampleRate: sr,
-          durationSec: audioBuf.duration || int16.length / sr,
-          samples: int16,
-          peaks: computePeaksFromInt16(int16, 170)
-        };
-        if (typeof ctx.close === "function") {
-          ctx.close().catch(() => {});
-        }
+    const meta = this.resolveStripMeta(stripEl, null);
+    if (!meta.audioUrl) return;
+    const baseUrl = meta.audioUrl.split(this.values.querySep)[0];
+    if (!pb.audio || pb.sourceUrl !== baseUrl) {
+      if (pb.audio) {
+        try { pb.audio.pause(); } catch (_) {}
       }
+      pb.audio = new window.Audio(meta.audioUrl);
+      pb.sourceUrl = baseUrl;
     }
-    if (parsed && voiceAudioState.voiceUrl === voiceUrl) {
-      voiceDecodedCache.set(voiceUrl, parsed);
-      voiceAudioState.sampleRate = parsed.sampleRate;
-      voiceAudioState.durationSec = parsed.durationSec;
-      voiceAudioState.peaks = parsed.peaks;
-      voiceAudioState.pcmSamplesInt16 = parsed.samples;
-    }
-  } catch (_) {
-    // Ignore decode errors in headless environments
-  }
-  syncAllVoiceStrips();
-}
-
-function stopVoicePlayback() {
-  if (voiceAudioState.rafId) {
-    cancelAnimationFrame(voiceAudioState.rafId);
-    voiceAudioState.rafId = 0;
-  }
-  if (voiceAudioState.playbackBufSource) {
-    try {
-      voiceAudioState.playbackBufSource.onended = null;
-      voiceAudioState.playbackBufSource.stop();
-      voiceAudioState.playbackBufSource.disconnect();
-    } catch (_) {}
-    voiceAudioState.playbackBufSource = null;
-  }
-  if (voiceAudioState.playbackAudio) {
-    try {
-      voiceAudioState.playbackAudio.pause();
-      voiceAudioState.playbackAudio.removeAttribute("src");
-      voiceAudioState.playbackAudio.removeAttribute("data-src");
-      voiceAudioState.playbackAudio.load();
-    } catch (_) {}
-  }
-  voiceAudioState.isPlaying = false;
-}
-
-function startVoicePlaybackFromRatio(stripEl, ratio) {
-  stopVoicePlayback();
-  const voiceUrl = (stripEl && stripEl.getAttribute("data-voice-url")) || voiceAudioState.voiceUrl;
-  if (!voiceUrl && (!voiceAudioState.pcmSamplesInt16 || voiceAudioState.pcmSamplesInt16.length === 0)) {
-    return;
-  }
-
-  const startR = Math.max(
-    voiceAudioState.startRatio,
-    Math.min(voiceAudioState.endRatio, ratio !== undefined ? ratio : voiceAudioState.playheadRatio)
-  );
-  const clampedStart =
-    startR >= voiceAudioState.endRatio - 0.01 ? voiceAudioState.startRatio : startR;
-  voiceAudioState.playheadRatio = clampedStart;
-
-  const AC =
-    (typeof window !== "undefined" && (window.AudioContext || window.webkitAudioContext)) ||
-    null;
-  if (
-    AC &&
-    voiceAudioState.pcmSamplesInt16 &&
-    voiceAudioState.pcmSamplesInt16.length > 0 &&
-    typeof AC.prototype.createBuffer === "function"
-  ) {
-    try {
-      if (!voiceAudioState.playbackCtx) {
-        voiceAudioState.playbackCtx = new AC();
-      }
-      const ctx = voiceAudioState.playbackCtx;
-      if (ctx.state === "suspended" && typeof ctx.resume === "function") {
-        ctx.resume().catch(() => {});
-      }
-      const samples = voiceAudioState.pcmSamplesInt16;
-      const sr = voiceAudioState.sampleRate || 24000;
-      const totalDur = samples.length / sr;
-      const sIdx = Math.max(0, Math.min(samples.length - 1, Math.floor(clampedStart * samples.length)));
-      const eIdx = Math.max(sIdx + 1, Math.min(samples.length, Math.ceil(voiceAudioState.endRatio * samples.length)));
-      const sliceLen = eIdx - sIdx;
-      const audioBuf = ctx.createBuffer(1, sliceLen, sr);
-      const ch0 = audioBuf.getChannelData(0);
-      for (let i = 0; i < sliceLen; i++) {
-        ch0[i] = samples[sIdx + i] / 32768;
-      }
-      const srcNode = ctx.createBufferSource();
-      srcNode.buffer = audioBuf;
-      srcNode.connect(ctx.destination);
-      voiceAudioState.playbackBufSource = srcNode;
-      voiceAudioState.playbackStartCtxTime = ctx.currentTime;
-      voiceAudioState.playbackStartRatio = clampedStart;
-      voiceAudioState.playbackEndRatio = voiceAudioState.endRatio;
-      voiceAudioState.isPlaying = true;
-      syncAllVoiceStrips();
-
-      const tickWebAudioPlayhead = () => {
-        if (!voiceAudioState.isPlaying || !voiceAudioState.playbackBufSource) return;
-        const elapsed = Math.max(0, ctx.currentTime - voiceAudioState.playbackStartCtxTime);
-        const curRatio =
-          totalDur > 0 ? voiceAudioState.playbackStartRatio + elapsed / totalDur : voiceAudioState.playbackEndRatio;
-        if (curRatio >= voiceAudioState.playbackEndRatio) {
-          stopVoicePlayback();
-          voiceAudioState.playheadRatio = voiceAudioState.startRatio;
-          syncAllVoiceStrips();
+    const aud = pb.audio;
+    const startPlay = () => {
+      const dur = aud.duration && isFinite(aud.duration) ? aud.duration : pb.durationSec || spec.fallbackDurationSec;
+      pb.durationSec = dur;
+      const t0 = ts.trimStart * dur;
+      const t1 = Math.max(t0 + spec.minPlaySpanSec, ts.trimEnd * dur);
+      if (aud.currentTime < t0 || aud.currentTime >= t1 - spec.minPlaySpanSec) aud.currentTime = t0;
+      pb.playing = true;
+      this.syncStripState(stripEl);
+      aud.play().catch(() => {
+        pb.playing = false;
+        this.syncStripState(stripEl);
+      });
+      const tick = () => {
+        if (!pb.playing || aud.paused) {
+          pb.playing = false;
+          this.syncStripState(stripEl);
+          EditorVoiceWaveform.draw(stripEl, ts, cap, spec.playheadOff);
           return;
         }
-        voiceAudioState.playheadRatio = curRatio;
-        syncAllVoiceStrips();
-        if (typeof requestAnimationFrame === "function") {
-          voiceAudioState.rafId = requestAnimationFrame(tickWebAudioPlayhead);
+        if (aud.currentTime >= t1) {
+          aud.pause();
+          aud.currentTime = t0;
+          pb.playing = false;
+          this.syncStripState(stripEl);
+          EditorVoiceWaveform.draw(stripEl, ts, cap, spec.playheadOff);
+          return;
         }
+        EditorVoiceWaveform.draw(stripEl, ts, cap, dur > spec.minRatio ? aud.currentTime / dur : spec.minRatio);
+        pb.animFrame = requestAnimationFrame(tick);
       };
+      pb.animFrame = requestAnimationFrame(tick);
+    };
+    if (aud.readyState >= spec.channels) startPlay();
+    else aud.addEventListener(this.values.eventLoadedMeta, startPlay, { once: true });
+  },
 
-      srcNode.onended = () => {
-        if (!voiceAudioState.isPlaying) return;
-        stopVoicePlayback();
-        voiceAudioState.playheadRatio = voiceAudioState.startRatio;
-        syncAllVoiceStrips();
-      };
+  stopCaptureTracks() {
+    const cap = this.capture;
+    if (cap.nativePollTimer) { clearInterval(cap.nativePollTimer); cap.nativePollTimer = null; }
+    if (cap.androidPollTimer) { clearInterval(cap.androidPollTimer); cap.androidPollTimer = null; }
+    if (cap.processorNode) { try { cap.processorNode.disconnect(); } catch (_) {} cap.processorNode = null; }
+    if (cap.sourceNode) { try { cap.sourceNode.disconnect(); } catch (_) {} cap.sourceNode = null; }
+    if (cap.mediaStream) {
+      try { cap.mediaStream.getTracks().forEach((t) => t.stop()); } catch (_) {}
+      cap.mediaStream = null;
+    }
+  },
 
-      srcNode.start(0);
-      if (typeof requestAnimationFrame === "function") {
-        voiceAudioState.rafId = requestAnimationFrame(tickWebAudioPlayhead);
-      }
+  encodeInt16Base64(floatSamples, startRatio, endRatio) {
+    if (!floatSamples || !floatSamples.length) return "";
+    const spec = this.audioSpec;
+    const total = floatSamples.length;
+    const i0 = Math.max(0, Math.min(total - 1, Math.floor((startRatio || spec.minRatio) * total)));
+    const i1 = Math.max(i0 + 1, Math.min(total, Math.ceil((endRatio || spec.maxRatio) * total)));
+    const len = i1 - i0;
+    const int16 = new Int16Array(len);
+    for (let i = 0; i < len; i++) {
+      let s = floatSamples[i0 + i];
+      if (s > spec.maxRatio) s = spec.maxRatio;
+      else if (s < -spec.maxRatio) s = -spec.maxRatio;
+      int16[i] = s < spec.minRatio ? Math.round(s * spec.pcmNegScale) : Math.round(s * spec.pcmPosScale);
+    }
+    const bytes = new Uint8Array(int16.buffer);
+    let binary = "";
+    for (let i = 0; i < bytes.length; i += spec.b64ChunkSize) {
+      binary += String.fromCharCode.apply(null, bytes.subarray(i, Math.min(bytes.length, i + spec.b64ChunkSize)));
+    }
+    return window.btoa ? window.btoa(binary) : "";
+  },
+
+  startAndroidCapture(stripEl) {
+    const cap = this.capture;
+    const pb = this.playback;
+    const ts = this.trimState;
+    const spec = this.audioSpec;
+    cap.starting = true;
+    cap.recording = false;
+    this.syncStripState(stripEl);
+    let status = 0;
+    try { status = Number(window.mojraAndroid.startAudioCapture()); } catch (_) { status = 0; }
+    if (status !== spec.androidStatusOk && status !== spec.androidStatusPerm) {
+      cap.starting = false;
+      this.syncStripState(stripEl);
+      AppShellController.showToast(AppShellController.tr(this.i18n.errUnavailable));
       return;
-    } catch (_) {
-      // Fall back to HTMLAudioElement below
     }
-  }
-
-  if (!voiceAudioState.playbackAudio) {
-    if (typeof Audio !== "undefined") {
-      voiceAudioState.playbackAudio = new Audio();
-    } else if (typeof document !== "undefined") {
-      voiceAudioState.playbackAudio = qs("#story-audio");
+    cap.starting = false;
+    cap.recording = true;
+    cap.androidMode = true;
+    cap.androidPendingPerm = status === spec.androidStatusPerm;
+    if (window.mojraAndroid.getAudioSampleRate) {
+      const sr = Number(window.mojraAndroid.getAudioSampleRate());
+      if (sr >= spec.minSampleRate && sr <= spec.maxSampleRate) cap.sampleRate = sr;
     }
-  }
-  const audio = voiceAudioState.playbackAudio;
-  if (!audio) return;
-
-  if (audio.getAttribute && audio.getAttribute("data-src") !== voiceUrl) {
-    audio.src = voiceUrl;
-    if (audio.setAttribute) audio.setAttribute("data-src", voiceUrl);
-  } else if (audio.src !== voiceUrl && !audio.src.endsWith(voiceUrl)) {
-    audio.src = voiceUrl;
-  }
-
-  const dur = voiceAudioState.durationSec || audio.duration || 0;
-  if (dur > 0) {
-    try {
-      audio.currentTime = clampedStart * dur;
-    } catch (_) {}
-  }
-
-  voiceAudioState.isPlaying = true;
-  syncAllVoiceStrips();
-
-  const tickPlayhead = () => {
-    if (!voiceAudioState.isPlaying) return;
-    const d = voiceAudioState.durationSec || audio.duration || 0;
-    if (d > 0 && !audio.paused) {
-      const r = audio.currentTime / d;
-      if (r >= voiceAudioState.endRatio || audio.ended) {
-        stopVoicePlayback();
-        voiceAudioState.playheadRatio = voiceAudioState.startRatio;
-        syncAllVoiceStrips();
+    this.syncStripState(stripEl);
+    let startWallMs = Date.now();
+    cap.androidPollTimer = setInterval(() => {
+      if (!cap.recording || !cap.androidMode || !window.mojraAndroid) return;
+      const rawPeak = String(window.mojraAndroid.pollAudioPeak() || "");
+      if (rawPeak === this.peakStatus.pending) {
+        startWallMs = Date.now();
         return;
       }
-      voiceAudioState.playheadRatio = Math.max(
-        voiceAudioState.startRatio,
-        Math.min(voiceAudioState.endRatio, r)
-      );
-      syncAllVoiceStrips();
-    }
-    if (typeof requestAnimationFrame === "function") {
-      voiceAudioState.rafId = requestAnimationFrame(tickPlayhead);
-    }
-  };
-
-  audio.onended = () => {
-    stopVoicePlayback();
-    voiceAudioState.playheadRatio = voiceAudioState.startRatio;
-    syncAllVoiceStrips();
-  };
-
-  const playPromise = audio.play && audio.play();
-  if (playPromise && typeof playPromise.catch === "function") {
-    playPromise.catch(() => {});
-  }
-  if (typeof requestAnimationFrame === "function") {
-    voiceAudioState.rafId = requestAnimationFrame(tickPlayhead);
-  }
-}
-
-async function startVoiceRecording(stripEl) {
-  if (voiceAudioState.isRecording || voiceAudioState.isSaving) return;
-  stopVoicePlayback();
-
-  const sceneId =
-    (stripEl && (stripEl.getAttribute("data-scene") || "").trim()) ||
-    voiceAudioState.sceneId;
-  if (!sceneId) return;
-  const voiceSection =
-    (stripEl && (stripEl.getAttribute("data-voice-section") || "").trim()) ||
-    voiceAudioState.voiceSection ||
-    "01";
-
-  voiceAudioState.sceneId = sceneId;
-  voiceAudioState.voiceSection = voiceSection;
-  voiceAudioState.isRecording = true;
-  voiceAudioState.recStartTime = Date.now();
-  voiceAudioState.recChunks = [];
-  voiceAudioState.recTotalSamples = 0;
-  voiceAudioState.recLivePeaks = [];
-  voiceAudioState.startRatio = 0;
-  voiceAudioState.endRatio = 1;
-  voiceAudioState.playheadRatio = 0;
-  syncAllVoiceStrips();
-
-  const hasAndroidBridge = Boolean(
-    typeof window !== "undefined" &&
-      window.mojraAndroid &&
-      typeof window.mojraAndroid.startAudioCapture === "function"
-  );
-  const useNativeBackend =
-    hasAndroidBridge ||
-    Boolean(
-      typeof window !== "undefined" &&
-        window.webkit &&
-        window.webkit.messageHandlers &&
-        window.webkit.messageHandlers.nativeHost
-    ) ||
-    typeof navigator === "undefined" ||
-    !navigator.mediaDevices ||
-    typeof navigator.mediaDevices.getUserMedia !== "function";
-
-  if (useNativeBackend) {
-    await startNativeBackendVoiceCapture(sceneId);
-    return;
-  }
-
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    voiceAudioState.mediaStream = stream;
-    const AC =
-      (typeof window !== "undefined" && (window.AudioContext || window.webkitAudioContext)) ||
-      null;
-    if (AC) {
-      let ctx = null;
-      let source = null;
-      try {
-        ctx = new AC({ sampleRate: 24000 });
-        source = ctx.createMediaStreamSource(stream);
-      } catch (_) {
-        if (ctx && typeof ctx.close === "function") {
-          ctx.close().catch(() => {});
-        }
-        ctx = new AC();
-        source = ctx.createMediaStreamSource(stream);
+      if (cap.androidPendingPerm) {
+        cap.androidPendingPerm = false;
+        startWallMs = Date.now();
       }
-      if (ctx.state === "suspended" && typeof ctx.resume === "function") {
-        ctx.resume().catch(() => {});
+      if (rawPeak === this.peakStatus.denied || rawPeak === this.peakStatus.error) {
+        this.stopCaptureTracks();
+        cap.recording = false;
+        cap.androidMode = false;
+        this.syncStripState(stripEl);
+        AppShellController.showToast(rawPeak === this.peakStatus.denied ? AppShellController.tr(this.i18n.errDenied) : AppShellController.tr(this.i18n.errStartFailed));
+        return;
       }
-      voiceAudioState.audioCtx = ctx;
-      voiceAudioState.sampleRate = Math.min(65535, Math.max(8000, Math.round(ctx.sampleRate || 24000)));
-      const proc = ctx.createScriptProcessor(2048, 1, 1);
-      voiceAudioState.sourceNode = source;
-      voiceAudioState.scriptNode = proc;
+      if (rawPeak === this.peakStatus.stopped) {
+        this.stopAndSaveCapture(stripEl);
+        return;
+      }
+      const p = parseFloat(rawPeak);
+      if (!isNaN(p) && p >= spec.minRatio) {
+        cap.peaks.push(Math.min(spec.maxRatio, p * spec.nativePeakGain));
+        if (cap.peaks.length > spec.maxPeaks) cap.peaks.shift();
+      }
+    }, spec.androidPollMs);
+    const tickAndroid = () => {
+      if (!cap.recording || !cap.androidMode) return;
+      pb.durationSec = cap.androidPendingPerm ? spec.minRatio : (Date.now() - startWallMs) / spec.msPerSec;
+      const timeEl = stripEl.querySelector(this.dom.selectors.timer);
+      if (timeEl) timeEl.textContent = AudioDeckController.formatSeconds(pb.durationSec);
+      EditorVoiceWaveform.draw(stripEl, ts, cap, spec.playheadOff);
+      pb.animFrame = requestAnimationFrame(tickAndroid);
+    };
+    pb.animFrame = requestAnimationFrame(tickAndroid);
+  },
+
+  async startNativeCapture(stripEl) {
+    const cap = this.capture;
+    const pb = this.playback;
+    const ts = this.trimState;
+    const spec = this.audioSpec;
+    const vals = this.values;
+    cap.starting = true;
+    cap.recording = false;
+    this.syncStripState(stripEl);
+    const decoded = await Dispatcher.post(this.actions.startCapture, {
+      scene: ts.sceneId,
+      voice_section: ts.sectionKey,
+      silent: vals.trueStr
+    });
+    if (!cap.starting) return;
+    const peakHdr = (decoded && decoded.voicePeak) || "";
+    if (!decoded || peakHdr === this.peakStatus.stopped) {
+      cap.starting = false;
+      cap.recording = false;
+      this.syncStripState(stripEl);
+      return;
+    }
+    cap.starting = false;
+    cap.recording = true;
+    cap.nativeMode = true;
+    this.syncStripState(stripEl);
+    const startWallMs = Date.now();
+    cap.nativePollTimer = setInterval(() => {
+      if (!cap.recording || !cap.nativeMode) return;
+      Dispatcher.post(this.actions.pollCapture, { silent: vals.trueStr });
+    }, spec.nativePollMs);
+    const tickNative = () => {
+      if (!cap.recording || !cap.nativeMode) return;
+      pb.durationSec = (Date.now() - startWallMs) / spec.msPerSec;
+      const timeEl = stripEl.querySelector(this.dom.selectors.timer);
+      if (timeEl) timeEl.textContent = AudioDeckController.formatSeconds(pb.durationSec);
+      EditorVoiceWaveform.draw(stripEl, ts, cap, spec.playheadOff);
+      pb.animFrame = requestAnimationFrame(tickNative);
+    };
+    pb.animFrame = requestAnimationFrame(tickNative);
+  },
+
+  async startWebAudioCapture(stripEl) {
+    const cap = this.capture;
+    const pb = this.playback;
+    const ts = this.trimState;
+    const spec = this.audioSpec;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, channelCount: spec.channels }
+      });
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) {
+        stream.getTracks().forEach((t) => t.stop());
+        AppShellController.showToast(AppShellController.tr(this.i18n.errWebAudio));
+        return;
+      }
+      if (!cap.audioCtx || cap.audioCtx.state === this.values.audioClosed) {
+        cap.audioCtx = new AudioCtx({ sampleRate: spec.defaultSampleRate });
+      }
+      if (cap.audioCtx.state === this.values.audioSuspended) await cap.audioCtx.resume();
+      cap.sampleRate = cap.audioCtx.sampleRate || spec.defaultSampleRate;
+      cap.mediaStream = stream;
+      cap.sourceNode = cap.audioCtx.createMediaStreamSource(stream);
+      const proc = cap.audioCtx.createScriptProcessor(spec.scriptBufferSize, spec.channels, spec.channels);
+      cap.processorNode = proc;
+      cap.recording = true;
+      this.syncStripState(stripEl);
+      const samplesPerPeak = Math.max(spec.minPeakSamples, Math.floor(cap.sampleRate / spec.peakRateDivisor));
       proc.onaudioprocess = (ev) => {
-        if (!voiceAudioState.isRecording) return;
-        const input = ev.inputBuffer.getChannelData(0);
-        const chunk = new Int16Array(input.length);
-        let peak = 0;
-        for (let i = 0; i < input.length; i++) {
-          const s = Math.max(-1, Math.min(1, input[i]));
-          const abs = Math.abs(s);
-          if (abs > peak) peak = abs;
-          chunk[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+        if (!cap.recording) return;
+        const ch = ev.inputBuffer.getChannelData(0);
+        const copy = new Float32Array(ch.length);
+        copy.set(ch);
+        cap.pcmChunks.push(copy);
+        cap.totalSamples += copy.length;
+        pb.durationSec = cap.totalSamples / cap.sampleRate;
+        for (let i = 0; i < copy.length; i++) {
+          const a = Math.abs(copy[i]);
+          if (a > cap.peakWindowMax) cap.peakWindowMax = a;
+          cap.peakWindowSamples++;
+          if (cap.peakWindowSamples >= samplesPerPeak) {
+            cap.peaks.push(Math.min(spec.maxRatio, cap.peakWindowMax * spec.webPeakGain));
+            if (cap.peaks.length > spec.maxPeaks) cap.peaks.shift();
+            cap.peakWindowMax = 0;
+            cap.peakWindowSamples = 0;
+          }
         }
-        voiceAudioState.recChunks.push(chunk);
-        voiceAudioState.recTotalSamples += chunk.length;
-        voiceAudioState.recLivePeaks.push(Math.min(1, peak * 1.8));
-        syncAllVoiceStrips();
       };
-      source.connect(proc);
-      proc.connect(ctx.destination);
+      cap.sourceNode.connect(proc);
+      proc.connect(cap.audioCtx.destination);
+      const tick = () => {
+        if (!cap.recording) return;
+        const timeEl = stripEl.querySelector(this.dom.selectors.timer);
+        if (timeEl) timeEl.textContent = Audio.formatSeconds(pb.durationSec);
+        EditorVoiceWaveform.draw(stripEl, ts, cap, spec.playheadOff);
+        pb.animFrame = requestAnimationFrame(tick);
+      };
+      pb.animFrame = requestAnimationFrame(tick);
+    } catch (_) {
+      AppShellController.showToast(AppShellController.tr(this.i18n.errAccess));
     }
-  } catch (_) {
-    if (voiceAudioState.audioCtx && typeof voiceAudioState.audioCtx.close === "function") {
-      voiceAudioState.audioCtx.close().catch(() => {});
-      voiceAudioState.audioCtx = null;
-    }
-    if (voiceAudioState.mediaStream) {
-      try {
-        voiceAudioState.mediaStream.getTracks().forEach((t) => t.stop());
-      } catch (_) {}
-      voiceAudioState.mediaStream = null;
-    }
-    await startNativeBackendVoiceCapture(sceneId);
-  }
-}
+  },
 
-async function startNativeBackendVoiceCapture(sceneId) {
-  voiceAudioState.isNativeCapture = true;
-  voiceAudioState.nativePollInFlight = false;
-  if (voiceAudioState.nativePollTimer) {
-    clearTimeout(voiceAudioState.nativePollTimer);
-    voiceAudioState.nativePollTimer = null;
-  }
-  const androidBridge =
-    typeof window !== "undefined" &&
-    window.mojraAndroid &&
-    typeof window.mojraAndroid.startAudioCapture === "function"
-      ? window.mojraAndroid
-      : null;
-  let useAndroidBridge = false;
-  if (androidBridge) {
-    const rc = Number(androidBridge.startAudioCapture()) || 0;
-    if (rc > 0) {
-      useAndroidBridge = true;
-    }
-  }
-  if (!useAndroidBridge) {
-    await sendServerAction("StartSceneVoiceCapture", { scene: sceneId });
-  }
-  if (!voiceAudioState.isRecording || !voiceAudioState.isNativeCapture) return;
-  const scheduleNextPoll = () => {
-    if (voiceAudioState.isRecording && voiceAudioState.isNativeCapture) {
-      voiceAudioState.nativePollTimer = setTimeout(pollOnce, 90);
-    }
-  };
-  const pollOnce = () => {
-    if (!voiceAudioState.isRecording || !voiceAudioState.isNativeCapture) {
-      if (voiceAudioState.nativePollTimer) {
-        clearTimeout(voiceAudioState.nativePollTimer);
-        voiceAudioState.nativePollTimer = null;
-      }
+  async startCapture(stripEl, params) {
+    if (!stripEl) return;
+    const cap = this.capture;
+    const pb = this.playback;
+    const ts = this.trimState;
+    const spec = this.audioSpec;
+    this.stopPreview(stripEl);
+    this.stopCaptureTracks();
+
+    const meta = this.resolveStripMeta(stripEl, params);
+    ts.stripEl = stripEl;
+    ts.sceneId = meta.sceneId;
+    ts.sectionKey = meta.sectionKey;
+    ts.trimStart = spec.minRatio;
+    ts.trimEnd = spec.maxRatio;
+    cap.pcmChunks = [];
+    cap.totalSamples = 0;
+    cap.peaks = [];
+    cap.peakWindowMax = 0;
+    cap.peakWindowSamples = 0;
+    cap.rawFloatSamples = null;
+    cap.nativeMode = false;
+    cap.androidMode = false;
+    cap.androidPendingPerm = false;
+    pb.durationSec = 0;
+    EditorVoiceWaveform.syncHandles(stripEl, ts, pb, cap);
+
+    if (typeof window !== "undefined" && window.mojraAndroid && window.mojraAndroid.startAudioCapture) {
+      this.startAndroidCapture(stripEl);
       return;
     }
-    if (getAllActiveVoiceStrips().length === 0) {
-      stopVoiceRecordingAndSave();
+    const canUseWebMic = Boolean(
+      typeof navigator !== "undefined" &&
+      navigator.mediaDevices &&
+      navigator.mediaDevices.getUserMedia &&
+      (typeof window === "undefined" || !window.mojraNative)
+    );
+    if (!canUseWebMic) {
+      await this.startNativeCapture(stripEl);
       return;
     }
-    if (useAndroidBridge && androidBridge && typeof androidBridge.pollAudioPeak === "function") {
-      const peakStr = String(androidBridge.pollAudioPeak());
-      if (peakStr === "pending") {
-        voiceAudioState.recStartTime = Date.now();
-        syncAllVoiceStrips();
-        scheduleNextPoll();
-        return;
-      }
-      if (peakStr === "denied") {
-        handleNativeVoicePeakHeader("stopped");
-        sendServerAction("StartSceneVoiceCapture", { scene: sceneId });
-        return;
-      }
-      handleNativeVoicePeakHeader(peakStr);
-      scheduleNextPoll();
-      return;
-    }
-    if (voiceAudioState.nativePollInFlight) {
-      scheduleNextPoll();
-      return;
-    }
-    voiceAudioState.nativePollInFlight = true;
-    const p = postServerActionSilent("PollSceneVoiceCapture", {});
-    if (p && typeof p.finally === "function") {
-      p.finally(() => {
-        voiceAudioState.nativePollInFlight = false;
+    await this.startWebAudioCapture(stripEl);
+  },
+
+  async stopAndSaveCapture(stripEl) {
+    const cap = this.capture;
+    const pb = this.playback;
+    const ts = this.trimState;
+    const vals = this.values;
+    const spec = this.audioSpec;
+    if (!cap.recording && !cap.starting) return;
+    const wasNative = cap.nativeMode;
+    const wasAndroid = cap.androidMode;
+    cap.starting = false;
+    cap.recording = false;
+    cap.nativeMode = false;
+    cap.androidMode = false;
+    cap.androidPendingPerm = false;
+    if (pb.animFrame) { cancelAnimationFrame(pb.animFrame); pb.animFrame = 0; }
+    this.stopCaptureTracks();
+
+    if (wasAndroid && window.mojraAndroid && window.mojraAndroid.stopAudioCaptureBase64) {
+      let b64 = "";
+      try { b64 = String(window.mojraAndroid.stopAudioCaptureBase64() || ""); } catch (_) { b64 = ""; }
+      this.syncStripState(stripEl);
+      if (!b64) return;
+      await Dispatcher.post(this.actions.saveRecording, {
+        scene: ts.sceneId,
+        voice_section: ts.sectionKey,
+        sample_rate: String(Math.round(cap.sampleRate || spec.defaultSampleRate)),
+        start_ratio: vals.defaultRatioStart,
+        end_ratio: vals.defaultRatioEnd,
+        pcm_b64: b64
       });
+      return;
+    }
+
+    if (wasNative) {
+      this.syncStripState(stripEl);
+      await Dispatcher.post(this.actions.stopCapture, {
+        scene: ts.sceneId,
+        voice_section: ts.sectionKey
+      });
+      return;
+    }
+
+    if (cap.totalSamples > 0) {
+      const merged = new Float32Array(cap.totalSamples);
+      let off = 0;
+      for (let i = 0; i < cap.pcmChunks.length; i++) {
+        merged.set(cap.pcmChunks[i], off);
+        off += cap.pcmChunks[i].length;
+      }
+      cap.rawFloatSamples = merged;
+      cap.pcmChunks = [];
+    }
+    EditorVoiceWaveform.syncHandles(stripEl, ts, pb, cap);
+    EditorVoiceWaveform.draw(stripEl, ts, cap, spec.playheadOff);
+    if (!cap.rawFloatSamples || cap.rawFloatSamples.length < spec.minSaveSamples) {
+      this.syncStripState(stripEl);
+      return;
+    }
+    const b64 = this.encodeInt16Base64(cap.rawFloatSamples, spec.minRatio, spec.maxRatio);
+    if (!b64) return;
+    await Dispatcher.post(this.actions.saveRecording, {
+      scene: ts.sceneId,
+      voice_section: ts.sectionKey,
+      sample_rate: String(Math.round(cap.sampleRate || spec.defaultSampleRate)),
+      start_ratio: vals.defaultRatioStart,
+      end_ratio: vals.defaultRatioEnd,
+      pcm_b64: b64
+    });
+  },
+
+  handlePeakHeader(peakVal) {
+    const cap = this.capture;
+    const spec = this.audioSpec;
+    if (!cap.nativeMode || (!cap.recording && !cap.starting)) return;
+    if (peakVal === this.peakStatus.stopped) {
+      if (cap.starting) return;
+      this.stopAndSaveCapture(this.trimState.stripEl);
+      return;
+    }
+    const p = parseFloat(peakVal);
+    if (!isNaN(p) && p >= spec.minRatio) {
+      cap.peaks.push(Math.min(spec.maxRatio, p * spec.nativePeakGain));
+      if (cap.peaks.length > spec.maxPeaks) cap.peaks.shift();
+    }
+  },
+
+  toggleTransport(params, el) {
+    const stripEl = el.closest(this.dom.selectors.strip) || el;
+    const cap = this.capture;
+    const ts = this.trimState;
+    if (ts.stripEl === stripEl && (cap.recording || cap.starting)) {
+      this.stopAndSaveCapture(stripEl);
+      return;
+    }
+    const meta = this.resolveStripMeta(stripEl, params);
+    const hasExisting = Boolean(
+      meta.audioUrl ||
+      (ts.stripEl === stripEl && cap.rawFloatSamples && cap.rawFloatSamples.length > 0)
+    );
+    if (hasExisting) {
+      ts.stripEl = stripEl;
+      ts.sceneId = meta.sceneId;
+      ts.sectionKey = meta.sectionKey;
+      this.togglePreview(stripEl);
     } else {
-      voiceAudioState.nativePollInFlight = false;
+      this.startCapture(stripEl, params);
     }
-    scheduleNextPoll();
-  };
-  pollOnce();
-}
+  },
 
-function handleNativeVoicePeakHeader(peakVal) {
-  if (!voiceAudioState.isRecording || !voiceAudioState.isNativeCapture) return;
-  if (peakVal === "stopped") {
-    voiceAudioState.isRecording = false;
-    voiceAudioState.isNativeCapture = false;
-    if (voiceAudioState.nativePollTimer) {
-      clearTimeout(voiceAudioState.nativePollTimer);
-      voiceAudioState.nativePollTimer = null;
+  startRecord(params, el) {
+    const stripEl = el.closest(this.dom.selectors.strip) || el;
+    this.startCapture(stripEl, params);
+  },
+
+  async cutTrim(params, el) {
+    const stripEl = el.closest(this.dom.selectors.strip) || el;
+    const ts = this.trimState;
+    const cap = this.capture;
+    const spec = this.audioSpec;
+    const meta = this.resolveStripMeta(stripEl, params);
+    const sRatio = ts.stripEl === stripEl ? ts.trimStart : meta.trimStart;
+    const eRatio = ts.stripEl === stripEl ? ts.trimEnd : meta.trimEnd;
+    if (!EditorVoiceWaveform.isTrimActive(sRatio, eRatio)) return;
+    ts.stripEl = stripEl;
+    ts.trimStart = sRatio;
+    ts.trimEnd = eRatio > sRatio ? eRatio : spec.maxRatio;
+    const postParams = {
+      scene: meta.sceneId,
+      voice_section: meta.sectionKey,
+      start_ratio: ts.trimStart.toFixed(spec.ratioDecimals),
+      end_ratio: ts.trimEnd.toFixed(spec.ratioDecimals),
+      destructive: this.values.trueStr
+    };
+    if (cap.rawFloatSamples && cap.rawFloatSamples.length > spec.minSaveSamples) {
+      postParams.sample_rate = String(Math.round(cap.sampleRate || spec.defaultSampleRate));
+      postParams.pcm_b64 = this.encodeInt16Base64(cap.rawFloatSamples, spec.minRatio, spec.maxRatio);
     }
-    syncAllVoiceStrips();
-    return;
-  }
-  const num = Math.max(0.03, Math.min(1, parseFloat(peakVal) || 0.04));
-  voiceAudioState.recLivePeaks.push(num);
-  syncAllVoiceStrips();
-}
+    this.stopPreview(stripEl);
+    ts.trimStart = spec.minRatio;
+    ts.trimEnd = spec.maxRatio;
+    await Dispatcher.post(this.actions.trimVoice, postParams);
+  },
 
-async function stopVoiceRecordingAndSave() {
-  if (!voiceAudioState.isRecording || voiceAudioState.isSaving) return;
-  const wasNative = voiceAudioState.isNativeCapture;
-  voiceAudioState.isRecording = false;
-  voiceAudioState.isNativeCapture = false;
-  if (voiceAudioState.nativePollTimer) {
-    clearTimeout(voiceAudioState.nativePollTimer);
-    voiceAudioState.nativePollTimer = null;
-  }
-  if (wasNative) {
-    voiceDecodedCache.clear();
-    syncAllVoiceStrips();
-    const androidBridge =
-      typeof window !== "undefined" &&
-      window.mojraAndroid &&
-      typeof window.mojraAndroid.stopAudioCaptureBase64 === "function"
-        ? window.mojraAndroid
-        : null;
-    if (androidBridge) {
-      const b64 = String(androidBridge.stopAudioCaptureBase64() || "");
-      const sr =
-        (typeof androidBridge.getAudioSampleRate === "function" &&
-          Number(androidBridge.getAudioSampleRate())) ||
-        24000;
-      if (b64 && voiceAudioState.sceneId) {
-        voiceAudioState.isSaving = true;
-        try {
-          await sendServerAction("SaveSceneVoiceRecording", {
-            scene: voiceAudioState.sceneId,
-            voice_section: voiceAudioState.voiceSection || "01",
-            pcm_b64: b64,
-            sample_rate: String(sr),
-            start_ratio: "0",
-            end_ratio: "1"
-          });
-        } finally {
-          voiceAudioState.isSaving = false;
-        }
-      }
+  startTrimDrag(params, el) {
+    const stripEl = el.closest(this.dom.selectors.strip);
+    if (!stripEl) return;
+    const ts = this.trimState;
+    const meta = this.resolveStripMeta(stripEl, params);
+    if (ts.stripEl !== stripEl) {
+      ts.stripEl = stripEl;
+      ts.sceneId = meta.sceneId;
+      ts.sectionKey = meta.sectionKey;
+      ts.trimStart = meta.trimStart;
+      ts.trimEnd = meta.trimEnd;
+    }
+    ts.draggingHandle = params.voice_trim || el.getAttribute(this.dom.attrs.trimRole) || this.handles.start;
+  },
+
+  moveTrimDrag(params) {
+    const ts = this.trimState;
+    const pb = this.playback;
+    const cap = this.capture;
+    const spec = this.audioSpec;
+    if (!ts.draggingHandle || !ts.stripEl) return;
+    const wrap = ts.stripEl.querySelector(this.dom.selectors.wrap);
+    if (!wrap) return;
+    const rect = wrap.getBoundingClientRect();
+    if (!rect.width) return;
+    const ratio = Math.max(spec.minRatio, Math.min(spec.maxRatio, ((params.client_x || 0) - rect.left) / rect.width));
+    if (ts.draggingHandle === this.handles.start) {
+      ts.trimStart = Math.min(ratio, ts.trimEnd - spec.minTrimGap);
+    } else if (ts.draggingHandle === this.handles.end) {
+      ts.trimEnd = Math.max(ratio, ts.trimStart + spec.minTrimGap);
+    } else if (ts.draggingHandle === this.handles.scrub && pb.audio && pb.durationSec > spec.minRatio) {
+      const clamped = Math.max(ts.trimStart, Math.min(ts.trimEnd, ratio));
+      pb.audio.currentTime = clamped * pb.durationSec;
+      EditorVoiceWaveform.draw(ts.stripEl, ts, cap, clamped);
       return;
     }
-    if (voiceAudioState.sceneId) {
-      voiceAudioState.isSaving = true;
-      try {
-        await sendServerAction("StopSceneVoiceCapture", {
-          scene: voiceAudioState.sceneId,
-          voice_section: voiceAudioState.voiceSection || "01"
-        });
-      } finally {
-        voiceAudioState.isSaving = false;
-      }
-    }
-    return;
-  }
+    EditorVoiceWaveform.syncHandles(ts.stripEl, ts, pb, cap);
+    EditorVoiceWaveform.draw(ts.stripEl, ts, cap, spec.playheadOff);
+  },
 
-  if (voiceAudioState.scriptNode) {
-    try {
-      voiceAudioState.scriptNode.disconnect();
-    } catch (_) {}
-    voiceAudioState.scriptNode = null;
-  }
-  if (voiceAudioState.sourceNode) {
-    try {
-      voiceAudioState.sourceNode.disconnect();
-    } catch (_) {}
-    voiceAudioState.sourceNode = null;
-  }
-  if (voiceAudioState.audioCtx && typeof voiceAudioState.audioCtx.close === "function") {
-    voiceAudioState.audioCtx.close().catch(() => {});
-    voiceAudioState.audioCtx = null;
-  }
-  if (voiceAudioState.mediaStream) {
-    try {
-      voiceAudioState.mediaStream.getTracks().forEach((t) => t.stop());
-    } catch (_) {}
-    voiceAudioState.mediaStream = null;
-  }
-
-  let total = voiceAudioState.recTotalSamples;
-  const sr = voiceAudioState.sampleRate || 24000;
-  let merged;
-  if (total > 0) {
-    merged = new Int16Array(total);
-    let offset = 0;
-    for (let i = 0; i < voiceAudioState.recChunks.length; i++) {
-      merged.set(voiceAudioState.recChunks[i], offset);
-      offset += voiceAudioState.recChunks[i].length;
-    }
-  } else {
-    total = Math.max(2400, Math.round(sr * 0.25));
-    merged = new Int16Array(total);
-  }
-
-  voiceAudioState.pcmSamplesInt16 = merged;
-  voiceAudioState.durationSec = merged.length / sr;
-  voiceAudioState.peaks = computePeaksFromInt16(merged, 170);
-  voiceAudioState.startRatio = 0;
-  voiceAudioState.endRatio = 1;
-  voiceAudioState.playheadRatio = 0;
-  syncAllVoiceStrips();
-
-  const b64 = int16ArrayToLEBase64(merged, 0, 1);
-  if (b64 && voiceAudioState.sceneId) {
-    voiceAudioState.isSaving = true;
-    try {
-      await sendServerAction("SaveSceneVoiceRecording", {
-        scene: voiceAudioState.sceneId,
-        voice_section: voiceAudioState.voiceSection || "01",
-        pcm_b64: b64,
-        sample_rate: String(sr),
-        start_ratio: "0",
-        end_ratio: "1"
+  async endTrimDrag() {
+    const ts = this.trimState;
+    const spec = this.audioSpec;
+    const attrs = this.dom.attrs;
+    if (!ts.draggingHandle) return;
+    const wasTrim = ts.draggingHandle === this.handles.start || ts.draggingHandle === this.handles.end;
+    const stripEl = ts.stripEl;
+    ts.draggingHandle = "";
+    if (wasTrim && stripEl) {
+      const startStr = ts.trimStart.toFixed(spec.ratioDecimals);
+      const endStr = ts.trimEnd.toFixed(spec.ratioDecimals);
+      stripEl.setAttribute(attrs.trimStart, startStr);
+      stripEl.setAttribute(attrs.trimEnd, endStr);
+      this.syncStripState(stripEl);
+      const meta = this.resolveStripMeta(stripEl, null);
+      await Dispatcher.post(this.actions.trimVoice, {
+        scene: ts.sceneId || meta.sceneId,
+        voice_section: ts.sectionKey || meta.sectionKey,
+        start_ratio: startStr,
+        end_ratio: endStr,
+        destructive: this.values.falseStr,
+        silent: this.values.trueStr
       });
-    } finally {
-      voiceAudioState.isSaving = false;
     }
-  }
-}
+  },
 
-function commitVoiceTrimAutoSave(stripEl) {
-  const sceneId =
-    (stripEl && (stripEl.getAttribute("data-scene") || "").trim()) ||
-    voiceAudioState.sceneId;
-  if (!sceneId) return;
-  const voiceSection =
-    (stripEl && (stripEl.getAttribute("data-voice-section") || "").trim()) ||
-    voiceAudioState.voiceSection ||
-    "01";
-  if (stripEl) {
-    stripEl.setAttribute("data-trim-start", voiceAudioState.startRatio.toFixed(4));
-    stripEl.setAttribute("data-trim-end", voiceAudioState.endRatio.toFixed(4));
-    syncVoiceStripDOM(stripEl);
-  }
-  sendServerAction("TrimSceneVoice", {
-    scene: sceneId,
-    voice_section: voiceSection,
-    start_ratio: voiceAudioState.startRatio.toFixed(4),
-    end_ratio: voiceAudioState.endRatio.toFixed(4),
-    destructive: "false"
-  });
-}
-
-function commitVoiceTrimDestructive(stripEl) {
-  const sceneId =
-    (stripEl && (stripEl.getAttribute("data-scene") || "").trim()) ||
-    voiceAudioState.sceneId;
-  if (!sceneId) return;
-  if (voiceAudioState.startRatio <= 0.002 && voiceAudioState.endRatio >= 0.998) {
-    return;
-  }
-  const voiceSection =
-    (stripEl && (stripEl.getAttribute("data-voice-section") || "").trim()) ||
-    voiceAudioState.voiceSection ||
-    "01";
-  stopVoicePlayback();
-  const params = {
-    scene: sceneId,
-    voice_section: voiceSection,
-    start_ratio: voiceAudioState.startRatio.toFixed(4),
-    end_ratio: voiceAudioState.endRatio.toFixed(4),
-    destructive: "true"
-  };
-  const voiceFile = (stripEl && stripEl.getAttribute("data-voice-file")) || "";
-  if (
-    voiceAudioState.pcmSamplesInt16 &&
-    voiceAudioState.pcmSamplesInt16.length > 0 &&
-    !voiceFile.toLowerCase().endsWith(".flac")
-  ) {
-    params.pcm_b64 = int16ArrayToLEBase64(voiceAudioState.pcmSamplesInt16, 0, 1);
-    params.sample_rate = String(voiceAudioState.sampleRate || 24000);
-  }
-  voiceDecodedCache.clear();
-  voiceAudioState.startRatio = 0;
-  voiceAudioState.endRatio = 1;
-  voiceAudioState.playheadRatio = 0;
-  sendServerAction("TrimSceneVoice", params);
-}
-
-function initVoiceRecorderStrips() {
-  const strips = getAllActiveVoiceStrips();
-  if (strips.length === 0) return;
-  const pendingAutoScene = voiceAudioState.autoRecordOnNextOpenScene;
-  voiceAudioState.autoRecordOnNextOpenScene = "";
-  const primaryStrip =
-    strips.find((el) => el.id === "modal-voice-rec-strip") || strips[0];
-  const scId = (primaryStrip.getAttribute("data-scene") || "").trim();
-  const vUrl = (primaryStrip.getAttribute("data-voice-url") || "").trim();
-  if (pendingAutoScene && scId === pendingAutoScene && !vUrl && !voiceAudioState.isRecording) {
-    startVoiceRecording(primaryStrip);
-    return;
-  }
-  loadVoiceStripAudio(primaryStrip);
-}
-
-function bindVoiceRecorderEvents() {
-  if (typeof document === "undefined") return;
-
-  document.addEventListener("click", (e) => {
-    if (!e.target || !e.target.closest) return;
-
-    const secSelectBtn = e.target.closest('.voice-rec-section-btn[action="SelectSceneVoiceSection"]');
-    if (secSelectBtn) {
-      if (voiceAudioState.isRecording) {
-        stopVoiceRecordingAndSave();
-      } else {
-        stopVoicePlayback();
-      }
-      return;
+  startScrubDrag(params, el) {
+    const stripEl = el.closest(this.dom.selectors.strip);
+    if (!stripEl) return;
+    const ts = this.trimState;
+    const pb = this.playback;
+    const cap = this.capture;
+    const spec = this.audioSpec;
+    const meta = this.resolveStripMeta(stripEl, params);
+    if (!meta.audioUrl || cap.recording) return;
+    const rect = el.getBoundingClientRect();
+    if (!rect.width) return;
+    ts.stripEl = stripEl;
+    ts.draggingHandle = this.handles.scrub;
+    const ratio = Math.max(ts.trimStart, Math.min(ts.trimEnd, ((params.client_x || 0) - rect.left) / rect.width));
+    EditorVoiceWaveform.draw(stripEl, ts, cap, ratio);
+    if (!pb.playing) this.togglePreview(stripEl);
+    if (pb.audio && pb.durationSec > spec.minRatio) {
+      pb.audio.currentTime = ratio * pb.durationSec;
     }
+  },
 
-    const toggleRecBtn = e.target.closest('.voice-rec-toggle-btn[action="ToggleSceneVoiceRecorder"]');
-    if (toggleRecBtn) {
-      if (!toggleRecBtn.classList.contains("active")) {
-        voiceAudioState.autoRecordOnNextOpenScene =
-          (toggleRecBtn.getAttribute("data-scene") || "").trim();
-      } else {
-        voiceAudioState.autoRecordOnNextOpenScene = "";
-        if (voiceAudioState.isRecording) {
-          stopVoiceRecordingAndSave();
-        } else {
-          stopVoicePlayback();
+  initStrips() {
+    const triggerAction = Dispatcher.lastAction;
+    const strips = Array.from(document.querySelectorAll(this.dom.selectors.strip));
+    if (!strips.length) return;
+    const ts = this.trimState;
+    const pb = this.playback;
+    const cap = this.capture;
+    strips.forEach((stripEl) => {
+      const meta = this.resolveStripMeta(stripEl, null);
+      if (!cap.recording && (ts.sceneId !== meta.sceneId || ts.sectionKey !== meta.sectionKey || ts.stripEl !== stripEl)) {
+        ts.stripEl = stripEl;
+        ts.sceneId = meta.sceneId;
+        ts.sectionKey = meta.sectionKey;
+        ts.trimStart = meta.trimStart;
+        ts.trimEnd = meta.trimEnd;
+        cap.rawFloatSamples = null;
+        cap.peaks = [];
+        if (pb.sourceUrl && pb.sourceUrl !== meta.audioUrl.split(this.values.querySep)[0]) {
+          this.stopPreview(stripEl);
+          pb.audio = null;
+          pb.sourceUrl = "";
         }
       }
-      return;
-    }
-
-    const rerecordBtn = e.target.closest('[data-voice-record-start="true"]');
-    if (rerecordBtn) {
-      e.preventDefault();
-      e.stopPropagation();
-      const stripEl = rerecordBtn.closest(".voice-rec-strip");
-      if (stripEl) {
-        startVoiceRecording(stripEl);
+      EditorVoiceWaveform.syncHandles(stripEl, ts, pb, cap);
+      EditorVoiceWaveform.loadPeaks(stripEl, ts, cap);
+      if (
+        triggerAction === this.actions.toggleRecorder &&
+        stripEl.getAttribute(this.dom.attrs.open) === this.values.trueStr &&
+        !meta.audioUrl &&
+        !cap.recording &&
+        !cap.starting
+      ) {
+        this.startCapture(stripEl, { scene: meta.sceneId, voice_section: meta.sectionKey });
       }
-      return;
-    }
-
-    const cutBtn = e.target.closest('[data-voice-trim-destructive="true"]');
-    if (cutBtn) {
-      e.preventDefault();
-      e.stopPropagation();
-      if (cutBtn.disabled || cutBtn.classList.contains("is-disabled")) {
-        return;
-      }
-      const stripEl = cutBtn.closest(".voice-rec-strip");
-      if (stripEl) {
-        commitVoiceTrimDestructive(stripEl);
-      }
-      return;
-    }
-
-    const transportBtn = e.target.closest('[data-voice-transport="true"]');
-    if (transportBtn) {
-      e.preventDefault();
-      e.stopPropagation();
-      if (voiceAudioState.isSaving) return;
-      const stripEl = transportBtn.closest(".voice-rec-strip");
-      if (!stripEl) return;
-
-      if (voiceAudioState.isRecording) {
-        stopVoiceRecordingAndSave();
-        return;
-      }
-      const voiceUrl = (stripEl.getAttribute("data-voice-url") || "").trim();
-      if (!voiceUrl && (!voiceAudioState.pcmSamplesInt16 || voiceAudioState.pcmSamplesInt16.length === 0)) {
-        startVoiceRecording(stripEl);
-        return;
-      }
-      if (voiceAudioState.isPlaying) {
-        stopVoicePlayback();
-        syncAllVoiceStrips();
-      } else {
-        startVoicePlaybackFromRatio(stripEl, voiceAudioState.playheadRatio);
-      }
-    }
-  });
-
-  document.addEventListener("pointerdown", (e) => {
-    if (e.button !== 0 || !e.target || !e.target.closest) return;
-    if (voiceAudioState.isRecording) return;
-
-    const trimHandle = e.target.closest(".voice-rec-trim-handle[data-voice-trim]");
-    if (trimHandle) {
-      const stripEl = trimHandle.closest(".voice-rec-strip");
-      if (!stripEl) return;
-      e.preventDefault();
-      e.stopPropagation();
-      stopVoicePlayback();
-      voiceAudioState.dragMode = trimHandle.getAttribute("data-voice-trim") || "";
-      voiceAudioState.dragStripEl = stripEl;
-      voiceAudioState.dragMoved = false;
-      return;
-    }
-
-    const wrapEl = e.target.closest('[data-voice-waveform-wrap="true"]');
-    if (wrapEl) {
-      const stripEl = wrapEl.closest(".voice-rec-strip");
-      if (!stripEl) return;
-      const rect = wrapEl.getBoundingClientRect();
-      if (rect.width <= 0) return;
-      e.preventDefault();
-      const rawRatio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-      const clamped = Math.max(
-        voiceAudioState.startRatio,
-        Math.min(voiceAudioState.endRatio, rawRatio)
-      );
-      voiceAudioState.playheadRatio = clamped;
-      voiceAudioState.dragMode = "playhead";
-      voiceAudioState.dragStripEl = stripEl;
-      voiceAudioState.dragMoved = false;
-      startVoicePlaybackFromRatio(stripEl, clamped);
-    }
-  });
-
-  document.addEventListener("pointermove", (e) => {
-    if (!voiceAudioState.dragMode || !voiceAudioState.dragStripEl) return;
-    const wrapEl = qs('[data-voice-waveform-wrap="true"]', voiceAudioState.dragStripEl);
-    if (!wrapEl) return;
-    const rect = wrapEl.getBoundingClientRect();
-    if (rect.width <= 0) return;
-
-    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    const minSpan = 0.05;
-
-    if (voiceAudioState.dragMode === "start") {
-      voiceAudioState.startRatio = Math.max(0, Math.min(voiceAudioState.endRatio - minSpan, ratio));
-      if (voiceAudioState.playheadRatio < voiceAudioState.startRatio) {
-        voiceAudioState.playheadRatio = voiceAudioState.startRatio;
-      }
-      voiceAudioState.dragMoved = true;
-      syncAllVoiceStrips();
-    } else if (voiceAudioState.dragMode === "end") {
-      voiceAudioState.endRatio = Math.min(1, Math.max(voiceAudioState.startRatio + minSpan, ratio));
-      if (voiceAudioState.playheadRatio > voiceAudioState.endRatio) {
-        voiceAudioState.playheadRatio = voiceAudioState.endRatio;
-      }
-      voiceAudioState.dragMoved = true;
-      syncAllVoiceStrips();
-    } else if (voiceAudioState.dragMode === "playhead") {
-      const clamped = Math.max(
-        voiceAudioState.startRatio,
-        Math.min(voiceAudioState.endRatio, ratio)
-      );
-      voiceAudioState.playheadRatio = clamped;
-      if (voiceAudioState.playbackAudio && voiceAudioState.durationSec > 0) {
-        try {
-          voiceAudioState.playbackAudio.currentTime = clamped * voiceAudioState.durationSec;
-        } catch (_) {}
-      }
-      syncAllVoiceStrips();
-    }
-  });
-
-  const endVoiceDrag = () => {
-    if (!voiceAudioState.dragMode) return;
-    const mode = voiceAudioState.dragMode;
-    const stripEl = voiceAudioState.dragStripEl;
-    const moved = voiceAudioState.dragMoved;
-    voiceAudioState.dragMode = "";
-    voiceAudioState.dragStripEl = null;
-    voiceAudioState.dragMoved = false;
-
-    if ((mode === "start" || mode === "end") && moved && stripEl) {
-      commitVoiceTrimAutoSave(stripEl);
-    }
-  };
-
-  document.addEventListener("pointerup", endVoiceDrag);
-  document.addEventListener("pointercancel", endVoiceDrag);
-}
-
-bindVoiceRecorderEvents();
+    });
+  }
+};
+Dispatcher.register(EditorVoice.moduleName, EditorVoice);

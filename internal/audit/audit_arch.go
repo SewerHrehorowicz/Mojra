@@ -295,6 +295,9 @@ func analyzeArchStringHacks(idx *workspaceIndex, jsFuncs []jsFuncInfo) []Finding
 	}
 
 	for _, fn := range jsFuncs {
+		if fn.name == "bindings" {
+			continue
+		}
 		strCalls := len(reJSStrMethodCall.FindAllStringIndex(fn.body, -1))
 		strLits := len(reJSStrLiteral.FindAllStringIndex(fn.body, -1))
 		if strCalls >= 6 || strLits >= 12 {

@@ -6,6 +6,20 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"mojra/internal/i18n"
+)
+
+const (
+	ScriptStandardPL               = "pl"
+	ScreenplayInsertDialogue       = "dialogue"
+	ScreenplayInsertParenthetical  = "parenthetical"
+	ScreenplayInsertAction         = "action"
+	ScreenplayInsertDialogueOff    = "dialogue_off"
+	ScreenplayInsertDialogueVO     = "dialogue_vo"
+	ScreenplayInsertTransitionCut  = "transition_cut"
+	ScreenplayInsertTransitionFade = "transition_fade"
+	ScreenplayInsertSubslug        = "subslug"
 )
 
 // ScreenplayBlockKind classifies elements inside a screenplay scene.
@@ -53,6 +67,17 @@ type SceneScriptMetrics struct {
 	EstimatedSeconds int
 }
 
+// ScreenplayInsertPill represents a quick-insert screenplay block button in the editor.
+type ScreenplayInsertPill struct {
+	Name          string
+	Kind          string
+	Label         string
+	Hint          string
+	Snippet       string
+	SelectTarget  string
+	DoubleNewline bool
+}
+
 // LocationStat aggregates production breakdown statistics for a single location.
 type LocationStat struct {
 	Name               string
@@ -66,6 +91,8 @@ type LocationStat struct {
 	ExtScenes          int
 	EstimatedShootDays int
 	SceneIDs           []string
+	FirstSceneID       string
+	DayNightBadge      string
 }
 
 // CharacterStat aggregates production breakdown statistics for a character role.
@@ -76,8 +103,11 @@ type CharacterStat struct {
 	SpeakingSceneIDs  []string
 	SilentSceneIDs    []string
 	TotalScenes       int
+	SpeakingScenes    int
+	SilentScenes      int
 	LocationsVisited  []string
 	EstimatedCallDays int
+	FirstSceneID      string
 }
 
 // ActStat aggregates page/scene metrics for an Act (chapter in screenplay mode).
@@ -88,6 +118,8 @@ type ActStat struct {
 	TotalEighths    int
 	FormattedLength string
 	SharePct        int
+	IsDominant      bool
+	IsEmpty         bool
 }
 
 // ScreenplayBreakdown contains the complete deterministic breakdown of a screenplay project.
@@ -690,4 +722,41 @@ func ParseScreenplaySceneBlocks(sc *Scene, standard string) []ScreenplayBlock {
 	out = append(out, headBlock)
 	out = append(out, bodyBlocks...)
 	return out
+}
+
+// ScreenplayBlockSnippet returns the localized screenplay snippet, initial selection target,
+// and whether a blank line separator should precede the snippet.
+func ScreenplayBlockSnippet(standard, kind, charName string, lang i18n.Lang) (snippet, selectTarget string, doubleNewline bool) {
+	stdLang := i18n.LangEN
+	if NormalizeScriptStandard(standard) == ScriptStandardPL {
+		stdLang = i18n.LangPL
+	}
+	if charName != "" {
+		dlgLine := i18n.T(lang, i18n.TrSpInsDialogue)
+		return charName + "\n" + dlgLine, dlgLine, true
+	}
+	switch kind {
+	case ScreenplayInsertDialogue:
+		charHdr := i18n.T(lang, i18n.TrSpInsCharacter)
+		return charHdr + "\n" + i18n.T(lang, i18n.TrSpInsDialogue), charHdr, true
+	case ScreenplayInsertParenthetical:
+		return i18n.T(lang, i18n.TrSpInsParen), i18n.T(lang, i18n.TrSpInsParenSel), false
+	case ScreenplayInsertAction:
+		actLine := i18n.T(lang, i18n.TrSpInsAction)
+		return actLine, actLine, true
+	case ScreenplayInsertDialogueOff:
+		charHdr := i18n.T(lang, i18n.TrSpInsCharacter)
+		return charHdr + i18n.T(stdLang, i18n.TrSpInsOffHdr) + i18n.T(lang, i18n.TrSpInsOffLine), charHdr, true
+	case ScreenplayInsertDialogueVO:
+		charHdr := i18n.T(lang, i18n.TrSpInsCharacter)
+		return charHdr + i18n.T(lang, i18n.TrSpInsVOHdr) + i18n.T(lang, i18n.TrSpInsVOLine), charHdr, true
+	case ScreenplayInsertTransitionCut:
+		return i18n.T(stdLang, i18n.TrSpInsCut), "", true
+	case ScreenplayInsertTransitionFade:
+		return i18n.T(stdLang, i18n.TrSpInsFade), "", true
+	case ScreenplayInsertSubslug:
+		return i18n.T(stdLang, i18n.TrSpInsSubslug), i18n.T(stdLang, i18n.TrSpInsLocation), true
+	default:
+		return "", "", false
+	}
 }

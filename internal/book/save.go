@@ -18,8 +18,9 @@ import (
 )
 
 const (
-	saveMagic   = "STSV"
-	saveVersion = byte(1)
+	saveMagic       = "STSV"
+	saveVersion     = byte(1)
+	choiceTargetEnd = "END"
 
 	// Byte offset of float64 AudioTime inside .sav header ("STSV" + version byte = offset 5)
 	audioTimeOffset = 5
@@ -808,3 +809,155 @@ func readLengthPrefixedString(r io.Reader) (string, error) {
 	}
 	return readBytesOfLen(r, int(n))
 }
+
+type historyPathEdge struct {
+	fromScene *Scene
+	choice    Choice
+	toScene   *Scene
+}
+
+// BuildHistoryPathBetween finds the shortest choice path in b.Scenes from fromSceneID to toSceneID
+// and reconstructs HistoryEntry steps along with variable snapshots and applied effects.
+func BuildHistoryPathBetween(b *Book, fromSceneID, toSceneID string, startVars map[string]string) ([]HistoryEntry, map[string]string) {
+	vars := EnsureSaveVariables(b, CloneVariablesMap(startVars))
+	if b == nil || len(b.Scenes) == 0 {
+		return nil, vars
+	}
+	fromSc := b.FindScene(fromSceneID)
+	toSc := b.FindScene(toSceneID)
+	if fromSc == nil || toSc == nil || strings.EqualFold(fromSc.ID, toSc.ID) {
+		return nil, vars
+	}
+
+	fromKey := strings.ToLower(fromSc.ID)
+	toKey := strings.ToLower(toSc.ID)
+	visited := map[string]bool{fromKey: true}
+	parentEdge := make(map[string]historyPathEdge)
+	queue := []*Scene{fromSc}
+
+bfsLoop:
+	for len(queue) > 0 {
+		cur := queue[0]
+		queue = queue[1:]
+		for _, ch := range cur.Choices {
+			if ch.IsEnding || strings.EqualFold(ch.TargetSceneID, choiceTargetEnd) || ch.TargetSceneID == "" {
+				continue
+			}
+			nextSc := b.FindScene(ch.TargetSceneID)
+			if nextSc == nil {
+				continue
+			}
+			nextKey := strings.ToLower(nextSc.ID)
+			if visited[nextKey] {
+				continue
+			}
+			visited[nextKey] = true
+			parentEdge[nextKey] = historyPathEdge{
+				fromScene: cur,
+				choice:    ch,
+				toScene:   nextSc,
+			}
+			if nextKey == toKey {
+				break bfsLoop
+			}
+			queue = append(queue, nextSc)
+		}
+	}
+
+	if !visited[toKey] {
+		return nil, vars
+	}
+
+	var edges []historyPathEdge
+	for curKey := toKey; curKey != fromKey; {
+		edge, ok := parentEdge[curKey]
+		if !ok {
+			return nil, vars
+		}
+		edges = append(edges, edge)
+		curKey = strings.ToLower(edge.fromScene.ID)
+	}
+	for i, j := 0, len(edges)-1; i < j; i, j = i+1, j-1 {
+		edges[i], edges[j] = edges[j], edges[i]
+	}
+
+	if len(startVars) == 0 && fromSc.Effects != "" {
+		ApplyEffects(fromSc.Effects, vars, b)
+	}
+
+	entries := make([]HistoryEntry, 0, len(edges))
+	for i, edge := range edges {
+		snap := CloneVariablesMap(vars)
+		if edge.choice.Effects != "" {
+			ApplyEffects(edge.choice.Effects, vars, b)
+		}
+		if edge.toScene.Effects != "" {
+			ApplyEffects(edge.toScene.Effects, vars, b)
+		}
+		entries = append(entries, HistoryEntry{
+			Step:          i + 1,
+			SceneID:       edge.fromScene.ID,
+			SceneName:     edge.fromScene.Name,
+			Chapter:       edge.fromScene.Chapter,
+			ChoiceLabel:   edge.choice.Label,
+			TargetSceneID: edge.toScene.ID,
+			Variables:     snap,
+		})
+	}
+	return entries, vars
+}
+
+// EnsureHistoryFromStart ensures that when save.CurrentSceneID is past b.StartSceneID,
+// save.History contains a continuous path starting at b.StartSceneID.
+func EnsureHistoryFromStart(b *Book, save *SaveState) bool {
+	if b == nil || save == nil || len(b.Scenes) == 0 {
+		return false
+	}
+	startID := b.StartSceneID
+	if b.FindScene(startID) == nil {
+		startID = b.Scenes[0].ID
+	}
+	curScene := b.FindScene(save.CurrentSceneID)
+	if curScene == nil {
+		curScene = b.FindScene(startID)
+	}
+	if curScene == nil {
+		return false
+	}
+	if strings.EqualFold(curScene.ID, startID) {
+		if len(save.History) > 0 {
+			save.History = nil
+			return true
+		}
+		return false
+	}
+	if len(save.History) == 0 {
+		path, endVars := BuildHistoryPathBetween(b, startID, curScene.ID, nil)
+		if len(path) == 0 {
+			return false
+		}
+		save.History = path
+		if len(save.Variables) == 0 {
+			save.Variables = endVars
+		} else {
+			save.Variables = EnsureSaveVariables(b, save.Variables)
+		}
+		return true
+	}
+	if !strings.EqualFold(save.History[0].SceneID, startID) {
+		prefix, _ := BuildHistoryPathBetween(b, startID, save.History[0].SceneID, nil)
+		if len(prefix) == 0 {
+			return false
+		}
+		combined := make([]HistoryEntry, 0, len(prefix)+len(save.History))
+		combined = append(combined, prefix...)
+		combined = append(combined, save.History...)
+		for i := range combined {
+			combined[i].Step = i + 1
+		}
+		save.History = combined
+		return true
+	}
+	return false
+}
+

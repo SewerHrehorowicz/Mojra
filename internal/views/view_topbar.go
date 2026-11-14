@@ -4,20 +4,21 @@ import (
 	"mojra/internal/book"
 	"mojra/internal/i18n"
 	"mojra/internal/state"
+	"mojra/internal/tpl"
 )
 
-type topbarView struct {
-	IsViewLibrary   bool       `tpl:"is_view_library"`
-	IsViewPlayer    bool       `tpl:"is_view_player"`
-	IsViewEditor    bool       `tpl:"is_view_editor"`
-	HasEditorBook   bool       `tpl:"has_editor_book"`
-	EditorBook      *book.Book `tpl:"editor_book"`
-	PlayerBook      *book.Book `tpl:"player_book"`
-	ActiveBookTitle string     `tpl:"active_book_title"`
-	ShowZenMode     bool       `tpl:"show_zen_mode"`
-	ZenMode         bool       `tpl:"zen_mode"`
-	ZenModeAttr     string     `tpl:"zen_mode_attr"`
-	ZenToggleTitle  string     `tpl:"zen_toggle_title"`
+type topbarTemplate struct {
+	IsViewLibrary   bool
+	IsViewPlayer    bool
+	IsViewEditor    bool
+	HasEditorBook   bool
+	EditorBook      *book.Book
+	PlayerBook      *book.Book
+	ActiveBookTitle string
+	ShowZenMode     bool
+	ZenMode         bool
+	ZenModeAttr     string
+	ZenToggleTitle  string
 }
 
 func contextBookForTopbar(s *state.AppState) *book.Book {
@@ -34,7 +35,7 @@ func contextBookForTopbar(s *state.AppState) *book.Book {
 	}
 }
 
-func viewTopbar(s *state.AppState) topbarView {
+func ViewTopbar(s *state.AppState) tpl.TemplateChunk {
 	activeView := state.ActiveWorkspaceView(s)
 	hasEditorBook := s.Editor.HasActiveBook()
 	var editorBook *book.Book
@@ -55,17 +56,19 @@ func viewTopbar(s *state.AppState) topbarView {
 		zenTitle = tr(s, i18n.TrScaleExitZenHint)
 	}
 
-	return topbarView{
-		IsViewLibrary:   activeView == state.ViewLibrary,
-		IsViewPlayer:    activeView == state.ViewPlayer,
-		IsViewEditor:    activeView == state.ViewEditor,
-		HasEditorBook:   hasEditorBook,
-		EditorBook:      editorBook,
-		PlayerBook:      s.Player.Book,
-		ActiveBookTitle: activeBookTitle,
-		ShowZenMode:     showZenMode,
-		ZenMode:         zenMode,
-		ZenModeAttr:     zenModeAttr,
-		ZenToggleTitle:  zenTitle,
+	return tpl.TemplateChunk{
+		TemplateData: &topbarTemplate{
+			IsViewLibrary:   activeView == state.ViewLibrary,
+			IsViewPlayer:    activeView == state.ViewPlayer,
+			IsViewEditor:    activeView == state.ViewEditor,
+			HasEditorBook:   hasEditorBook,
+			EditorBook:      editorBook,
+			PlayerBook:      s.Player.Book,
+			ActiveBookTitle: activeBookTitle,
+			ShowZenMode:     showZenMode,
+			ZenMode:         zenMode,
+			ZenModeAttr:     zenModeAttr,
+			ZenToggleTitle:  zenTitle,
+		},
 	}
 }

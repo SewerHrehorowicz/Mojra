@@ -69,8 +69,8 @@ func (m ScenePreviewMode) String() string {
 	return previewModeNames[PreviewModeNormal]
 }
 
-// EditorSceneTextState holds the state of the Playbook Studio scene text editor panel (#modal-scene-text).
-type EditorSceneTextState struct {
+// TextEditorState holds the state of the Playbook Studio scene text editor panel (#modal-scene-text).
+type TextEditorState struct {
 	SceneID         string
 	InitialID       string
 	WidthMode       SceneWidthMode
@@ -83,12 +83,12 @@ type EditorSceneTextState struct {
 }
 
 // IsOpen reports whether the scene text editor panel is currently open.
-func (m *EditorSceneTextState) IsOpen() bool {
+func (m *TextEditorState) IsOpen() bool {
 	return m.SceneID != ""
 }
 
 // Open opens the scene text editor panel for the given scene ID and resets transient popovers.
-func (m *EditorSceneTextState) Open(sceneID string) {
+func (m *TextEditorState) Open(sceneID string) {
 	m.SceneID = sceneID
 	m.InitialID = sceneID
 	m.ChoiceRulesOpen = nil
@@ -97,13 +97,13 @@ func (m *EditorSceneTextState) Open(sceneID string) {
 }
 
 // SyncSceneID updates the active and initial scene IDs of the open scene text panel.
-func (m *EditorSceneTextState) SyncSceneID(sceneID string) {
+func (m *TextEditorState) SyncSceneID(sceneID string) {
 	m.SceneID = sceneID
 	m.InitialID = sceneID
 }
 
 // Close closes the scene text editor panel while preserving sticky layout preferences (WidthMode, SettingsOpen).
-func (m *EditorSceneTextState) Close() {
+func (m *TextEditorState) Close() {
 	m.SceneID = ""
 	m.InitialID = ""
 	m.PreviewMode = PreviewModeNormal
@@ -114,7 +114,7 @@ func (m *EditorSceneTextState) Close() {
 }
 
 // ApplyNavigationEffects applies choice and destination scene variable effects to the preview test state.
-func (m *EditorSceneTextState) ApplyNavigationEffects(b *book.Book, chosenEffects, nextSceneEffects string) {
+func (m *TextEditorState) ApplyNavigationEffects(b *book.Book, chosenEffects, nextSceneEffects string) {
 	if b == nil || len(b.Variables) == 0 {
 		return
 	}
@@ -128,13 +128,13 @@ func (m *EditorSceneTextState) ApplyNavigationEffects(b *book.Book, chosenEffect
 }
 
 // ResetRulesUI clears open choice rule rows and syntax help popover state.
-func (m *EditorSceneTextState) ResetRulesUI() {
+func (m *TextEditorState) ResetRulesUI() {
 	m.ChoiceRulesOpen = nil
 	m.SyntaxHelpOpen = false
 }
 
 // ToggleChoiceRule toggles the visibility of the condition/effect rule fields for a specific choice.
-func (m *EditorSceneTextState) ToggleChoiceRule(sceneID, idxStr string, hasRule bool) {
+func (m *TextEditorState) ToggleChoiceRule(sceneID, idxStr string, hasRule bool) {
 	if m.ChoiceRulesOpen == nil {
 		m.ChoiceRulesOpen = make(map[string]bool)
 	}
@@ -150,7 +150,7 @@ func (m *EditorSceneTextState) ToggleChoiceRule(sceneID, idxStr string, hasRule 
 }
 
 // TogglePreviewMode toggles the live prose preview mode between normal and output.
-func (m *EditorSceneTextState) TogglePreviewMode() {
+func (m *TextEditorState) TogglePreviewMode() {
 	if m.PreviewMode == PreviewModeOutput || m.PreviewMode == PreviewModeHighlight {
 		m.PreviewMode = PreviewModeNormal
 	} else {

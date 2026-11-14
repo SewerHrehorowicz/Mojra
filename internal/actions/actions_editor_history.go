@@ -4,8 +4,6 @@ package actions
 
 import (
 	"net/http"
-	"net/url"
-	"strconv"
 	"strings"
 
 	"mojra/internal/book"
@@ -46,74 +44,6 @@ func reloadActiveBook(s *state.AppState) {
 	s.Library.Put(reloaded)
 	if !isHistoryPreview(s) && s.Player.Book != nil && s.Player.Book.ID == reloaded.ID {
 		s.Player.Book = reloaded
-	}
-}
-
-// WriteEditorHistoryHeaders writes the X-Scene-* and X-History-* HTTP response headers for the Studio editor.
-func WriteEditorHistoryHeaders(w http.ResponseWriter, s *state.AppState) {
-	b := s.Editor.ActiveBook
-	if b != nil {
-		if s.Editor.SelectedSceneID != "" {
-			w.Header().Set("X-Scene-ID", s.Editor.SelectedSceneID)
-			if s.Editor.LastRenamedFromSceneID != "" && !strings.EqualFold(s.Editor.LastRenamedFromSceneID, s.Editor.SelectedSceneID) {
-				w.Header().Set("X-Scene-Prev-ID", s.Editor.LastRenamedFromSceneID)
-			}
-			s.Editor.LastRenamedFromSceneID = ""
-			if sc := b.FindScene(s.Editor.SelectedSceneID); sc != nil {
-				w.Header().Set("X-Scene-Explicit-ID", sc.ExplicitID)
-				w.Header().Set("X-Scene-Ref", url.QueryEscape(sc.ReferenceKey()))
-				w.Header().Set("X-Scene-Title", url.QueryEscape(sc.DisplayName()))
-				w.Header().Set("X-Scene-Chapter", url.QueryEscape(sc.Chapter))
-			}
-		}
-		if b.StartSceneID != "" {
-			w.Header().Set("X-Start-Scene-ID", b.StartSceneID)
-		}
-	}
-	histPreview := isHistoryPreview(s)
-	if histPreview {
-		w.Header().Set("X-History-Preview", "true")
-	} else {
-		w.Header().Set("X-History-Preview", "false")
-	}
-	if s.Config.StandaloneMode {
-		return
-	}
-	h := s.Editor.History.RefreshFromDisk(b)
-	if h == nil {
-		return
-	}
-	count := h.UnnamedEditsCount()
-	canUndo := !histPreview && h.CanUndo()
-	canRedo := !histPreview && h.CanRedo()
-	w.Header().Set("X-History-Count", strconv.Itoa(count))
-	if canUndo {
-		w.Header().Set("X-Can-Undo", "true")
-		curIdx := h.CursorIndex()
-		if curIdx >= 0 && curIdx < len(h.Revisions) {
-			w.Header().Set("X-Undo-Title", "Cofnij: "+h.Revisions[curIdx].Label+" (Ctrl+Z)")
-		}
-	} else {
-		w.Header().Set("X-Can-Undo", "false")
-		if histPreview {
-			w.Header().Set("X-Undo-Title", tr(s, i18n.TrHistoryPreviewLocked))
-		} else {
-			w.Header().Set("X-Undo-Title", "Brak zmian do cofnięcia od ostatniej wersji (Ctrl+Z)")
-		}
-	}
-	if canRedo {
-		w.Header().Set("X-Can-Redo", "true")
-		curIdx := h.CursorIndex()
-		if curIdx >= 0 && curIdx+1 < len(h.Revisions) {
-			w.Header().Set("X-Redo-Title", "Ponów: "+h.Revisions[curIdx+1].Label+" (Ctrl+Shift+Z)")
-		}
-	} else {
-		w.Header().Set("X-Can-Redo", "false")
-		if histPreview {
-			w.Header().Set("X-Redo-Title", tr(s, i18n.TrHistoryPreviewLocked))
-		} else {
-			w.Header().Set("X-Redo-Title", "Brak zmian do ponowienia (Ctrl+Shift+Z)")
-		}
 	}
 }
 

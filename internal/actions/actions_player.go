@@ -173,6 +173,9 @@ func playFromScene(s *state.AppState, r *http.Request) string {
 				truncated := false
 				for i, h := range s.Player.Save.History {
 					if strings.EqualFold(h.SceneID, s.Editor.SelectedSceneID) {
+						if len(h.Variables) > 0 {
+							s.Player.Save.Variables = book.CloneVariablesMap(h.Variables)
+						}
 						s.Player.Save.History = s.Player.Save.History[:i]
 						truncated = true
 						break
@@ -180,10 +183,12 @@ func playFromScene(s *state.AppState, r *http.Request) string {
 				}
 				if !truncated {
 					s.Player.Save.History = nil
+					s.Player.Save.Variables = nil
 				}
 			}
 			s.Player.Save.CurrentSceneID = s.Editor.SelectedSceneID
 			s.Player.Save.AudioTime = 0
+			book.EnsureHistoryFromStart(s.Player.Book, s.Player.Save)
 			if len(s.Editor.SceneText.TestVars) > 0 {
 				s.Player.Save.Variables = book.EnsureSaveVariables(s.Player.Book, s.Editor.SceneText.TestVars)
 			} else {

@@ -1,75 +1,73 @@
-{if open}
+{if Open}
     .modal-backdrop#modal-backdrop-new-book
-        data-backdrop-action: CloseNewBookModal
         .modal-card
             .modal-header
-                {if mode == "screenplay"}
+                {if Mode == "screenplay"}
                     h3.modal-title#new-book-modal-title {t_new_screenplay_modal_title}
                 {else}
                     h3.modal-title#new-book-modal-title {t_new_book_modal_title}
             form.modal-body#form-new-book
-                action: CreateNewBook
                 .node-meta-fields.modal-meta-fields
                     .node-meta-row
                         span.node-meta-key#new-book-title-label {t_title_key}
-                        {if mode == "screenplay"}
+                        {if Mode == "screenplay"}
                             input.node-meta-input.field-input#new-book-title
                                 type: text
                                 name: title
-                                value: "{title}"
+                                value: "{Title}"
                                 placeholder: "{t_new_screenplay_title_placeholder}"
                         {else}
                             input.node-meta-input.field-input#new-book-title
                                 type: text
                                 name: title
-                                value: "{title}"
+                                value: "{Title}"
                                 placeholder: "{t_new_book_title_placeholder}"
                     .node-meta-row
                         span.node-meta-key {t_author_key}
                         input.node-meta-input.field-input#new-book-author
                             type: text
                             name: author
-                            value: "{author}"
+                            value: "{Author}"
                             placeholder: "{t_author_placeholder}"
                     .node-meta-row
                         span.node-meta-key {t_mode_key}
                         .custom-select.node-media-select.new-book-mode-select
-                            input.custom-select-input
+                            data-select-root: "true"
+                            input
                                 type: hidden
                                 name: mode
-                                value: "{mode}"
+                                value: "{Mode}"
                             button.custom-select-trigger.modal-field-select-trigger
-                                type: button
                                 data-select-toggle: "true"
-                                span.custom-select-label {mode_label}
+                                span.custom-select-label {ModeLabel}
                                 svg.custom-select-caret src: /icons/chevron-down.svg
                             .custom-select-menu.hidden
-                                {for md_opt in mode_options}
-                                    button.custom-select-option .active?: {md_opt.is_active}
-                                        type: button
-                                        data-select-value: "{md_opt.value}"
-                                        data-select-label: "{md_opt.label}"
-                                        {md_opt.label}
-                    .node-meta-row.node-meta-row-radio#new-book-standard-field .hidden?: {mode != "screenplay"}
+                                data-select-menu: "true"
+                                {for md_opt in ModeOptions}
+                                    button.custom-select-option .active?: {md_opt.IsActive}
+                                        data-select-value: "{md_opt.Value}"
+                                        data-select-label: "{md_opt.Label}"
+                                        {md_opt.Label}
+                    .node-meta-row.node-meta-row-radio#new-book-standard-field .hidden?: {Mode != "screenplay"}
                         span.node-meta-key {t_standard_key}
                         .form-radio-group
-                            {for std_opt in standard_options}
-                                label.form-radio-option .active?: {std_opt.is_active}
+                            {for std_opt in StandardOptions}
+                                label.form-radio-option .active?: {std_opt.IsActive}
+                                    data-radio-option: "true"
                                     input.form-radio-input
                                         type: radio
                                         name: standard
-                                        value: "{std_opt.value}"
-                                        checked?: {std_opt.is_active}
-                                    span.form-radio-label {std_opt.label}
+                                        value: "{std_opt.Value}"
+                                        checked?: {std_opt.IsActive}
+                                    span.form-radio-label {std_opt.Label}
                                     span.form-radio-sq
-                    .node-meta-row#new-book-narrated-field .hidden?: {mode == "screenplay"}
+                    .node-meta-row#new-book-narrated-field .hidden?: {Mode == "screenplay"}
                         span.node-meta-key {t_narration_key}
                         input
                             type: hidden
                             name: narrated
-                            value: "{narrated}"
-                        button.book-setting-toggle-btn.form-toggle-btn .active?: {narrated}
-                            type: button
+                            value: "{Narrated}"
+                        button.book-setting-toggle-btn.form-toggle-btn .active?: {Narrated}
                             data-form-toggle: narrated
                             data-active-when: "true"
                             data-label-on: "{t_required_label}"
@@ -77,21 +75,20 @@
                             span.toggle-right
                                 span.toggle-switch
                                     span.toggle-thumb
-                                svg.action-icon.toggle-icon-on .hidden?: {!narrated} src: /icons/mic.svg
-                                svg.action-icon.toggle-icon-off .hidden?: {narrated} src: /icons/mic-off.svg
+                                svg.action-icon.toggle-icon-on .hidden?: {!Narrated} src: /icons/mic.svg
+                                svg.action-icon.toggle-icon-off .hidden?: {Narrated} src: /icons/mic-off.svg
                             span.custom-select-label
-                                {if narrated}
+                                {if Narrated}
                                     "{t_required_label}"
                                 {else}
                                     "{t_disabled_label}"
-                    .node-meta-row#new-book-imageless-field .hidden?: {mode == "screenplay"}
+                    .node-meta-row#new-book-imageless-field .hidden?: {Mode == "screenplay"}
                         span.node-meta-key {t_images_key}
                         input
                             type: hidden
                             name: imageless
-                            value: "{imageless}"
-                        button.book-setting-toggle-btn.form-toggle-btn .active?: {!imageless}
-                            type: button
+                            value: "{Imageless}"
+                        button.book-setting-toggle-btn.form-toggle-btn .active?: {!Imageless}
                             data-form-toggle: imageless
                             data-active-when: "false"
                             data-label-on: "{t_with_images_label}"
@@ -99,10 +96,10 @@
                             span.toggle-right
                                 span.toggle-switch
                                     span.toggle-thumb
-                                svg.action-icon.toggle-icon-on .hidden?: {imageless} src: /icons/image.svg
-                                svg.action-icon.toggle-icon-off .hidden?: {!imageless} src: /icons/image-off.svg
+                                svg.action-icon.toggle-icon-on .hidden?: {Imageless} src: /icons/image.svg
+                                svg.action-icon.toggle-icon-off .hidden?: {!Imageless} src: /icons/image-off.svg
                             span.custom-select-label
-                                {if imageless}
+                                {if Imageless}
                                     "{t_no_images_label}"
                                 {else}
                                     "{t_with_images_label}"
@@ -112,21 +109,17 @@
                             input.node-meta-input.field-input#new-book-path
                                 type: text
                                 name: save_path
-                                value: "{dir}"
-                                placeholder: "{dir}"
-                            button.node-icon-btn.node-folder-btn
-                                type: button
-                                action: BrowseNewBookFolder
+                                value: "{Dir}"
+                                placeholder: "{Dir}"
+                            button.node-icon-btn.node-folder-btn#btn-browse-new-book-folder
                                 data-hint: "{t_choose_folder_hint}"
                                 svg.folder-browse-icon src: /icons/folder.svg
                 .modal-actions
-                    button.btn
-                        type: button
-                        action: CloseNewBookModal
+                    button.btn.btn-close-new-book
                         "{t_cancel}"
                     button.btn.btn-primary#new-book-submit-btn
                         type: submit
-                        {if mode == "screenplay"}
+                        {if Mode == "screenplay"}
                             "{t_create_screenplay_btn}"
                         {else}
                             "{t_create_book_btn}"

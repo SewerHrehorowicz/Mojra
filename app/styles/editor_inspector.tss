@@ -1003,8 +1003,45 @@
   border-bottom 1px solid --text-primary
   border-right 1px solid --text-primary
 
-.voice-rec-strip.is-recording .voice-rec-trim-handle
+.voice-rec-strip.is-recording .voice-rec-trim-handle,
+[data-voice-strip][data-voice-state="recording"] .voice-rec-trim-handle
   display none
+
+[data-voice-strip][data-voice-state="recording"] [data-voice-icon="stop"],
+[data-voice-strip][data-voice-state="playing"] [data-voice-icon="pause"],
+[data-voice-strip][data-voice-state="ready"] [data-voice-icon="play"],
+[data-voice-strip][data-voice-state="idle"] [data-voice-icon="mic"]
+  display block !important
+
+[data-voice-strip][data-voice-state="recording"] [data-voice-icon="mic"],
+[data-voice-strip][data-voice-state="recording"] [data-voice-icon="play"],
+[data-voice-strip][data-voice-state="recording"] [data-voice-icon="pause"],
+[data-voice-strip][data-voice-state="playing"] [data-voice-icon="play"]
+  display none !important
+
+[data-voice-strip][data-voice-state="playing"] [data-voice-icon="mic"],
+[data-voice-strip][data-voice-state="playing"] [data-voice-icon="stop"],
+[data-voice-strip][data-voice-state="ready"] [data-voice-icon="pause"],
+[data-voice-strip][data-voice-state="ready"] [data-voice-icon="mic"]
+  display none !important
+
+[data-voice-strip][data-voice-state="ready"] [data-voice-icon="stop"],
+[data-voice-strip][data-voice-state="idle"] [data-voice-icon="play"],
+[data-voice-strip][data-voice-state="idle"] [data-voice-icon="pause"],
+[data-voice-strip][data-voice-state="idle"] [data-voice-icon="stop"]
+  display none !important
+
+[data-voice-strip][data-voice-state="recording"] [data-voice-record-start="true"],
+[data-voice-strip][data-voice-state="recording"] [data-voice-delete="true"],
+[data-voice-strip][data-voice-state="idle"] [data-voice-record-start="true"],
+[data-voice-strip][data-voice-state="idle"] [data-voice-delete="true"]
+  display none !important
+
+[data-voice-strip][data-voice-state="ready"] [data-voice-record-start="true"],
+[data-voice-strip][data-voice-state="ready"] [data-voice-delete="true"],
+[data-voice-strip][data-voice-state="playing"] [data-voice-record-start="true"],
+[data-voice-strip][data-voice-state="playing"] [data-voice-delete="true"]
+  display inline-flex !important
 
 .voice-rec-timer
   font-family --font-sans
@@ -1016,7 +1053,8 @@
   flex-shrink 0
   font-variant-numeric tabular-nums
 
-.voice-rec-strip.is-recording .voice-rec-timer
+.voice-rec-strip.is-recording .voice-rec-timer,
+[data-voice-strip][data-voice-state="recording"] .voice-rec-timer
   color --text-primary
   font-weight 700
 

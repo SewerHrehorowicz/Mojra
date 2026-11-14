@@ -3,209 +3,58 @@
 package views
 
 import (
-	"fmt"
 	"strings"
 
 	"mojra/internal/book"
-	"mojra/internal/i18n"
 	"mojra/internal/state"
+	"mojra/internal/tpl"
 )
 
-type playerScreenplayBlockItem struct {
-	Kind            string `tpl:"kind"`
-	Text            string `tpl:"text"`
-	SceneNum        int    `tpl:"scene_num"`
-	ShowSceneNum    bool   `tpl:"show_scene_num"`
-	IsSlugline      bool   `tpl:"is_slugline"`
-	IsCharacter     bool   `tpl:"is_character"`
-	IsParenthetical bool   `tpl:"is_parenthetical"`
-	IsDialogue      bool   `tpl:"is_dialogue"`
-	IsTransition    bool   `tpl:"is_transition"`
+const metaSep = " • "
+
+type playerTemplate struct {
+	ImagelessMode       bool
+	IsHistoryPreview    bool
+	HistoryPreviewID    string
+	HistoryPreviewLabel string
+	HeaderMeta          string
+	RailTitle           string
+	HasBgImage          bool
+	BgImageURL          string
+	HasHistory          bool
+	HistoryScenes       []tpl.TemplateChunk
+	HistoryTicks        []string
+	CurrentScene        tpl.TemplateChunk
+	ShowAudioDeck       bool
+	AudioDeck           tpl.TemplateChunk
+	PrefetchMediaURLs   string
+	BookProgressPct     int
 }
 
-type playerChoiceView struct {
-	Idx        int    `tpl:"idx"`
-	Label      string `tpl:"label"`
-	Arrow      string `tpl:"arrow"`
-	IsBranch   bool   `tpl:"is_branch"`
-	IsImplicit bool   `tpl:"is_implicit"`
-	IsLocked   bool   `tpl:"is_locked"`
+type playerScript struct {
+	bookId        string
+	sensitivity   string
+	imagelessMode bool
 }
 
-type sceneData struct {
-	Idx                int                         `tpl:"idx"`
-	HeaderMeta         string                      `tpl:"header_meta"`
-	Name               string                      `tpl:"name"`
-	Slugline           string                      `tpl:"slugline"`
-	RailTitle          string                      `tpl:"rail_title"`
-	HasTitle           bool                        `tpl:"has_title"`
-	Prose              string                      `tpl:"prose"`
-	ScreenplayBlocks   []playerScreenplayBlockItem `tpl:"screenplay_blocks"`
-	HasImage           bool                        `tpl:"has_image"`
-	ImageURL           string                      `tpl:"image_url"`
-	HasBgImage         bool                        `tpl:"has_bg_image"`
-	BgImageURL         string                      `tpl:"bg_image_url"`
-	AudioURL           string                      `tpl:"audio_url"`
-	AudioQueue         string                      `tpl:"audio_queue"`
-	AudioDurationLabel string                      `tpl:"audio_duration_label"`
-	AudioTrimStart     string                      `tpl:"audio_trim_start"`
-	AudioTrimEnd       string                      `tpl:"audio_trim_end"`
-	IsTerminal         bool                        `tpl:"is_terminal"`
-	Choices            []playerChoiceView          `tpl:"choices"`
-}
+func ViewPlayer(s *state.AppState) tpl.TemplateChunk {
+	v := &playerTemplate{}
+	scData := &playerScript{}
+	chunk := tpl.TemplateChunk{
+		TemplateData: v,
+		ScriptData:   scData,
+	}
 
-type SceneData = sceneData
-
-type playerView struct {
-	ImagelessMode       bool        `tpl:"imageless_mode"`
-	IsScreenplayMode    bool        `tpl:"is_screenplay_mode"`
-	IsHistoryPreview    bool        `tpl:"is_history_preview"`
-	HistoryPreviewID    string      `tpl:"history_preview_id"`
-	HistoryPreviewLabel string      `tpl:"history_preview_label"`
-	HasHistory          bool        `tpl:"has_history"`
-	HistoryItems        []sceneData `tpl:"history_items"`
-	CurrentScene        sceneData   `tpl:"current_scene"`
-	ShowAudioDeck       bool        `tpl:"show_audio_deck"`
-	PrefetchMediaURLs   string      `tpl:"prefetch_media_urls"`
-	BookProgressPct     int         `tpl:"book_progress_pct"`
-	AudioResumeTime     string      `tpl:"audio_resume_time"`
-	AudioSpeed          string      `tpl:"audio_speed"`
-	AutoChoiceEnabled   bool        `tpl:"auto_choice_enabled"`
-	AutoChoiceLabel     string      `tpl:"auto_choice_label"`
-	AutoChoiceDelay     string      `tpl:"auto_choice_delay"`
-}
-
-type sceneAudioResolved struct {
-	url       string
-	duration  string
-	trimStart string
-	trimEnd   string
-	queueSpec string
-}
-
-func buildPlayerScreenplayBlocks(sc *book.Scene, vars map[string]string, b *book.Book, sceneNum int, standard string) []playerScreenplayBlockItem {
-	if sc == nil {
-		return nil
-	}
-	evalSc := sc
-	if book.HasDynamicProse(sc.Text) {
-		clone := *sc
-		clone.Text = book.EvaluateProseText(sc.Text, vars, b)
-		evalSc = &clone
-	}
-	normStd := book.NormalizeScriptStandard(standard)
-	blocks := book.ParseScreenplaySceneBlocks(evalSc, normStd)
-	if len(blocks) == 0 {
-		return nil
-	}
-	numbered := book.IsNumberedStandard(normStd)
-	renderedPrimarySlug := false
-	out := make([]playerScreenplayBlockItem, 0, len(blocks))
-	for _, blk := range blocks {
-		showNum := false
-		if blk.Kind == book.BlockSlugline && !renderedPrimarySlug {
-			renderedPrimarySlug = true
-			showNum = numbered && sceneNum > 0
-		}
-		out = append(out, playerScreenplayBlockItem{
-			Kind:            string(blk.Kind),
-			Text:            blk.Text,
-			SceneNum:        sceneNum,
-			ShowSceneNum:    showNum,
-			IsSlugline:      blk.Kind == book.BlockSlugline,
-			IsCharacter:     blk.Kind == book.BlockCharacter,
-			IsParenthetical: blk.Kind == book.BlockParenthetical,
-			IsDialogue:      blk.Kind == book.BlockDialogue,
-			IsTransition:    blk.Kind == book.BlockTransition,
-		})
-	}
-	return out
-}
-
-func resolvePlayerSceneAudio(b *book.Book, sc *book.Scene, vars map[string]string) sceneAudioResolved {
-	if b == nil || !b.Narrated || sc == nil {
-		return sceneAudioResolved{duration: "0:00", trimStart: "0.0000", trimEnd: "1.0000"}
-	}
-	queue := book.EvaluateSceneAudioQueue(sc, vars, b)
-	queueSpec, _, totalDurLbl := book.EncodeSceneAudioQueue(queue)
-	if len(queue) > 0 {
-		ts, te := book.NormalizedVoiceTrimValues(queue[0].TrimStart, queue[0].TrimEnd)
-		return sceneAudioResolved{
-			url:       queue[0].AudioURL,
-			duration:  totalDurLbl,
-			trimStart: fmt.Sprintf("%.4f", ts),
-			trimEnd:   fmt.Sprintf("%.4f", te),
-			queueSpec: queueSpec,
-		}
-	}
-	if sc.AudioURL == "" {
-		return sceneAudioResolved{duration: "0:00", trimStart: "0.0000", trimEnd: "1.0000"}
-	}
-	durLbl, stamp := book.ReadSceneAudioDurationAndStamp(b, sc)
-	if durLbl == "" {
-		durLbl = "0:00"
-	}
-	urlStr := sc.AudioURL
-	if stamp > 0 && !strings.Contains(urlStr, "?v=") {
-		urlStr = fmt.Sprintf("%s?v=%d", urlStr, stamp)
-	}
-	ts, te := sc.NormalizedVoiceTrim()
-	return sceneAudioResolved{
-		url:       urlStr,
-		duration:  durLbl,
-		trimStart: fmt.Sprintf("%.4f", ts),
-		trimEnd:   fmt.Sprintf("%.4f", te),
-	}
-}
-
-func buildPlayerSceneData(s *state.AppState, sc *book.Scene, idx int, vars map[string]string, choices []playerChoiceView) sceneData {
-	b := s.Player.Book
-	imageless := b.IsEffectiveImageless(s.Settings)
-	imgURL := ""
-	if !imageless && sc.ImageURL != "" {
-		imgURL = sc.ImageURL
-	}
-	headerMeta := b.Title
-	if sc.Chapter != "" {
-		headerMeta = b.Title + " • " + sc.Chapter
-	}
-	var blocks []playerScreenplayBlockItem
-	if b.IsScreenplay() {
-		blocks = buildPlayerScreenplayBlocks(sc, vars, b, sc.OrderIndex+1, b.NormalizedStandard())
-	}
-	prose := book.EvaluateSceneProseText(sc, vars, b)
-	aud := resolvePlayerSceneAudio(b, sc, vars)
-	return sceneData{
-		Idx:                idx,
-		HeaderMeta:         headerMeta,
-		Name:               sc.Name,
-		Slugline:           sc.Slugline,
-		RailTitle:          sc.DisplayName(),
-		HasTitle:           strings.TrimSpace(sc.Name) != "",
-		Prose:              prose,
-		ScreenplayBlocks:   blocks,
-		HasImage:           imgURL != "",
-		ImageURL:           imgURL,
-		AudioURL:           aud.url,
-		AudioQueue:         aud.queueSpec,
-		AudioDurationLabel: aud.duration,
-		AudioTrimStart:     aud.trimStart,
-		AudioTrimEnd:       aud.trimEnd,
-		IsTerminal:         len(sc.Choices) == 0 || sc.ExplicitEnd,
-		Choices:            choices,
-	}
-}
-
-func ViewPlayer(s *state.AppState) *playerView {
-	v := &playerView{}
-	populatePlayerContext(s, v)
-	return v
-}
-
-func populatePlayerContext(s *state.AppState, v *playerView) {
 	b := s.Player.Book
 	imageless := b.IsEffectiveImageless(s.Settings)
 	v.ImagelessMode = imageless
+	scData.imagelessMode = imageless
+	if b != nil {
+		scData.bookId = b.ID
+	}
+	if s.Settings != nil {
+		scData.sensitivity = book.NormalizeScrollSensitivity(s.Settings.ScrollSensitivity)
+	}
 	isHistPreview := !s.Config.StandaloneMode && s.Editor.History.IsPreview(s.Editor.ActiveBook)
 	v.IsHistoryPreview = isHistPreview
 	if isHistPreview && s.Editor.History.Preview != nil {
@@ -214,14 +63,12 @@ func populatePlayerContext(s *state.AppState, v *playerView) {
 	}
 
 	if b == nil || len(b.Scenes) == 0 {
-		return
+		return chunk
 	}
 	curScene := b.CurrentScene(s.Player.Save)
 	if curScene == nil {
 		curScene = b.Scenes[0]
 	}
-
-	v.IsScreenplayMode = b.IsScreenplay()
 
 	histCount := 0
 	if s.Player.Save != nil {
@@ -231,6 +78,9 @@ func populatePlayerContext(s *state.AppState, v *playerView) {
 				s.Player.PersistSave(s.Config.SavesDir)
 				break
 			}
+		}
+		if book.EnsureHistoryFromStart(b, s.Player.Save) && !isHistPreview {
+			s.Player.PersistSave(s.Config.SavesDir)
 		}
 		histCount = len(s.Player.Save.History)
 		if len(s.Player.Save.Variables) == 0 && len(b.Variables) > 0 {
@@ -252,8 +102,9 @@ func populatePlayerContext(s *state.AppState, v *playerView) {
 
 	lastImageURL := ""
 	if histCount > 0 {
-		histList := make([]sceneData, 0, histCount)
-		for idx, entry := range s.Player.Save.History {
+		histChunks := make([]tpl.TemplateChunk, 0, histCount)
+		histTicks := make([]string, 0, histCount)
+		for _, entry := range s.Player.Save.History {
 			pastScene := b.FindScene(entry.SceneID)
 			if pastScene == nil {
 				continue
@@ -265,52 +116,33 @@ func populatePlayerContext(s *state.AppState, v *playerView) {
 			if len(pastVars) == 0 {
 				pastVars = curVars
 			}
-			sd := buildPlayerSceneData(s, pastScene, idx, pastVars, nil)
-			sd.BgImageURL = lastImageURL
-			sd.HasBgImage = !imageless && lastImageURL != ""
-			histList = append(histList, sd)
+			histChunks = append(histChunks, ViewScene(s, pastScene, pastVars, false))
+			histTicks = append(histTicks, pastScene.DisplayName())
 		}
-		v.HistoryItems = histList
-	}
-
-	hasMultipleChoices := len(curScene.Choices) > 1
-	curChoices := make([]playerChoiceView, 0, len(curScene.Choices))
-	for idx, ch := range curScene.Choices {
-		condMet := book.EvaluateCondition(ch.Condition, curVars, b)
-		if !condMet && !ch.ShowWhenLocked {
-			continue
-		}
-		label := ch.Label
-		if !hasMultipleChoices {
-			label = tr(s, i18n.TrNext)
-		}
-		arrow := "»"
-		if ch.IsEnding {
-			arrow = tr(s, i18n.TrEndUpper)
-		}
-		isImplicitNext := !hasMultipleChoices && !ch.IsEnding && ch.TargetSceneID != "END"
-		curChoices = append(curChoices, playerChoiceView{
-			Idx:        idx,
-			Label:      label,
-			Arrow:      arrow,
-			IsBranch:   hasMultipleChoices && !ch.IsEnding,
-			IsImplicit: isImplicitNext,
-			IsLocked:   !condMet && ch.ShowWhenLocked,
-		})
+		v.HistoryScenes = histChunks
+		v.HistoryTicks = histTicks
 	}
 
 	if !imageless && curScene.ImageURL != "" {
 		lastImageURL = curScene.ImageURL
 	}
-	curSD := buildPlayerSceneData(s, curScene, 0, curVars, curChoices)
-	curSD.BgImageURL = lastImageURL
-	curSD.HasBgImage = !imageless && lastImageURL != ""
-	v.CurrentScene = curSD
+	headerMeta := b.Title
+	if curScene.Chapter != "" {
+		headerMeta = b.Title + metaSep + curScene.Chapter
+	}
+	v.HeaderMeta = headerMeta
+	v.RailTitle = curScene.DisplayName()
+	v.BgImageURL = lastImageURL
+	v.HasBgImage = !imageless && lastImageURL != ""
+	v.CurrentScene = ViewScene(s, curScene, curVars, true)
 	v.ShowAudioDeck = b.Narrated
+	if b.Narrated {
+		v.AudioDeck = ViewAudioDeck(s, b, curScene, curVars)
+	}
 
 	seenURLs := make(map[string]bool, 16)
-	if curSD.ImageURL != "" {
-		seenURLs[curSD.ImageURL] = true
+	if !imageless && curScene.ImageURL != "" {
+		seenURLs[curScene.ImageURL] = true
 	}
 	if lastImageURL != "" {
 		seenURLs[lastImageURL] = true
@@ -324,7 +156,7 @@ func populatePlayerContext(s *state.AppState, v *playerView) {
 
 	var hop1Scenes []*book.Scene
 	for _, ch := range curScene.Choices {
-		if ch.IsEnding || ch.TargetSceneID == "" || ch.TargetSceneID == "END" || seenScenes[ch.TargetSceneID] {
+		if ch.IsEnding || ch.TargetSceneID == "" || ch.TargetSceneID == endTargetID || seenScenes[ch.TargetSceneID] {
 			continue
 		}
 		target := b.FindScene(ch.TargetSceneID)
@@ -338,7 +170,7 @@ func populatePlayerContext(s *state.AppState, v *playerView) {
 	var hop2Scenes []*book.Scene
 	for _, h1 := range hop1Scenes {
 		for _, ch := range h1.Choices {
-			if ch.IsEnding || ch.TargetSceneID == "" || ch.TargetSceneID == "END" || seenScenes[ch.TargetSceneID] {
+			if ch.IsEnding || ch.TargetSceneID == "" || ch.TargetSceneID == endTargetID || seenScenes[ch.TargetSceneID] {
 				continue
 			}
 			target := b.FindScene(ch.TargetSceneID)
@@ -391,18 +223,5 @@ func populatePlayerContext(s *state.AppState, v *playerView) {
 		}
 	}
 	v.BookProgressPct = progressPct
-
-	var audioTime float64
-	if s.Player.Save != nil {
-		audioTime = s.Player.Save.AudioTime
-	}
-	v.AudioResumeTime = fmt.Sprintf("%.1f", audioTime)
-	v.AudioSpeed = fmt.Sprintf("%.2g", s.Settings.PlaybackSpeed)
-	v.AutoChoiceEnabled = s.Settings.AutoChoice
-	if s.Settings.AutoChoice {
-		v.AutoChoiceLabel = tr(s, i18n.TrAutoChoiceOnLabel)
-	} else {
-		v.AutoChoiceLabel = tr(s, i18n.TrAutoChoiceOffLabel)
-	}
-	v.AutoChoiceDelay = fmt.Sprintf("%.2g", book.NormalizeAutoChoiceDelay(s.Settings.AutoChoiceDelay))
+	return chunk
 }

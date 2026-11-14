@@ -351,3 +351,71 @@ func TestConditionalVoiceSectionsAutoLinkQueueAndExport(t *testing.T) {
 		t.Fatalf("expected decoded STBC scene to have 4 voice sections, got %d", len(decBook.Scenes[0].VoiceSections))
 	}
 }
+
+func TestEnsureHistoryFromStart(t *testing.T) {
+	b := &Book{
+		ID:           "hist-test",
+		StartSceneID: "start",
+		Scenes: []*Scene{
+			{
+				ID:      "start",
+				Name:    "Start",
+				Chapter: "Akt I",
+				Effects: "gold = 1",
+				Choices: []Choice{
+					{Label: "Idź dalej", TargetSceneID: "mid", Effects: "gold += 2"},
+				},
+			},
+			{
+				ID:      "mid",
+				Name:    "Środek",
+				Chapter: "Akt I",
+				Effects: "gold += 3",
+				Choices: []Choice{
+					{Label: "Do końca", TargetSceneID: "fin", Effects: "gold += 4"},
+				},
+			},
+			{
+				ID:      "fin",
+				Name:    "Finał",
+				Chapter: "Akt II",
+			},
+		},
+	}
+	ParseDataFile("start: start\nvar: gold = 0\n", b)
+
+	save := &SaveState{
+		BookID:         b.ID,
+		CurrentSceneID: "fin",
+	}
+	if !EnsureHistoryFromStart(b, save) {
+		t.Fatalf("expected EnsureHistoryFromStart to reconstruct missing history path")
+	}
+	if len(save.History) != 2 {
+		t.Fatalf("expected 2 history steps from start to fin, got %d", len(save.History))
+	}
+	if save.History[0].SceneID != "start" || save.History[0].Variables["gold"] != "1" {
+		t.Fatalf("unexpected step 0: %+v", save.History[0])
+	}
+	if save.History[1].SceneID != "mid" || save.History[1].Variables["gold"] != "6" {
+		t.Fatalf("unexpected step 1: %+v", save.History[1])
+	}
+	if save.Variables["gold"] != "10" {
+		t.Fatalf("expected final variable gold=10, got %q", save.Variables["gold"])
+	}
+
+	partialSave := &SaveState{
+		BookID:         b.ID,
+		CurrentSceneID: "fin",
+		History: []HistoryEntry{
+			{Step: 1, SceneID: "mid", SceneName: "Środek", TargetSceneID: "fin"},
+		},
+	}
+	if !EnsureHistoryFromStart(b, partialSave) {
+		t.Fatalf("expected EnsureHistoryFromStart to prepend missing history prefix")
+	}
+	if len(partialSave.History) != 2 || partialSave.History[0].SceneID != "start" || partialSave.History[1].SceneID != "mid" || partialSave.History[1].Step != 2 {
+		t.Fatalf("unexpected combined history: %+v", partialSave.History)
+	}
+}
+

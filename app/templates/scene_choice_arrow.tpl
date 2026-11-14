@@ -1,11 +1,11 @@
-{if not ch.is_editable}
-    span.choice-label-text {ch.label}
-{if ch.is_branch}
+{if not ch.IsEditable}
+    span.choice-label-text {ch.Label}
+{if ch.IsBranch}
     span.choice-arrow
         svg.choice-branch-icon src: /icons/branch.svg
-{elif ch.is_editable}
+{elif ch.IsEditable}
     span.choice-arrow "↺"
-{elif ch.is_ending}
+{elif ch.IsEnding}
     span.choice-arrow {t_end_upper}
 {else}
     span.choice-arrow "»"

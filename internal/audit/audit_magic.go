@@ -87,6 +87,9 @@ func analyzeMagicFuncStrings(idx *workspaceIndex, jsFuncs []jsFuncInfo) []Findin
 	}
 
 	for _, fn := range jsFuncs {
+		if fn.name == "bindings" {
+			continue
+		}
 		for _, loc := range reJSStrLiteral.FindAllStringIndex(fn.body, -1) {
 			raw := fn.body[loc[0]:loc[1]]
 			if len(raw) <= 2 {

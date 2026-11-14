@@ -1306,7 +1306,7 @@ func EvaluateSceneAudioQueue(sc *Scene, state map[string]string, b *Book) []Voic
 	return queue
 }
 
-// EncodeSceneAudioQueue encodes a slice of VoiceQueueItems into "url1|ts1|te1|dur1;url2|ts2|te2|dur2" and returns total duration.
+// EncodeSceneAudioQueue encodes a slice of VoiceQueueItems into "url1|startSec1|endSec1|durSec1;..." and returns total duration.
 func EncodeSceneAudioQueue(items []VoiceQueueItem) (queueSpec string, totalDurSec float64, totalDurLabel string) {
 	if len(items) == 0 {
 		return "", 0, "0:00"
@@ -1321,8 +1321,40 @@ func EncodeSceneAudioQueue(items []VoiceQueueItem) (queueSpec string, totalDurSe
 		if dur < 0 {
 			dur = 0
 		}
+		span := te - ts
+		if span < 0.001 {
+			span = 1
+		}
+		rawDur := dur / span
+		startSec := rawDur * ts
+		endSec := rawDur * te
 		totalDurSec += dur
-		parts = append(parts, fmt.Sprintf("%s|%.4f|%.4f|%.3f", it.AudioURL, ts, te, dur))
+		parts = append(parts, fmt.Sprintf("%s|%.3f|%.3f|%.3f", it.AudioURL, startSec, endSec, dur))
 	}
 	return strings.Join(parts, ";"), totalDurSec, formatDurationSecondsLabel(totalDurSec)
+}
+
+// ResolveAudioQueueResume maps a saved global audio time (in seconds) to a segment index and local offset within that segment.
+func ResolveAudioQueueResume(items []VoiceQueueItem, totalDurSec, audioTime float64) (resumeIndex int, resumeOffsetSec float64) {
+	if len(items) == 0 || audioTime <= 0.2 || audioTime >= totalDurSec-0.1 {
+		return 0, 0
+	}
+	var accum float64
+	for i, it := range items {
+		dur := it.DurationSec
+		if dur < 0 {
+			dur = 0
+		}
+		if audioTime <= accum+dur || i == len(items)-1 {
+			local := audioTime - accum
+			if local < 0 {
+				local = 0
+			} else if dur > 0 && local > dur {
+				local = dur
+			}
+			return i, local
+		}
+		accum += dur
+	}
+	return 0, 0
 }

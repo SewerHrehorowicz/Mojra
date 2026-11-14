@@ -4,21 +4,22 @@ import (
 	"mojra/internal/book"
 	"mojra/internal/i18n"
 	"mojra/internal/state"
+	"mojra/internal/tpl"
 )
 
-type modalExportView struct {
-	ShowExportModal          bool             `tpl:"show_export_modal"`
-	ExportPrimaryFormats     []map[string]any `tpl:"export_primary_formats"`
-	ExportAdvancedFormats    []map[string]any `tpl:"export_advanced_formats"`
-	ExportSelectedCount      int              `tpl:"export_selected_count"`
-	ExportSelectedCountLabel string           `tpl:"export_selected_count_label"`
-	ExportHasSelected        bool             `tpl:"export_has_selected"`
-	ExportAdvancedOpen       bool             `tpl:"export_advanced_open"`
-	ExportModalStandard      string           `tpl:"export_modal_standard"`
-	ExportModalStandardLabel string           `tpl:"export_modal_standard_label"`
-	ExportModalStandardOpts  []map[string]any `tpl:"export_modal_standard_options"`
-	ExportModalDir           string           `tpl:"export_modal_dir"`
-	DefaultExportDir         string           `tpl:"default_export_dir"`
+type modalExportTemplate struct {
+	ShowExportModal           bool
+	ExportPrimaryFormats      []book.ExportFormatItem
+	ExportAdvancedFormats     []book.ExportFormatItem
+	ExportSelectedCount       int
+	ExportSelectedCountLabel  string
+	ExportHasSelected         bool
+	ExportAdvancedOpen        bool
+	ExportModalStandard       string
+	ExportModalStandardLabel  string
+	ExportModalStandardOptions []book.SelectOption
+	ExportModalDir            string
+	DefaultExportDir          string
 }
 
 func formatExportSelectionCountLabel(count int, lang i18n.Lang) string {
@@ -34,7 +35,7 @@ func formatExportSelectionCountLabel(count int, lang i18n.Lang) string {
 	}
 }
 
-func buildExportModalFormatLists(selected map[string]bool, lang i18n.Lang) ([]map[string]any, []map[string]any, int) {
+func buildExportModalFormatLists(selected map[string]bool, lang i18n.Lang) ([]book.ExportFormatItem, []book.ExportFormatItem, int) {
 	webLabel := i18n.T(lang, i18n.TrExportFmtWebApp)
 	pdfLabel := i18n.T(lang, i18n.TrExportFmtPDFScreenplay)
 	fountainLabel := i18n.T(lang, i18n.TrExportFmtFountain)
@@ -62,8 +63,8 @@ func buildExportModalFormatLists(selected map[string]bool, lang i18n.Lang) ([]ma
 		{"playtxt", playtxtLabel, ".playtxt"},
 	}
 
-	var primary []map[string]any
-	var advanced []map[string]any
+	var primary []book.ExportFormatItem
+	var advanced []book.ExportFormatItem
 	totalSelected := 0
 
 	for _, d := range primaryDefs {
@@ -71,11 +72,11 @@ func buildExportModalFormatLists(selected map[string]bool, lang i18n.Lang) ([]ma
 		if sel {
 			totalSelected++
 		}
-		primary = append(primary, map[string]any{
-			"id":          d.id,
-			"label":       d.label,
-			"ext":         d.ext,
-			"is_selected": sel,
+		primary = append(primary, book.ExportFormatItem{
+			ID:         d.id,
+			Label:      d.label,
+			Ext:        d.ext,
+			IsSelected: sel,
 		})
 	}
 	for _, d := range advancedDefs {
@@ -83,17 +84,17 @@ func buildExportModalFormatLists(selected map[string]bool, lang i18n.Lang) ([]ma
 		if sel {
 			totalSelected++
 		}
-		advanced = append(advanced, map[string]any{
-			"id":          d.id,
-			"label":       d.label,
-			"ext":         d.ext,
-			"is_selected": sel,
+		advanced = append(advanced, book.ExportFormatItem{
+			ID:         d.id,
+			Label:      d.label,
+			Ext:        d.ext,
+			IsSelected: sel,
 		})
 	}
 	return primary, advanced, totalSelected
 }
 
-func ViewModalExport(s *state.AppState) *modalExportView {
+func ViewModalExport(s *state.AppState) tpl.TemplateChunk {
 	lang := LangOf(s)
 	b := s.Editor.ActiveBook
 	primaryFmts, advancedFmts, selCount := buildExportModalFormatLists(s.ModalExport.Formats, lang)
@@ -108,18 +109,20 @@ func ViewModalExport(s *state.AppState) *modalExportView {
 		exportDir = defaultExportDir
 	}
 
-	return &modalExportView{
-		ShowExportModal:          s.ModalExport.Open,
-		ExportPrimaryFormats:     primaryFmts,
-		ExportAdvancedFormats:    advancedFmts,
-		ExportSelectedCount:      selCount,
-		ExportSelectedCountLabel: formatExportSelectionCountLabel(selCount, lang),
-		ExportHasSelected:        selCount > 0,
-		ExportAdvancedOpen:       s.ModalExport.AdvancedOpen,
-		ExportModalStandard:      expStd,
-		ExportModalStandardLabel: expStdLabel,
-		ExportModalStandardOpts:  expStdOpts,
-		ExportModalDir:           exportDir,
-		DefaultExportDir:         defaultExportDir,
+	return tpl.TemplateChunk{
+		TemplateData: &modalExportTemplate{
+			ShowExportModal:            s.ModalExport.Open,
+			ExportPrimaryFormats:       primaryFmts,
+			ExportAdvancedFormats:      advancedFmts,
+			ExportSelectedCount:        selCount,
+			ExportSelectedCountLabel:   formatExportSelectionCountLabel(selCount, lang),
+			ExportHasSelected:          selCount > 0,
+			ExportAdvancedOpen:         s.ModalExport.AdvancedOpen,
+			ExportModalStandard:        expStd,
+			ExportModalStandardLabel:   expStdLabel,
+			ExportModalStandardOptions: expStdOpts,
+			ExportModalDir:             exportDir,
+			DefaultExportDir:           defaultExportDir,
+		},
 	}
 }

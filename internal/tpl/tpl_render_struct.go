@@ -14,6 +14,39 @@ type structTypeMeta struct {
 
 var structMetaCache sync.Map // map[reflect.Type]*structTypeMeta
 
+var templateNameByStructType = map[string]string{
+	"appShellTemplate":            "app_shell",
+	"topbarTemplate":              "topbar",
+	"playerTemplate":              "player_view",
+	"sceneTemplate":               "scene_view",
+	"audioDeckTemplate":           "audio_deck",
+	"studioTemplate":              "studio_view",
+	"libraryTemplate":             "library_view",
+	"editorContextPanelTemplate":  "editor_context_panel",
+	"editorBreakdownTemplate":     "editor_breakdown_panel",
+	"editorVariablesTemplate":     "editor_variables_panel",
+	"editorHistoryTemplate":       "editor_history_panel",
+	"textEditorTemplate":          "text_editor",
+	"modalAddBookTemplate":        "modal_add_book",
+	"modalConfirmTemplate":        "confirm_modal",
+	"modalEditorHelpTemplate":     "modal_editor_help",
+	"modalExportTemplate":         "modal_export",
+	"modalNewBookTemplate":        "modal_new_book",
+	"modalQRTemplate":             "modal_qr",
+	"modalStudioProjectsTemplate": "modal_studio_projects",
+}
+
+func chunkTemplateName(v any) string {
+	if v == nil {
+		return ""
+	}
+	rt := reflect.TypeOf(v)
+	for rt.Kind() == reflect.Pointer {
+		rt = rt.Elem()
+	}
+	return templateNameByStructType[rt.Name()]
+}
+
 func pascalToSnake(s string) string {
 	var b strings.Builder
 	b.Grow(len(s) + 4)
@@ -40,6 +73,9 @@ func registerStructField(sf reflect.StructField, idx []int, byName map[string][]
 	if sf.PkgPath != "" {
 		return
 	}
+	if _, exists := byName[sf.Name]; !exists {
+		byName[sf.Name] = idx
+	}
 	if tag := strings.TrimSpace(sf.Tag.Get("tpl")); tag != "" && tag != "*" && tag != "-" {
 		if _, exists := byName[tag]; !exists {
 			byName[tag] = idx
@@ -55,29 +91,38 @@ func registerStructField(sf reflect.StructField, idx []int, byName map[string][]
 	}
 }
 
-func collectStructFields(t reflect.Type, byName map[string][]int) {
-	n := t.NumField()
-	for i := 0; i < n; i++ {
-		sf := t.Field(i)
-		if !sf.Anonymous {
-			registerStructField(sf, []int{i}, byName)
+type structWalkItem struct {
+	typ    reflect.Type
+	prefix []int
+}
+
+func collectStructFields(rootType reflect.Type, byName map[string][]int) {
+	queue := []structWalkItem{{typ: rootType, prefix: nil}}
+	for len(queue) > 0 {
+		cur := queue[0]
+		queue = queue[1:]
+		n := cur.typ.NumField()
+		for i := 0; i < n; i++ {
+			sf := cur.typ.Field(i)
+			if !sf.Anonymous {
+				idx := append(append([]int(nil), cur.prefix...), i)
+				registerStructField(sf, idx, byName)
+			}
 		}
-	}
-	for i := 0; i < n; i++ {
-		sf := t.Field(i)
-		if sf.Anonymous || sf.Tag.Get("tpl") == "*" {
-			subType := sf.Type
-			if subType.Kind() == reflect.Pointer {
-				subType = subType.Elem()
-			}
-			if subType.Kind() == reflect.Struct {
-				subN := subType.NumField()
-				for j := 0; j < subN; j++ {
-					registerStructField(subType.Field(j), []int{i, j}, byName)
+		for i := 0; i < n; i++ {
+			sf := cur.typ.Field(i)
+			if sf.Anonymous || sf.Tag.Get("tpl") == "*" {
+				idx := append(append([]int(nil), cur.prefix...), i)
+				subType := sf.Type
+				if subType.Kind() == reflect.Pointer {
+					subType = subType.Elem()
 				}
-			}
-			if sf.Anonymous {
-				registerStructField(sf, []int{i}, byName)
+				if subType.Kind() == reflect.Struct && len(idx) <= 4 {
+					queue = append(queue, structWalkItem{typ: subType, prefix: idx})
+				}
+				if sf.Anonymous {
+					registerStructField(sf, idx, byName)
+				}
 			}
 		}
 	}

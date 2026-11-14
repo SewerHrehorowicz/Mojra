@@ -46,46 +46,112 @@ func NewViewContext(lang i18n.Lang, data any) *tpl.RenderContext {
 	return base.WithStruct(data)
 }
 
-type appShellView struct {
-	Theme                string              `tpl:"theme"`
-	IsDark               bool                `tpl:"is_dark"`
-	ThemeToggleLabel     string              `tpl:"theme_toggle_label"`
-	ImagelessMode        bool                `tpl:"imageless_mode"`
-	Imageless            bool                `tpl:"imageless"`
-	ImagelessLocked      bool                `tpl:"imageless_locked"`
-	ImagelessLockedAttr  string              `tpl:"imageless_locked_attr"`
-	ImagelessAttr        string              `tpl:"imageless_attr"`
-	ImagelessToggleLabel string              `tpl:"imageless_toggle_label"`
-	UIScale              string              `tpl:"ui_scale"`
-	IsSmallUI            bool                `tpl:"is_small_ui"`
-	IsLargeUI            bool                `tpl:"is_large_ui"`
-	AutoChoiceDelay      float64             `tpl:"auto_choice_delay"`
-	IsAutoDelay1         bool                `tpl:"is_auto_delay_1"`
-	IsAutoDelay2         bool                `tpl:"is_auto_delay_2"`
-	IsAutoDelay3         bool                `tpl:"is_auto_delay_3"`
-	IsAutoDelay5         bool                `tpl:"is_auto_delay_5"`
-	ScrollSensitivity    string              `tpl:"scroll_sensitivity"`
-	IsScrollSensHigh     bool                `tpl:"is_scroll_sens_high"`
-	IsScrollSensMedium   bool                `tpl:"is_scroll_sens_medium"`
-	IsScrollSensLow      bool                `tpl:"is_scroll_sens_low"`
-	IsScrollSensOff      bool                `tpl:"is_scroll_sens_off"`
-	StandaloneMode       bool                `tpl:"standalone_mode"`
-	DevMode              bool                `tpl:"dev_mode"`
-	PreviewMode          string              `tpl:"preview_mode"`
-	Topbar               topbarView          `tpl:"*"`
-	WorkspaceView        tpl.TemplateChunk   `tpl:"workspace_view"`
-	ActiveModals         []tpl.TemplateChunk `tpl:"active_modals"`
+const (
+	themeLight       = "light"
+	themeDark        = "dark"
+	uiScaleLarge     = "large"
+	uiScaleSmall     = "small"
+	sensHigh         = "high"
+	sensMedium       = "medium"
+	sensLow          = "low"
+	sensOff          = "off"
+	previewFull      = "full"
+	previewPortrait  = "portrait"
+	previewTablet    = "tablet"
+	previewLandscape = "landscape"
+)
+
+type appShellTemplate struct {
+	Theme                string
+	IsDark               bool
+	ThemeToggleLabel     string
+	ImagelessMode        bool
+	Imageless            bool
+	ImagelessLocked      bool
+	ImagelessLockedAttr  string
+	ImagelessAttr        string
+	ImagelessToggleLabel string
+	UIScale              string
+	IsSmallUI            bool
+	IsLargeUI            bool
+	AutoChoiceDelay      float64
+	IsAutoDelay1         bool
+	IsAutoDelay2         bool
+	IsAutoDelay3         bool
+	IsAutoDelay5         bool
+	ScrollSensitivity    string
+	IsScrollSensHigh     bool
+	IsScrollSensMedium   bool
+	IsScrollSensLow      bool
+	IsScrollSensOff      bool
+	StandaloneMode       bool
+	DevMode              bool
+	PreviewMode          string
+	ActiveBookTitle      string
+	ZenModeAttr          string
+	Topbar               tpl.TemplateChunk
+	WorkspaceView        tpl.TemplateChunk
+	ActiveModals         []tpl.TemplateChunk
+}
+
+type appShellScript struct {
+	theme           string
+	lang            string
+	uiScale         string
+	imageless       bool
+	imagelessLocked bool
+	zenMode         bool
+	sensitivity     string
+	deviceMode      string
+}
+
+func buildAppShellScript(s *state.AppState) *appShellScript {
+	theme := s.Settings.Theme
+	if theme != themeLight {
+		theme = themeDark
+	}
+	ctxBook := contextBookForTopbar(s)
+	uiScale := s.Settings.UIScale
+	if uiScale != uiScaleLarge {
+		uiScale = uiScaleSmall
+	}
+	devPreview := ""
+	if s.Config.DevMode {
+		pm := s.Settings.PreviewMode
+		if pm == previewPortrait || pm == previewTablet || pm == previewLandscape {
+			devPreview = pm
+		} else {
+			devPreview = previewFull
+		}
+	}
+	return &appShellScript{
+		theme:           theme,
+		lang:            book.NormalizeLanguage(s.Settings.Language),
+		uiScale:         uiScale,
+		imageless:       ctxBook.IsEffectiveImageless(s.Settings),
+		imagelessLocked: ctxBook.IsImageless(),
+		zenMode:         s.Player.IsEffectiveZenMode(state.ActiveWorkspaceView(s)),
+		sensitivity:     book.NormalizeScrollSensitivity(s.Settings.ScrollSensitivity),
+		deviceMode:      devPreview,
+	}
+}
+
+// ViewAppShellScript returns a script-only TemplateChunk hydrating AppShellController.data on partial updates.
+func ViewAppShellScript(s *state.AppState) tpl.TemplateChunk {
+	return tpl.TemplateChunk{
+		ScriptData: buildAppShellScript(s),
+	}
 }
 
 // ViewActiveWorkspaceChunk returns the TemplateChunk for the active workspace view.
 func ViewActiveWorkspaceChunk(s *state.AppState) tpl.TemplateChunk {
 	switch state.ActiveWorkspaceView(s) {
 	case state.ViewEditor:
-		return tpl.TemplateChunk{Template: "editor_view", Data: ViewEditor(s)}
+		return ViewStudio(s)
 	case state.ViewPlayer:
-		return tpl.TemplateChunk{Template: "player_view", Data: ViewPlayer(s)}
+		return ViewPlayer(s)
 	default:
-		return tpl.TemplateChunk{Template: "library_view", Data: ViewLibrary(s)}
+		return ViewLibrary(s)
 	}
 }
 
@@ -93,55 +159,52 @@ func ViewActiveWorkspaceChunk(s *state.AppState) tpl.TemplateChunk {
 func ViewActiveModalChunks(s *state.AppState) []tpl.TemplateChunk {
 	var modals []tpl.TemplateChunk
 	if s.Editor.RightPanel == state.PanelHelp {
-		modals = append(modals, tpl.TemplateChunk{Template: "modal_editor_help", Data: ViewModalEditorHelp(s)})
+		modals = append(modals, ViewModalEditorHelp(s))
 	}
 	if s.Modals.QR {
-		modals = append(modals, tpl.TemplateChunk{Template: "modal_qr", Data: ViewModalQR(s)})
+		modals = append(modals, ViewModalQR(s))
 	}
 	if s.ModalNewBook.Open {
-		modals = append(modals, tpl.TemplateChunk{Template: "modal_new_book", Data: ViewModalNewBook(s)})
+		modals = append(modals, ViewModalNewBook(s))
 	}
 	if s.ModalExport.Open {
-		modals = append(modals, tpl.TemplateChunk{Template: "modal_export", Data: ViewModalExport(s)})
+		modals = append(modals, ViewModalExport(s))
 	}
 	if s.Modals.AddBook {
-		modals = append(modals, tpl.TemplateChunk{Template: "modal_add_book", Data: ViewModalAddBook(s)})
+		modals = append(modals, ViewModalAddBook(s))
 	}
 	if s.Modals.StudioProjects {
-		modals = append(modals, tpl.TemplateChunk{Template: "modal_studio_projects", Data: ViewModalStudioProjects(s)})
+		modals = append(modals, ViewModalStudioProjects(s))
 	}
-	if s.Editor.SceneText.IsOpen() && state.ActiveWorkspaceView(s) == state.ViewEditor {
-		if m := ViewEditorSceneText(s); m != nil {
-			modals = append(modals, tpl.TemplateChunk{Template: "modal_scene_text", Data: m})
+	if s.Editor.SceneText.IsOpen() {
+		if m := ViewTextEditor(s); m.TemplateData != nil {
+			modals = append(modals, m)
 		}
 	}
 	if s.ModalConfirm.IsOpen() {
-		modals = append(modals, tpl.TemplateChunk{Template: "confirm_modal", Data: ViewModalConfirm(s)})
+		modals = append(modals, ViewModalConfirm(s))
 	}
 	return modals
 }
 
-func ViewAppShell(s *state.AppState) *appShellView {
-	theme := s.Settings.Theme
-	if theme != "light" {
-		theme = "dark"
-	}
+func ViewAppShell(s *state.AppState) tpl.TemplateChunk {
+	script := buildAppShellScript(s)
+	theme := script.theme
 	themeToggleLabel := tr(s, i18n.TrThemeLightLabel)
-	if theme == "light" {
+	if theme == themeLight {
 		themeToggleLabel = tr(s, i18n.TrThemeDarkLabel)
 	}
 
-	ctxBook := contextBookForTopbar(s)
-	imagelessLocked := ctxBook.IsImageless()
-	effectiveImageless := ctxBook.IsEffectiveImageless(s.Settings)
-	imagelessLockedAttr := "false"
+	imagelessLocked := script.imagelessLocked
+	effectiveImageless := script.imageless
+	imagelessLockedAttr := attrFalse
 	if imagelessLocked {
-		imagelessLockedAttr = "true"
+		imagelessLockedAttr = attrTrue
 	}
-	imagelessAttr := "false"
+	imagelessAttr := attrFalse
 	imagelessToggleLabel := tr(s, i18n.TrImagelessOnLabel)
 	if effectiveImageless {
-		imagelessAttr = "true"
+		imagelessAttr = attrTrue
 		if imagelessLocked {
 			imagelessToggleLabel = tr(s, i18n.TrImagelessLockedLabel)
 		} else {
@@ -149,25 +212,27 @@ func ViewAppShell(s *state.AppState) *appShellView {
 		}
 	}
 
-	uiScale := s.Settings.UIScale
-	if uiScale != "large" {
-		uiScale = "small"
-	}
-
+	uiScale := script.uiScale
 	autoDelay := book.NormalizeAutoChoiceDelay(s.Settings.AutoChoiceDelay)
-	scrollSens := book.NormalizeScrollSensitivity(s.Settings.ScrollSensitivity)
+	scrollSens := script.sensitivity
 
-	previewMode := "full"
-	if s.Config.DevMode {
-		pm := s.Settings.PreviewMode
-		if pm == "portrait" || pm == "tablet" || pm == "landscape" {
-			previewMode = pm
-		}
+	previewMode := previewFull
+	if script.deviceMode != "" {
+		previewMode = script.deviceMode
 	}
 
-	return &appShellView{
+	topbarChunk := ViewTopbar(s)
+	topbarData, _ := topbarChunk.TemplateData.(*topbarTemplate)
+	activeBookTitle := tr(s, i18n.TrNavLibrary)
+	zenModeAttr := attrFalse
+	if topbarData != nil {
+		activeBookTitle = topbarData.ActiveBookTitle
+		zenModeAttr = topbarData.ZenModeAttr
+	}
+
+	view := &appShellTemplate{
 		Theme:                theme,
-		IsDark:               theme != "light",
+		IsDark:               theme != themeLight,
 		ThemeToggleLabel:     themeToggleLabel,
 		ImagelessMode:        effectiveImageless,
 		Imageless:            effectiveImageless,
@@ -176,23 +241,29 @@ func ViewAppShell(s *state.AppState) *appShellView {
 		ImagelessAttr:        imagelessAttr,
 		ImagelessToggleLabel: imagelessToggleLabel,
 		UIScale:              uiScale,
-		IsSmallUI:            uiScale == "small",
-		IsLargeUI:            uiScale == "large",
+		IsSmallUI:            uiScale == uiScaleSmall,
+		IsLargeUI:            uiScale == uiScaleLarge,
 		AutoChoiceDelay:      autoDelay,
 		IsAutoDelay1:         autoDelay <= 1.25,
 		IsAutoDelay2:         autoDelay > 1.25 && autoDelay <= 2.5,
 		IsAutoDelay3:         autoDelay > 2.5 && autoDelay <= 4.0,
 		IsAutoDelay5:         autoDelay > 4.0,
 		ScrollSensitivity:    scrollSens,
-		IsScrollSensHigh:     scrollSens == "high",
-		IsScrollSensMedium:   scrollSens == "medium",
-		IsScrollSensLow:      scrollSens == "low",
-		IsScrollSensOff:      scrollSens == "off",
+		IsScrollSensHigh:     scrollSens == sensHigh,
+		IsScrollSensMedium:   scrollSens == sensMedium,
+		IsScrollSensLow:      scrollSens == sensLow,
+		IsScrollSensOff:      scrollSens == sensOff,
 		StandaloneMode:       s.Config.StandaloneMode,
 		DevMode:              s.Config.DevMode,
 		PreviewMode:          previewMode,
-		Topbar:               viewTopbar(s),
+		ActiveBookTitle:      activeBookTitle,
+		ZenModeAttr:          zenModeAttr,
+		Topbar:               topbarChunk,
 		WorkspaceView:        ViewActiveWorkspaceChunk(s),
 		ActiveModals:         ViewActiveModalChunks(s),
+	}
+	return tpl.TemplateChunk{
+		TemplateData: view,
+		ScriptData:   script,
 	}
 }

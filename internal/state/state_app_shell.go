@@ -73,6 +73,7 @@ type SimpleModalsState struct {
 	AddBook        bool
 	StudioProjects bool
 	VoiceRecorder  bool
+	VoicePeak      string
 }
 
 // AppState holds the complete application state decomposed into cohesive domain sub-states.

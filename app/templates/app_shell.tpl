@@ -1,14 +1,7 @@
-@topbar
+@Topbar
 main.workspace#workspace
-    {if workspace_view}
-        @workspace_view
-    {elif is_view_library}
-        @library_view
-    {elif is_view_player}
-        @player_view
-    {elif is_view_editor}
-        @editor_view
+    @WorkspaceView
 .modals-root#modals-root
-    @active_modals
+    @ActiveModals
 .toast.hidden#toast-banner
 .ui-tooltip.hidden#ui-tooltip

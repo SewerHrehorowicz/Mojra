@@ -16,6 +16,7 @@ import (
 	"mojra/internal/actions"
 	"mojra/internal/book"
 	"mojra/internal/osbridge"
+	"mojra/internal/tpl"
 )
 
 func TestEditorUndoRedoAndVersionHistory(t *testing.T) {
@@ -50,11 +51,12 @@ func TestEditorUndoRedoAndVersionHistory(t *testing.T) {
 	}
 	addBytes, _ := io.ReadAll(respAdd.Body)
 	_ = respAdd.Body.Close()
-	if respAdd.Header.Get("X-Can-Undo") != "true" || respAdd.Header.Get("X-Can-Redo") != "false" || respAdd.Header.Get("X-History-Count") != "1" {
-		t.Fatalf("unexpected history headers after CreateSceneAt: undo=%q redo=%q count=%q",
-			respAdd.Header.Get("X-Can-Undo"), respAdd.Header.Get("X-Can-Redo"), respAdd.Header.Get("X-History-Count"))
+	addMeta, _ := tpl.DecodeFDPResponse(addBytes)
+	if addMeta.Get("canUndo") != "true" || addMeta.Get("canRedo") != "false" || addMeta.Get("historyCount") != "1" {
+		t.Fatalf("unexpected history meta after CreateSceneAt: undo=%q redo=%q count=%q",
+			addMeta.Get("canUndo"), addMeta.Get("canRedo"), addMeta.Get("historyCount"))
 	}
-	if !strings.Contains(string(addBytes), `action="ToggleEditorHistoryPanel"`) ||
+	if !strings.Contains(string(addBytes), `btn-toggle-history`) ||
 		strings.Contains(string(addBytes), `id="btn-editor-undo"`) ||
 		strings.Contains(string(addBytes), `id="btn-editor-redo"`) {
 		t.Fatalf("expected only history panel button (and no undo/redo buttons) in editor toolbar HTML")
@@ -70,9 +72,11 @@ func TestEditorUndoRedoAndVersionHistory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SaveEditorState pan failed: %v", err)
 	}
+	panBytes, _ := io.ReadAll(respPan.Body)
 	_ = respPan.Body.Close()
-	if respPan.Header.Get("X-History-Count") != "1" {
-		t.Fatalf("expected viewport pan/zoom not to increment X-History-Count, got %q", respPan.Header.Get("X-History-Count"))
+	panMeta, _ := tpl.DecodeFDPResponse(panBytes)
+	if panMeta.Get("historyCount") != "1" {
+		t.Fatalf("expected viewport pan/zoom not to increment historyCount, got %q", panMeta.Get("historyCount"))
 	}
 
 	// 4. Node position SaveEditorState MUST record a layout undo step
@@ -86,9 +90,11 @@ func TestEditorUndoRedoAndVersionHistory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SaveEditorState node move failed: %v", err)
 	}
+	moveBytes, _ := io.ReadAll(respMove.Body)
 	_ = respMove.Body.Close()
-	if respMove.Header.Get("X-History-Count") != "2" || respMove.Header.Get("X-Can-Undo") != "true" {
-		t.Fatalf("expected node move to increment X-History-Count to 2, got %q", respMove.Header.Get("X-History-Count"))
+	moveMeta, _ := tpl.DecodeFDPResponse(moveBytes)
+	if moveMeta.Get("historyCount") != "2" || moveMeta.Get("canUndo") != "true" {
+		t.Fatalf("expected node move to increment historyCount to 2, got %q", moveMeta.Get("historyCount"))
 	}
 
 	// 5. UndoEditor twice -> back to baseline (2 scenes, CanUndo=false, CanRedo=true)
@@ -96,19 +102,23 @@ func TestEditorUndoRedoAndVersionHistory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UndoEditor 1 failed: %v", err)
 	}
+	undo1Bytes, _ := io.ReadAll(respUndo1.Body)
 	_ = respUndo1.Body.Close()
-	if respUndo1.Header.Get("X-History-Count") != "1" || respUndo1.Header.Get("X-Can-Redo") != "true" {
-		t.Fatalf("unexpected headers after UndoEditor 1: count=%q redo=%q", respUndo1.Header.Get("X-History-Count"), respUndo1.Header.Get("X-Can-Redo"))
+	undo1Meta, _ := tpl.DecodeFDPResponse(undo1Bytes)
+	if undo1Meta.Get("historyCount") != "1" || undo1Meta.Get("canRedo") != "true" {
+		t.Fatalf("unexpected meta after UndoEditor 1: count=%q redo=%q", undo1Meta.Get("historyCount"), undo1Meta.Get("canRedo"))
 	}
 
 	respUndo2, err := http.PostForm(ts.URL+"/api/action", url.Values{"action": {"UndoEditor"}})
 	if err != nil {
 		t.Fatalf("UndoEditor 2 failed: %v", err)
 	}
+	undo2Bytes, _ := io.ReadAll(respUndo2.Body)
 	_ = respUndo2.Body.Close()
-	if respUndo2.Header.Get("X-History-Count") != "0" || respUndo2.Header.Get("X-Can-Undo") != "false" || respUndo2.Header.Get("X-Can-Redo") != "true" {
-		t.Fatalf("unexpected headers at baseline after UndoEditor 2: count=%q undo=%q redo=%q",
-			respUndo2.Header.Get("X-History-Count"), respUndo2.Header.Get("X-Can-Undo"), respUndo2.Header.Get("X-Can-Redo"))
+	undo2Meta, _ := tpl.DecodeFDPResponse(undo2Bytes)
+	if undo2Meta.Get("historyCount") != "0" || undo2Meta.Get("canUndo") != "false" || undo2Meta.Get("canRedo") != "true" {
+		t.Fatalf("unexpected meta at baseline after UndoEditor 2: count=%q undo=%q redo=%q",
+			undo2Meta.Get("historyCount"), undo2Meta.Get("canUndo"), undo2Meta.Get("canRedo"))
 	}
 	if len(srv.State.Editor.ActiveBook.Scenes) != 2 {
 		t.Fatalf("expected 2 scenes after undoing back to baseline, got %d", len(srv.State.Editor.ActiveBook.Scenes))
@@ -118,10 +128,12 @@ func TestEditorUndoRedoAndVersionHistory(t *testing.T) {
 	respRedo1, _ := http.PostForm(ts.URL+"/api/action", url.Values{"action": {"RedoEditor"}})
 	_ = respRedo1.Body.Close()
 	respRedo2, _ := http.PostForm(ts.URL+"/api/action", url.Values{"action": {"RedoEditor"}})
+	redo2Bytes, _ := io.ReadAll(respRedo2.Body)
 	_ = respRedo2.Body.Close()
-	if len(srv.State.Editor.ActiveBook.Scenes) != 3 || respRedo2.Header.Get("X-History-Count") != "2" {
+	redo2Meta, _ := tpl.DecodeFDPResponse(redo2Bytes)
+	if len(srv.State.Editor.ActiveBook.Scenes) != 3 || redo2Meta.Get("historyCount") != "2" {
 		t.Fatalf("expected 3 scenes and count=2 after RedoEditor twice, got scenes=%d count=%q",
-			len(srv.State.Editor.ActiveBook.Scenes), respRedo2.Header.Get("X-History-Count"))
+			len(srv.State.Editor.ActiveBook.Scenes), redo2Meta.Get("historyCount"))
 	}
 
 	// 7. ToggleEditorHistoryPanel and SaveHistoryVersion ("Wersja 1.0")
@@ -144,9 +156,10 @@ func TestEditorUndoRedoAndVersionHistory(t *testing.T) {
 	}
 	saveVerBytes, _ := io.ReadAll(respSaveVer.Body)
 	_ = respSaveVer.Body.Close()
-	if respSaveVer.Header.Get("X-History-Count") != "0" || respSaveVer.Header.Get("X-Can-Undo") != "false" {
+	saveVerMeta, _ := tpl.DecodeFDPResponse(saveVerBytes)
+	if saveVerMeta.Get("historyCount") != "0" || saveVerMeta.Get("canUndo") != "false" {
 		t.Fatalf("expected SaveHistoryVersion to collapse unnamed edits (count=0, canUndo=false), got count=%q undo=%q",
-			respSaveVer.Header.Get("X-History-Count"), respSaveVer.Header.Get("X-Can-Undo"))
+			saveVerMeta.Get("historyCount"), saveVerMeta.Get("canUndo"))
 	}
 	if !strings.Contains(string(saveVerBytes), "Wersja 1.0") {
 		t.Fatalf("expected saved version 'Wersja 1.0' in history panel HTML")
@@ -162,12 +175,13 @@ func TestEditorUndoRedoAndVersionHistory(t *testing.T) {
 	}
 	restoreBytes, _ := io.ReadAll(respRestore.Body)
 	_ = respRestore.Body.Close()
+	restoreMeta, _ := tpl.DecodeFDPResponse(restoreBytes)
 	if len(srv.State.Editor.ActiveBook.Scenes) != 2 {
 		t.Fatalf("expected 2 scenes after restoring r1, got %d", len(srv.State.Editor.ActiveBook.Scenes))
 	}
-	if respRestore.Header.Get("X-Can-Undo") != "true" || respRestore.Header.Get("X-History-Count") != "1" {
+	if restoreMeta.Get("canUndo") != "true" || restoreMeta.Get("historyCount") != "1" {
 		t.Fatalf("expected non-destructive restore of older version to be undoable (count=1, canUndo=true), got count=%q undo=%q",
-			respRestore.Header.Get("X-History-Count"), respRestore.Header.Get("X-Can-Undo"))
+			restoreMeta.Get("historyCount"), restoreMeta.Get("canUndo"))
 	}
 	if !strings.Contains(string(restoreBytes), "Wersja 1.0") {
 		t.Fatalf("expected 'Wersja 1.0' to remain in named versions list after restoring older version r1")
@@ -224,13 +238,13 @@ func TestHistoryPreviewClickPlayAndEditLock(t *testing.T) {
 	}
 	prevHTMLBytes, _ := io.ReadAll(respPrev.Body)
 	_ = respPrev.Body.Close()
-	prevHTML := string(prevHTMLBytes)
+	prevMeta, prevHTML := tpl.DecodeFDPResponse(prevHTMLBytes)
 
-	if respPrev.Header.Get("X-History-Preview") != "true" {
-		t.Fatalf("expected X-History-Preview=true when previewing past revision, got %q", respPrev.Header.Get("X-History-Preview"))
+	if prevMeta.Get("historyPreview") != "true" {
+		t.Fatalf("expected historyPreview=true when previewing past revision, got %q", prevMeta.Get("historyPreview"))
 	}
-	if respPrev.Header.Get("X-History-Count") != "0" {
-		t.Fatalf("expected previewing past revision NOT to create a revert commit (X-History-Count=0), got %q", respPrev.Header.Get("X-History-Count"))
+	if prevMeta.Get("historyCount") != "0" {
+		t.Fatalf("expected previewing past revision NOT to create a revert commit (historyCount=0), got %q", prevMeta.Get("historyCount"))
 	}
 	if len(srv.State.Editor.ActiveBook.Scenes) != 2 {
 		t.Fatalf("expected 2 scenes in previewed r1 book, got %d", len(srv.State.Editor.ActiveBook.Scenes))
@@ -316,9 +330,11 @@ func TestHistoryPreviewClickPlayAndEditLock(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PreviewHistoryRevision(r2) failed: %v", err)
 	}
+	exitBytes, _ := io.ReadAll(respExit.Body)
 	_ = respExit.Body.Close()
-	if respExit.Header.Get("X-History-Preview") != "false" {
-		t.Fatalf("expected X-History-Preview=false after clicking active head revision, got %q", respExit.Header.Get("X-History-Preview"))
+	exitMeta, _ := tpl.DecodeFDPResponse(exitBytes)
+	if exitMeta.Get("historyPreview") != "false" {
+		t.Fatalf("expected historyPreview=false after clicking active head revision, got %q", exitMeta.Get("historyPreview"))
 	}
 	if len(srv.State.Editor.ActiveBook.Scenes) != 3 {
 		t.Fatalf("expected 3 scenes restored after exiting preview, got %d", len(srv.State.Editor.ActiveBook.Scenes))
@@ -405,9 +421,11 @@ func TestChapterPortsAndOneWayChapterConnectionsInStudio(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ConnectChoice backward failed: %v", err)
 	}
+	backBytes, _ := io.ReadAll(rBack.Body)
 	_ = rBack.Body.Close()
-	if !strings.Contains(rBack.Header.Get("X-Toast"), "jednokierunkowa") {
-		t.Fatalf("expected backward chapter transition to be rejected with toast, got X-Toast=%q", rBack.Header.Get("X-Toast"))
+	backMeta, _ := tpl.DecodeFDPResponse(backBytes)
+	if !strings.Contains(backMeta.Get("toast"), "jednokierunkowa") {
+		t.Fatalf("expected backward chapter transition to be rejected with toast, got toast=%q", backMeta.Get("toast"))
 	}
 }
 
@@ -530,8 +548,8 @@ func TestUnifiedPortStylesInCSSAndWebGL(t *testing.T) {
 	_ = jsResp.Body.Close()
 	js := string(jsBytes)
 
-	if !strings.Contains(js, "function pushPortQuads(x, y, isConnected, isHoveredOrActive, theme, isUnreachable)") ||
-		!strings.Contains(js, "const sp = isConnected ? studioGL.uv.portHover : studioGL.uv.portRing;") {
+	if !strings.Contains(js, "pushPortQuads(x, y, isConnected, isHoveredOrActive, theme, isUnreachable") ||
+		!strings.Contains(js, "const sp = isConnected ? uv.portHover : uv.portRing;") {
 		t.Fatalf("expected WebGL pushPortQuads to render connected ports filled and unconnected ports hollow with wire color when inactive")
 	}
 }
@@ -592,7 +610,7 @@ func TestScreenplayModeEndToEndFlow(t *testing.T) {
 	if !strings.Contains(html, `placeholder="Tytuł scenariusza..."`) || !strings.Contains(html, `data-hint="Ustawienia scenariusza"`) {
 		t.Fatalf("expected screenplay terminology in editor UI")
 	}
-	if strings.Contains(html, `action="ToggleBookImageless"`) || strings.Contains(html, `action="ToggleBookNarrated"`) || strings.Contains(html, `name="explicit_image"`) || strings.Contains(html, `book-mode-select`) {
+	if strings.Contains(html, `btn-toggle-book-imageless`) || strings.Contains(html, `btn-toggle-book-narrated`) || strings.Contains(html, `name="explicit_image"`) || strings.Contains(html, `book-mode-select`) {
 		t.Fatalf("expected screenplay editor to have no narration or image mode controls and no book-to-screenplay mode switcher")
 	}
 
@@ -875,7 +893,7 @@ func TestScreenplayModeEndToEndFlow(t *testing.T) {
 	// Verify exported Web index.html has Splash Screen with play.svg and NO #topbar, and no separate book.playbook file
 	webIndexBytes, _ := os.ReadFile(filepath.Join(batchExportDir, bookID+"-web", "index.html"))
 	webIndexHTML := string(webIndexBytes)
-	if strings.Contains(webIndexHTML, `id="topbar"`) || !strings.Contains(webIndexHTML, `id="wasm-splash"`) || !strings.Contains(webIndexHTML, `data-wasm-play="true"`) {
+	if strings.Contains(webIndexHTML, `id="topbar"`) || !strings.Contains(webIndexHTML, `id="wasm-splash"`) || !strings.Contains(webIndexHTML, `id="btn-wasm-play"`) {
 		t.Fatalf("expected exported Web index.html to render Splash Screen with Play button and no #topbar, got:\n%s", webIndexHTML)
 	}
 	if _, err := os.Stat(filepath.Join(batchExportDir, bookID+"-web", "book.playbook")); err == nil {
@@ -1040,39 +1058,39 @@ func TestWFPProtocolAndZeroRepoSavesOrAppState(t *testing.T) {
 		"author":     {""},
 		"text":       {"Pierwszy akapit z polskimi znakami: Zażółć gęślą jaźń.\n\nDrugi akapit ze strzałką \\-> w treści."},
 	}
-	wfpFrame := actions.EncodeWFPForm(orig)
-	if !bytes.Contains(wfpFrame, []byte("_body=text\n")) || !bytes.Contains(wfpFrame, []byte("\n\nPierwszy akapit")) {
-		t.Fatalf("expected WFP frame to place multiline text in raw body after \\n\\n, got:\n%s", string(wfpFrame))
+	fdpFrame := tpl.EncodeFDPForm(orig)
+	if !bytes.Contains(fdpFrame, []byte("_body=text\n")) || !bytes.Contains(fdpFrame, []byte("\n\nPierwszy akapit")) {
+		t.Fatalf("expected FDP frame to place multiline text in raw body after \\n\\n, got:\n%s", string(fdpFrame))
 	}
 	decoded := make(url.Values)
-	if !actions.DecodeWFPFormBytes(wfpFrame, decoded) {
-		t.Fatalf("DecodeWFPFormBytes failed on valid frame:\n%s", string(wfpFrame))
+	if !tpl.DecodeFDPBytes(fdpFrame, decoded) {
+		t.Fatalf("DecodeFDPBytes failed on valid frame:\n%s", string(fdpFrame))
 	}
 	for k := range orig {
 		if decoded.Get(k) != orig.Get(k) {
-			t.Fatalf("WFP round-trip mismatch for key %q: got %q, want %q", k, decoded.Get(k), orig.Get(k))
+			t.Fatalf("FDP round-trip mismatch for key %q: got %q, want %q", k, decoded.Get(k), orig.Get(k))
 		}
 		if _, exists := decoded[k]; !exists {
 			t.Fatalf("expected key %q (even when empty) to exist in decoded form", k)
 		}
 	}
 
-	// 2. Verify POST /api/action accepts WFP wire frames directly
+	// 2. Verify POST /api/action accepts FDP wire frames directly
 	rootDir := t.TempDir()
 	srv := NewServer(rootDir, mojra.AppFS)
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
 	postWFP := func(vals url.Values) *http.Response {
-		req, err := http.NewRequest(http.MethodPost, ts.URL+"/api/action", bytes.NewReader(actions.EncodeWFPForm(vals)))
+		req, err := http.NewRequest(http.MethodPost, ts.URL+"/api/action", bytes.NewReader(tpl.EncodeFDPForm(vals)))
 		if err != nil {
 			t.Fatalf("NewRequest failed: %v", err)
 		}
-		req.Header.Set("Content-Type", "text/x-wfp;charset=UTF-8")
+		req.Header.Set("Content-Type", tpl.ContentTypeFDP)
 		req.Header.Set("X-Requested-With", "Mojra")
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
-			t.Fatalf("POST /api/action WFP failed: %v", err)
+			t.Fatalf("POST /api/action FDP failed: %v", err)
 		}
 		_, _ = io.ReadAll(resp.Body)
 		_ = resp.Body.Close()
@@ -1819,16 +1837,17 @@ func TestNewSceneIDAndTitleEditsNeverOverwriteFirstSceneAndSyncChapterSlugs(t *t
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
-	postForm := func(action string, vals url.Values) *http.Response {
+	postForm := func(action string, vals url.Values) url.Values {
 		t.Helper()
 		vals.Set("action", action)
 		resp, err := http.PostForm(ts.URL+"/api/action", vals)
 		if err != nil {
 			t.Fatalf("POST %s failed: %v", action, err)
 		}
-		_, _ = io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(resp.Body)
 		_ = resp.Body.Close()
-		return resp
+		meta, _ := tpl.DecodeFDPResponse(body)
+		return meta
 	}
 
 	customDir := filepath.Join(t.TempDir(), "NowaKsiazka")
@@ -1854,14 +1873,14 @@ func TestNewSceneIDAndTitleEditsNeverOverwriteFirstSceneAndSyncChapterSlugs(t *t
 
 	// 2. Open modal on new scene ("s1"), then simulate sequential AutoSaveScene calls where explicit_id changes
 	postForm("OpenSceneTextModal", url.Values{"scene": {"s1"}})
-	resp1 := postForm("AutoSaveScene", url.Values{
+	meta1 := postForm("AutoSaveScene", url.Values{
 		"scene_id":    {"s1"},
 		"name":        {"Zatopiona śluza"},
 		"explicit_id": {"zatopiona_sluza"},
 		"text":        {"Treść nowej sceny przy śluzie."},
 	})
-	if gotID := resp1.Header.Get("X-Scene-ID"); gotID != "zatopiona_sluza" {
-		t.Fatalf("expected X-Scene-ID=zatopiona_sluza after first AutoSaveScene, got %q", gotID)
+	if gotID := meta1.Get("sceneId"); gotID != "zatopiona_sluza" {
+		t.Fatalf("expected sceneId=zatopiona_sluza after first AutoSaveScene, got %q", gotID)
 	}
 	// Even if a stale request still sends scene_id="s1", it must NEVER overwrite scenes[0] ("poczatek")
 	postForm("AutoSaveScene", url.Values{
@@ -1955,7 +1974,7 @@ func TestNewSceneIDAndTitleEditsNeverOverwriteFirstSceneAndSyncChapterSlugs(t *t
 }
 
 func BenchmarkParseActionRequestWFP(b *testing.B) {
-	payload := actions.EncodeWFPForm(url.Values{
+	payload := tpl.EncodeFDPForm(url.Values{
 		"action":    {"SaveEditorState"},
 		"scene_id":  {"poczatek"},
 		"pan_x":     {"120"},
@@ -1968,7 +1987,7 @@ func BenchmarkParseActionRequestWFP(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		req := &http.Request{
 			Method: http.MethodPost,
-			Header: http.Header{"Content-Type": []string{"text/x-wfp"}},
+			Header: http.Header{"Content-Type": []string{tpl.ContentTypeFDP}},
 			Body:   io.NopCloser(bytes.NewReader(payload)),
 		}
 		actions.ParseActionRequest(req)

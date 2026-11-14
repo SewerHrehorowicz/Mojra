@@ -36,6 +36,26 @@ type Choice struct {
 	IsChapterLink   bool
 	IsImplicit      bool
 	IsEnding        bool
+	Idx             int
+	SceneID         string
+	RawLabel        string
+	Arrow           string
+	IsSingle        bool
+	IsEditable      bool
+	IsBranch        bool
+	IsCondUnmet     bool
+	IsLockedPreview bool
+	SelectedValue   string
+	HasCondition    bool
+	HasEffects      bool
+	HasRule         bool
+	IsRuleOpen      bool
+	IsExitInvalid   bool
+	ExitErrorHint   string
+	IsCondInvalid   bool
+	IsEffInvalid    bool
+	CondErrorHint   string
+	EffErrorHint    string
 }
 
 type EnumDef struct {
@@ -43,14 +63,38 @@ type EnumDef struct {
 	Values []string
 }
 
+type SelectOption struct {
+	OptIdx   int
+	Value    string
+	Label    string
+	Meta     string
+	VarName  string
+	IsActive bool
+}
+
 type VariableDef struct {
-	Name     string
-	Kind     string // "bool", "int", "enum"
-	BoolVal  bool
-	IntVal   int
-	EnumName string
-	EnumVal  string
-	Options  []string
+	Idx          int
+	Name         string
+	Kind         string // "bool", "int", "enum"
+	Meta         string
+	BoolVal      bool
+	BoolLabel    string
+	IntVal       int
+	EnumName     string
+	EnumVal      string
+	Value        string
+	Options      []string
+	ValuesStr    string
+	OptionItems  []SelectOption
+	EnumOptions  []SelectOption
+	OptCount     int
+	CanRemoveOpt bool
+	DefaultOpt   string
+	CurrentVal   string
+	IsBool       bool
+	IsInt        bool
+	IsEnum       bool
+	IsChecked    bool
 }
 
 // VoiceSectionMeta stores optional explicit audio file and trim bounds for a single voice section.
@@ -62,24 +106,31 @@ type VoiceSectionMeta struct {
 
 // VoiceSection represents an ordered static or conditional voiceover section extracted from a scene's AST.
 type VoiceSection struct {
-	Index         int
-	Key           string
-	Kind          string // "static", "if", "elif", "else"
-	Condition     string
-	Label         string
-	ShortLabel    string
-	HeaderTitle   string
-	Text          string
-	ExplicitVoice string
-	TargetFile    string
-	AudioFile     string
-	AudioURL      string
-	TrimStart     float64
-	TrimEnd       float64
-	DurationSec   float64
-	DurationLabel string
-	HasAudio      bool
-	HasTrim       bool
+	Index          int
+	Key            string
+	Kind           string // "static", "if", "elif", "else"
+	Condition      string
+	Label          string
+	ShortLabel     string
+	InspectorLabel string
+	HeaderTitle    string
+	Text           string
+	ExplicitVoice  string
+	TargetFile     string
+	AudioFile      string
+	AudioURL       string
+	TrimStart      float64
+	TrimEnd        float64
+	TrimStartStr   string
+	TrimEndStr     string
+	DurationSec    float64
+	DurationLabel  string
+	HasAudio       bool
+	HasTrim        bool
+	IsActive       bool
+	IsSelected     bool
+	ShowDeleteBtn  bool
+	IsStatic       bool
 }
 
 // VoiceQueueItem represents an active audio segment in the sequential player queue.
@@ -268,13 +319,21 @@ func (s *Scene) EnsureHTML() string {
 }
 
 type Chapter struct {
-	ID            string
-	ExplicitID    string
-	Name          string
-	ExplicitStart string
-	StartSceneID  string
-	SourceFile    string
-	SceneIDs      []string
+	ID                string
+	ExplicitID        string
+	Name              string
+	ExplicitStart     string
+	StartSceneID      string
+	StartSceneLabel   string
+	SourceFile        string
+	SceneIDs          []string
+	SceneCount        int
+	LengthStat        string
+	BranchCount       int
+	ExitCount         int
+	StartSceneValue   string
+	StartSceneOptions []SelectOption
+	SceneStartOptions []SelectOption
 }
 
 // DisplayName returns the chapter's title if present, or falls back to its ExplicitID or ID.
@@ -382,9 +441,79 @@ type Book struct {
 	RetiredSceneIDs      map[string]bool
 	AutoSceneIDByName    map[string]string
 	Warnings             []string
+	ProgressPct          int
+	SceneCount           int
+	ModeBadge            string
+	KindBadge            string
+	MetaLine             string
+	PathLine             string
+	IsCurrent            bool
+	IsUnpacked           bool
 	deferProseHTML       bool
 	cachedBreakdown      *ScreenplayBreakdown
 	cachedBreakdownStamp uint64
+}
+
+type ExportFormatItem struct {
+	ID         string
+	Label      string
+	Ext        string
+	IsSelected bool
+}
+
+type StudioSearchItem struct {
+	ID             string
+	DisplayTitle   string
+	Title          string
+	Slugline       string
+	Chapter        string
+	ChapterUpper   string
+	Synopsis       string
+	TextB64        string
+	Choices        string
+	DefaultBadge   string
+	DefaultSnippet string
+	IsSelected     bool
+}
+
+type EditorNodeView struct {
+	ID                    string
+	ExplicitID            string
+	CurrentImage          string
+	CurrentImageLabel     string
+	ImageOptions          []SelectOption
+	CurrentVoice          string
+	CurrentVoiceLabel     string
+	CurrentVoiceURL       string
+	VoiceDurationLabel    string
+	VoiceTrimStart        string
+	VoiceTrimEnd          string
+	HasVoiceFile          bool
+	HasVoiceTrim          bool
+	VoiceOptions          []SelectOption
+	HasVoiceSections         bool
+	ActiveVoiceSectionKey    string
+	ActiveVoiceSectionFile   string
+	ActiveVoiceSectionText   string
+	ActiveVoiceSectionHeader string
+	VoiceSections            []VoiceSection
+	Name                  string
+	Slugline              string
+	Synopsis              string
+	Effects               string
+	HasEffects            bool
+	IsEffectsInvalid      bool
+	EffectsErrorHint      string
+	ScriptLengthLabel     string
+	Chapter               string
+	ChapterOptions        []SelectOption
+	SourceFile            string
+	IsStartScene          bool
+	IsChapterEntry        bool
+	HasNodeWarnings       bool
+	NodeWarnings          []string
+	InspectorPorts        []Choice
+	PortCount             int
 }
 
 // ParseAutoSceneSeq extracts N from an auto scene ID of the form "s<N>" (N >= 1), or returns 0.

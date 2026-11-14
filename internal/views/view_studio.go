@@ -5,6 +5,7 @@ package views
 import (
 	"encoding/base64"
 	"fmt"
+	"net/url"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -14,128 +15,216 @@ import (
 	"mojra/internal/i18n"
 	"mojra/internal/logging"
 	"mojra/internal/state"
+	"mojra/internal/tpl"
 )
 
-type studioHomeProjectItem struct {
-	Book       *book.Book `tpl:"*"`
-	MetaLine   string     `tpl:"meta_line"`
-	PathLine   string     `tpl:"path_line"`
-	IsUnpacked bool       `tpl:"is_unpacked"`
+const (
+	undoTitlePrefix    = "Cofnij: "
+	undoShortcutSuffix = " (Ctrl+Z)"
+	undoEmptyTitle     = "Brak zmian do cofnięcia od ostatniej wersji (Ctrl+Z)"
+	redoTitlePrefix    = "Ponów: "
+	redoShortcutSuffix = " (Ctrl+Shift+Z)"
+	redoEmptyTitle     = "Brak zmian do ponowienia (Ctrl+Shift+Z)"
+)
+
+type studioTemplate struct {
+	ContextPanel                  tpl.TemplateChunk
+	VariablesPanel                tpl.TemplateChunk
+	BreakdownPanel                tpl.TemplateChunk
+	HistoryPanel                  tpl.TemplateChunk
+	HasEditorBook                 bool
+	IsScreenplayMode              bool
+	BookSettingsOpen              bool
+	EditorSettingsHint            string
+	EditorChapterTitlePlaceholder string
+	SelectedSceneID               string
+	SelectedSceneTitle            string
+	ShowEditorVariablesPanel      bool
+	ShowEditorBreakdownPanel      bool
+	ShowEditorHistoryPanel        bool
+	ShowEditorHelpPanel           bool
+	IsHistoryPreview              bool
+	HistoryPreviewAttr            string
+	HistoryPreviewID              string
+	HistoryPreviewLabel           string
+	StudioGraphPayload            string
+	StudioSearchOpen              bool
+	StudioSearchQuery             string
+	StudioSearchCount             int
+	StudioSearchItems             []book.StudioSearchItem
+	BookWarningsOpen              bool
+	HasBookWarnings               bool
+	BookWarningCount              int
+	HasMultipleBookWarnings       bool
+	FirstBookWarning              string
+	BookWarnings                  []string
+	HasStudioHomeProjects         bool
+	StudioHomeProjects            []book.Book
+	HasStudioPackedBooks          bool
+	StudioPackedBooks             []book.Book
 }
 
-func populateEditorCommonVars(s *state.AppState, vars map[string]any, full bool) {
+type studioScript struct {
+	isHistoryPreview bool
+	historyPreview   bool
+	selectedSceneId  string
+	studioSearchOpen bool
+	sceneId          string
+	scenePrevId      string
+	sceneExplicitId  string
+	sceneRef         string
+	sceneTitle       string
+	sceneChapter     string
+	startSceneId     string
+	historyCount     int
+	canUndo          bool
+	undoTitle        string
+	canRedo          bool
+	redoTitle        string
+}
+
+func buildStudioScript(s *state.AppState) *studioScript {
+	b := s.Editor.ActiveBook
+	histPreview := !s.Config.StandaloneMode && s.Editor.History.IsPreview(b)
+	sc := &studioScript{
+		isHistoryPreview: histPreview,
+		historyPreview:   histPreview,
+		selectedSceneId:  s.Editor.SelectedSceneID,
+		studioSearchOpen: s.Editor.SearchOpen,
+	}
+	if b != nil {
+		if s.Editor.SelectedSceneID != "" {
+			sc.sceneId = s.Editor.SelectedSceneID
+			if s.Editor.LastRenamedFromSceneID != "" && !strings.EqualFold(s.Editor.LastRenamedFromSceneID, s.Editor.SelectedSceneID) {
+				sc.scenePrevId = s.Editor.LastRenamedFromSceneID
+			}
+			s.Editor.LastRenamedFromSceneID = ""
+			if sel := b.FindScene(s.Editor.SelectedSceneID); sel != nil {
+				sc.sceneExplicitId = sel.ExplicitID
+				sc.sceneRef = url.QueryEscape(sel.ReferenceKey())
+				sc.sceneTitle = url.QueryEscape(sel.DisplayName())
+				sc.sceneChapter = url.QueryEscape(sel.Chapter)
+			}
+		}
+		if b.StartSceneID != "" {
+			sc.startSceneId = b.StartSceneID
+		}
+	}
+	if s.Config.StandaloneMode {
+		return sc
+	}
+	h := s.Editor.History.RefreshFromDisk(b)
+	if h == nil {
+		return sc
+	}
+	sc.historyCount = h.UnnamedEditsCount()
+	sc.canUndo = !histPreview && h.CanUndo()
+	sc.canRedo = !histPreview && h.CanRedo()
+	if sc.canUndo {
+		curIdx := h.CursorIndex()
+		if curIdx >= 0 && curIdx < len(h.Revisions) {
+			sc.undoTitle = undoTitlePrefix + h.Revisions[curIdx].Label + undoShortcutSuffix
+		}
+	} else if histPreview {
+		sc.undoTitle = tr(s, i18n.TrHistoryPreviewLocked)
+	} else {
+		sc.undoTitle = undoEmptyTitle
+	}
+	if sc.canRedo {
+		curIdx := h.CursorIndex()
+		if curIdx >= 0 && curIdx+1 < len(h.Revisions) {
+			sc.redoTitle = redoTitlePrefix + h.Revisions[curIdx+1].Label + redoShortcutSuffix
+		}
+	} else if histPreview {
+		sc.redoTitle = tr(s, i18n.TrHistoryPreviewLocked)
+	} else {
+		sc.redoTitle = redoEmptyTitle
+	}
+	return sc
+}
+
+// ViewStudioScript returns a script-only TemplateChunk hydrating Studio/history controller state on partial updates.
+func ViewStudioScript(s *state.AppState) tpl.TemplateChunk {
+	return tpl.TemplateChunk{
+		ScriptData: buildStudioScript(s),
+	}
+}
+
+func ViewStudio(s *state.AppState) tpl.TemplateChunk {
 	b := s.Editor.ActiveBook
 	hasEditorBook := s.Editor.HasActiveBook()
-	vars["has_editor_book"] = hasEditorBook
-	vars["book"] = b
-	vars["default_new_book_dir"] = book.ResolveNewBookDir(s.Settings)
-	vars["default_export_dir"] = b.ResolveExportDir(s.Settings)
-
-	isScreenplay := false
-	if hasEditorBook {
-		isScreenplay = b.IsScreenplay()
-		vars["script_standard"] = b.NormalizedStandard()
-	} else {
-		vars["script_standard"] = "pl"
+	isSp := hasEditorBook && b.IsScreenplay()
+	settingsHint := tr(s, i18n.TrEditorBookSettingsHint)
+	chTitlePlaceholder := tr(s, i18n.TrEditorChapterTitlePlaceholder)
+	if isSp {
+		settingsHint = tr(s, i18n.TrEditorSpSettingsHint)
+		chTitlePlaceholder = tr(s, i18n.TrEditorActTitlePlaceholder)
 	}
-	vars["is_screenplay_mode"] = isScreenplay
 
-	if isScreenplay {
-		vars["editor_title_placeholder"] = tr(s, i18n.TrEditorSpTitlePlaceholder)
-		vars["editor_author_placeholder"] = tr(s, i18n.TrEditorSpAuthorPlaceholder)
-		vars["editor_description_placeholder"] = tr(s, i18n.TrEditorSpDescPlaceholder)
-		vars["editor_chapter_title_placeholder"] = tr(s, i18n.TrEditorActTitlePlaceholder)
-		vars["editor_settings_hint"] = tr(s, i18n.TrEditorSpSettingsHint)
-	} else {
-		vars["editor_title_placeholder"] = tr(s, i18n.TrEditorBookTitlePlaceholder)
-		vars["editor_author_placeholder"] = tr(s, i18n.TrEditorBookAuthorPlaceholder)
-		vars["editor_description_placeholder"] = tr(s, i18n.TrEditorBookDescPlaceholder)
-		vars["editor_chapter_title_placeholder"] = tr(s, i18n.TrEditorChapterTitlePlaceholder)
-		vars["editor_settings_hint"] = tr(s, i18n.TrEditorBookSettingsHint)
-	}
+	histChunk := ViewEditorHistory(s)
+	ctxChunk := ViewEditorContextPanel(s)
+	varsChunk := ViewEditorVariables(s)
 
 	isHistPreview := !s.Config.StandaloneMode && s.Editor.History.IsPreview(b)
-	vars[keyIsHistoryPreview] = isHistPreview
+	histPreviewAttr := attrFalse
+	var histPreviewID, histPreviewLabel string
 	if isHistPreview {
-		vars[keyHistoryPreviewAttr] = attrTrue
-	} else {
-		vars[keyHistoryPreviewAttr] = attrFalse
+		histPreviewAttr = attrTrue
+		if s.Editor.History.Preview != nil {
+			histPreviewID = s.Editor.History.Preview.RevisionID
+			histPreviewLabel = s.Editor.History.Preview.RevisionLabel
+		}
 	}
-	if isHistPreview && s.Editor.History.Preview != nil {
-		vars[keyHistoryPreviewID] = s.Editor.History.Preview.RevisionID
-		vars[keyHistoryPreviewLabel] = s.Editor.History.Preview.RevisionLabel
-	} else {
-		vars[keyHistoryPreviewID] = ""
-		vars[keyHistoryPreviewLabel] = ""
+
+	v := &studioTemplate{
+		ContextPanel:                  ctxChunk,
+		VariablesPanel:                varsChunk,
+		HistoryPanel:                  histChunk,
+		HasEditorBook:                 hasEditorBook,
+		IsScreenplayMode:              isSp,
+		BookSettingsOpen:              s.Editor.RightPanel == state.PanelBook,
+		EditorSettingsHint:            settingsHint,
+		EditorChapterTitlePlaceholder: chTitlePlaceholder,
+		ShowEditorVariablesPanel:      s.Editor.RightPanel == state.PanelVariables,
+		ShowEditorBreakdownPanel:      s.Editor.RightPanel == state.PanelBreakdown && isSp,
+		ShowEditorHistoryPanel:        s.Editor.RightPanel == state.PanelHistory,
+		ShowEditorHelpPanel:           s.Editor.RightPanel == state.PanelHelp,
+		IsHistoryPreview:              isHistPreview,
+		HistoryPreviewAttr:            histPreviewAttr,
+		HistoryPreviewID:              histPreviewID,
+		HistoryPreviewLabel:           histPreviewLabel,
 	}
 
 	if hasEditorBook && len(b.Scenes) > 0 {
-		warnItems := make([]map[string]any, 0, len(b.Warnings))
-		for _, w := range b.Warnings {
-			warnItems = append(warnItems, map[string]any{"text": w})
+		selected := b.FindScene(s.Editor.SelectedSceneID)
+		if selected == nil {
+			selected = b.Scenes[0]
 		}
-		vars["has_book_warnings"] = len(b.Warnings) > 0
-		vars["book_warning_count"] = len(b.Warnings)
-		vars["has_multiple_book_warnings"] = len(b.Warnings) > 1
+		v.SelectedSceneID = selected.ID
+		v.SelectedSceneTitle = selected.DisplayName()
+		v.StudioSearchOpen = s.Editor.SearchOpen
+		v.StudioSearchQuery = s.Editor.SearchQuery
+		v.BookWarningsOpen = s.Editor.WarningsOpen
+		v.HasBookWarnings = len(b.Warnings) > 0
+		v.BookWarningCount = len(b.Warnings)
+		v.HasMultipleBookWarnings = len(b.Warnings) > 1
 		if len(b.Warnings) > 0 {
-			vars["first_book_warning"] = b.Warnings[0]
-		} else {
-			vars["first_book_warning"] = ""
+			v.FirstBookWarning = b.Warnings[0]
+			v.BookWarnings = append([]string(nil), b.Warnings...)
 		}
-		vars["book_warnings"] = warnItems
-		isNarrated := !b.IsScreenplay() && b.Narrated
-		vars["book_narrated"] = isNarrated
-		if isNarrated {
-			vars["book_narrated_label"] = tr(s, i18n.TrBookNarratedReqLabel)
-			vars["book_narrated_short_label"] = tr(s, i18n.TrRequiredLabel)
-		} else {
-			vars["book_narrated_label"] = tr(s, i18n.TrBookNarratedOffLabel)
-			vars["book_narrated_short_label"] = tr(s, i18n.TrDisabledLabel)
-		}
-		vars["book_imageless"] = b.Imageless
-		if b.Imageless {
-			vars["book_imageless_label"] = tr(s, i18n.TrBookImagelessOnLabel)
-			vars["book_imageless_short_label"] = tr(s, i18n.TrNoImagesLabel)
-		} else {
-			vars["book_imageless_label"] = tr(s, i18n.TrBookImagelessOffLabel)
-			vars["book_imageless_short_label"] = tr(s, i18n.TrWithImagesLabel)
-		}
+		populateEditorContext(s, v)
 	} else {
-		vars["has_book_warnings"] = false
-		vars["book_warning_count"] = 0
-		vars["has_multiple_book_warnings"] = false
-		vars["first_book_warning"] = ""
-		vars["book_narrated"] = false
-		vars["book_narrated_label"] = tr(s, i18n.TrBookNarratedOffLabel)
-		vars["book_narrated_short_label"] = tr(s, i18n.TrDisabledLabel)
-		vars["book_imageless"] = false
-		vars["book_imageless_label"] = tr(s, i18n.TrBookImagelessOffLabel)
-		vars["book_imageless_short_label"] = tr(s, i18n.TrWithImagesLabel)
-		vars["has_selected_node"] = false
-		vars["book_settings_open"] = false
-		vars["has_selected_chapter"] = false
-		vars["is_node_inspector_hidden"] = false
-		vars["studio_search_count"] = 0
-		vars["studio_search_items"] = []map[string]any(nil)
-		populateEditorHistoryContext(s, vars)
-		if full {
-			populateStudioHomeContext(s, vars, s.Library.Books)
-		}
+		populateStudioHomeContext(s, v, s.Library.Books)
+	}
+	return tpl.TemplateChunk{
+		TemplateData: v,
+		ScriptData:   buildStudioScript(s),
 	}
 }
 
-func ViewEditor(s *state.AppState) map[string]any {
-	vars := make(map[string]any, 96)
-	populateEditorCommonVars(s, vars, true)
-	if s.Editor.HasActiveBook() && len(s.Editor.ActiveBook.Scenes) > 0 {
-		populateEditorContext(s, vars)
-	}
-	return vars
-}
-
-func populateStudioHomeContext(s *state.AppState, vars map[string]any, books []*book.Book) {
+func populateStudioHomeContext(s *state.AppState, v *studioTemplate, books []*book.Book) {
 	lang := LangOf(s)
-	items := make([]studioHomeProjectItem, 0, len(books))
+	items := make([]book.Book, 0, len(books))
 	unpackedByID := make(map[string]bool, len(books))
 	unpackedByTitle := make(map[string]bool, len(books))
 
@@ -151,11 +240,10 @@ func populateStudioHomeContext(s *state.AppState, vars map[string]any, books []*
 		if titleKey != "" {
 			unpackedByTitle[titleKey] = true
 		}
-		items = append(items, studioHomeProjectItem{
-			Book:     b,
-			MetaLine: formatStudioProjectMetaLine(b, lang),
-			PathLine: formatStudioProjectPathLine(b),
-		})
+		item := *b
+		item.MetaLine = formatStudioProjectMetaLine(b, lang)
+		item.PathLine = formatStudioProjectPathLine(b)
+		items = append(items, item)
 	}
 
 	var extPaths []string
@@ -176,22 +264,21 @@ func populateStudioHomeContext(s *state.AppState, vars map[string]any, books []*
 		}
 	}
 
-	packedItems := make([]studioHomeProjectItem, 0, len(packedBooks))
+	packedItems := make([]book.Book, 0, len(packedBooks))
 	for _, pb := range packedBooks {
 		titleKey := book.SanitizeBookID(pb.Title)
 		isUnpacked := unpackedByID[pb.ID] || (titleKey != "" && unpackedByTitle[titleKey])
-		packedItems = append(packedItems, studioHomeProjectItem{
-			Book:       pb,
-			MetaLine:   formatStudioProjectMetaLine(pb, lang),
-			PathLine:   formatStudioProjectPathLine(pb),
-			IsUnpacked: isUnpacked,
-		})
+		item := *pb
+		item.MetaLine = formatStudioProjectMetaLine(pb, lang)
+		item.PathLine = formatStudioProjectPathLine(pb)
+		item.IsUnpacked = isUnpacked
+		packedItems = append(packedItems, item)
 	}
 
-	vars["has_studio_home_projects"] = len(items) > 0
-	vars["studio_home_projects"] = items
-	vars["has_studio_packed_books"] = len(packedItems) > 0
-	vars["studio_packed_books"] = packedItems
+	v.HasStudioHomeProjects = len(items) > 0
+	v.StudioHomeProjects = items
+	v.HasStudioPackedBooks = len(packedItems) > 0
+	v.StudioPackedBooks = packedItems
 }
 
 func formatStudioProjectMetaLine(b *book.Book, lang i18n.Lang) string {
@@ -312,11 +399,8 @@ func formatStudioProjectPathLine(b *book.Book) string {
 	return parent + "/" + b.ID + "/book.playtxt"
 }
 
-func populateEditorContext(s *state.AppState, vars map[string]any) {
+func populateEditorContext(s *state.AppState, v *studioTemplate) {
 	b := s.Editor.ActiveBook
-	tSel := time.Now()
-	populateEditorSelectedNodeOnly(s, vars)
-	logging.Active.MarkStep(logging.StageEditorSelectedNode, tSel, b.ID)
 	selected := b.FindScene(s.Editor.SelectedSceneID)
 	if selected == nil {
 		selected = b.Scenes[0]
@@ -337,29 +421,28 @@ func populateEditorContext(s *state.AppState, vars map[string]any) {
 		edZoom = 1.0
 	}
 	tGraph := time.Now()
-	vars["studio_graph_payload"] = buildStudioGraphPayload(b, edZoom, selected.ID, orderedScenes)
+	v.StudioGraphPayload = buildStudioGraphPayload(b, edZoom, selected.ID, orderedScenes)
 	logging.Active.MarkStep(logging.StageEditorGraphPayload, tGraph, b.ID)
 	tSearch := time.Now()
-	populateEditorSearchContext(s, vars, orderedScenes)
+	populateEditorSearchContext(s, v, orderedScenes)
 	logging.Active.MarkStep(logging.StageEditorSearchCtx, tSearch, b.ID)
 	tBreakdown := time.Now()
-	populateEditorBreakdownContext(s, vars)
+	v.BreakdownPanel = ViewEditorBreakdown(s)
 	logging.Active.MarkStep(logging.StageEditorBreakdownCtx, tBreakdown, b.ID)
-	populateEditorHistoryContext(s, vars)
 }
 
-func populateEditorSearchContext(s *state.AppState, vars map[string]any, orderedScenes []*book.Scene) {
+func populateEditorSearchContext(s *state.AppState, v *studioTemplate, orderedScenes []*book.Scene) {
 	b := s.Editor.ActiveBook
 	if b == nil || len(orderedScenes) == 0 {
-		vars["studio_search_count"] = 0
-		vars["studio_search_items"] = []map[string]any(nil)
 		return
 	}
+
 	badgeScene := strings.TrimSuffix(tr(s, i18n.TrSpSceneUpperKey), ":")
 	isSp := b.IsScreenplay()
 	defCh := b.DefaultChapterName()
+	queryLower := strings.ToLower(strings.TrimSpace(s.Editor.SearchQuery))
 
-	items := make([]map[string]any, 0, len(orderedScenes))
+	items := make([]book.StudioSearchItem, 0, len(orderedScenes))
 	for _, sc := range orderedScenes {
 		chName := strings.TrimSpace(sc.Chapter)
 		if chName == "" {
@@ -380,7 +463,11 @@ func populateEditorSearchContext(s *state.AppState, vars map[string]any, ordered
 			}
 			choiceParts = append(choiceParts, strings.TrimSpace(ch.Label)+" -> "+strings.TrimSpace(t))
 		}
+		choicesStr := strings.Join(choiceParts, " | ")
 		flatText := strings.Join(strings.Fields(sc.Text), " ")
+		if queryLower != "" && !matchesEditorSearchScene(sc, dispTitle, chName, choicesStr, flatText, queryLower) {
+			continue
+		}
 		defSnip := strings.Join(strings.Fields(sc.Synopsis), " ")
 		if defSnip == "" {
 			defSnip = firstSentenceSnippet(flatText)
@@ -389,23 +476,23 @@ func populateEditorSearchContext(s *state.AppState, vars map[string]any, ordered
 		if len(runes) > 84 {
 			defSnip = string(runes[:84]) + "..."
 		}
-		items = append(items, map[string]any{
-			"id":              sc.ID,
-			"display_title":   dispTitle,
-			"title":           sc.Name,
-			"slugline":        sc.Slugline,
-			"chapter":         chName,
-			"chapter_upper":   strings.ToUpper(chName),
-			"synopsis":        sc.Synopsis,
-			"text_b64":        base64.StdEncoding.EncodeToString([]byte(sc.Text)),
-			"choices":         strings.Join(choiceParts, " | "),
-			"default_badge":   badgeScene,
-			"default_snippet": defSnip,
-			"is_selected":     sc.ID == s.Editor.SelectedSceneID,
+		items = append(items, book.StudioSearchItem{
+			ID:             sc.ID,
+			DisplayTitle:   dispTitle,
+			Title:          sc.Name,
+			Slugline:       sc.Slugline,
+			Chapter:        chName,
+			ChapterUpper:   strings.ToUpper(chName),
+			Synopsis:       sc.Synopsis,
+			TextB64:        base64.StdEncoding.EncodeToString([]byte(sc.Text)),
+			Choices:        choicesStr,
+			DefaultBadge:   badgeScene,
+			DefaultSnippet: defSnip,
+			IsSelected:     sc.ID == s.Editor.SelectedSceneID,
 		})
 	}
-	vars["studio_search_count"] = len(items)
-	vars["studio_search_items"] = items
+	v.StudioSearchCount = len(items)
+	v.StudioSearchItems = items
 }
 
 func firstSentenceSnippet(s string) string {
@@ -416,6 +503,11 @@ func firstSentenceSnippet(s string) string {
 		}
 	}
 	return s
+}
+
+func matchesEditorSearchScene(sc *book.Scene, dispTitle, chName, choicesStr, flatText, queryLower string) bool {
+	haystack := strings.ToLower(sc.ID + " " + dispTitle + " " + sc.Name + " " + sc.Slugline + " " + chName + " " + sc.Synopsis + " " + choicesStr + " " + flatText)
+	return strings.Contains(haystack, queryLower)
 }
 
 func sanitizeGraphPayloadField(v string) string {

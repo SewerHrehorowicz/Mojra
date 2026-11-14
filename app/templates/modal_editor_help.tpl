@@ -1,12 +1,9 @@
-{if show_editor_help_modal}
+{if ShowEditorHelpModal}
     .modal-backdrop#modal-backdrop-editor-help
-        data-backdrop-action: CloseEditorHelpModal
         .modal-card.modal-card-lg
             .modal-header
                 h3.modal-title {t_help_panel_title}
-                button.node-close-btn
-                    type: button
-                    action: CloseEditorHelpModal
+                button.node-close-btn.btn-close-editor-help
                     svg.node-close-icon src: /icons/close.svg
             .modal-body
                 .help-shortcuts-list
@@ -35,7 +32,5 @@
                         span.help-shortcut-key {t_help_m_k8}
                         span.help-shortcut-desc {t_help_m_d8}
                 .modal-actions
-                    button.btn.btn-primary
-                        type: button
-                        action: CloseEditorHelpModal
+                    button.btn.btn-primary.btn-close-editor-help
                         "{t_got_it_btn}"

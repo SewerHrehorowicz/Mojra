@@ -32,24 +32,48 @@ func closeNewBookModal(s *state.AppState, _ *http.Request) string {
 	return ""
 }
 
-func browseNewBookFolder(s *state.AppState, r *http.Request) string {
-	s.ModalNewBook.Title = r.FormValue("title")
-	s.ModalNewBook.Author = r.FormValue("author")
-	if m := strings.TrimSpace(r.FormValue("mode")); m != "" {
+const (
+	newBookFormTitle     = "title"
+	newBookFormAuthor    = "author"
+	newBookFormMode      = "mode"
+	newBookFormStandard  = "standard"
+	newBookFormNarrated  = "narrated"
+	newBookFormImageless = "imageless"
+	newBookFormSavePath  = "save_path"
+	boolValTrue          = "true"
+	boolValOn            = "on"
+)
+
+func syncNewBookModalForm(s *state.AppState, r *http.Request) {
+	if r == nil {
+		return
+	}
+	s.ModalNewBook.Title = r.FormValue(newBookFormTitle)
+	s.ModalNewBook.Author = r.FormValue(newBookFormAuthor)
+	if m := strings.TrimSpace(r.FormValue(newBookFormMode)); m != "" {
 		s.ModalNewBook.Mode = book.NormalizeBookMode(m)
 	}
-	if std := strings.TrimSpace(r.FormValue("standard")); std != "" {
+	if std := strings.TrimSpace(r.FormValue(newBookFormStandard)); std != "" {
 		s.ModalNewBook.Standard = book.NormalizeScriptStandard(std)
 	}
-	rawNarr := strings.ToLower(strings.TrimSpace(r.FormValue("narrated")))
-	s.ModalNewBook.Narrated = rawNarr == "true" || rawNarr == "on" || rawNarr == "1"
-	rawImg := strings.ToLower(strings.TrimSpace(r.FormValue("imageless")))
-	s.ModalNewBook.Imageless = rawImg == "true" || rawImg == "on" || rawImg == "1"
-	if curPath := strings.TrimSpace(r.FormValue("save_path")); curPath != "" {
+	rawNarr := strings.ToLower(strings.TrimSpace(r.FormValue(newBookFormNarrated)))
+	s.ModalNewBook.Narrated = rawNarr == boolValTrue || rawNarr == boolValOn || rawNarr == "1"
+	rawImg := strings.ToLower(strings.TrimSpace(r.FormValue(newBookFormImageless)))
+	s.ModalNewBook.Imageless = rawImg == boolValTrue || rawImg == boolValOn || rawImg == "1"
+	if curPath := strings.TrimSpace(r.FormValue(newBookFormSavePath)); curPath != "" {
 		if expanded, err := book.ExpandLocalPath(curPath); err == nil && expanded != "" {
 			s.ModalNewBook.Dir = expanded
 		}
 	}
+}
+
+func setNewBookModalModeAction(s *state.AppState, r *http.Request) string {
+	syncNewBookModalForm(s, r)
+	return ""
+}
+
+func browseNewBookFolder(s *state.AppState, r *http.Request) string {
+	syncNewBookModalForm(s, r)
 
 	picked := pickNativeBookPathUnlocked(s, true)
 	if picked != "" {

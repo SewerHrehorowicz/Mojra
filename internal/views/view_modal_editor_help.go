@@ -1,13 +1,18 @@
 package views
 
-import "mojra/internal/state"
+import (
+	"mojra/internal/state"
+	"mojra/internal/tpl"
+)
 
-type modalEditorHelpView struct {
-	ShowEditorHelpModal bool `tpl:"show_editor_help_modal"`
+type modalEditorHelpTemplate struct {
+	ShowEditorHelpModal bool
 }
 
-func ViewModalEditorHelp(s *state.AppState) *modalEditorHelpView {
-	return &modalEditorHelpView{
-		ShowEditorHelpModal: s.Editor.RightPanel == state.PanelHelp,
+func ViewModalEditorHelp(s *state.AppState) tpl.TemplateChunk {
+	return tpl.TemplateChunk{
+		TemplateData: &modalEditorHelpTemplate{
+			ShowEditorHelpModal: s.Editor.RightPanel == state.PanelHelp,
+		},
 	}
 }

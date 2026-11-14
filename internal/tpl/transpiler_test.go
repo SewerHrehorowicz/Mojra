@@ -229,7 +229,7 @@ func TestBuildWorkspaceAppAssets(t *testing.T) {
 		t.Fatalf("read library_view.tpl: %v", err)
 	}
 	libTpl := string(libTplBytes)
-	if !strings.Contains(libTpl, "action: OpenAddBookModal") || !strings.Contains(libTpl, "button.book-cover-wrap") {
+	if !strings.Contains(libTpl, "#btn-open-add-book") || !strings.Contains(libTpl, "button.book-cover-wrap") {
 		t.Fatalf("regression in library_view.tpl: expected #btn-open-add-book and button.book-cover-wrap, got:\n%s", libTpl)
 	}
 	cardStart := strings.Index(libTpl, "article.book-card")
@@ -269,10 +269,10 @@ func TestBuildWorkspaceAppAssets(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read player-only style.css: %v", err)
 	}
-	if !strings.Contains(string(playerJSBytes), "initPlayerScrollAndAudio") {
-		t.Fatalf("expected initPlayerScrollAndAudio in player-only app.js")
+	if !strings.Contains(string(playerJSBytes), "focusPresent") {
+		t.Fatalf("expected focusPresent in player-only app.js")
 	}
-	for _, forbiddenEditorJS := range []string{"function initNodeEditorCanvas", "function drawStudioWires", "EDITOR_GRID_SIZE"} {
+	for _, forbiddenEditorJS := range []string{"const StudioView =", "const EditorWires =", "EDITOR_GRID_SIZE"} {
 		if strings.Contains(string(playerJSBytes), forbiddenEditorJS) {
 			t.Fatalf("expected %q to be omitted from player-only app.js", forbiddenEditorJS)
 		}
@@ -606,7 +606,7 @@ func TestConditionalClassesAttrsElifElseAndComponentSlots(t *testing.T) {
 	})
 	html := RenderTemplate("page", components, ctx)
 	for _, want := range []string{
-		`<button class="tab-btn active is-locked mode-full" id="main-btn" disabled="disabled" data-hint="Podpowiedź">Aktywny</button>`,
+		`<button class="tab-btn active is-locked mode-full" id="main-btn" type="button" disabled="disabled" data-hint="Podpowiedź">Aktywny</button>`,
 		`<span class="view-tag">Edytor</span>`,
 		`<div class="panel-card is-highlighted">`,
 		`<header class="panel-hdr">Karta Sceny</header>`,
@@ -656,26 +656,47 @@ func BenchmarkRenderTemplateAppShell(b *testing.B) {
 		"has_active_book":        true,
 		"active_book_title":      "Nie bój się policji rzecznej",
 		"show_reset_progress":    true,
-		"show_audio_deck":        true,
-		"audio_speed":            "1",
-		"audio_resume_time":      "0.0",
-		"auto_choice_enabled":    true,
-		"auto_choice_label":      "Auto-Wybór: WŁ",
-		"current_scene": map[string]any{
-			"name":         "Wstyd w warsztacie",
-			"rail_title":   "Wstyd w warsztacie",
-			"has_title":    true,
-			"header_meta":  "Nie bój się policji rzecznej • Rozdział 1",
-			"html":         "<p>Krótki akapit tekstu sceny testowej.</p>",
-			"has_image":    true,
-			"image_url":    "/api/books/test/media/images/sc1.png",
-			"has_bg_image": true,
-			"bg_image_url": "/api/books/test/media/images/sc1.png",
-			"audio_url":    "/api/books/test/media/voice/sc1.ogg",
-			"is_terminal":  false,
-			"choices": []map[string]any{
-				{"idx": 0, "label": "Wejdź do warsztatu", "arrow": "»", "is_branch": true, "is_implicit": false},
-				{"idx": 1, "label": "Odejdź w stronę rzeki", "arrow": "»", "is_branch": true, "is_implicit": false},
+		"workspace_view": TemplateChunk{
+			Template: "player_view",
+			TemplateData: map[string]any{
+				"ImagelessMode": false,
+				"HeaderMeta":    "Nie bój się policji rzecznej • Rozdział 1",
+				"RailTitle":     "Wstyd w warsztacie",
+				"HasBgImage":    true,
+				"BgImageURL":    "/api/books/test/media/images/sc1.png",
+				"ShowAudioDeck": true,
+				"AudioDeck": TemplateChunk{
+					Template: "audio_deck",
+					TemplateData: map[string]any{
+						"AudioURL":           "/api/books/test/media/voice/sc1.ogg",
+						"AudioDurationLabel": "1:20",
+						"AudioTrimStart":     "0.0000",
+						"AudioTrimEnd":       "1.0000",
+						"AudioResumeTime":    "0.0",
+						"AudioSpeed":         "1",
+						"AutoChoiceEnabled":  true,
+						"AutoChoiceLabel":    "Auto-Wybór: WŁ",
+						"AutoChoiceDelay":    "2",
+					},
+				},
+				"CurrentScene": TemplateChunk{
+					Template: "scene_view",
+					TemplateData: map[string]any{
+						"IsPresent":   true,
+						"Name":        "Wstyd w warsztacie",
+						"RailTitle":   "Wstyd w warsztacie",
+						"HasTitle":    true,
+						"Prose":       "Krótki akapit tekstu sceny testowej.",
+						"HasImage":    true,
+						"ImageURL":    "/api/books/test/media/images/sc1.png",
+						"IsTerminal":  false,
+						"IsBranching": true,
+						"Choices": []map[string]any{
+							{"Label": "Wejdź do warsztatu", "ShowWhenLocked": false, "IsEnding": false},
+							{"Label": "Odejdź w stronę rzeki", "ShowWhenLocked": false, "IsEnding": false},
+						},
+					},
+				},
 			},
 		},
 	})
@@ -710,7 +731,7 @@ func BuildPlayerOnlyApp(appDir, outDir string) error {
 		return err
 	}
 	delete(templates, "library_view")
-	delete(templates, "editor_view")
+	delete(templates, "studio_view")
 	delete(templates, "editor_context_panel")
 	delete(templates, "editor_history_panel")
 	delete(templates, "editor_breakdown_panel")

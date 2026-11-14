@@ -84,6 +84,48 @@ type HistoryRevision struct {
 	Files           map[string]string
 }
 
+// HistoryGraphLane represents a single vertical lane cell inside a history graph row.
+type HistoryGraphLane struct {
+	Branch           string
+	HoverHint        string
+	IsBranchRail     bool
+	IsOtherBranch    bool
+	HasRailUp        bool
+	HasRailDown      bool
+	IsActiveRailUp   bool
+	IsActiveRailDown bool
+	IsDashedRailUp   bool
+	IsDashedRailDown bool
+	HasNode          bool
+	IsForkCorner     bool
+	HasForkHoriz     bool
+	IsActiveFork     bool
+	IsCompactIn      bool
+	IsCompactOut     bool
+	HasCompactHoriz  bool
+	IsActiveCompact  bool
+	HasStemStart     bool
+	HasStemThrough   bool
+}
+
+// HistoryGraphRow represents a rendered revision row in the Studio history timeline.
+type HistoryGraphRow struct {
+	ID              string
+	Label           string
+	MetaLabel       string
+	Branch          string
+	HoverHint       string
+	IsUnnamedStep   bool
+	IsCurrent       bool
+	IsActiveHead    bool
+	IsPreview       bool
+	IsUndone        bool
+	IsActiveLineage bool
+	IsActiveBranch  bool
+	IsBranchHead    bool
+	Lanes           []HistoryGraphLane
+}
+
 // HistoryPreview holds the read-only revision preview snapshot for a book in Studio.
 type HistoryPreview struct {
 	RevisionID      string

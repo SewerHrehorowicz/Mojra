@@ -85,3 +85,82 @@ func TestAuditRejectsMoreThanFourCommaSelectorsInTSS(t *testing.T) {
 		t.Fatalf("expected 1 TPL_ARCH finding for >4 comma-separated selectors, got: %v", got)
 	}
 }
+
+func TestAuditRejectsLogicInJSBindingsAndBrokenControllerDataMap(t *testing.T) {
+	tmpDir := t.TempDir()
+	ctrlDir := filepath.Join(tmpDir, "app", "js", "controllers")
+	viewsDir := filepath.Join(tmpDir, "internal", "views")
+	if err := os.MkdirAll(ctrlDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(viewsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	viewSrc := `package views
+import "mojra/internal/tpl"
+type sampleTemplate struct{}
+type sampleScript struct {
+	bookId string
+	count  int
+}
+func ViewSample() tpl.TemplateChunk {
+	return tpl.TemplateChunk{
+		TemplateData: &sampleTemplate{},
+		ScriptData: &sampleScript{bookId: "a", count: 1},
+	}
+}
+`
+	if err := os.WriteFile(filepath.Join(viewsDir, "view_sample.go"), []byte(viewSrc), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	badCtrlSrc := `"use strict";
+const SampleController = {
+  data: {
+    count: "wrong_type"
+  },
+  bindings() {
+    return {
+      ".btn-a": {
+        click: Dispatcher.action("DoThing", (p) => ({ id: p.idx }))
+      },
+      ".btn-b": {
+        click: this.missingMethod
+      }
+    };
+  },
+  settings: {},
+  validMethod() {
+    return this.data.undeclaredField;
+  }
+};
+Dispatcher.register("SampleController", SampleController);
+`
+	if err := os.WriteFile(filepath.Join(ctrlDir, "sample_controller.js"), []byte(badCtrlSrc), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	idx, err := loadWorkspaceIndex(tmpDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	findings := checkJSControllersAndDataContracts(tmpDir, idx.fset, idx.goFiles)
+	hasBindingsLogic := false
+	hasDataMap := false
+	for _, f := range findings {
+		if f.Category == "JS_BINDINGS_LOGIC" {
+			hasBindingsLogic = true
+		}
+		if f.Category == "JS_CONTROLLER_DATA_MAP" {
+			hasDataMap = true
+		}
+	}
+	if !hasBindingsLogic {
+		t.Fatalf("expected JS_BINDINGS_LOGIC findings for inline arrow/mapper and missing local method, got: %v", findings)
+	}
+	if !hasDataMap {
+		t.Fatalf("expected JS_CONTROLLER_DATA_MAP findings for missing/mismatched data fields, got: %v", findings)
+	}
+}
+

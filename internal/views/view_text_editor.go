@@ -3,45 +3,15 @@
 package views
 
 import (
-	"fmt"
 	"strings"
 
 	"mojra/internal/book"
 	"mojra/internal/i18n"
 	"mojra/internal/state"
+	"mojra/internal/tpl"
 )
 
-type screenplayInsertPillItem struct {
-	Kind  string
-	Label string
-	Hint  string
-}
-
-type screenplayCharPillItem struct {
-	Name  string
-	Label string
-	Hint  string
-}
-
-type incomingSceneChoiceItem struct {
-	SceneID        string
-	SceneName      string
-	ChoiceLabel    string
-	HasChoiceLabel bool
-}
-
-type sceneTestVarItem struct {
-	Name        string
-	Kind        string
-	IsBool      bool
-	IsInt       bool
-	IsEnum      bool
-	BoolVal     bool
-	Value       string
-	EnumOptions []map[string]any
-}
-
-type editorSceneTextView struct {
+type textEditorTemplate struct {
 	ShowSceneTextModal                   bool
 	SceneTextModalID                     string
 	SceneTextModalName                   string
@@ -51,17 +21,17 @@ type editorSceneTextView struct {
 	SceneTextModalSynopsis               string
 	SceneTextModalText                   string
 	SceneTextModalLengthLabel            string
-	SluglinePrefixPills                  []map[string]any
-	SluglineTimePills                    []map[string]any
-	ScreenplayInsertPills                []screenplayInsertPillItem
-	ScreenplayCharacterPills             []screenplayCharPillItem
+	SluglinePrefixPills                  []string
+	SluglineTimePills                    []string
+	ScreenplayInsertPills                []book.ScreenplayInsertPill
+	ScreenplayCharacterPills             []book.ScreenplayInsertPill
 	HasScreenplayCharacterPills          bool
 	SceneTextModalIsStart                bool
 	SceneTextModalChapter                string
 	SceneTextModalChapterKey             string
-	SceneTextModalChapterOptions         []map[string]any
+	SceneTextModalChapterOptions         []book.SelectOption
 	SceneTextModalHasVoiceSections       bool
-	SceneTextModalVoiceSections          []map[string]any
+	SceneTextModalVoiceSections          []book.VoiceSection
 	SceneTextModalActiveVoiceSectionKey  string
 	SceneTextModalActiveVoiceSectionFile string
 	IsVoiceSectionIsolated               bool
@@ -69,7 +39,7 @@ type editorSceneTextView struct {
 	IsolatedVoiceSectionHeader           string
 	SceneTextModalCurrentImage           string
 	SceneTextModalCurrentImageLabel      string
-	SceneTextModalImageOptions           []map[string]any
+	SceneTextModalImageOptions           []book.SelectOption
 	SceneTextModalBookNarrated           bool
 	SceneTextModalCurrentVoice           string
 	SceneTextModalCurrentVoiceLabel      string
@@ -79,7 +49,7 @@ type editorSceneTextView struct {
 	SceneTextModalVoiceTrimEnd           string
 	SceneTextModalHasVoice               bool
 	SceneTextModalHasVoiceTrim           bool
-	SceneTextModalVoiceOptions           []map[string]any
+	SceneTextModalVoiceOptions           []book.SelectOption
 	VoiceRecorderOpen                    bool
 	HasBookVariables                     bool
 	SceneTextHasRightPanel               bool
@@ -92,15 +62,15 @@ type editorSceneTextView struct {
 	SceneTextModalEffectsInvalid         bool
 	SceneTextModalEffectsErrorHint       string
 	BookVarsSpec                         string
-	BookVarSuggestions                   []map[string]any
-	BookEnumSuggestions                  []map[string]any
-	BookTargetSuggestions                []map[string]any
+	BookVarSuggestions                   []book.VariableDef
+	BookEnumSuggestions                  []book.SelectOption
+	BookTargetSuggestions                []book.SelectOption
 	ShowSyntaxHelpPopover                bool
-	SyntaxHelpCondRows                   []map[string]any
+	SyntaxHelpCondRows                   []book.SelectOption
 	IsScenePreviewNormal                 bool
 	IsScenePreviewHighlight              bool
 	IsScenePreviewOutput                 bool
-	SceneTestVars                        []sceneTestVarItem
+	SceneTestVars                        []book.VariableDef
 	HasSceneTestVars                     bool
 	ShowSceneTestVarsBar                 bool
 	SceneTestVarsSpec                    string
@@ -111,15 +81,22 @@ type editorSceneTextView struct {
 	SceneTextModalHasImage               bool
 	SceneTextModalImageURL               string
 	SceneTextModalIsImageless            bool
-	SceneTextModalIncoming               []incomingSceneChoiceItem
+	SceneTextModalIncoming               []book.SelectOption
 	SceneTextModalHasIncoming            bool
-	SceneTextModalChoices                []map[string]any
+	SceneTextModalChoices                []book.Choice
 	IsHistoryPreview                     bool
 	IsScreenplayMode                     bool
 	ScriptStandard                       string
 }
 
-func buildScreenplayFormatInsertPills(standard string, b *book.Book, lang i18n.Lang) ([]screenplayInsertPillItem, []screenplayCharPillItem) {
+type textEditorScript struct {
+	sceneId        string
+	bookVarsSpec   string
+	isScreenplay   bool
+	scriptStandard string
+}
+
+func buildScreenplayFormatInsertPills(standard string, b *book.Book, lang i18n.Lang) ([]book.ScreenplayInsertPill, []book.ScreenplayInsertPill) {
 	isPL := book.NormalizeScriptStandard(standard) == "pl"
 	pick := func(plVal, intlVal string) string {
 		if isPL {
@@ -136,7 +113,7 @@ func buildScreenplayFormatInsertPills(standard string, b *book.Book, lang i18n.L
 		}
 		return trK(intlStdKey)
 	}
-	insertPills := []screenplayInsertPillItem{
+	insertPills := []book.ScreenplayInsertPill{
 		{Kind: "dialogue", Label: trK(i18n.TrSpPillDialogueLabel), Hint: trK(i18n.TrSpPillDialogueHint)},
 		{Kind: "parenthetical", Label: pickTr(i18n.TrSpPillParenLabelPLStd, i18n.TrSpPillParenLabelIntlStd), Hint: pickTr(i18n.TrSpPillParenHintPLStd, i18n.TrSpPillParenHintIntlStd)},
 		{Kind: "action", Label: trK(i18n.TrSpPillActionLabel), Hint: pickTr(i18n.TrSpPillActionHintPLStd, i18n.TrSpPillActionHintIntlStd)},
@@ -146,50 +123,121 @@ func buildScreenplayFormatInsertPills(standard string, b *book.Book, lang i18n.L
 		{Kind: "transition_fade", Label: pick("+ ŚCIEMNIENIE.", "+ FADE OUT."), Hint: pickTr(i18n.TrSpPillFadeHintPLStd, i18n.TrSpPillFadeHintIntlStd)},
 		{Kind: "subslug", Label: pick("+ Podscena (WN./PL.)", trK(i18n.TrSpPillSubslugLabelIntlStd)), Hint: pickTr(i18n.TrSpPillSubslugHintPLStd, i18n.TrSpPillSubslugHintIntlStd)},
 	}
+	for i := range insertPills {
+		insertPills[i].Snippet, insertPills[i].SelectTarget, insertPills[i].DoubleNewline = book.ScreenplayBlockSnippet(standard, insertPills[i].Kind, "", lang)
+	}
 
-	var charPills []screenplayCharPillItem
+	var charPills []book.ScreenplayInsertPill
 	if b != nil {
 		bd := b.ScreenplayBreakdown()
 		limit := len(bd.Characters)
 		if limit > 8 {
 			limit = 8
 		}
-		charPills = make([]screenplayCharPillItem, 0, limit)
+		charPills = make([]book.ScreenplayInsertPill, 0, limit)
 		for i := 0; i < limit; i++ {
 			chName := bd.Characters[i].Name
-			charPills = append(charPills, screenplayCharPillItem{
-				Name:  chName,
-				Label: "@ " + chName,
-				Hint:  i18n.Tf(lang, i18n.TrSpPillCharDialogueHintFmt, chName),
+			snip, selTgt, dblNl := book.ScreenplayBlockSnippet(standard, "", chName, lang)
+			charPills = append(charPills, book.ScreenplayInsertPill{
+				Name:          chName,
+				Label:         "@ " + chName,
+				Hint:          i18n.Tf(lang, i18n.TrSpPillCharDialogueHintFmt, chName),
+				Snippet:       snip,
+				SelectTarget:  selTgt,
+				DoubleNewline: dblNl,
 			})
 		}
 	}
 	return insertPills, charPills
 }
 
-func ViewEditorSceneText(s *state.AppState) *editorSceneTextView {
+func ViewTextEditor(s *state.AppState) tpl.TemplateChunk {
 	if !s.Editor.SceneText.IsOpen() {
-		return nil
+		return tpl.TemplateChunk{}
 	}
 	b := s.Editor.ActiveBook
 	modalSc := b.FindScene(s.Editor.SceneText.SceneID)
 	if modalSc == nil {
 		s.Editor.SceneText.Close()
-		return nil
+		return tpl.TemplateChunk{}
 	}
 
 	lang := LangOf(s)
-	v := &editorSceneTextView{
-		ShowSceneTextModal:       true,
-		SceneTextModalID:         modalSc.ID,
-		SceneTextModalName:       modalSc.DisplayName(),
-		SceneTextModalRawName:    modalSc.Name,
-		SceneTextModalExplicitID: modalSc.ExplicitID,
-		SceneTextModalSlugline:   modalSc.Slugline,
-		SceneTextModalSynopsis:   modalSc.Synopsis,
-		SceneTextModalText:       modalSc.Text,
-		IsHistoryPreview:         !s.Config.StandaloneMode && s.Editor.History.IsPreview(b),
-		ScriptStandard:           "pl",
+	nv := buildEditorNodeView(s, modalSc, true)
+	bookNarrated := b != nil && !b.IsScreenplay() && b.Narrated
+	isVoiceSectionIsolated := bookNarrated && s.Modals.VoiceRecorder && nv.HasVoiceSections
+	displayedModalText := modalSc.Text
+	if isVoiceSectionIsolated {
+		displayedModalText = nv.ActiveVoiceSectionText
+	}
+	chKey := tr(s, i18n.TrChapterKey)
+	if b != nil && b.IsScreenplay() {
+		chKey = tr(s, i18n.TrActKey)
+	}
+	settingsOpenVal := attrFalse
+	if s.Editor.SceneText.SettingsOpen {
+		settingsOpenVal = attrTrue
+	}
+	hasBookVars := b != nil && len(b.Variables) > 0
+	isFullWidth := s.Editor.SceneText.WidthMode == state.WidthModeFull
+
+	v := &textEditorTemplate{
+		ShowSceneTextModal:                   true,
+		SceneTextModalID:                     nv.ID,
+		SceneTextModalName:                   modalSc.DisplayName(),
+		SceneTextModalRawName:                nv.Name,
+		SceneTextModalExplicitID:             nv.ExplicitID,
+		SceneTextModalSlugline:               nv.Slugline,
+		SceneTextModalSynopsis:               nv.Synopsis,
+		SceneTextModalText:                   displayedModalText,
+		SceneTextModalLengthLabel:            nv.ScriptLengthLabel,
+		SceneTextModalIsStart:                nv.IsStartScene,
+		SceneTextModalChapter:                nv.Chapter,
+		SceneTextModalChapterKey:             chKey,
+		SceneTextModalChapterOptions:         nv.ChapterOptions,
+		SceneTextModalHasVoiceSections:       nv.HasVoiceSections,
+		SceneTextModalVoiceSections:          nv.VoiceSections,
+		SceneTextModalActiveVoiceSectionKey:  nv.ActiveVoiceSectionKey,
+		SceneTextModalActiveVoiceSectionFile: nv.ActiveVoiceSectionFile,
+		IsVoiceSectionIsolated:               isVoiceSectionIsolated,
+		IsolatedVoiceSectionKey:              nv.ActiveVoiceSectionKey,
+		IsolatedVoiceSectionHeader:           nv.ActiveVoiceSectionHeader,
+		SceneTextModalCurrentImage:           nv.CurrentImage,
+		SceneTextModalCurrentImageLabel:      nv.CurrentImageLabel,
+		SceneTextModalImageOptions:           nv.ImageOptions,
+		SceneTextModalBookNarrated:           bookNarrated,
+		SceneTextModalCurrentVoice:           nv.CurrentVoice,
+		SceneTextModalCurrentVoiceLabel:      nv.CurrentVoiceLabel,
+		SceneTextModalVoiceURL:               nv.CurrentVoiceURL,
+		SceneTextModalVoiceDurationLabel:     nv.VoiceDurationLabel,
+		SceneTextModalVoiceTrimStart:         nv.VoiceTrimStart,
+		SceneTextModalVoiceTrimEnd:           nv.VoiceTrimEnd,
+		SceneTextModalHasVoice:               nv.HasVoiceFile,
+		SceneTextModalHasVoiceTrim:           nv.HasVoiceTrim,
+		SceneTextModalVoiceOptions:           nv.VoiceOptions,
+		VoiceRecorderOpen:                    s.Modals.VoiceRecorder,
+		HasBookVariables:                     hasBookVars,
+		SceneTextHasRightPanel:               s.Editor.RightPanel != state.PanelNone,
+		SceneTextIsFullWidth:                 isFullWidth,
+		SceneTextIsHalfWidth:                 !isFullWidth,
+		SceneTextModalSettingsOpen:           s.Editor.SceneText.SettingsOpen,
+		SceneTextModalSettingsOpenVal:        settingsOpenVal,
+		SceneTextModalEffects:                nv.Effects,
+		SceneTextModalHasEffects:             nv.HasEffects,
+		SceneTextModalEffectsInvalid:         nv.IsEffectsInvalid,
+		SceneTextModalEffectsErrorHint:       nv.EffectsErrorHint,
+		BookVarsSpec:                         book.EncodeBookVariablesSpec(b),
+		BookVarSuggestions:                   buildBookVarSuggestions(b),
+		BookEnumSuggestions:                  buildBookEnumValueSuggestions(b),
+		BookTargetSuggestions:                buildBookTargetSuggestions(s, modalSc),
+		ShowSyntaxHelpPopover:                hasBookVars && s.Editor.SceneText.SyntaxHelpOpen,
+		SyntaxHelpCondRows: []book.SelectOption{
+			{Value: "if: odkryta_prawda && sumienie >= 2", Label: "bool / int / enum (&&, ||, !, ==, !=, >=, <=)"},
+			{Value: "set: odkryta_prawda = true; sumienie++", Label: tr(s, i18n.TrSyntaxHelpSetDesc)},
+			{Value: "exit: ogien_w_kaplicy", Label: tr(s, i18n.TrSyntaxHelpExitDesc)},
+		},
+		IsHistoryPreview: !s.Config.StandaloneMode && s.Editor.History.IsPreview(b),
+		ScriptStandard:   "pl",
 	}
 
 	if b != nil {
@@ -199,165 +247,9 @@ func ViewEditorSceneText(s *state.AppState) *editorSceneTextView {
 
 	if v.IsScreenplayMode {
 		normStd := v.ScriptStandard
-		metrics := book.ComputeSceneScriptMetrics(modalSc, modalSc.OrderIndex+1, normStd)
-		v.SceneTextModalLengthLabel = metrics.FormattedLength
 		v.SluglinePrefixPills, v.SluglineTimePills = buildSluglineHelperPills(normStd)
 		v.ScreenplayInsertPills, v.ScreenplayCharacterPills = buildScreenplayFormatInsertPills(normStd, b, lang)
 		v.HasScreenplayCharacterPills = len(v.ScreenplayCharacterPills) > 0
-	}
-
-	if b != nil {
-		if b.StartSceneID != "" {
-			v.SceneTextModalIsStart = strings.EqualFold(modalSc.ID, b.StartSceneID)
-		} else if len(b.Scenes) > 0 {
-			v.SceneTextModalIsStart = modalSc.ID == b.Scenes[0].ID
-		}
-	}
-
-	curChName := strings.TrimSpace(modalSc.Chapter)
-	if curChName == "" && b != nil {
-		curChName = b.DefaultChapterName()
-	}
-	chKey := tr(s, i18n.TrChapterKey)
-	if b != nil && b.IsScreenplay() {
-		chKey = tr(s, i18n.TrActKey)
-	}
-	var modalChOptions []map[string]any
-	if b != nil {
-		modalChOptions = make([]map[string]any, 0, len(b.Chapters)+1)
-		matchedCh := false
-		for _, chItem := range b.Chapters {
-			isAct := strings.EqualFold(curChName, strings.TrimSpace(chItem.Name))
-			if isAct {
-				matchedCh = true
-			}
-			modalChOptions = append(modalChOptions, map[string]any{
-				"value":     chItem.Name,
-				"label":     chItem.Name,
-				"is_active": isAct,
-			})
-		}
-		if !matchedCh && curChName != "" {
-			modalChOptions = append(modalChOptions, map[string]any{
-				"value":     curChName,
-				"label":     curChName,
-				"is_active": true,
-			})
-		}
-	}
-	v.SceneTextModalChapter = curChName
-	v.SceneTextModalChapterKey = chKey
-	v.SceneTextModalChapterOptions = modalChOptions
-
-	media := buildSceneMediaOptions(s, modalSc, true)
-	curImg := media.curImg
-	curImgLabel := media.curImgLabel
-	imgOptions := media.imgOptions
-	curVoice := media.curVoice
-	curVoiceLabel := media.curVoiceLabel
-	voiceOptions := media.voiceOptions
-	modalVoiceURL := modalSc.AudioURL
-	modalVoiceDur := "0:00"
-	if curVoice != "" && b != nil {
-		durLbl, stamp := book.ReadSceneAudioDurationAndStamp(b, modalSc)
-		modalVoiceDur = durLbl
-		if modalVoiceURL != "" && stamp > 0 {
-			modalVoiceURL = fmt.Sprintf("%s?v=%d", modalVoiceURL, stamp)
-		}
-	}
-	modalTrimStart, modalTrimEnd := modalSc.NormalizedVoiceTrim()
-	hasModalVoice := curVoice != "" && modalSc.AudioURL != ""
-	hasModalVoiceTrim := hasModalVoice && modalSc.HasVoiceTrim()
-	bookNarrated := b != nil && !b.IsScreenplay() && b.Narrated
-
-	hasModalVoiceSections, activeModalSec, modalVoiceSectionItems := buildSceneVoiceSectionsView(s, modalSc)
-	if hasModalVoiceSections {
-		curVoice = activeModalSec.AudioFile
-		if curVoice == "" {
-			curVoice = activeModalSec.ExplicitVoice
-		}
-		if curVoice != "" {
-			curVoiceLabel = curVoice
-		} else if s.Modals.VoiceRecorder && activeModalSec.TargetFile != "" {
-			curVoiceLabel = activeModalSec.TargetFile
-		} else {
-			curVoiceLabel = tr(s, i18n.TrMediaNoneLabel)
-		}
-		modalVoiceURL = activeModalSec.AudioURL
-		if activeModalSec.HasAudio {
-			modalVoiceDur = activeModalSec.DurationLabel
-		} else {
-			modalVoiceDur = "0:00"
-		}
-		modalTrimStart, modalTrimEnd = activeModalSec.TrimStart, activeModalSec.TrimEnd
-		hasModalVoice = activeModalSec.HasAudio
-		hasModalVoiceTrim = activeModalSec.HasTrim
-		for i := range voiceOptions {
-			val, _ := voiceOptions[i]["value"].(string)
-			voiceOptions[i]["is_active"] = strings.EqualFold(val, curVoice)
-		}
-	}
-
-	isVoiceSectionIsolated := bookNarrated && s.Modals.VoiceRecorder && hasModalVoiceSections
-	displayedModalText := modalSc.Text
-	if isVoiceSectionIsolated {
-		displayedModalText = activeModalSec.Text
-	}
-	v.SceneTextModalText = displayedModalText
-	v.SceneTextModalHasVoiceSections = hasModalVoiceSections
-	v.SceneTextModalVoiceSections = modalVoiceSectionItems
-	v.SceneTextModalActiveVoiceSectionKey = activeModalSec.Key
-	v.SceneTextModalActiveVoiceSectionFile = activeModalSec.TargetFile
-	v.IsVoiceSectionIsolated = isVoiceSectionIsolated
-	v.IsolatedVoiceSectionKey = activeModalSec.Key
-	v.IsolatedVoiceSectionHeader = activeModalSec.HeaderTitle
-
-	v.SceneTextModalCurrentImage = curImg
-	v.SceneTextModalCurrentImageLabel = curImgLabel
-	v.SceneTextModalImageOptions = imgOptions
-	v.SceneTextModalBookNarrated = bookNarrated
-	v.SceneTextModalCurrentVoice = curVoice
-	v.SceneTextModalCurrentVoiceLabel = curVoiceLabel
-	v.SceneTextModalVoiceURL = modalVoiceURL
-	v.SceneTextModalVoiceDurationLabel = modalVoiceDur
-	v.SceneTextModalVoiceTrimStart = fmt.Sprintf("%.4f", modalTrimStart)
-	v.SceneTextModalVoiceTrimEnd = fmt.Sprintf("%.4f", modalTrimEnd)
-	v.SceneTextModalHasVoice = hasModalVoice
-	v.SceneTextModalHasVoiceTrim = hasModalVoiceTrim
-	v.SceneTextModalVoiceOptions = voiceOptions
-	v.VoiceRecorderOpen = s.Modals.VoiceRecorder
-
-	settingsOpenVal := "false"
-	if s.Editor.SceneText.SettingsOpen {
-		settingsOpenVal = "true"
-	}
-	hasBookVars := b != nil && len(b.Variables) > 0
-	v.HasBookVariables = hasBookVars
-	v.SceneTextHasRightPanel = s.Editor.RightPanel != state.PanelNone
-	isFullWidth := s.Editor.SceneText.WidthMode == state.WidthModeFull
-	v.SceneTextIsFullWidth = isFullWidth
-	v.SceneTextIsHalfWidth = !isFullWidth
-	v.SceneTextModalSettingsOpen = s.Editor.SceneText.SettingsOpen
-	v.SceneTextModalSettingsOpenVal = settingsOpenVal
-
-	effModalStr := book.CleanEffectsExpr(modalSc.Effects)
-	effModalErr := ""
-	if effModalStr != "" {
-		effModalErr = book.ExplainEffectsExprErrorLang(modalSc.Effects, b, s.Settings.Language)
-	}
-	v.SceneTextModalEffects = effModalStr
-	v.SceneTextModalHasEffects = effModalStr != ""
-	v.SceneTextModalEffectsInvalid = effModalErr != ""
-	v.SceneTextModalEffectsErrorHint = effModalErr
-	v.BookVarsSpec = book.EncodeBookVariablesSpec(b)
-	v.BookVarSuggestions = buildBookVarSuggestions(b)
-	v.BookEnumSuggestions = buildBookEnumValueSuggestions(b)
-	v.BookTargetSuggestions = buildBookTargetSuggestions(s, modalSc)
-	v.ShowSyntaxHelpPopover = hasBookVars && s.Editor.SceneText.SyntaxHelpOpen
-	v.SyntaxHelpCondRows = []map[string]any{
-		{"code": "if: odkryta_prawda && sumienie >= 2", "desc": "bool / int / enum (&&, ||, !, ==, !=, >=, <=)"},
-		{"code": "set: odkryta_prawda = true; sumienie++", "desc": tr(s, i18n.TrSyntaxHelpSetDesc)},
-		{"code": "exit: ogien_w_kaplicy", "desc": tr(s, i18n.TrSyntaxHelpExitDesc)},
 	}
 
 	previewMode := s.Editor.SceneText.PreviewMode
@@ -371,25 +263,25 @@ func ViewEditorSceneText(s *state.AppState) *editorSceneTextView {
 
 	testState := book.EnsureSaveVariables(b, s.Editor.SceneText.TestVars)
 	s.Editor.SceneText.TestVars = testState
-	var testVarItems []sceneTestVarItem
+	var testVarItems []book.VariableDef
 	if b != nil {
 		book.ResolveBookVariableTypes(b)
-		testVarItems = make([]sceneTestVarItem, 0, len(b.Variables))
+		testVarItems = make([]book.VariableDef, 0, len(b.Variables))
 		for _, vd := range b.Variables {
 			curVal := testState[vd.Name]
 			isTrue := curVal == "true"
-			var enumOpts []map[string]any
+			var enumOpts []book.SelectOption
 			if vd.Kind == book.VarKindEnum {
-				enumOpts = make([]map[string]any, 0, len(vd.Options))
+				enumOpts = make([]book.SelectOption, 0, len(vd.Options))
 				for _, opt := range vd.Options {
-					enumOpts = append(enumOpts, map[string]any{
-						"value":     opt,
-						"label":     opt,
-						"is_active": strings.EqualFold(opt, curVal),
+					enumOpts = append(enumOpts, book.SelectOption{
+						Value:    opt,
+						Label:    opt,
+						IsActive: strings.EqualFold(opt, curVal),
 					})
 				}
 			}
-			testVarItems = append(testVarItems, sceneTestVarItem{
+			testVarItems = append(testVarItems, book.VariableDef{
 				Name:        vd.Name,
 				Kind:        vd.Kind,
 				IsBool:      vd.Kind == book.VarKindBool,
@@ -434,7 +326,7 @@ func ViewEditorSceneText(s *state.AppState) *editorSceneTextView {
 	v.SceneTextModalImageURL = modalImgURL
 	v.SceneTextModalIsImageless = imageless || modalImgURL == ""
 
-	var incomingScenes []incomingSceneChoiceItem
+	var incomingScenes []book.SelectOption
 	if b != nil {
 		seenIncoming := make(map[string]bool)
 		for _, sc := range b.Scenes {
@@ -455,11 +347,11 @@ func ViewEditorSceneText(s *state.AppState) *editorSceneTextView {
 					continue
 				}
 				seenIncoming[dedupKey] = true
-				incomingScenes = append(incomingScenes, incomingSceneChoiceItem{
-					SceneID:        sc.ID,
-					SceneName:      sc.DisplayName(),
-					ChoiceLabel:    choiceLbl,
-					HasChoiceLabel: choiceLbl != "",
+				incomingScenes = append(incomingScenes, book.SelectOption{
+					Value:    sc.ID,
+					Label:    sc.DisplayName(),
+					Meta:     choiceLbl,
+					IsActive: choiceLbl != "",
 				})
 			}
 		}
@@ -488,7 +380,7 @@ func ViewEditorSceneText(s *state.AppState) *editorSceneTextView {
 		}
 	}
 	hasMulti := len(choicesSource) > 1
-	modalChoices := make([]map[string]any, 0, len(choicesSource))
+	modalChoices := make([]book.Choice, 0, len(choicesSource))
 	for idx, ch := range choicesSource {
 		lbl := ch.Label
 		if !hasMulti && lbl == "" {
@@ -499,7 +391,7 @@ func ViewEditorSceneText(s *state.AppState) *editorSceneTextView {
 			arr = "↺"
 		}
 		selectedVal := buildChoiceTargetOptions(s, modalSc, ch)
-		choiceMap, hasCond := buildChoiceRuleViewMap(s, modalSc, idx, ch, selectedVal)
+		choiceView, hasCond := buildChoiceRuleView(s, modalSc, idx, ch, selectedVal)
 		condMet := book.EvaluateCondition(ch.Condition, testState, b)
 		if previewMode == state.PreviewModeOutput && hasCond && !condMet && !ch.ShowWhenLocked {
 			continue
@@ -508,17 +400,25 @@ func ViewEditorSceneText(s *state.AppState) *editorSceneTextView {
 		if ch.IsEnding && targetScID == "" {
 			targetScID = startID
 		}
-		choiceMap["label"] = lbl
-		choiceMap["arrow"] = arr
-		choiceMap["is_branch"] = !ch.IsEnding
-		choiceMap["is_editable"] = true
-		choiceMap["target_scene_id"] = targetScID
-		choiceMap["is_cond_unmet"] = previewMode == state.PreviewModeHighlight && hasCond && !condMet
-		choiceMap["is_locked_preview"] = previewMode == state.PreviewModeOutput && hasCond && !condMet && ch.ShowWhenLocked
-		modalChoices = append(modalChoices, choiceMap)
+		choiceView.Label = lbl
+		choiceView.Arrow = arr
+		choiceView.IsBranch = !ch.IsEnding
+		choiceView.IsEditable = true
+		choiceView.TargetSceneID = targetScID
+		choiceView.IsCondUnmet = previewMode == state.PreviewModeHighlight && hasCond && !condMet
+		choiceView.IsLockedPreview = previewMode == state.PreviewModeOutput && hasCond && !condMet && ch.ShowWhenLocked
+		modalChoices = append(modalChoices, choiceView)
 	}
 	v.SceneTextModalChoices = modalChoices
-	return v
+	return tpl.TemplateChunk{
+		TemplateData: v,
+		ScriptData: &textEditorScript{
+			sceneId:        v.SceneTextModalID,
+			bookVarsSpec:   v.BookVarsSpec,
+			isScreenplay:   v.IsScreenplayMode,
+			scriptStandard: v.ScriptStandard,
+		},
+	}
 }
 
 func resolveInheritedSceneImageURL(s *state.AppState, target *book.Scene) string {

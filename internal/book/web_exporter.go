@@ -163,30 +163,63 @@ func resolveBaseWasmAndExecJS(rootDir string, embeddedFS fs.FS) ([]byte, string,
 	return nil, "", fmt.Errorf("brak szablonu runtime mojra.wasm")
 }
 
-func renderWasmSplashHTMLWithCover(b *Book, coverSrc string, wasmSrc string, playSVG string) string {
-	title := "Mojra"
-	author := ""
-	description := ""
-	bookID := "book"
-	imagelessAttr := "false"
+const (
+	wasmSplashTplName = "wasm_splash"
+	wasmDefaultTitle  = "Mojra"
+	wasmDefaultBookID = "book"
+	wasmDefaultFile   = "mojra.wasm"
+	wasmTrueAttr      = "true"
+	wasmFalseAttr     = "false"
+	wasmTemplatesDir  = "templates"
+	wasmAppDir        = "app"
+)
+
+type wasmSplashViewData struct {
+	Title         string
+	Author        string
+	Description   string
+	CoverSrc      string
+	BookID        string
+	ImagelessAttr string
+	WasmSrc       string
+}
+
+func renderWasmSplashHTMLWithCover(b *Book, coverSrc string, wasmSrc string, rootDir string, embeddedFS fs.FS) (string, error) {
+	data := wasmSplashViewData{
+		Title:         wasmDefaultTitle,
+		CoverSrc:      coverSrc,
+		BookID:        wasmDefaultBookID,
+		ImagelessAttr: wasmFalseAttr,
+		WasmSrc:       wasmSrc,
+	}
 	if b != nil {
 		if strings.TrimSpace(b.Title) != "" {
-			title = strings.TrimSpace(b.Title)
+			data.Title = strings.TrimSpace(b.Title)
 		}
-		author = strings.TrimSpace(b.Author)
-		description = strings.TrimSpace(b.Description)
+		data.Author = strings.TrimSpace(b.Author)
+		data.Description = strings.TrimSpace(b.Description)
 		if b.ID != "" {
-			bookID = b.ID
+			data.BookID = b.ID
 		}
 		if b.Imageless {
-			imagelessAttr = "true"
-			coverSrc = ""
+			data.ImagelessAttr = wasmTrueAttr
+			data.CoverSrc = ""
 		}
 	}
-	if strings.TrimSpace(wasmSrc) == "" {
-		wasmSrc = "mojra.wasm"
+	if strings.TrimSpace(data.WasmSrc) == "" {
+		data.WasmSrc = wasmDefaultFile
 	}
-	return tpl.RenderWasmSplashPageHTML(title, author, description, coverSrc, bookID, imagelessAttr, wasmSrc, playSVG)
+	templates, err := tpl.LoadTemplatesFromDir(filepath.Join(rootDir, wasmAppDir, wasmTemplatesDir), embeddedFS)
+	if err != nil {
+		return "", err
+	}
+	buf := tpl.AcquireBuffer()
+	defer tpl.ReleaseBuffer(buf)
+	ctx := tpl.NewContext(nil).WithStruct(data)
+	if err := tpl.RenderTemplateTo(buf, wasmSplashTplName, templates, ctx); err != nil {
+		return "", err
+	}
+	return buf.String(), nil
 }
 
 // ExportWebWASMApp exports a self-contained Web/WASM player directory (<exportDir>/<book.ID>-web/)
@@ -214,7 +247,7 @@ func ExportWebWASMApp(b *Book, exportDir string, rootDir string, embeddedFS fs.F
 		return "", err
 	}
 
-	cssStr, jsStr, playSVG, err := buildPlayerWebBundleAssets(rootDir, embeddedFS, wasmExecJS)
+	cssStr, jsStr, err := buildPlayerWebBundleAssets(rootDir, embeddedFS, wasmExecJS)
 	if err != nil {
 		return "", err
 	}
@@ -241,7 +274,10 @@ func ExportWebWASMApp(b *Book, exportDir string, rootDir string, embeddedFS fs.F
 		}
 	}
 
-	indexHTML := renderWasmSplashHTMLWithCover(b, coverFilename, "mojra.wasm", playSVG)
+	indexHTML, err := renderWasmSplashHTMLWithCover(b, coverFilename, wasmDefaultFile, rootDir, embeddedFS)
+	if err != nil {
+		return "", err
+	}
 	if err := os.WriteFile(filepath.Join(outDir, "index.html"), []byte(indexHTML), 0644); err != nil {
 		return "", err
 	}
@@ -291,44 +327,38 @@ func EmbedDemoBookIntoWWW(rootDir string, baseWasm []byte) error {
 	return os.WriteFile(filepath.Join(wwwOutDir, "mojra.wasm"), embeddedWasm, 0644)
 }
 
-func buildPlayerWebBundleAssets(rootDir string, embeddedFS fs.FS, wasmExecJS string) (cssStr, jsStr, playSVG string, err error) {
+func buildPlayerWebBundleAssets(rootDir string, embeddedFS fs.FS, wasmExecJS string) (cssStr, jsStr string, err error) {
 	appDir := filepath.Join(rootDir, "app")
 	if _, statErr := os.Stat(filepath.Join(appDir, "styles", "player.tss")); statErr == nil {
 		cssStr, err = tpl.BundleFilesToString(tpl.CSSPlayerModuleFiles(appDir), true)
 		if err != nil {
-			return "", "", "", err
+			return "", "", err
 		}
 		playerJS, jErr := tpl.BundleFilesToString(tpl.JSPlayerModuleFiles(appDir), true)
 		if jErr != nil {
-			return "", "", "", jErr
+			return "", "", jErr
 		}
 		var jsBuf bytes.Buffer
 		jsBuf.WriteString(wasmExecJS)
 		jsBuf.WriteString("\n;\n")
 		jsBuf.WriteString(playerJS)
 		jsStr = jsBuf.String()
-		if rawSVG, sErr := os.ReadFile(filepath.Join(appDir, "icons", "play.svg")); sErr == nil {
-			playSVG = strings.TrimSpace(string(rawSVG))
-		}
-		return cssStr, jsStr, playSVG, nil
+		return cssStr, jsStr, nil
 	}
 
 	if embeddedFS != nil {
 		cssStr, err = tpl.BundlePlayerCSSFromFS(embeddedFS, true)
 		if err != nil {
-			return "", "", "", err
+			return "", "", err
 		}
 		playerJS, jErr := tpl.BundlePlayerJSFromFS(embeddedFS, true)
 		if jErr != nil {
-			return "", "", "", jErr
+			return "", "", jErr
 		}
 		jsStr = wasmExecJS + "\n;\n" + playerJS
-		if rawSVG, sErr := fs.ReadFile(embeddedFS, "app/icons/play.svg"); sErr == nil {
-			playSVG = strings.TrimSpace(string(rawSVG))
-		}
-		return cssStr, jsStr, playSVG, nil
+		return cssStr, jsStr, nil
 	}
-	return "", "", "", fmt.Errorf("brak zasobów app/ do zbudowania paczki Web")
+	return "", "", fmt.Errorf("brak zasobów app/ do zbudowania paczki Web")
 }
 
 func copyWebFontsAndIcons(outDir, rootDir string, embeddedFS fs.FS) {

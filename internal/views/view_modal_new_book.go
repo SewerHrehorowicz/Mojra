@@ -3,24 +3,25 @@ package views
 import (
 	"mojra/internal/book"
 	"mojra/internal/state"
+	"mojra/internal/tpl"
 )
 
-type modalNewBookView struct {
-	Open            bool             `tpl:"open"`
-	Mode            string           `tpl:"mode"`
-	Standard        string           `tpl:"standard"`
-	Title           string           `tpl:"title"`
-	Author          string           `tpl:"author"`
-	Description     string           `tpl:"description"`
-	Narrated        bool             `tpl:"narrated"`
-	Imageless       bool             `tpl:"imageless"`
-	Dir             string           `tpl:"dir"`
-	ModeLabel       string           `tpl:"mode_label"`
-	ModeOptions     []map[string]any `tpl:"mode_options"`
-	StandardOptions []map[string]any `tpl:"standard_options"`
+type modalNewBookTemplate struct {
+	Open            bool
+	Mode            string
+	Standard        string
+	Title           string
+	Author          string
+	Description     string
+	Narrated        bool
+	Imageless       bool
+	Dir             string
+	ModeLabel       string
+	ModeOptions     []book.SelectOption
+	StandardOptions []book.SelectOption
 }
 
-func ViewModalNewBook(s *state.AppState) *modalNewBookView {
+func ViewModalNewBook(s *state.AppState) tpl.TemplateChunk {
 	d := s.ModalNewBook
 	d.Mode = book.NormalizeBookMode(d.Mode)
 	d.Standard = book.NormalizeScriptStandard(d.Standard)
@@ -28,18 +29,20 @@ func ViewModalNewBook(s *state.AppState) *modalNewBookView {
 	modeLbl, modeOpts := buildBookModeOptions(d.Mode, LangOf(s))
 	_, stdOpts := buildScriptStandardOptions(d.Standard)
 
-	return &modalNewBookView{
-		Open:            d.Open,
-		Mode:            d.Mode,
-		Standard:        d.Standard,
-		Title:           d.Title,
-		Author:          d.Author,
-		Description:     d.Description,
-		Narrated:        d.Narrated,
-		Imageless:       d.Imageless,
-		Dir:             d.Dir,
-		ModeLabel:       modeLbl,
-		ModeOptions:     modeOpts,
-		StandardOptions: stdOpts,
+	return tpl.TemplateChunk{
+		TemplateData: &modalNewBookTemplate{
+			Open:            d.Open,
+			Mode:            d.Mode,
+			Standard:        d.Standard,
+			Title:           d.Title,
+			Author:          d.Author,
+			Description:     d.Description,
+			Narrated:        d.Narrated,
+			Imageless:       d.Imageless,
+			Dir:             d.Dir,
+			ModeLabel:       modeLbl,
+			ModeOptions:     modeOpts,
+			StandardOptions: stdOpts,
+		},
 	}
 }

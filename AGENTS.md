@@ -9,6 +9,7 @@ implementuj <plan>.md zgodnie z @AGENTS.md nie lap za szerokiego kontekstu, nie 
 ## 0. Architectural constraints
 - strings in function bodies are strictly forbidden, excect of 1-2 char separators or whitespaces
 - keep data structured in data objects (struct, mini-module, const), not as a map of strings; magic strings always point to deeper archotectural problem
+- never use UPPERCASE (`SCREAMING_SNAKE_CASE`) identifiers in JavaScript; always use `camelCase`
 - no pass-through functions, they are forbidden
 - no duped funcionalities, before implementing check if you have the thing in project already
 - use project graph you keep in project root in standarized format (not json); read from it to discover project quickly, write to it after changing anything that is relevant each time
