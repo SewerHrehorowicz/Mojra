@@ -13,6 +13,9 @@ const StudioController = {
     sceneTitle: "",
     sceneChapter: "",
     startSceneId: "",
+    studioGraphPayload: "",
+    resetCanvas: false,
+    voicePeak: "",
     historyCount: 0,
     canUndo: false,
     undoTitle: "",
@@ -136,7 +139,9 @@ const StudioController = {
     },
     selectors: {
       viewport: "#timeline-scroll-viewport",
-      contextPanel: "#editor-context-panel",
+      expandSceneBtn: "#btn-expand-scene-text",
+      expandSceneTitle: "#scene-text-expand-title",
+      graphDataPre: "#studio-graph-data",
       selectRoot: "[data-select-root]",
       openSelects: '[data-select-root][data-select-open="true"]',
       selectMenu: "[data-select-menu]",
@@ -154,6 +159,7 @@ const StudioController = {
     },
     attrs: {
       bookId: "data-book-id",
+      dataScene: "data-scene",
       selectOpen: "data-select-open",
       activeWhen: "data-active-when",
       paramVal: "param-value",
@@ -237,7 +243,6 @@ const StudioController = {
     state.panX = Math.round(px - worldX * targetZoom);
     state.panY = Math.round(py - worldY * targetZoom);
     this.applyTransform();
-    CanvasDrag.scheduleViewportSave();
   },
 
   zoomIn() {
@@ -280,7 +285,6 @@ const StudioController = {
     }
     state.initialized = true;
     this.applyTransform();
-    if (shouldForce) CanvasDrag.scheduleViewportSave();
   },
 
   fitAllNodes(viewport) {
@@ -312,7 +316,6 @@ const StudioController = {
     state.panY = Math.round((vh - boxH * state.zoom) * c.half - minY * state.zoom);
     state.initialized = true;
     this.applyTransform();
-    CanvasDrag.scheduleViewportSave();
   },
 
   syncViewportVisibility() {
@@ -417,6 +420,52 @@ const StudioController = {
       this.applyTransform();
     }
     this.syncViewportVisibility();
+  },
+
+  onHydrate(frame, _action, params) {
+    const s = this.settings;
+    if (this.data.resetCanvas && typeof CanvasModel !== s.values.undefType) {
+      CanvasModel.editorCanvasState.initialized = false;
+      this.data.resetCanvas = false;
+    }
+    if (frame && frame.voicePeak && typeof EditorVoice !== s.values.undefType) {
+      EditorVoice.handlePeakHeader(frame.voicePeak);
+    }
+    const newSceneId = this.data.sceneId || this.data.selectedSceneId || "";
+    const oldSceneId = this.data.scenePrevId || (params && (params.scene_id || params.scene)) || "";
+    if (newSceneId && oldSceneId && newSceneId !== oldSceneId && typeof CanvasModel !== s.values.undefType) {
+      const gState = CanvasModel.studioGraphState;
+      const nd = gState.nodeById.get(oldSceneId);
+      if (nd) {
+        gState.nodeById.delete(oldSceneId);
+        nd.id = newSceneId;
+        gState.nodeById.set(newSceneId, nd);
+      }
+      if (CanvasModel.selectedNodeIds.has(oldSceneId)) {
+        CanvasModel.selectedNodeIds.delete(oldSceneId);
+        CanvasModel.selectedNodeIds.add(newSceneId);
+      }
+    }
+    if (this.data.selectedSceneId && typeof CanvasModel !== s.values.undefType) {
+      CanvasModel.editorSelectionCleared = false;
+      CanvasModel.selectedNodeIds.clear();
+      CanvasModel.selectedNodeIds.add(this.data.selectedSceneId);
+    }
+    const expandBtn = document.querySelector(s.selectors.expandSceneBtn);
+    if (expandBtn && this.data.selectedSceneId) {
+      expandBtn.setAttribute(s.attrs.dataScene, this.data.selectedSceneId);
+    }
+    const expandTitle = document.querySelector(s.selectors.expandSceneTitle);
+    if (expandTitle && this.data.sceneTitle) {
+      expandTitle.textContent = decodeURIComponent(this.data.sceneTitle.replace(/\+/g, " "));
+    }
+    if (frame && frame.studioGraphPayload && typeof CanvasModel !== s.values.undefType && document.querySelector(s.selectors.viewport)) {
+      const pre = document.querySelector(s.selectors.graphDataPre);
+      if (pre) pre.textContent = this.data.studioGraphPayload;
+      CanvasModel.parseStudioGraphPayload(this.data.studioGraphPayload);
+      EditorWires.route();
+      this.applyTransform();
+    }
   }
 };
 Dispatcher.register("StudioController", StudioController);

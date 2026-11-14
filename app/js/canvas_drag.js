@@ -57,7 +57,6 @@ const CanvasDrag = {
   },
 
   metrics: {
-    viewportSaveDelayMs: 240,
     zoomDecimals: 3,
     defaultZoom: 1,
     half: 0.5,
@@ -74,19 +73,6 @@ const CanvasDrag = {
     chapterHitPadX: 10,
     chapterHitPadTop: 14,
     chapterHitPadBottom: 6
-  },
-
-  scheduleViewportSave() {
-    if (CanvasModel.viewportSaveTimer) clearTimeout(CanvasModel.viewportSaveTimer);
-    CanvasModel.viewportSaveTimer = setTimeout(() => {
-      CanvasModel.viewportSaveTimer = null;
-      const state = CanvasModel.editorCanvasState;
-      Dispatcher.post(this.actions.saveEditorState, {
-        pan_x: Math.round(state.panX || 0),
-        pan_y: Math.round(state.panY || 0),
-        zoom: (state.zoom || this.metrics.defaultZoom).toFixed(this.metrics.zoomDecimals)
-      });
-    }, this.metrics.viewportSaveDelayMs);
   },
 
   saveBatchNodePositions(items) {
@@ -438,7 +424,6 @@ const CanvasDrag = {
     CanvasModel.studioGraphState.overlayBatchDirty = true;
 
     if (g.type === this.gestures.pan || (g.type === this.gestures.rightPan && g.moved)) {
-      this.scheduleViewportSave();
       return;
     }
     if (g.type === this.gestures.choiceDrag) {

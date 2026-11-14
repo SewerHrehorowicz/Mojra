@@ -329,7 +329,7 @@ func postChaosWFP(t *testing.T, sb *chaosSandbox, step int, elDesc string, vals 
 		payload = rawBodyOverride
 		reqSummary = fmt.Sprintf("raw_bytes=%d %q", len(rawBodyOverride), string(rawBodyOverride[:minInt(len(rawBodyOverride), 80)]))
 	} else {
-		payload = tpl.EncodeFDPForm(vals)
+		payload = encodeFDPForm(vals)
 		var pairs []string
 		for k, v := range vals {
 			if len(v) > 0 {
@@ -358,7 +358,7 @@ func postChaosWFP(t *testing.T, sb *chaosSandbox, step int, elDesc string, vals 
 	defer resp.Body.Close()
 	bodyBytes, _ := io.ReadAll(resp.Body)
 	bodyStr := string(bodyBytes)
-	fdpMeta, _ := tpl.DecodeFDPResponse(bodyBytes)
+	fdpMeta, _ := decodeFDPResponse(bodyBytes)
 	dur := time.Since(start)
 
 	sb.Server.State.Mu.Lock()
@@ -388,19 +388,19 @@ func activeModalLabelLocked(s *Server) string {
 	st := s.State
 	switch {
 	case st.Editor.SceneText.IsOpen():
-		return "#modal-scene-text"
-	case st.ModalConfirm.IsOpen():
-		return "#modal-confirm"
-	case st.ModalNewBook.Open:
-		return "#modal-new-book"
-	case st.Modals.AddBook:
-		return "#modal-add-book"
-	case st.Modals.StudioProjects:
-		return "#modal-studio-project"
-	case st.ModalExport.Open:
-		return "#modal-export"
-	case st.Modals.QR:
-		return "#modal-qr"
+		return "#text-editor-view"
+	case st.Confirm.IsOpen():
+		return "#confirm-view"
+	case st.NewBook.Open:
+		return "#new-book-view"
+	case st.Overlays.AddBook:
+		return "#add-book-view"
+	case st.Overlays.StudioProjects:
+		return "#studio-projects-view"
+	case st.Export.Open:
+		return "#export-view"
+	case st.Overlays.QR:
+		return "#qr-view"
 	default:
 		return "none"
 	}
@@ -426,7 +426,7 @@ func verifyChaosStepOracles(t *testing.T, sb *chaosSandbox, step int, action str
 	target := fdpMeta.Get("target")
 	if status == http.StatusOK {
 		switch target {
-		case "#app", "#workspace", "#modals-root", "#editor-context-panel", "none":
+		case "#app", "#workspace", "#modals-root", "#editor-context-view", "none":
 		default:
 			fail("invalid target %q on 200 OK", target)
 		}
@@ -666,7 +666,7 @@ func TestAuthoringSceneIDGenerationAndReroutingInvariants(t *testing.T) {
 		if status != http.StatusOK && status != http.StatusNoContent {
 			t.Fatalf("step %d: expected 200/204 for %v, got %d", step-1, kv, status)
 		}
-		meta, _ := tpl.DecodeFDPResponse([]byte(bodyStr))
+		meta, _ := decodeFDPResponse([]byte(bodyStr))
 		return meta
 	}
 
@@ -1206,7 +1206,7 @@ func crawlAllActionSpecsDeterministically(t *testing.T, sb *chaosSandbox, runAct
 	runAction("button[action=OpenBook]", "action", "OpenBook", "book", mainBookID, "view", "editor")
 	runAction("button[action=ToggleSceneVoiceRecorder]", "action", "ToggleSceneVoiceRecorder", "open", "false")
 	sb.Server.State.Mu.Lock()
-	sb.Server.State.Modals.VoiceRecorder = false
+	sb.Server.State.Overlays.VoiceRecorder = false
 	if sb.Server.State.Editor.ActiveBook != nil && !sb.Server.State.Editor.ActiveBook.IsPacked && sb.Server.State.Editor.ActiveBook.RootPath != "" {
 		sb.Server.State.Editor.ActiveBook.Narrated = false
 		for _, sc := range sb.Server.State.Editor.ActiveBook.Scenes {
@@ -1617,7 +1617,7 @@ func runConcurrentChaosBurst(t *testing.T, sb *chaosSandbox, baseStep int, burst
 				vals.Set("scene", "poczatek")
 			}
 
-			payload := tpl.EncodeFDPForm(vals)
+			payload := encodeFDPForm(vals)
 			req, err := http.NewRequest(http.MethodPost, sb.HTTPServer.URL+"/api/action", bytes.NewReader(payload))
 			if err != nil {
 				errs <- err.Error()
@@ -1644,12 +1644,12 @@ func runConcurrentChaosBurst(t *testing.T, sb *chaosSandbox, baseStep int, burst
 	}
 
 	// Verify invariants after concurrent burst settles
-	req, _ := http.NewRequest(http.MethodPost, sb.HTTPServer.URL+"/api/action", bytes.NewReader(tpl.EncodeFDPForm(url.Values{"action": {"SwitchView"}, "view": {"editor"}})))
+	req, _ := http.NewRequest(http.MethodPost, sb.HTTPServer.URL+"/api/action", bytes.NewReader(encodeFDPForm(url.Values{"action": {"SwitchView"}, "view": {"editor"}})))
 	req.Header.Set("Content-Type", tpl.ContentTypeFDP)
 	if resp, err := sb.HTTPServer.Client().Do(req); err == nil {
 		b, _ := io.ReadAll(resp.Body)
 		_ = resp.Body.Close()
-		meta, _ := tpl.DecodeFDPResponse(b)
+		meta, _ := decodeFDPResponse(b)
 		verifyChaosStepOracles(t, sb, baseStep, "ConcurrentBurstVerify", resp.StatusCode, meta, string(b))
 	}
 }
@@ -2241,7 +2241,7 @@ function verifyDOMInvariants(doc) {
       const fullURL = urlStr.startsWith("http") ? urlStr : baseURL + urlStr;
       if (opts && opts.body) {
         const bodyStr = String(opts.body);
-        const parsed = vm.runInContext("typeof Fdp !== 'undefined' ? Fdp.decode(" + JSON.stringify(bodyStr) + ") : {}", win);
+        const parsed = vm.runInContext("typeof Fdp !== 'undefined' ? (Fdp.decode(" + JSON.stringify(bodyStr) + ")[0] || {}) : {}", win);
         if (parsed.action) dispatched.add(parsed.action);
       }
       const p = fetch(fullURL, opts);

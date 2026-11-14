@@ -26,6 +26,75 @@ func NewServer(rootDir string, embeddedFS fs.FS) *Server {
 	return NewServerWithOptions(rootDir, embeddedFS, false)
 }
 
+func encodeFDPForm(vals url.Values) []byte {
+	if len(vals) == 0 {
+		return nil
+	}
+	var bodyKey, bodyVal string
+	for k := range vals {
+		v := vals.Get(k)
+		if bodyKey == "" && strings.ContainsAny(v, "\n\r") {
+			bodyKey = k
+			bodyVal = v
+		}
+	}
+	var b bytes.Buffer
+	for k := range vals {
+		v := vals.Get(k)
+		if k == bodyKey {
+			b.WriteString("_body=")
+			b.WriteString(k)
+			b.WriteByte('\n')
+			continue
+		}
+		b.WriteString(k)
+		b.WriteByte('=')
+		b.WriteString(tpl.EscapeFDPLineVal(v))
+		b.WriteByte('\n')
+	}
+	if bodyKey != "" {
+		b.WriteByte('\n')
+		b.WriteString(bodyVal)
+	} else if b.Len() > 0 && b.Bytes()[b.Len()-1] == '\n' {
+		b.Truncate(b.Len() - 1)
+	}
+	return b.Bytes()
+}
+
+func decodeFDPResponse(raw []byte) (url.Values, string) {
+	frames := tpl.DecodeFDPFrames(raw)
+	if len(frames) == 0 {
+		return make(url.Values), string(raw)
+	}
+	merged := make(url.Values, 24)
+	var htmlBuilder strings.Builder
+	for _, f := range frames {
+		for k, v := range f {
+			if k == "target" {
+				curTarget := merged.Get("target")
+				if curTarget != "" && curTarget != "none" {
+					continue
+				}
+			}
+			if k == "html" {
+				if h := f.Get("html"); h != "" {
+					if htmlBuilder.Len() > 0 {
+						htmlBuilder.WriteByte('\n')
+					}
+					htmlBuilder.WriteString(h)
+				}
+				continue
+			}
+			merged[k] = v
+		}
+	}
+	htmlStr := htmlBuilder.String()
+	if htmlStr != "" {
+		merged.Set("html", htmlStr)
+	}
+	return merged, htmlStr
+}
+
 func NewStandaloneServer(rootDir string, embeddedFS fs.FS, standaloneBook *book.Book) *Server {
 	savesDir := book.ResolveSavesDir(rootDir)
 	_ = os.MkdirAll(savesDir, 0755)
@@ -223,14 +292,14 @@ func TestServerActionLifecycleAndSecurity(t *testing.T) {
 	}
 	openModalHTML, _ := io.ReadAll(openModalResp.Body)
 	_ = openModalResp.Body.Close()
-	if !strings.Contains(string(openModalHTML), "modal-scene-text") || !strings.Contains(string(openModalHTML), "scene-text-fullscreen-backdrop") || !strings.Contains(string(openModalHTML), "player-layout") {
-		t.Fatalf("expected fullscreen book-view modal-scene-text in rendered HTML")
+	if !strings.Contains(string(openModalHTML), "text-editor-view") || !strings.Contains(string(openModalHTML), "scene-text-fullscreen-backdrop") || !strings.Contains(string(openModalHTML), "player-layout") {
+		t.Fatalf("expected fullscreen book-view text-editor-view in rendered HTML")
 	}
 	if !strings.Contains(string(openModalHTML), "modal-choice-nav-btn") || !strings.Contains(string(openModalHTML), "scene-text-back-btn") {
-		t.Fatalf("expected interactive story navigation choices and styled back button in modal-scene-text")
+		t.Fatalf("expected interactive story navigation choices and styled back button in text-editor-view")
 	}
 	if !strings.Contains(string(openModalHTML), `class="scene-title scene-title-present node-inline-title"`) || !strings.Contains(string(openModalHTML), `name="choice_label_0"`) || !strings.Contains(string(openModalHTML), "scroll-more-cue") {
-		t.Fatalf("expected editable title input, editable choice inputs, and scroll-more-cue in modal-scene-text, got:\n%s", string(openModalHTML))
+		t.Fatalf("expected editable title input, editable choice inputs, and scroll-more-cue in text-editor-view, got:\n%s", string(openModalHTML))
 	}
 	if !strings.Contains(string(openModalHTML), `data-scene-settings-toggle="true"`) ||
 		!strings.Contains(string(openModalHTML), `id="modal-scene-settings-block"`) ||
@@ -238,13 +307,13 @@ func TestServerActionLifecycleAndSecurity(t *testing.T) {
 		!strings.Contains(string(openModalHTML), `class="node-start-indicator"`) ||
 		strings.Contains(string(openModalHTML), `id="modal-btn-set-start-scene"`) ||
 		(!strings.Contains(string(openModalHTML), `name="explicit_image"`) && !strings.Contains(string(openModalHTML), `modal-image-select`)) {
-		t.Fatalf("expected settings toggle button, start indicator next to title, and settings block (id, image) in modal-scene-text, got:\n%s", string(openModalHTML))
+		t.Fatalf("expected settings toggle button, start indicator next to title, and settings block (id, image) in text-editor-view, got:\n%s", string(openModalHTML))
 	}
 	if srv.State.Editor.ActiveBook.Narrated && !strings.Contains(string(openModalHTML), `name="explicit_voice"`) && !strings.Contains(string(openModalHTML), `modal-voice-select`) {
-		t.Fatalf("expected explicit_voice selector in modal-scene-text when book is narrated")
+		t.Fatalf("expected explicit_voice selector in text-editor-view when book is narrated")
 	}
 	if !srv.State.Editor.ActiveBook.Narrated && (strings.Contains(string(openModalHTML), `name="explicit_voice"`) || strings.Contains(string(openModalHTML), `param-explicit-voice=`)) {
-		t.Fatalf("did not expect explicit_voice selector in modal-scene-text when book is not narrated")
+		t.Fatalf("did not expect explicit_voice selector in text-editor-view when book is not narrated")
 	}
 
 	navModalForm := url.Values{}
@@ -279,17 +348,17 @@ func TestServerActionLifecycleAndSecurity(t *testing.T) {
 	}
 	saveModalHTML, _ := io.ReadAll(saveModalResp.Body)
 	_ = saveModalResp.Body.Close()
-	if !strings.Contains(string(saveModalHTML), "modal-scene-text") || srv.State.Editor.SceneText.SceneID != "poczatek" {
-		t.Fatalf("expected SaveSceneTextModal to keep modal-scene-text open on poczatek, got:\n%s", string(saveModalHTML))
+	if !strings.Contains(string(saveModalHTML), "text-editor-view") || srv.State.Editor.SceneText.SceneID != "poczatek" {
+		t.Fatalf("expected SaveSceneTextModal to keep text-editor-view open on poczatek, got:\n%s", string(saveModalHTML))
 	}
 	if !strings.Contains(string(saveModalHTML), `value="Początek Przygody"`) || !strings.Contains(string(saveModalHTML), `>Wejdź do zamku</textarea>`) {
 		t.Fatalf("expected SaveSceneTextModal to persist updated title and choice label in modal HTML, got:\n%s", string(saveModalHTML))
 	}
 	if !strings.Contains(string(saveModalHTML), `class="node-icon-btn node-media-add-btn modal-add-choice-btn"`) || !strings.Contains(string(saveModalHTML), `name="choice_target_0"`) {
-		t.Fatalf("expected modal-add-choice-btn and choice_target_0 selector in modal-scene-text, got:\n%s", string(saveModalHTML))
+		t.Fatalf("expected modal-add-choice-btn and choice_target_0 selector in text-editor-view, got:\n%s", string(saveModalHTML))
 	}
 
-	// Add a choice directly inside modal-scene-text, edit its target, then remove it
+	// Add a choice directly inside text-editor-view, edit its target, then remove it
 	addModalChoiceForm := url.Values{}
 	addModalChoiceForm.Set("action", "AddChoice")
 	addModalChoiceForm.Set("scene", "poczatek")
@@ -299,9 +368,9 @@ func TestServerActionLifecycleAndSecurity(t *testing.T) {
 	}
 	addModalChoiceHTML, _ := io.ReadAll(addModalChoiceResp.Body)
 	_ = addModalChoiceResp.Body.Close()
-	addModalMeta, _ := tpl.DecodeFDPResponse(addModalChoiceHTML)
-	if addModalMeta.Get("target") != "#modals-root" || !strings.Contains(string(addModalChoiceHTML), "modal-scene-text") || !strings.Contains(string(addModalChoiceHTML), `name="choice_target_2"`) {
-		t.Fatalf("expected AddChoice in modal-scene-text to return #modals-root with choice_target_2, got target=%q:\n%s", addModalMeta.Get("target"), string(addModalChoiceHTML))
+	addModalMeta, _ := decodeFDPResponse(addModalChoiceHTML)
+	if addModalMeta.Get("target") != "#modals-root" || !strings.Contains(string(addModalChoiceHTML), "text-editor-view") || !strings.Contains(string(addModalChoiceHTML), `name="choice_target_2"`) {
+		t.Fatalf("expected AddChoice in text-editor-view to return #modals-root with choice_target_2, got target=%q:\n%s", addModalMeta.Get("target"), string(addModalChoiceHTML))
 	}
 
 	editTargetModalForm := url.Values{}
@@ -340,9 +409,8 @@ func TestServerActionLifecycleAndSecurity(t *testing.T) {
 	}
 	promptRemChoiceHTML, _ := io.ReadAll(promptRemChoiceResp.Body)
 	_ = promptRemChoiceResp.Body.Close()
-	promptRemMeta, _ := tpl.DecodeFDPResponse(promptRemChoiceHTML)
-	if promptRemMeta.Get("modalId") != "modal-confirm" || !strings.Contains(string(promptRemChoiceHTML), `id="modal-confirm"`) || !strings.Contains(string(promptRemChoiceHTML), "Wycofaj się") || srv.State.Editor.SceneText.SceneID != "poczatek" {
-		t.Fatalf("expected PromptRemoveChoice to open #modal-confirm alongside active SceneTextModalID, got:\n%s", string(promptRemChoiceHTML))
+	if !strings.Contains(string(promptRemChoiceHTML), `id="confirm-view"`) || !strings.Contains(string(promptRemChoiceHTML), "Wycofaj się") || srv.State.Editor.SceneText.SceneID != "poczatek" {
+		t.Fatalf("expected PromptRemoveChoice to open #confirm-view alongside active SceneTextModalID, got:\n%s", string(promptRemChoiceHTML))
 	}
 
 	confirmRemChoiceForm := url.Values{}
@@ -353,8 +421,8 @@ func TestServerActionLifecycleAndSecurity(t *testing.T) {
 	}
 	confirmRemChoiceHTML, _ := io.ReadAll(confirmRemChoiceResp.Body)
 	_ = confirmRemChoiceResp.Body.Close()
-	if strings.Contains(string(confirmRemChoiceHTML), `value="Wycofaj się"`) || !strings.Contains(string(confirmRemChoiceHTML), `id="modal-scene-text"`) {
-		t.Fatalf("expected ConfirmModalAccept to remove choice_2 and keep #modal-scene-text open, got:\n%s", string(confirmRemChoiceHTML))
+	if strings.Contains(string(confirmRemChoiceHTML), `value="Wycofaj się"`) || !strings.Contains(string(confirmRemChoiceHTML), `id="text-editor-view"`) {
+		t.Fatalf("expected ConfirmModalAccept to remove choice_2 and keep #text-editor-view open, got:\n%s", string(confirmRemChoiceHTML))
 	}
 
 	closeModalForm := url.Values{}
@@ -804,7 +872,7 @@ func TestDevicePreviewStrippedInProductionAndEnabledInDev(t *testing.T) {
 	}
 	actBytes, _ := io.ReadAll(actResp.Body)
 	_ = actResp.Body.Close()
-	actMeta, _ := tpl.DecodeFDPResponse(actBytes)
+	actMeta, _ := decodeFDPResponse(actBytes)
 	if gotHdr := actMeta.Get("deviceMode"); gotHdr != "" {
 		t.Fatalf("expected no deviceMode in production mode, got %q", gotHdr)
 	}
@@ -868,7 +936,7 @@ func TestDevicePreviewStrippedInProductionAndEnabledInDev(t *testing.T) {
 	}
 	tabletBytes, _ := io.ReadAll(tabletResp.Body)
 	_ = tabletResp.Body.Close()
-	tabletMeta, _ := tpl.DecodeFDPResponse(tabletBytes)
+	tabletMeta, _ := decodeFDPResponse(tabletBytes)
 	if gotHdr := tabletMeta.Get("deviceMode"); gotHdr != "tablet" {
 		t.Fatalf("expected deviceMode=tablet in dev mode, got %q", gotHdr)
 	}
@@ -950,15 +1018,15 @@ Dopiero kapitan Arvo wszystko mu wytłumaczył.
 		t.Fatalf("expected isolated Reader Home topbar with brand-mark, Mojra logo, settings gear icon, fullscreen button, and bottom Studio switch, got:\n%s", libHTML)
 	}
 
-	secStart := strings.Index(libHTML, `<section class="view-panel" id="view-library">`)
+	secStart := strings.Index(libHTML, `<section class="view-panel" id="library-view">`)
 	secEnd := strings.Index(libHTML, `</section>`)
 	if secStart < 0 || secEnd <= secStart {
-		t.Fatalf("expected #view-library section in HTML, got:\n%s", libHTML)
+		t.Fatalf("expected #library-view section in HTML, got:\n%s", libHTML)
 	}
 	libSection := libHTML[secStart:secEnd]
 
 	if !strings.Contains(libSection, `id="btn-open-add-book"`) {
-		t.Fatalf("expected #btn-open-add-book (+ Dodaj książkę) in #view-library, got:\n%s", libSection)
+		t.Fatalf("expected #btn-open-add-book (+ Dodaj książkę) in #library-view, got:\n%s", libSection)
 	}
 	cardStart := strings.Index(libSection, `<article class="book-card">`)
 	cardChunk := ""
@@ -972,11 +1040,11 @@ Dopiero kapitan Arvo wszystko mu wytłumaczył.
 		t.Fatalf("regression in .book-card: expected only 1 button (.book-cover-wrap with play icon on cover), got:\n%s", libSection)
 	}
 	if !strings.Contains(libSection, `<progress class="book-progress-bar"`) {
-		t.Fatalf("expected visual progress bar in #view-library, got:\n%s", libSection)
+		t.Fatalf("expected visual progress bar in #library-view, got:\n%s", libSection)
 	}
 	for _, forbidden := range []string{"book-progress-text", "%", "book-card-actions", "Kontynuuj słuchanie</button>", "Resetuj postęp"} {
 		if strings.Contains(libSection, forbidden) {
-			t.Fatalf("regression in #view-library: forbidden element/text %q found in:\n%s", forbidden, libSection)
+			t.Fatalf("regression in #library-view: forbidden element/text %q found in:\n%s", forbidden, libSection)
 		}
 	}
 
@@ -992,7 +1060,7 @@ Dopiero kapitan Arvo wszystko mu wytłumaczył.
 	}
 	playerHTMLBytes, _ := io.ReadAll(openResp.Body)
 	_ = openResp.Body.Close()
-	openMeta, playerHTML := tpl.DecodeFDPResponse(playerHTMLBytes)
+	openMeta, playerHTML := decodeFDPResponse(playerHTMLBytes)
 	if openMeta.Get("resetCanvas") != "true" {
 		t.Fatalf("expected resetCanvas=true on OpenBook, got %q", openMeta.Get("resetCanvas"))
 	}
@@ -1073,9 +1141,9 @@ Dopiero kapitan Arvo wszystko mu wytłumaczył.
 	}
 	imgBytes, _ := io.ReadAll(rImg.Body)
 	_ = rImg.Body.Close()
-	imgMeta, imgHTML := tpl.DecodeFDPResponse(imgBytes)
-	if imgMeta.Get("imageless") != "true" || imgMeta.Get("keepScroll") != "true" {
-		t.Fatalf("expected imageless=true and keepScroll=true in FDP meta, got %q / %q", imgMeta.Get("imageless"), imgMeta.Get("keepScroll"))
+	imgMeta, imgHTML := decodeFDPResponse(imgBytes)
+	if imgMeta.Get("imageless") != "true" {
+		t.Fatalf("expected imageless=true in FDP meta, got %q", imgMeta.Get("imageless"))
 	}
 	if !strings.Contains(imgHTML, `class="player-layout is-imageless"`) {
 		t.Fatalf("expected .player-layout.is-imageless in imageless mode, got:\n%s", imgHTML)
@@ -1093,9 +1161,9 @@ Dopiero kapitan Arvo wszystko mu wytłumaczył.
 	}
 	scaleBytes, _ := io.ReadAll(rScale.Body)
 	_ = rScale.Body.Close()
-	scaleMeta, scaleHTML := tpl.DecodeFDPResponse(scaleBytes)
-	if scaleMeta.Get("uiScale") != "large" || scaleMeta.Get("keepScroll") != "true" || scaleMeta.Get("target") != "none" {
-		t.Fatalf("expected uiScale=large, keepScroll=true, and target=none in FDP meta, got %q / %q / %q", scaleMeta.Get("uiScale"), scaleMeta.Get("keepScroll"), scaleMeta.Get("target"))
+	scaleMeta, scaleHTML := decodeFDPResponse(scaleBytes)
+	if scaleMeta.Get("uiScale") != "large" || scaleMeta.Get("target") != "none" {
+		t.Fatalf("expected uiScale=large and target=none in FDP meta, got %q / %q", scaleMeta.Get("uiScale"), scaleMeta.Get("target"))
 	}
 	if len(scaleHTML) != 0 || rScale.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200 OK with empty HTML body for ToggleUIScale, got status=%d len=%d", rScale.StatusCode, len(scaleHTML))
@@ -1110,7 +1178,7 @@ Dopiero kapitan Arvo wszystko mu wytłumaczył.
 	}
 	scaleBackBytes, _ := io.ReadAll(rScaleBack.Body)
 	_ = rScaleBack.Body.Close()
-	scaleBackMeta, _ := tpl.DecodeFDPResponse(scaleBackBytes)
+	scaleBackMeta, _ := decodeFDPResponse(scaleBackBytes)
 	if scaleBackMeta.Get("uiScale") != "small" {
 		t.Fatalf("expected uiScale=small on second ToggleUIScale (never zen), got %q", scaleBackMeta.Get("uiScale"))
 	}
@@ -1124,7 +1192,7 @@ Dopiero kapitan Arvo wszystko mu wytłumaczył.
 	}
 	zenOnBytes, _ := io.ReadAll(rZenOn.Body)
 	_ = rZenOn.Body.Close()
-	zenOnMeta, _ := tpl.DecodeFDPResponse(zenOnBytes)
+	zenOnMeta, _ := decodeFDPResponse(zenOnBytes)
 	if zenOnMeta.Get("zenMode") != "true" {
 		t.Fatalf("expected zenMode=true in player view, got %q", zenOnMeta.Get("zenMode"))
 	}
@@ -1134,7 +1202,7 @@ Dopiero kapitan Arvo wszystko mu wytłumaczył.
 	}
 	zenOffBytes, _ := io.ReadAll(rZenOff.Body)
 	_ = rZenOff.Body.Close()
-	zenOffMeta, _ := tpl.DecodeFDPResponse(zenOffBytes)
+	zenOffMeta, _ := decodeFDPResponse(zenOffBytes)
 	if zenOffMeta.Get("zenMode") != "false" {
 		t.Fatalf("expected zenMode=false after second ToggleZenMode, got %q", zenOffMeta.Get("zenMode"))
 	}
@@ -1148,7 +1216,7 @@ Dopiero kapitan Arvo wszystko mu wytłumaczył.
 	}
 	setSmallBytes, _ := io.ReadAll(rSetSmall.Body)
 	_ = rSetSmall.Body.Close()
-	setSmallMeta, _ := tpl.DecodeFDPResponse(setSmallBytes)
+	setSmallMeta, _ := decodeFDPResponse(setSmallBytes)
 	if setSmallMeta.Get("uiScale") != "small" {
 		t.Fatalf("expected uiScale=small after SetUIScale(small), got %q", setSmallMeta.Get("uiScale"))
 	}
@@ -1162,7 +1230,7 @@ Dopiero kapitan Arvo wszystko mu wytłumaczył.
 	}
 	setSensBytes, _ := io.ReadAll(rSetSens.Body)
 	_ = rSetSens.Body.Close()
-	setSensMeta, _ := tpl.DecodeFDPResponse(setSensBytes)
+	setSensMeta, _ := decodeFDPResponse(setSensBytes)
 	if setSensMeta.Get("sensitivity") != "low" {
 		t.Fatalf("expected sensitivity=low after SetScrollSensitivity(low), got %q", setSensMeta.Get("sensitivity"))
 	}
@@ -1176,11 +1244,11 @@ Dopiero kapitan Arvo wszystko mu wytłumaczył.
 	}
 	quitBytes, _ := io.ReadAll(rQuit.Body)
 	_ = rQuit.Body.Close()
-	quitMeta, quitHTML := tpl.DecodeFDPResponse(quitBytes)
+	quitMeta, quitHTML := decodeFDPResponse(quitBytes)
 	if quitMeta.Get("nativeCmd") != "quit" {
 		t.Fatalf("expected nativeCmd=quit on QuitApp, got %q", quitMeta.Get("nativeCmd"))
 	}
-	if strings.Contains(quitHTML, `id="modal-confirm"`) || strings.Contains(quitHTML, "Zamknij Mojra") {
+	if strings.Contains(quitHTML, `id="confirm-view"`) || strings.Contains(quitHTML, "Zamknij Mojra") {
 		t.Fatalf("expected no confirmation prompt when closing app, got:\n%s", quitHTML)
 	}
 
@@ -1194,7 +1262,7 @@ Dopiero kapitan Arvo wszystko mu wytłumaczył.
 	}
 	_ = rSwEd.Body.Close()
 
-	// 7a. SelectStudioScene returns only #editor-context-panel (not the canvas or topbar)
+	// 7a. SelectStudioScene returns only #editor-context-view (not the canvas or topbar)
 	selForm := url.Values{}
 	selForm.Set("action", "SelectStudioScene")
 	selForm.Set("scene", "samotnosc_nad_woda")
@@ -1204,12 +1272,12 @@ Dopiero kapitan Arvo wszystko mu wytłumaczył.
 	}
 	selBytes, _ := io.ReadAll(rSel.Body)
 	_ = rSel.Body.Close()
-	selMeta, selHTML := tpl.DecodeFDPResponse(selBytes)
-	if selMeta.Get("target") != "#editor-context-panel" {
-		t.Fatalf("expected target=#editor-context-panel for SelectStudioScene, got %q", selMeta.Get("target"))
+	selMeta, selHTML := decodeFDPResponse(selBytes)
+	if selMeta.Get("target") != "#editor-context-view" {
+		t.Fatalf("expected target=#editor-context-view for SelectStudioScene, got %q", selMeta.Get("target"))
 	}
-	if !strings.Contains(selHTML, `id="editor-context-panel"`) || !strings.Contains(selHTML, "Samotność nad wodą") {
-		t.Fatalf("expected #editor-context-panel chunk for Samotność nad wodą, got:\n%s", selHTML)
+	if !strings.Contains(selHTML, `id="editor-context-view"`) || !strings.Contains(selHTML, "Samotność nad wodą") {
+		t.Fatalf("expected #editor-context-view chunk for Samotność nad wodą, got:\n%s", selHTML)
 	}
 	for _, unrequested := range []string{`id="topbar"`, `id="timeline-scroll-viewport"`, `id="studio-canvas"`} {
 		if strings.Contains(selHTML, unrequested) {
@@ -1226,7 +1294,7 @@ Dopiero kapitan Arvo wszystko mu wytłumaczył.
 	}
 	helpChunkBytes, _ := io.ReadAll(rHelp.Body)
 	_ = rHelp.Body.Close()
-	helpMeta, helpChunk := tpl.DecodeFDPResponse(helpChunkBytes)
+	helpMeta, helpChunk := decodeFDPResponse(helpChunkBytes)
 	if helpMeta.Get("target") != "#workspace" {
 		t.Fatalf("expected target=#workspace for OpenEditorHelpModal, got %q", helpMeta.Get("target"))
 	}
@@ -1253,12 +1321,12 @@ Dopiero kapitan Arvo wszystko mu wytłumaczył.
 	}
 	chBranchBytes, _ := io.ReadAll(rChBranch.Body)
 	_ = rChBranch.Body.Close()
-	chBranchMeta, chBranchHTML := tpl.DecodeFDPResponse(chBranchBytes)
+	chBranchMeta, chBranchHTML := decodeFDPResponse(chBranchBytes)
 	if chBranchMeta.Get("target") != "#workspace" {
 		t.Fatalf("expected target=#workspace for ChooseBranch, got %q", chBranchMeta.Get("target"))
 	}
-	if !strings.Contains(chBranchHTML, `id="view-player"`) || strings.Contains(chBranchHTML, `id="topbar"`) {
-		t.Fatalf("expected ChooseBranch to render only #view-player without #topbar, got:\n%s", chBranchHTML)
+	if !strings.Contains(chBranchHTML, `id="player-view"`) || strings.Contains(chBranchHTML, `id="topbar"`) {
+		t.Fatalf("expected ChooseBranch to render only #player-view without #topbar, got:\n%s", chBranchHTML)
 	}
 }
 
@@ -1604,7 +1672,7 @@ func TestTopbarAlwaysVisibleIncludingSceneTextEditor(t *testing.T) {
 	for _, required := range []string{
 		"ALWAYS Keep the Top Bar",
 		"header.topbar#topbar",
-		"#modal-scene-text",
+		"#text-editor-view",
 		"scene-text-fullscreen-backdrop",
 	} {
 		if !strings.Contains(agentsText, required) {
@@ -1612,7 +1680,7 @@ func TestTopbarAlwaysVisibleIncludingSceneTextEditor(t *testing.T) {
 		}
 	}
 
-	// 2. Rebuild app assets and verify CSS/template invariants so #topbar is never covered by #modal-scene-text
+	// 2. Rebuild app assets and verify CSS/template invariants so #topbar is never covered by #text-editor-view
 	appDir := filepath.Join(repoRoot, "app")
 	if err := tpl.BuildApp(appDir); err != nil {
 		t.Fatalf("tpl.BuildApp failed: %v", err)
@@ -1664,7 +1732,7 @@ func TestTopbarAlwaysVisibleIncludingSceneTextEditor(t *testing.T) {
 		t.Fatalf(".timeline-scroll-viewport must NEVER be hidden globally by :has(> aside:not(.hidden)) outside portrait phone media queries")
 	}
 
-	// 3. Verify runtime behavior when opening #modal-scene-text and clicking topbar navigation tabs
+	// 3. Verify runtime behavior when opening #text-editor-view and clicking topbar navigation tabs
 	rootDir := t.TempDir()
 	srv := NewServer(rootDir, mojra.AppFS)
 	ts := httptest.NewServer(srv.Handler())
@@ -1682,7 +1750,7 @@ func TestTopbarAlwaysVisibleIncludingSceneTextEditor(t *testing.T) {
 	}
 	_ = rCreate.Body.Close()
 
-	// Open scene text modal with form scene_id (returns full app_shell) and verify #topbar is present alongside #modal-scene-text
+	// Open scene text modal with form scene_id (returns full app_shell) and verify #topbar is present alongside #text-editor-view
 	openFullForm := url.Values{
 		"action":   {"OpenSceneTextModal"},
 		"scene":    {"poczatek"},
@@ -1698,15 +1766,15 @@ func TestTopbarAlwaysVisibleIncludingSceneTextEditor(t *testing.T) {
 	if !strings.Contains(openFullHTML, `<header class="topbar" id="topbar">`) ||
 		!strings.Contains(openFullHTML, `id="tab-studio-home"`) ||
 		!strings.Contains(openFullHTML, `id="editor-book-title">Księga Rzeki</span>`) ||
-		!strings.Contains(openFullHTML, `id="modal-scene-text"`) {
-		t.Fatalf("expected #topbar with Studio navigation and title to remain present when #modal-scene-text is open, got:\n%s", openFullHTML)
+		!strings.Contains(openFullHTML, `id="text-editor-view"`) {
+		t.Fatalf("expected #topbar with Studio navigation and title to remain present when #text-editor-view is open, got:\n%s", openFullHTML)
 	}
-	modalPart := openFullHTML[strings.Index(openFullHTML, `id="modal-scene-text"`):]
+	modalPart := openFullHTML[strings.Index(openFullHTML, `id="text-editor-view"`):]
 	if strings.Contains(modalPart, "Graj od tej sceny") || strings.Contains(modalPart, "Usuń scenę") || strings.Contains(modalPart, "Wróć do edytora") {
 		t.Fatalf("expected icon-only buttons without text descriptions in .scene-text-editor-top-bar, got:\n%s", modalPart)
 	}
 
-	// Clicking a topbar tab (SwitchView) while #modal-scene-text is open must close #modal-scene-text and switch cleanly
+	// Clicking a topbar tab (SwitchView) while #text-editor-view is open must close #text-editor-view and switch cleanly
 	swForm := url.Values{
 		"action": {"SwitchView"},
 		"view":   {"editor"},
@@ -1721,11 +1789,11 @@ func TestTopbarAlwaysVisibleIncludingSceneTextEditor(t *testing.T) {
 		t.Fatalf("#timeline-scroll-viewport must never be hidden on desktop when an editor panel is open")
 	}
 	swHTML := string(swBytes)
-	if srv.State.Editor.SceneText.SceneID != "" || strings.Contains(swHTML, `id="modal-scene-text"`) {
-		t.Fatalf("expected SwitchView from #topbar to close #modal-scene-text, got SceneTextModalID=%q", srv.State.Editor.SceneText.SceneID)
+	if srv.State.Editor.SceneText.SceneID != "" || strings.Contains(swHTML, `id="text-editor-view"`) {
+		t.Fatalf("expected SwitchView from #topbar to close #text-editor-view, got SceneTextModalID=%q", srv.State.Editor.SceneText.SceneID)
 	}
-	if !strings.Contains(swHTML, `<header class="topbar" id="topbar">`) || !strings.Contains(swHTML, `id="view-editor"`) {
-		t.Fatalf("expected #topbar and #view-editor after SwitchView, got:\n%s", swHTML)
+	if !strings.Contains(swHTML, `<header class="topbar" id="topbar">`) || !strings.Contains(swHTML, `id="studio-view"`) {
+		t.Fatalf("expected #topbar and #studio-view after SwitchView, got:\n%s", swHTML)
 	}
 }
 
@@ -1749,7 +1817,7 @@ func TestBookImagelessSettingAndTopbarLock(t *testing.T) {
 	}
 	normBytes, _ := io.ReadAll(rNorm.Body)
 	_ = rNorm.Body.Close()
-	normMeta, normHTML := tpl.DecodeFDPResponse(normBytes)
+	normMeta, normHTML := decodeFDPResponse(normBytes)
 	if normMeta.Get("imageless") != "false" || normMeta.Get("imagelessLocked") != "false" {
 		t.Fatalf("expected imageless=false and imagelessLocked=false for normal book, got %q / %q", normMeta.Get("imageless"), normMeta.Get("imagelessLocked"))
 	}
@@ -1770,7 +1838,7 @@ func TestBookImagelessSettingAndTopbarLock(t *testing.T) {
 	}
 	togOnBytes, _ := io.ReadAll(rTogOn.Body)
 	_ = rTogOn.Body.Close()
-	togOnMeta, _ := tpl.DecodeFDPResponse(togOnBytes)
+	togOnMeta, _ := decodeFDPResponse(togOnBytes)
 
 	if !srv.State.Editor.ActiveBook.Imageless {
 		t.Fatalf("expected ActiveBook.Imageless=true after ToggleBookImageless")
@@ -1784,7 +1852,7 @@ func TestBookImagelessSettingAndTopbarLock(t *testing.T) {
 	}
 	settingsOnBytes, _ := io.ReadAll(rSettingsOn.Body)
 	_ = rSettingsOn.Body.Close()
-	_, settingsOnHTML := tpl.DecodeFDPResponse(settingsOnBytes)
+	_, settingsOnHTML := decodeFDPResponse(settingsOnBytes)
 	if !strings.Contains(settingsOnHTML, `id="btn-toggle-imageless" type="button" disabled="disabled"`) {
 		t.Fatalf("expected #btn-toggle-imageless to be disabled/inactive in settings modal when imageless book is open, got:\n%s", settingsOnHTML)
 	}
@@ -1810,7 +1878,7 @@ func TestBookImagelessSettingAndTopbarLock(t *testing.T) {
 	}
 	tryBytes, _ := io.ReadAll(rTry.Body)
 	_ = rTry.Body.Close()
-	tryMeta, _ := tpl.DecodeFDPResponse(tryBytes)
+	tryMeta, _ := decodeFDPResponse(tryBytes)
 	if tryMeta.Get("imageless") != "true" || tryMeta.Get("imagelessLocked") != "true" || srv.State.Settings.Imageless {
 		t.Fatalf("expected ToggleImageless to be ignored while imageless book is loaded, got imageless=%q Settings.Imageless=%v", tryMeta.Get("imageless"), srv.State.Settings.Imageless)
 	}
@@ -1826,7 +1894,7 @@ func TestBookImagelessSettingAndTopbarLock(t *testing.T) {
 	}
 	playBytes, _ := io.ReadAll(rPlay.Body)
 	_ = rPlay.Body.Close()
-	_, playHTML := tpl.DecodeFDPResponse(playBytes)
+	_, playHTML := decodeFDPResponse(playBytes)
 	if !strings.Contains(playHTML, `class="player-layout is-imageless"`) || strings.Contains(playHTML, `class="player-bg-img"`) {
 		t.Fatalf("expected player view to be forced into .is-imageless without scene images, got:\n%s", playHTML)
 	}
@@ -1838,7 +1906,7 @@ func TestBookImagelessSettingAndTopbarLock(t *testing.T) {
 	}
 	togOffBytes, _ := io.ReadAll(rTogOff.Body)
 	_ = rTogOff.Body.Close()
-	togOffMeta, togOffHTML := tpl.DecodeFDPResponse(togOffBytes)
+	togOffMeta, togOffHTML := decodeFDPResponse(togOffBytes)
 	if srv.State.Editor.ActiveBook.Imageless || togOffMeta.Get("imagelessLocked") != "false" || togOffMeta.Get("imageless") != "false" {
 		t.Fatalf("expected imageless lock released after ToggleBookImageless OFF, got Book.Imageless=%v imagelessLocked=%q", srv.State.Editor.ActiveBook.Imageless, togOffMeta.Get("imagelessLocked"))
 	}
@@ -1853,7 +1921,7 @@ func TestNodeEditorEmptyLibraryRenameFitAndRootScene(t *testing.T) {
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
-	// 1. With no books in library (ActiveBook == nil), switching to Node Studio ("editor") MUST open #view-editor
+	// 1. With no books in library (ActiveBook == nil), switching to Node Studio ("editor") MUST open #studio-view
 	swForm := url.Values{
 		"action": {"SwitchView"},
 		"view":   {"editor"},
@@ -1865,8 +1933,8 @@ func TestNodeEditorEmptyLibraryRenameFitAndRootScene(t *testing.T) {
 	swBytes, _ := io.ReadAll(rSw.Body)
 	_ = rSw.Body.Close()
 	swHTML := string(swBytes)
-	if !strings.Contains(swHTML, `id="view-editor"`) || !strings.Contains(swHTML, `id="editor-empty-state"`) || !strings.Contains(swHTML, `id="btn-new-book"`) {
-		t.Fatalf("expected #view-editor with #editor-empty-state and #btn-new-book when library is empty, got:\n%s", swHTML)
+	if !strings.Contains(swHTML, `id="studio-view"`) || !strings.Contains(swHTML, `id="editor-empty-state"`) || !strings.Contains(swHTML, `id="btn-new-book"`) {
+		t.Fatalf("expected #studio-view with #editor-empty-state and #btn-new-book when library is empty, got:\n%s", swHTML)
 	}
 
 	// 2. Open new book modal and create a new book from Node Editor
@@ -1879,7 +1947,7 @@ func TestNodeEditorEmptyLibraryRenameFitAndRootScene(t *testing.T) {
 	}
 	modalBytes, _ := io.ReadAll(rModal.Body)
 	_ = rModal.Body.Close()
-	if !strings.Contains(string(modalBytes), `id="modal-backdrop-new-book"`) || !strings.Contains(string(modalBytes), `id="form-new-book"`) {
+	if !strings.Contains(string(modalBytes), `id="new-book-view"`) || !strings.Contains(string(modalBytes), `id="form-new-book"`) {
 		t.Fatalf("expected new book modal and #form-new-book form, got:\n%s", string(modalBytes))
 	}
 
@@ -2381,7 +2449,7 @@ func TestMultilingualUISwitchAndI18nTableCompleteness(t *testing.T) {
 	}
 	togBytes, _ := io.ReadAll(togResp.Body)
 	_ = togResp.Body.Close()
-	togMeta, togHTML := tpl.DecodeFDPResponse(togBytes)
+	togMeta, togHTML := decodeFDPResponse(togBytes)
 	if got := togMeta.Get("lang"); got != "en" {
 		t.Fatalf("expected lang=en after ToggleLanguage, got %q", got)
 	}
@@ -2404,7 +2472,7 @@ func TestMultilingualUISwitchAndI18nTableCompleteness(t *testing.T) {
 	}
 	setBytes, _ := io.ReadAll(setResp.Body)
 	_ = setResp.Body.Close()
-	setMeta, setHTML := tpl.DecodeFDPResponse(setBytes)
+	setMeta, setHTML := decodeFDPResponse(setBytes)
 	if got := setMeta.Get("lang"); got != "pl" {
 		t.Fatalf("expected lang=pl after SetLanguage(pl), got %q", got)
 	}
@@ -2438,7 +2506,7 @@ func TestEditorUIStatePersistenceAcrossSessionsAndRotatedExpandTitle(t *testing.
 		t.Fatalf("CreateSceneAt failed: %v", err)
 	}
 
-	// Rename the new scene to "Costam" and open #modal-scene-text on it in half-width mode + open Variables panel
+	// Rename the new scene to "Costam" and open #text-editor-view on it in half-width mode + open Variables panel
 	_, err = http.PostForm(ts1.URL+"/api/action", url.Values{
 		"action": {"OpenSceneTextModal"},
 		"scene":  {"s1"},
@@ -2489,14 +2557,14 @@ func TestEditorUIStatePersistenceAcrossSessionsAndRotatedExpandTitle(t *testing.
 	body2, _ := io.ReadAll(resp2.Body)
 	_ = resp2.Body.Close()
 	html2 := string(body2)
-	if !strings.Contains(html2, `id="modal-scene-text"`) || !strings.Contains(html2, `value="Costam"`) {
-		t.Fatalf("expected #modal-scene-text to be open on 'Costam' on initial GET / in new session")
+	if !strings.Contains(html2, `id="text-editor-view"`) || !strings.Contains(html2, `value="Costam"`) {
+		t.Fatalf("expected #text-editor-view to be open on 'Costam' on initial GET / in new session")
 	}
 	if !strings.Contains(html2, `id="scene-text-expand-title"`) || !strings.Contains(html2, `<span class="scene-text-expand-title" id="scene-text-expand-title">Costam</span>`) {
 		t.Fatalf("expected rotated #scene-text-expand-title with 'Costam' inside #btn-expand-scene-text")
 	}
 
-	// Now collapse #modal-scene-text on srv2 and verify a 3rd session starts with #modal-scene-text closed but node 'costam' selected
+	// Now collapse #text-editor-view on srv2 and verify a 3rd session starts with #text-editor-view closed but node 'costam' selected
 	_, _ = http.PostForm(ts2.URL+"/api/action", url.Values{
 		"action": {"CloseSceneTextModal"},
 	})

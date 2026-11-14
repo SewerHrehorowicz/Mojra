@@ -1127,7 +1127,7 @@ function makeEvent(type, props) {
         if (!ct.includes("text/x-fdp")) {
           throw new Error("Expected FDP Content-Type text/x-fdp, got: " + ct);
         }
-        const parsed = vm.runInContext("typeof Fdp !== 'undefined' ? Fdp.decode(" + JSON.stringify(bodyStr) + ") : {}", win);
+        const parsed = vm.runInContext("typeof Fdp !== 'undefined' ? (Fdp.decode(" + JSON.stringify(bodyStr) + ")[0] || {}) : {}", win);
         const act = parsed.action;
         if (act) actionLog.push(act + "(" + bodyStr.replace(/\n/g, "|") + ")");
       }
@@ -1171,12 +1171,12 @@ function makeEvent(type, props) {
     await waitForActions();
   };
 
-  // 1. Switch to Studio Home (#view-editor) via bottom mode switch in Reader Home
+  // 1. Switch to Studio Home (#studio-view) via bottom mode switch in Reader Home
   await clickEl('#btn-switch-to-studio');
-  if (!doc.querySelector("#view-editor") || !doc.querySelector("#editor-empty-state")) {
+  if (!doc.querySelector("#studio-view") || !doc.querySelector("#editor-empty-state")) {
     const appChildren = doc.querySelector("#app") ? doc.querySelector("#app").children.map((c) => c.tagName + "#" + c.id).join(",") : "NONE";
     const allIds = doc.querySelectorAll("*").map((c) => c.tagName + "#" + c.id).filter((s) => !s.endsWith("#")).join(",");
-    throw new Error("Expected #view-editor and #editor-empty-state; actionLog=" + actionLog.join(" | ") + " appChildren=" + appChildren + " allIds=" + allIds);
+    throw new Error("Expected #studio-view and #editor-empty-state; actionLog=" + actionLog.join(" | ") + " appChildren=" + appChildren + " allIds=" + allIds);
   }
 
   // 2. Click OpenNewBookModal button in Node Studio
@@ -1219,8 +1219,8 @@ function makeEvent(type, props) {
   canvas.dispatchEvent(makeEvent("mousedown", { button: 0, clientX: nodeScreenPt.x, clientY: nodeScreenPt.y, target: canvas }));
   canvas.dispatchEvent(makeEvent("mouseup", { button: 0, clientX: nodeScreenPt.x, clientY: nodeScreenPt.y, target: canvas }));
   await waitForActions();
-  if (!doc.querySelector("#editor-context-form").classList.contains("hidden") || !doc.querySelector("#editor-context-panel").classList.contains("hidden")) {
-    throw new Error("Expected #editor-context-panel and #editor-context-form to remain hidden when clicking a node card on canvas");
+  if (!doc.querySelector("#editor-context-form").classList.contains("hidden") || !doc.querySelector("#editor-context-view").classList.contains("hidden")) {
+    throw new Error("Expected #editor-context-view and #editor-context-form to remain hidden when clicking a node card on canvas");
   }
   if (!vm.runInContext("CanvasModel.selectedNodeIds.has(CanvasModel.studioGraphState.nodes[0].id)", win)) {
     throw new Error("Expected clicking node card on canvas to select the node");
@@ -1294,7 +1294,7 @@ function makeEvent(type, props) {
     throw new Error("Expected clicking gray branch-radio square to promote node to primary, got " + promotedRole);
   }
 
-  // 6c2. Open #modal-scene-text on rootId, then click add-choice-btn on another canvas node (secRadioPt.id) and verify the target node refreshes on canvas
+  // 6c2. Open #text-editor-view on rootId, then click add-choice-btn on another canvas node (secRadioPt.id) and verify the target node refreshes on canvas
   await vm.runInContext("Dispatcher.post('OpenSceneTextModal', { scene: '" + rootId + "' })", win);
   await waitForActions();
   const childAddPt = vm.runInContext("(() => { const n = CanvasModel.studioGraphState.nodeById.get('" + secRadioPt.id + "'); const z = CanvasModel.editorCanvasState.zoom; return { x: Math.round((CanvasModel.getNodeFooterBtnX(n, 'add', false) + 12) * z + CanvasModel.editorCanvasState.panX), y: Math.round((n.y + n.h - 19) * z + CanvasModel.editorCanvasState.panY) }; })()", win);
@@ -1304,7 +1304,7 @@ function makeEvent(type, props) {
   await waitForActions();
   const childPortsAfterCanvasAdd = vm.runInContext("(() => { const n = CanvasModel.studioGraphState.nodeById.get('" + secRadioPt.id + "'); return n && n.hasChoices && n.ports ? n.ports.length : 0; })()", win);
   if (childPortsAfterCanvasAdd !== 2) {
-    throw new Error("Expected clicking add-choice-btn on another canvas node while #modal-scene-text is open to refresh that node to 2 choices, got " + childPortsAfterCanvasAdd);
+    throw new Error("Expected clicking add-choice-btn on another canvas node while #text-editor-view is open to refresh that node to 2 choices, got " + childPortsAfterCanvasAdd);
   }
   await clickEl('#btn-collapse-scene-text');
 
@@ -1375,7 +1375,7 @@ function makeEvent(type, props) {
     throw new Error("Expected double-clicking wire-pin to remove it, got " + pinCountAfterDblClick);
   }
 
-  // 8. Add 2 bool variables in Variables panel, then double-click node card on WebGL canvas to open #modal-scene-text
+  // 8. Add 2 bool variables in Variables panel, then double-click node card on WebGL canvas to open #text-editor-view
   await clickEl("#btn-editor-variables");
   await clickEl('button.var-section-add-btn[data-kind="bool"]');
   const firstVarInp = doc.querySelector("input.var-name-input");
@@ -1395,14 +1395,14 @@ function makeEvent(type, props) {
   await waitForActions();
   const afterModalPan = vm.runInContext("({ panX: CanvasModel.editorCanvasState.panX, panY: CanvasModel.editorCanvasState.panY })", win);
   if (afterModalPan.panX !== beforeModalPan.panX || afterModalPan.panY !== beforeModalPan.panY) {
-    throw new Error("Expected opening #modal-scene-text to keep canvas panX/panY unchanged, got before=" + beforeModalPan.panX + "," + beforeModalPan.panY + " after=" + afterModalPan.panX + "," + afterModalPan.panY);
+    throw new Error("Expected opening #text-editor-view to keep canvas panX/panY unchanged, got before=" + beforeModalPan.panX + "," + beforeModalPan.panY + " after=" + afterModalPan.panX + "," + afterModalPan.panY);
   }
   const modalTa = doc.querySelector("#modal-scene-textarea");
   if (!modalTa) {
-    throw new Error("Expected double-clicking node card on canvas to open #modal-scene-text");
+    throw new Error("Expected double-clicking node card on canvas to open #text-editor-view");
   }
 
-  // 9. Toggle scene settings inside #modal-scene-text, edit textarea, and click back button
+  // 9. Toggle scene settings inside #text-editor-view, edit textarea, and click back button
   await clickEl("[data-scene-settings-toggle]");
   const settingsBlock = doc.querySelector("#modal-scene-settings-block");
   if (!settingsBlock || settingsBlock.classList.contains("hidden")) {
@@ -1430,9 +1430,9 @@ function makeEvent(type, props) {
   await waitForActions();
 
   // 9b. Test .syn-autocomplete-dropdown ArrowDown/ArrowUp + Enter, excluding already-used variables, and automatic space insertion before next variable in set:
-  const effInp = doc.querySelector('#modal-scene-text input.choice-rule-input[name="choice_effects_0"]');
+  const effInp = doc.querySelector('#text-editor-view input.choice-rule-input[name="choice_effects_0"]');
   if (!effInp) {
-    throw new Error("Expected #modal-scene-text input.choice-rule-input[name=choice_effects_0]");
+    throw new Error("Expected #text-editor-view input.choice-rule-input[name=choice_effects_0]");
   }
   effInp.value = "cwiczenia_z_wioslem = false?";
   effInp.selectionStart = effInp.value.length;
@@ -1462,9 +1462,9 @@ function makeEvent(type, props) {
   }
 
   // 9c. Test exit: input '?' replacement dropdown, excluding current scene/chapter/target
-  const exitInp = doc.querySelector('#modal-scene-text input.choice-exit-input[name="choice_target_0"]');
+  const exitInp = doc.querySelector('#text-editor-view input.choice-exit-input[name="choice_target_0"]');
   if (!exitInp) {
-    throw new Error("Expected #modal-scene-text input.choice-exit-input[name=choice_target_0]");
+    throw new Error("Expected #text-editor-view input.choice-exit-input[name=choice_target_0]");
   }
   const origExitVal = exitInp.value;
   exitInp.value = "?" + origExitVal;
@@ -1485,7 +1485,7 @@ function makeEvent(type, props) {
   }
   exitInp.dispatchEvent(makeEvent("keydown", { key: "Enter", target: exitInp }));
   await waitForActions();
-  const refreshedExitInp = doc.querySelector('#modal-scene-text input.choice-exit-input[name="choice_target_0"]') || exitInp;
+  const refreshedExitInp = doc.querySelector('#text-editor-view input.choice-exit-input[name="choice_target_0"]') || exitInp;
   const refreshedExitRow = refreshedExitInp.closest(".choice-triple-row");
   if (refreshedExitInp.value.includes("?") || (refreshedExitRow && refreshedExitRow.classList.contains("is-invalid"))) {
     throw new Error("Expected selecting target from dropdown to replace full exit: value and clear .is-invalid, got: " + refreshedExitInp.value);
@@ -1494,20 +1494,20 @@ function makeEvent(type, props) {
   refreshedExitInp.dispatchEvent(makeEvent("change", { target: refreshedExitInp }));
   await waitForActions();
 
-  const modalNameInp = doc.querySelector('#modal-scene-text input[name="name"]');
+  const modalNameInp = doc.querySelector('#text-editor-view input[name="name"]');
   if (modalNameInp) {
     modalNameInp.value = "Scena Zsynchronizowana";
     modalNameInp.dispatchEvent(makeEvent("change", { target: modalNameInp }));
     await waitForActions();
   }
-  const navNextBtn = doc.querySelector('#modal-scene-text .modal-choice-nav-btn');
+  const navNextBtn = doc.querySelector('#text-editor-view .modal-choice-nav-btn');
   if (navNextBtn) {
-    await clickEl('#modal-scene-text .modal-choice-nav-btn');
+    await clickEl('#text-editor-view .modal-choice-nav-btn');
   }
 
   await clickEl('#btn-collapse-scene-text');
-  if (doc.querySelector("#modal-scene-text")) {
-    throw new Error("Expected CloseSceneTextModal to close #modal-scene-text");
+  if (doc.querySelector("#text-editor-view")) {
+    throw new Error("Expected CloseSceneTextModal to close #text-editor-view");
   }
 
   // 10. Built-in Voice Recorder & Trimmer (ToggleBookNarrated -> ToggleSceneVoiceRecorder -> Record -> Playhead -> Trim)
@@ -1621,23 +1621,23 @@ function makeEvent(type, props) {
   if (doc.body.getAttribute("data-theme") !== "light") {
     throw new Error("Expected ToggleTheme to set data-theme=light");
   }
-  await clickEl('#modal-backdrop-qr .btn-close-qr');
+  await clickEl('#qr-view .btn-close-qr');
 
-  // 11. Navigate Node Editor -> Studio Home -> Reader Home -> Book Reader (#view-player)
+  // 11. Navigate Node Editor -> Studio Home -> Reader Home -> Book Reader (#player-view)
   await clickEl("#tab-studio-home");
   if (!doc.querySelector("#editor-empty-state") || !doc.querySelector("#studio-projects-grid")) {
     throw new Error("Expected clicking #tab-studio-home to return to Studio Home with #studio-projects-grid");
   }
   await clickEl("#btn-switch-to-reader");
-  if (!doc.querySelector("#view-library")) {
-    throw new Error("Expected #view-library after clicking #btn-switch-to-reader");
+  if (!doc.querySelector("#library-view")) {
+    throw new Error("Expected #library-view after clicking #btn-switch-to-reader");
   }
   await clickEl('button.book-cover-wrap');
-  if (!doc.querySelector("#view-player")) {
-    throw new Error("Expected #view-player after clicking book cover in Reader Home");
+  if (!doc.querySelector("#player-view")) {
+    throw new Error("Expected #player-view after clicking book cover in Reader Home");
   }
   if (!doc.querySelector("#btn-toggle-zen") || doc.querySelector("#btn-open-settings")) {
-    throw new Error("Expected #btn-toggle-zen and no #btn-open-settings in book reader (#view-player)");
+    throw new Error("Expected #btn-toggle-zen and no #btn-open-settings in book reader (#player-view)");
   }
   await clickEl("#btn-toggle-zen");
   if (doc.body.getAttribute("data-zen") !== "true" || !doc.querySelector("#btn-toggle-zen").classList.contains("active")) {
@@ -1669,7 +1669,7 @@ function makeEvent(type, props) {
   }
   const storyAudio = doc.querySelector("#story-audio");
   if (!storyAudio || storyAudio.paused || doc.querySelector("#icon-audio-pause").classList.contains("hidden")) {
-    throw new Error("Expected narrated scene entry in #view-player to auto-play #story-audio with pause button visible");
+    throw new Error("Expected narrated scene entry in #player-view to auto-play #story-audio with pause button visible");
   }
   if (vm.runInContext("AudioDeckController.data.autoChoiceDelayMs", win) !== 2000) {
     throw new Error("Expected default AudioDeckController.data.autoChoiceDelayMs=2000, got: " + vm.runInContext("AudioDeckController.data.autoChoiceDelayMs", win));
@@ -1682,7 +1682,7 @@ function makeEvent(type, props) {
   const rewindBtn = doc.querySelector("#history-stack button.contextual-rewind-btn");
   if (rewindBtn) {
     await clickEl(rewindBtn);
-    await clickEl('#modal-confirm .btn-confirm-accept');
+    await clickEl('#confirm-view .btn-confirm-accept');
     const rewoundAudio = doc.querySelector("#story-audio");
     if (rewoundAudio) {
       vm.runInContext("AudioDeckController.data.autoChoiceDelayMs = 20", win);
@@ -1697,8 +1697,8 @@ function makeEvent(type, props) {
 
   // 12. Return from Player to Reader Home (#tab-library), switch to Studio Home (#btn-switch-to-studio), create a Screenplay project, test Breakdown Panel forms & jump
   await clickEl("#tab-library");
-  if (!doc.querySelector("#view-library")) {
-    throw new Error("Expected clicking #tab-library in player topbar to return to Reader Home (#view-library)");
+  if (!doc.querySelector("#library-view")) {
+    throw new Error("Expected clicking #tab-library in player topbar to return to Reader Home (#library-view)");
   }
   await clickEl("#btn-switch-to-studio");
   await clickEl('#btn-new-book, .canvas-toolbar .btn-open-new-book');
@@ -1736,8 +1736,8 @@ function makeEvent(type, props) {
   await clickEl('#btn-collapse-scene-text');
 
   await clickEl("#btn-editor-breakdown");
-  if (!doc.querySelector("#editor-breakdown-panel") || doc.querySelector("#editor-breakdown-panel").classList.contains("hidden")) {
-    throw new Error("Expected #btn-editor-breakdown to open #editor-breakdown-panel");
+  if (!doc.querySelector("#editor-breakdown-view") || doc.querySelector("#editor-breakdown-view").classList.contains("hidden")) {
+    throw new Error("Expected #btn-editor-breakdown to open #editor-breakdown-view");
   }
 
   // Clear canvas selection first, then click .breakdown-jump-btn
@@ -1753,7 +1753,7 @@ function makeEvent(type, props) {
   // Auto-save Character Rename and Location Rename inputs in Breakdown Panel on change/blur
   const charRenameForm = doc.querySelector('form.breakdown-rename-char-form');
   if (!charRenameForm) {
-    throw new Error("Expected form.breakdown-rename-char-form in #editor-breakdown-panel");
+    throw new Error("Expected form.breakdown-rename-char-form in #editor-breakdown-view");
   }
   const newCharInp = charRenameForm.querySelector('input[name="new_name"]');
   newCharInp.value = "DETEKTYW";
@@ -1762,14 +1762,14 @@ function makeEvent(type, props) {
 
   const locRenameForm = doc.querySelector('form.breakdown-rename-loc-form');
   if (!locRenameForm) {
-    throw new Error("Expected form.breakdown-rename-loc-form in #editor-breakdown-panel");
+    throw new Error("Expected form.breakdown-rename-loc-form in #editor-breakdown-view");
   }
   const newLocInp = locRenameForm.querySelector('input[name="new_location"]');
   newLocInp.value = "PORT RZECZNY";
   newLocInp.dispatchEvent(makeEvent("blur", { target: newLocInp }));
   await waitForActions();
 
-  // Verify Studio Full-Text Search (#btn-studio-search, #studio-search-palette, live filter, and #modal-scene-text jump)
+  // Verify Studio Full-Text Search (#btn-studio-search, #studio-search-palette, live filter, and #text-editor-view jump)
   await clickEl("#btn-studio-search");
   const searchPalette = doc.querySelector("#studio-search-palette");
   const searchBtn = doc.querySelector("#btn-studio-search");
@@ -1784,8 +1784,8 @@ function makeEvent(type, props) {
     throw new Error("Expected #studio-search-count to equal '1' when filtering for DETEKTYW, got: " + doc.querySelector("#studio-search-count").textContent);
   }
   await clickEl('#studio-search-results .studio-search-row:not(.hidden) [data-search-open-text]');
-  if (!doc.querySelector("#modal-scene-text") || !doc.querySelector("#topbar")) {
-    throw new Error("Expected clicking search result edit button to open #modal-scene-text while keeping #topbar visible");
+  if (!doc.querySelector("#text-editor-view") || !doc.querySelector("#topbar")) {
+    throw new Error("Expected clicking search result edit button to open #text-editor-view while keeping #topbar visible");
   }
   await clickEl('#btn-collapse-scene-text');
   await clickEl("#btn-close-studio-search");
@@ -1799,8 +1799,8 @@ function makeEvent(type, props) {
     throw new Error("Expected non-empty #scene-text-expand-title inside collapsed #btn-expand-scene-text");
   }
   await clickEl("#btn-expand-scene-text");
-  if (!doc.querySelector("#modal-scene-text")) {
-    throw new Error("Expected clicking #btn-expand-scene-text to open #modal-scene-text");
+  if (!doc.querySelector("#text-editor-view")) {
+    throw new Error("Expected clicking #btn-expand-scene-text to open #text-editor-view");
   }
   await vm.runInContext("(() => { const scId = document.querySelector('#form-scene-text input[name=\"scene_id\"]').value; const nd = CanvasModel.studioGraphState.nodeById.get(scId); CanvasOverlays.openFloatingNodeTitleInput(nd); })()", win);
   const canvasTitleInp = doc.querySelector("#canvas-node-title-input");
@@ -1822,8 +1822,8 @@ function makeEvent(type, props) {
 
   // Verify Export Project Modal multi-select, collapsible ZAAWANSOWANE, and norma dropdown in live DOM
   await clickEl('#btn-open-export-modal');
-  if (!doc.querySelector("#modal-export-project")) {
-    throw new Error("Expected #modal-export-project to open on OpenExportModal");
+  if (!doc.querySelector("#export-view")) {
+    throw new Error("Expected #export-view to open on OpenExportModal");
   }
   if (!doc.querySelector(".export-selection-count").textContent.includes("3 WYBRANE")) {
     throw new Error("Expected initial export modal counter '3 WYBRANE'");
@@ -1845,8 +1845,8 @@ function makeEvent(type, props) {
   await clickEl('.export-standard-select .custom-select-option[data-select-value="us"]');
   await waitForActions();
   await clickEl('.btn-close-export');
-  if (doc.querySelector("#modal-export-project")) {
-    throw new Error("Expected #modal-export-project to close on CloseExportModal");
+  if (doc.querySelector("#export-view")) {
+    throw new Error("Expected #export-view to close on CloseExportModal");
   }
 
   const f12Evt = makeEvent("keydown", { key: "F12", code: "F12", target: doc.body });
@@ -2043,7 +2043,7 @@ func TestWasmPlayerStaticAnalysisAndRuntimeExecution(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadTemplatesFromDir(\"\", wasmSimFS) failed (missing template or SVG in embed_wasm.go): %v", err)
 	}
-	for _, reqTpl := range []string{"player_view", "scene_choice_arrow", "confirm_modal"} {
+	for _, reqTpl := range []string{"player_view", "scene_choice_arrow", "confirm_view"} {
 		if _, ok := wasmTemplates[reqTpl]; !ok {
 			t.Fatalf("expected template %q to be loaded from WasmAppFS", reqTpl)
 		}
@@ -2525,7 +2525,7 @@ async function runBundleE2E(bundleDir, protocolMode) {
   for (const fn of (listeners["click"] || [])) {
     fn({ type: "click", target: playBtn, preventDefault() {}, stopPropagation() {} });
   }
-  for (let i = 0; i < 60 && !doc.querySelector("#view-player"); i++) {
+  for (let i = 0; i < 60 && !doc.querySelector("#player-view"); i++) {
     await new Promise(r => setTimeout(r, 20));
   }
 
@@ -2533,9 +2533,9 @@ async function runBundleE2E(bundleDir, protocolMode) {
     throw new Error("Expected __wasmBoot and __wasmAction to be registered by mojra.wasm in " + bundleDir + " (" + protocolMode + ")");
   }
 
-  const playerView = doc.querySelector("#view-player");
+  const playerView = doc.querySelector("#player-view");
   if (!playerView) {
-    throw new Error("Expected #view-player to be mounted after bootWasmPlayer in " + bundleDir + " (" + protocolMode + ")");
+    throw new Error("Expected #player-view to be mounted after bootWasmPlayer in " + bundleDir + " (" + protocolMode + ")");
   }
   const choiceBtns = doc.querySelectorAll(".choice-btn");
   if (choiceBtns.length < 2) {
@@ -2572,13 +2572,13 @@ async function runBundleE2E(bundleDir, protocolMode) {
     fn({ type: "click", target: rewindBtn, preventDefault() {}, stopPropagation() {} });
   }
   await new Promise(r => setTimeout(r, 20));
-  const confirmModal = doc.querySelector("#modal-confirm");
+  const confirmModal = doc.querySelector("#confirm-view");
   if (!confirmModal) {
-    throw new Error("Expected #modal-confirm to open after PromptRewindStep in WASM player");
+    throw new Error("Expected #confirm-view to open after PromptRewindStep in WASM player");
   }
-  const acceptBtn = doc.querySelector('#modal-confirm .btn-confirm-accept');
+  const acceptBtn = doc.querySelector('#confirm-view .btn-confirm-accept');
   if (!acceptBtn) {
-    throw new Error("Expected ConfirmModalAccept button in #modal-confirm");
+    throw new Error("Expected ConfirmModalAccept button in #confirm-view");
   }
   for (const fn of (listeners["click"] || [])) {
     fn({ type: "click", target: acceptBtn, preventDefault() {}, stopPropagation() {} });

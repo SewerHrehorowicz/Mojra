@@ -142,8 +142,6 @@ func hasLeadingDoctype(nodes []*Node) bool {
 
 // TemplateChunk pairs presentational TemplateData (for .tpl HTML rendering) with optional ScriptData (for controller hydration).
 type TemplateChunk struct {
-	Template     string
-	Data         any
 	TemplateData any
 	ScriptData   any
 }
@@ -151,12 +149,9 @@ type TemplateChunk struct {
 // Resolve returns the template name and presentational data root for this chunk.
 func (c TemplateChunk) Resolve() (string, any) {
 	if c.TemplateData != nil {
-		if c.Template != "" {
-			return c.Template, c.TemplateData
-		}
 		return chunkTemplateName(c.TemplateData), c.TemplateData
 	}
-	return c.Template, c.Data
+	return "", nil
 }
 
 // RenderTemplateTo streams a named template directly into w using a pooled buffer.

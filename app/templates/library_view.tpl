@@ -1,4 +1,4 @@
-section.view-panel#view-library
+section.view-panel#library-view
     .library-top-actions
         button.btn.btn-sm#btn-open-add-book
             "{t_add_book_btn}"

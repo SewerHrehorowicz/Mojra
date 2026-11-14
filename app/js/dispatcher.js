@@ -1,5 +1,11 @@
 "use strict";
 
+/*
+No domain logic here, no hardcoded maps, this is generic
+dispatcher that knows nothing about app, it's DOM, controllers, views
+can be moved to another project and work the same
+make sure never violate that when editing this file
+*/
 const Dispatcher = {
   _ready: typeof document !== "undefined" ? document.addEventListener("DOMContentLoaded", () => Dispatcher.boot()) : null,
   endpoint: "/api/action",
@@ -15,7 +21,6 @@ const Dispatcher = {
   ],
 
   settings: {
-    noContentStatus: 204,
     paramPrefixLen: 6,
     dataPrefixLen: 5,
     attrs: {
@@ -54,8 +59,6 @@ const Dispatcher = {
       none: "none",
       trueStr: "true",
       falseStr: "false",
-      htmlKey: "html",
-      bodyKey: "_body",
       strType: "string",
       numType: "number",
       fnType: "function",
@@ -125,32 +128,25 @@ const Dispatcher = {
     }
   },
 
-  hydrate(decoded) {
-    if (!decoded) return;
+  hydrate(frame) {
+    if (!frame || !frame.controller) return;
     const s = this.settings;
-    const ctrlNames = Object.keys(this.controllers);
-    const keys = Object.keys(decoded);
+    const ctrl = this.controllers[frame.controller];
+    if (!ctrl || !ctrl.data || typeof ctrl.data !== s.vals.objType) return;
+    const keys = Object.keys(frame);
     for (let i = 0; i < keys.length; i++) {
       const key = keys[i];
-      if (key === s.vals.htmlKey || key === s.vals.bodyKey) continue;
-      const valStr = decoded[key];
-      for (let c = 0; c < ctrlNames.length; c++) {
-        const ctrl = this.controllers[ctrlNames[c]];
-        if (!ctrl || !ctrl.data || typeof ctrl.data !== s.vals.objType || !(key in ctrl.data)) continue;
-        this.assignDataValue(ctrl.data, key, valStr);
+      if (key in ctrl.data) {
+        this.assignDataValue(ctrl.data, key, frame[key]);
       }
     }
   },
 
-  notifyHydrated(decoded, action, params) {
-    if (!decoded) return;
-    const s = this.settings;
-    const ctrlNames = Object.keys(this.controllers);
-    for (let c = 0; c < ctrlNames.length; c++) {
-      const ctrl = this.controllers[ctrlNames[c]];
-      if (ctrl && typeof ctrl.onHydrate === s.vals.fnType) {
-        ctrl.onHydrate(decoded, action, params);
-      }
+  notifyHydrated(frame, action, params) {
+    if (!frame || !frame.controller) return;
+    const ctrl = this.controllers[frame.controller];
+    if (ctrl && typeof ctrl.onHydrate === this.settings.vals.fnType) {
+      ctrl.onHydrate(frame, action, params);
     }
   },
 
@@ -342,14 +338,21 @@ const Dispatcher = {
     this.lastParams = params || null;
     const s = this.settings;
     const raw = typeof resp === s.vals.strType ? resp : (resp.html !== undefined ? resp.html : await resp.text());
-    const decoded = Fdp.decode(raw);
-    this.hydrate(decoded);
-    const t = targetOverride || decoded.target;
-    if (t && t !== s.vals.none) {
-      this.swapTarget(t, decoded.html || "");
+    const frames = Fdp.decode(raw);
+    for (let i = 0; i < frames.length; i++) {
+      this.hydrate(frames[i]);
     }
-    this.notifyHydrated(decoded, action, params);
-    return decoded;
+    for (let i = 0; i < frames.length; i++) {
+      const f = frames[i];
+      const t = (i === 0 && targetOverride) ? targetOverride : f.target;
+      if (t && t !== s.vals.none) {
+        this.swapTarget(t, f.html || "");
+      }
+    }
+    for (let i = 0; i < frames.length; i++) {
+      this.notifyHydrated(frames[i], action, params);
+    }
+    return frames;
   },
 
   async post(action, params, target) {

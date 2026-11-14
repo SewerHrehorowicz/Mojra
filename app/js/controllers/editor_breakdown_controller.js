@@ -5,24 +5,24 @@ const EditorBreakdownController = {
 
   bindings() {
     return {
-      "#editor-breakdown-panel .btn-close-breakdown": {
+      "#editor-breakdown-view .btn-close-breakdown": {
         click: Dispatcher.action("CloseEditorBreakdownPanel")
       },
-      "#editor-breakdown-panel .breakdown-rename-char-form": {
+      "#editor-breakdown-view .breakdown-rename-char-form": {
         submit: this.submitCharRename
       },
-      "#editor-breakdown-panel .breakdown-rename-char-form .breakdown-name-input": {
+      "#editor-breakdown-view .breakdown-rename-char-form .breakdown-name-input": {
         change: this.renameCharacter,
         blur: this.renameCharacter
       },
-      "#editor-breakdown-panel .breakdown-rename-loc-form": {
+      "#editor-breakdown-view .breakdown-rename-loc-form": {
         submit: this.submitLocRename
       },
-      "#editor-breakdown-panel .breakdown-rename-loc-form .breakdown-name-input": {
+      "#editor-breakdown-view .breakdown-rename-loc-form .breakdown-name-input": {
         change: this.renameLocation,
         blur: this.renameLocation
       },
-      "#editor-breakdown-panel .breakdown-jump-btn": {
+      "#editor-breakdown-view .breakdown-jump-btn": {
         click: Dispatcher.action("SelectStudioScene")
       }
     };

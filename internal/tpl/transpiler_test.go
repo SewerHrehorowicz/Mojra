@@ -656,54 +656,30 @@ func BenchmarkRenderTemplateAppShell(b *testing.B) {
 		"has_active_book":        true,
 		"active_book_title":      "Nie bój się policji rzecznej",
 		"show_reset_progress":    true,
-		"workspace_view": TemplateChunk{
-			Template: "player_view",
-			TemplateData: map[string]any{
-				"ImagelessMode": false,
-				"HeaderMeta":    "Nie bój się policji rzecznej • Rozdział 1",
-				"RailTitle":     "Wstyd w warsztacie",
-				"HasBgImage":    true,
-				"BgImageURL":    "/api/books/test/media/images/sc1.png",
-				"ShowAudioDeck": true,
-				"AudioDeck": TemplateChunk{
-					Template: "audio_deck",
-					TemplateData: map[string]any{
-						"AudioURL":           "/api/books/test/media/voice/sc1.ogg",
-						"AudioDurationLabel": "1:20",
-						"AudioTrimStart":     "0.0000",
-						"AudioTrimEnd":       "1.0000",
-						"AudioResumeTime":    "0.0",
-						"AudioSpeed":         "1",
-						"AutoChoiceEnabled":  true,
-						"AutoChoiceLabel":    "Auto-Wybór: WŁ",
-						"AutoChoiceDelay":    "2",
-					},
-				},
-				"CurrentScene": TemplateChunk{
-					Template: "scene_view",
-					TemplateData: map[string]any{
-						"IsPresent":   true,
-						"Name":        "Wstyd w warsztacie",
-						"RailTitle":   "Wstyd w warsztacie",
-						"HasTitle":    true,
-						"Prose":       "Krótki akapit tekstu sceny testowej.",
-						"HasImage":    true,
-						"ImageURL":    "/api/books/test/media/images/sc1.png",
-						"IsTerminal":  false,
-						"IsBranching": true,
-						"Choices": []map[string]any{
-							{"Label": "Wejdź do warsztatu", "ShowWhenLocked": false, "IsEnding": false},
-							{"Label": "Odejdź w stronę rzeki", "ShowWhenLocked": false, "IsEnding": false},
-						},
-					},
-				},
-			},
+		"ImagelessMode":          false,
+		"HeaderMeta":             "Nie bój się policji rzecznej • Rozdział 1",
+		"RailTitle":              "Wstyd w warsztacie",
+		"HasBgImage":             true,
+		"BgImageURL":             "/api/books/test/media/images/sc1.png",
+		"ShowAudioDeck":          false,
+		"BookProgressPct":        42,
+		"IsPresent":              true,
+		"Name":                   "Wstyd w warsztacie",
+		"HasTitle":               true,
+		"Prose":                  "Krótki akapit tekstu sceny testowej.",
+		"HasImage":               true,
+		"ImageURL":               "/api/books/test/media/images/sc1.png",
+		"IsTerminal":             false,
+		"IsBranching":            true,
+		"Choices": []map[string]any{
+			{"Label": "Wejdź do warsztatu", "ShowWhenLocked": false, "IsEnding": false},
+			{"Label": "Odejdź w stronę rzeki", "ShowWhenLocked": false, "IsEnding": false},
 		},
 	})
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = RenderTemplateTo(io.Discard, "app_shell", templates, ctx)
+		_ = RenderTemplateTo(io.Discard, "scene_view", templates, ctx)
 	}
 }
 
@@ -730,12 +706,16 @@ func BuildPlayerOnlyApp(appDir, outDir string) error {
 	if err != nil {
 		return err
 	}
-	delete(templates, "library_view")
-	delete(templates, "studio_view")
-	delete(templates, "editor_context_panel")
-	delete(templates, "editor_history_panel")
-	delete(templates, "editor_breakdown_panel")
-	delete(templates, "editor_variables_panel")
+	for _, ex := range []string{
+		"library_view",
+		"studio_view",
+		"editor_context_view",
+		"editor_history_view",
+		"editor_breakdown_view",
+		"editor_variables_view",
+	} {
+		delete(templates, ex)
+	}
 	StripDevNodesFromTemplates(templates)
 	idxTpl := templates["index"]
 	htmlStr := TranspileStaticHTML(idxTpl, templates)

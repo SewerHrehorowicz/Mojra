@@ -714,8 +714,8 @@ func checkSecurityLoopsAndReliability(rootDir string, fset *token.FileSet, goFil
 						})
 					}
 
-					// HOT_PATH_ALLOC: Disk I/O or heavy analysis inside render_*.go / view_*.go
-					if strings.HasPrefix(pf.relPath, "internal/gui/render") || strings.HasPrefix(pf.relPath, "internal/views/view_") {
+					// HOT_PATH_ALLOC: Disk I/O or heavy analysis inside *_view.go
+					if strings.HasPrefix(pf.relPath, "internal/views/") && strings.HasSuffix(pf.relPath, "_view.go") {
 						if callName == "os.Stat" || callName == "os.ReadFile" || callName == "os.ReadDir" || callName == "book.AnalyzeScreenplay" || callName == "book.CompareBookBranches" {
 							out = append(out, Finding{
 								File:     pf.relPath,
@@ -1172,13 +1172,13 @@ func checkJSControllersAndDataContracts(rootDir string, fset *token.FileSet, goF
 		}
 	}
 
-	// 9c. Verify 1:1 mapping between Go view_*Script structs (ScriptData) and JS Controller.data
+	// 9c. Verify 1:1 mapping between Go *_view.go *Script structs (ScriptData) and JS Controller.data
 	for _, pf := range goFiles {
-		if pf.isTest || !strings.HasPrefix(pf.relPath, "internal/views/view_") {
+		if pf.isTest || !strings.HasPrefix(pf.relPath, "internal/views/") || !strings.HasSuffix(pf.relPath, "_view.go") {
 			continue
 		}
-		viewBase := filepath.Base(pf.relPath) // view_<snake>.go
-		snakeName := strings.TrimSuffix(strings.TrimPrefix(viewBase, "view_"), ".go")
+		viewBase := filepath.Base(pf.relPath) // <snake>_view.go
+		snakeName := strings.TrimSuffix(viewBase, "_view.go")
 		expectedCtrlBase := snakeName + "_controller.js"
 		ctrl := controllersByBase[expectedCtrlBase]
 

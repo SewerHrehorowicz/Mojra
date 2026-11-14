@@ -23,16 +23,8 @@ const (
 	targetSelApp       = "#app"
 	targetSelWorkspace = "#workspace"
 	targetSelModals    = "#modals-root"
-	targetSelInspector = "#editor-context-panel"
+	targetSelInspector = "#editor-context-view"
 	targetSelNone      = "none"
-
-	modalIDConfirm        = "modal-confirm"
-	modalIDQR             = "modal-qr"
-	modalIDNewBook        = "modal-new-book"
-	modalIDExport         = "modal-export"
-	modalIDAddBook        = "modal-add-book"
-	modalIDStudioProjects = "modal-studio-projects"
-	modalIDSceneText      = "modal-scene-text"
 
 	nativeCmdToggleFullscreen = "toggle-fullscreen"
 	nativeCmdQuit             = "quit"
@@ -65,6 +57,11 @@ type stateSnapshot struct {
 	confirmAction string
 	sceneTextID   string
 	hasFormScene  bool
+}
+
+type actionFrame struct {
+	target string
+	chunks []tpl.TemplateChunk
 }
 
 func isFDPRequestPayload(ct string, raw []byte) bool {
@@ -149,102 +146,112 @@ func isLoopbackRequest(r *http.Request) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
-func activeModalID(s *state.AppState) string {
-	switch {
-	case s.ModalConfirm.IsOpen():
-		return modalIDConfirm
-	case s.Modals.QR:
-		return modalIDQR
-	case s.ModalNewBook.Open:
-		return modalIDNewBook
-	case s.ModalExport.Open:
-		return modalIDExport
-	case s.Modals.AddBook:
-		return modalIDAddBook
-	case s.Modals.StudioProjects:
-		return modalIDStudioProjects
-	case s.Editor.SceneText.IsOpen():
-		return modalIDSceneText
-	default:
-		return ""
-	}
-}
-
-func resolveActionChunks(s *state.AppState, act string, spec ActionSpec, r *http.Request, before stateSnapshot) (string, string, []tpl.TemplateChunk) {
-	if r.FormValue(formFieldSilent) == formValTrue {
-		return targetSelNone, "", nil
-	}
-	if !before.confirmOpen && s.ModalConfirm.IsOpen() {
-		return targetSelModals, modalIDConfirm, views.ViewActiveModalChunks(s)
-	}
-	if before.confirmOpen && !s.ModalConfirm.IsOpen() && act == ConfirmModalAccept {
-		if before.confirmAction == RemoveChoice && s.Editor.SceneText.IsOpen() {
-			return targetSelModals, modalIDSceneText, views.ViewActiveModalChunks(s)
+func resolveActionFrames(s *state.AppState, act string, spec ActionSpec, r *http.Request, before stateSnapshot) []actionFrame {
+	if act == AutoSaveScene && state.ActiveWorkspaceView(s) == state.ViewEditor && !s.Config.StandaloneMode && !s.Editor.StudioHome {
+		if s.Editor.SceneText.IsOpen() {
+			return []actionFrame{
+				{target: targetSelInspector, chunks: []tpl.TemplateChunk{views.EditorContextView(s)}},
+				{target: targetSelNone, chunks: []tpl.TemplateChunk{views.TextEditorScriptView(s)}},
+			}
 		}
-		return targetSelApp, "", []tpl.TemplateChunk{views.ViewAppShell(s)}
+		if r.FormValue(formFieldSilent) == formValTrue {
+			return []actionFrame{
+				{target: targetSelNone, chunks: []tpl.TemplateChunk{views.EditorContextScriptView(s)}},
+			}
+		}
+		return []actionFrame{
+			{target: targetSelInspector, chunks: []tpl.TemplateChunk{views.EditorContextView(s)}},
+		}
 	}
-	var targetSelector, modalID string
+	if r.FormValue(formFieldSilent) == formValTrue {
+		return nil
+	}
+	if !before.confirmOpen && s.Confirm.IsOpen() {
+		return []actionFrame{{target: targetSelModals, chunks: views.ActiveOverlayViews(s)}}
+	}
+	if before.confirmOpen && !s.Confirm.IsOpen() && act == ConfirmModalAccept {
+		if before.confirmAction == RemoveChoice && s.Editor.SceneText.IsOpen() {
+			return []actionFrame{
+				{target: targetSelModals, chunks: views.ActiveOverlayViews(s)},
+				{target: targetSelInspector, chunks: []tpl.TemplateChunk{views.EditorContextView(s)}},
+			}
+		}
+		return []actionFrame{{target: targetSelApp, chunks: []tpl.TemplateChunk{views.AppShellView(s)}}}
+	}
+	var targetSelector string
 	var chunks []tpl.TemplateChunk
 	switch spec.Target {
 	case targetNone:
-		if s.Modals.QR && spec.KeepScroll {
-			return targetSelModals, modalIDQR, views.ViewActiveModalChunks(s)
+		if s.Overlays.QR && spec.KeepScroll {
+			return []actionFrame{{target: targetSelModals, chunks: views.ActiveOverlayViews(s)}}
 		}
 		if act == ToggleImageless && state.ActiveWorkspaceView(s) == state.ViewPlayer {
-			return targetSelWorkspace, "", []tpl.TemplateChunk{views.ViewPlayer(s)}
+			return []actionFrame{{target: targetSelWorkspace, chunks: []tpl.TemplateChunk{views.PlayerView(s)}}}
 		}
-		return targetSelNone, "", nil
+		return nil
 	case targetInspector:
 		if s.Config.StandaloneMode {
-			targetSelector, chunks = targetSelWorkspace, []tpl.TemplateChunk{views.ViewPlayer(s)}
+			targetSelector, chunks = targetSelWorkspace, []tpl.TemplateChunk{views.PlayerView(s)}
 		} else if s.Editor.SceneText.IsOpen() {
-			targetSelector, chunks = targetSelApp, []tpl.TemplateChunk{views.ViewAppShell(s)}
+			return []actionFrame{
+				{target: targetSelInspector, chunks: []tpl.TemplateChunk{views.EditorContextView(s)}},
+				{target: targetSelModals, chunks: views.ActiveOverlayViews(s)},
+			}
 		} else if before.hasFormScene {
-			targetSelector, chunks = targetSelWorkspace, []tpl.TemplateChunk{views.ViewStudio(s)}
+			targetSelector, chunks = targetSelWorkspace, []tpl.TemplateChunk{views.StudioView(s)}
 		} else {
-			targetSelector, chunks = targetSelInspector, []tpl.TemplateChunk{views.ViewEditorContextPanel(s)}
+			targetSelector, chunks = targetSelInspector, []tpl.TemplateChunk{views.EditorContextView(s)}
 		}
 	case targetModals:
 		if act == OpenSceneTextModal && before.hasFormScene {
-			return targetSelApp, "", []tpl.TemplateChunk{views.ViewAppShell(s)}
+			return []actionFrame{{target: targetSelApp, chunks: []tpl.TemplateChunk{views.AppShellView(s)}}}
 		}
-		return targetSelModals, activeModalID(s), views.ViewActiveModalChunks(s)
+		if s.Editor.SceneText.IsOpen() && state.ActiveWorkspaceView(s) == state.ViewEditor && !s.Config.StandaloneMode && !s.Editor.StudioHome {
+			return []actionFrame{
+				{target: targetSelModals, chunks: views.ActiveOverlayViews(s)},
+				{target: targetSelInspector, chunks: []tpl.TemplateChunk{views.EditorContextView(s)}},
+			}
+		}
+		return []actionFrame{{target: targetSelModals, chunks: views.ActiveOverlayViews(s)}}
 	case targetSceneForm:
 		if s.Editor.SceneText.IsOpen() {
 			reqSc := strings.TrimSpace(r.FormValue(formKeyScene))
 			if (act == AddBookVariable && s.Editor.RightPanel == state.PanelVariables) ||
 				(act == AddChoice && !before.hasFormScene && reqSc != "" && !strings.EqualFold(reqSc, before.sceneTextID)) {
-				return targetSelApp, "", []tpl.TemplateChunk{views.ViewAppShell(s)}
+				return []actionFrame{{target: targetSelApp, chunks: []tpl.TemplateChunk{views.AppShellView(s)}}}
 			}
-			return targetSelModals, modalIDSceneText, views.ViewActiveModalChunks(s)
+			return []actionFrame{
+				{target: targetSelModals, chunks: views.ActiveOverlayViews(s)},
+				{target: targetSelInspector, chunks: []tpl.TemplateChunk{views.EditorContextView(s)}},
+			}
 		}
 		if spec.InspectorWithoutFormID && !before.hasFormScene && state.ActiveWorkspaceView(s) == state.ViewEditor && !s.Config.StandaloneMode && !s.Editor.StudioHome {
-			return targetSelInspector, "", []tpl.TemplateChunk{views.ViewEditorContextPanel(s)}
+			return []actionFrame{{target: targetSelInspector, chunks: []tpl.TemplateChunk{views.EditorContextView(s)}}}
 		}
-		targetSelector, chunks = targetSelWorkspace, []tpl.TemplateChunk{views.ViewActiveWorkspaceChunk(s)}
+		targetSelector, chunks = targetSelWorkspace, []tpl.TemplateChunk{views.ActiveWorkspaceView(s)}
 	case targetUndoRedo:
 		if s.Editor.SceneText.IsOpen() {
-			return targetSelApp, "", []tpl.TemplateChunk{views.ViewAppShell(s)}
+			return []actionFrame{{target: targetSelApp, chunks: []tpl.TemplateChunk{views.AppShellView(s)}}}
 		}
-		targetSelector, chunks = targetSelWorkspace, []tpl.TemplateChunk{views.ViewActiveWorkspaceChunk(s)}
+		targetSelector, chunks = targetSelWorkspace, []tpl.TemplateChunk{views.ActiveWorkspaceView(s)}
 	case targetWorkspace:
 		if act == CloseSceneTextModal {
 			if state.ActiveWorkspaceView(s) != state.ViewEditor || s.Config.StandaloneMode {
-				return targetSelModals, modalIDSceneText, views.ViewActiveModalChunks(s)
+				return []actionFrame{{target: targetSelModals, chunks: views.ActiveOverlayViews(s)}}
 			}
-			return targetSelApp, "", []tpl.TemplateChunk{views.ViewAppShell(s)}
+			return []actionFrame{{target: targetSelApp, chunks: []tpl.TemplateChunk{views.AppShellView(s)}}}
 		}
-		targetSelector, chunks = targetSelWorkspace, []tpl.TemplateChunk{views.ViewActiveWorkspaceChunk(s)}
+		targetSelector, chunks = targetSelWorkspace, []tpl.TemplateChunk{views.ActiveWorkspaceView(s)}
 	default:
-		return targetSelApp, "", []tpl.TemplateChunk{views.ViewAppShell(s)}
+		return []actionFrame{{target: targetSelApp, chunks: []tpl.TemplateChunk{views.AppShellView(s)}}}
 	}
 	if ((!before.hadPlayerBook && s.Player.Book != nil) || (!before.hadEditorBook && s.Editor.ActiveBook != nil)) && targetSelector == targetSelWorkspace {
-		return targetSelApp, "", []tpl.TemplateChunk{views.ViewAppShell(s)}
+		return []actionFrame{{target: targetSelApp, chunks: []tpl.TemplateChunk{views.AppShellView(s)}}}
 	}
-	return targetSelector, modalID, chunks
+	return []actionFrame{{target: targetSelector, chunks: chunks}}
 }
 
-// HandleAction processes POST /api/action requests and writes an FDP response frame.
+// HandleAction processes POST /api/action requests and writes multi-frame FDP responses.
 func HandleAction(s *state.AppState, w http.ResponseWriter, r *http.Request, ensureTemplates func() map[string]*tpl.ParsedTemplate) {
 	if r.Method != http.MethodPost {
 		http.Error(w, errMethodNotAllowed, http.StatusMethodNotAllowed)
@@ -263,7 +270,7 @@ func HandleAction(s *state.AppState, w http.ResponseWriter, r *http.Request, ens
 	defer s.Mu.Unlock()
 
 	if !isLoopbackRequest(r) {
-		lanOK := spec.LANAllowed || (act == ConfirmModalAccept && (s.ModalConfirm.PendingAction == RewindStep || s.ModalConfirm.PendingAction == ResetProgress))
+		lanOK := spec.LANAllowed || (act == ConfirmModalAccept && (s.Confirm.PendingAction == RewindStep || s.Confirm.PendingAction == ResetProgress))
 		if !lanOK {
 			http.Error(w, errForbiddenLAN, http.StatusForbidden)
 			return
@@ -295,8 +302,8 @@ func HandleAction(s *state.AppState, w http.ResponseWriter, r *http.Request, ens
 	before := stateSnapshot{
 		hadPlayerBook: s.Player.Book != nil,
 		hadEditorBook: s.Editor.ActiveBook != nil,
-		confirmOpen:   s.ModalConfirm.IsOpen(),
-		confirmAction: s.ModalConfirm.PendingAction,
+		confirmOpen:   s.Confirm.IsOpen(),
+		confirmAction: s.Confirm.PendingAction,
 		sceneTextID:   s.Editor.SceneText.SceneID,
 		hasFormScene:  strings.TrimSpace(r.FormValue(formKeySceneID)) != "",
 	}
@@ -316,7 +323,7 @@ func HandleAction(s *state.AppState, w http.ResponseWriter, r *http.Request, ens
 
 	if act == SaveAudioTime || act == StartWindowDrag {
 		w.Header().Set(headerContentType, tpl.ContentTypeFDP)
-		_ = tpl.WriteFDPResponse(w, tpl.FDPFrameMeta{Target: targetSelNone, KeepScroll: true}, nil)
+		_ = tpl.WriteFDPFrames(w, tpl.FDPFrame{Target: targetSelNone, Chunk: views.AppShellScriptView(s)})
 		return
 	}
 
@@ -326,52 +333,97 @@ func HandleAction(s *state.AppState, w http.ResponseWriter, r *http.Request, ens
 		logging.Active.MarkStep(logging.StageActionSaveSettings, tSave, act)
 	}
 
+	s.Overlays.Toast = toast
+	s.Overlays.NativeCmd = nativeCmd
+	s.Overlays.ResetCanvas = spec.ResetCanvas || (act == AddChoice && !s.Editor.SceneText.IsOpen())
+
 	tBuildView := time.Now()
-	targetSelector, modalID, chunks := resolveActionChunks(s, act, spec, r, before)
+	actionFrames := resolveActionFrames(s, act, spec, r, before)
 	logging.Active.MarkStep(logging.StageActionBuildView, tBuildView, act)
 
-	meta := tpl.FDPFrameMeta{
-		Target:      targetSelector,
-		KeepScroll:  spec.KeepScroll,
-		ResetCanvas: spec.ResetCanvas || (act == AddChoice && !s.Editor.SceneText.IsOpen()),
-		Toast:       toast,
-		NativeCmd:   nativeCmd,
-		VoicePeak:   s.Modals.VoicePeak,
-		ModalID:     modalID,
+	var templates map[string]*tpl.ParsedTemplate
+	if ensureTemplates != nil && len(actionFrames) > 0 {
+		templates = ensureTemplates()
 	}
-	s.Modals.VoicePeak = ""
+	lang := views.LangOf(s)
 
-	htmlBuf := tpl.AcquireBuffer()
-	defer tpl.ReleaseBuffer(htmlBuf)
-	if targetSelector != targetSelNone && len(chunks) > 0 && ensureTemplates != nil {
-		templates := ensureTemplates()
+	fdpFrames := make([]tpl.FDPFrame, 0, len(actionFrames)+2)
+	hasAppShell := false
+	hasStudio := false
+
+	for _, af := range actionFrames {
+		if af.target == targetSelApp {
+			hasAppShell = true
+		}
+		if (af.target == targetSelApp || af.target == targetSelWorkspace) && state.ActiveWorkspaceView(s) == state.ViewEditor {
+			hasStudio = true
+		}
+		if af.target == targetSelNone {
+			for _, ch := range af.chunks {
+				fdpFrames = append(fdpFrames, tpl.FDPFrame{
+					Target: targetSelNone,
+					Chunk:  ch,
+				})
+			}
+			continue
+		}
+		if len(af.chunks) == 0 {
+			fdpFrames = append(fdpFrames, tpl.FDPFrame{
+				Target: af.target,
+			})
+			continue
+		}
+		htmlBuf := tpl.AcquireBuffer()
 		tRender := time.Now()
-		lang := views.LangOf(s)
-		for _, chunk := range chunks {
+		for _, chunk := range af.chunks {
 			tplName, tplData := chunk.Resolve()
-			if tplName != "" {
+			if tplName != "" && templates != nil {
 				ctx := views.NewViewContext(lang, tplData)
 				if err := tpl.RenderTemplateTo(htmlBuf, tplName, templates, ctx); err != nil {
+					tpl.ReleaseBuffer(htmlBuf)
 					http.Error(w, err.Error(), http.StatusInternalServerError)
 					return
 				}
 			}
 		}
-		logging.Active.MarkStep(logging.StageActionRenderTpl, tRender, targetSelector)
+		logging.Active.MarkStep(logging.StageActionRenderTpl, tRender, af.target)
+		bodyCopy := append([]byte(nil), htmlBuf.Bytes()...)
+		tpl.ReleaseBuffer(htmlBuf)
+
+		fdpFrames = append(fdpFrames, tpl.FDPFrame{
+			Target:   af.target,
+			HTMLBody: bodyCopy,
+			Chunk:    af.chunks[0],
+		})
+		for i := 1; i < len(af.chunks); i++ {
+			if af.chunks[i].ScriptData != nil {
+				fdpFrames = append(fdpFrames, tpl.FDPFrame{
+					Target: targetSelNone,
+					Chunk:  tpl.TemplateChunk{ScriptData: af.chunks[i].ScriptData},
+				})
+			}
+		}
 	}
 
-	allChunks := make([]tpl.TemplateChunk, 0, len(chunks)+2)
-	allChunks = append(allChunks, chunks...)
-	if targetSelector != targetSelApp {
-		allChunks = append(allChunks, views.ViewAppShellScript(s))
+	if !hasAppShell {
+		fdpFrames = append(fdpFrames, tpl.FDPFrame{
+			Target: targetSelNone,
+			Chunk:  views.AppShellScriptView(s),
+		})
 	}
-	studioRendered := (targetSelector == targetSelApp || targetSelector == targetSelWorkspace) &&
-		state.ActiveWorkspaceView(s) == state.ViewEditor
-	if !s.Config.StandaloneMode && !studioRendered {
-		allChunks = append(allChunks, views.ViewStudioScript(s))
+	if !s.Config.StandaloneMode && !hasStudio {
+		fdpFrames = append(fdpFrames, tpl.FDPFrame{
+			Target: targetSelNone,
+			Chunk:  views.StudioScriptView(s),
+		})
 	}
+
+	s.Overlays.VoicePeak = ""
+	s.Overlays.Toast = ""
+	s.Overlays.NativeCmd = ""
+	s.Overlays.ResetCanvas = false
 
 	w.Header().Set(headerContentType, tpl.ContentTypeFDP)
-	_ = tpl.WriteFDPResponse(w, meta, htmlBuf.Bytes(), allChunks...)
+	_ = tpl.WriteFDPFrames(w, fdpFrames...)
 	logging.Active.MarkStep(logging.StageActionTotal, tAction, act)
 }

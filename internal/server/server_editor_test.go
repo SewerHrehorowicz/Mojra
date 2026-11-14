@@ -51,7 +51,7 @@ func TestEditorUndoRedoAndVersionHistory(t *testing.T) {
 	}
 	addBytes, _ := io.ReadAll(respAdd.Body)
 	_ = respAdd.Body.Close()
-	addMeta, _ := tpl.DecodeFDPResponse(addBytes)
+	addMeta, _ := decodeFDPResponse(addBytes)
 	if addMeta.Get("canUndo") != "true" || addMeta.Get("canRedo") != "false" || addMeta.Get("historyCount") != "1" {
 		t.Fatalf("unexpected history meta after CreateSceneAt: undo=%q redo=%q count=%q",
 			addMeta.Get("canUndo"), addMeta.Get("canRedo"), addMeta.Get("historyCount"))
@@ -74,7 +74,7 @@ func TestEditorUndoRedoAndVersionHistory(t *testing.T) {
 	}
 	panBytes, _ := io.ReadAll(respPan.Body)
 	_ = respPan.Body.Close()
-	panMeta, _ := tpl.DecodeFDPResponse(panBytes)
+	panMeta, _ := decodeFDPResponse(panBytes)
 	if panMeta.Get("historyCount") != "1" {
 		t.Fatalf("expected viewport pan/zoom not to increment historyCount, got %q", panMeta.Get("historyCount"))
 	}
@@ -92,7 +92,7 @@ func TestEditorUndoRedoAndVersionHistory(t *testing.T) {
 	}
 	moveBytes, _ := io.ReadAll(respMove.Body)
 	_ = respMove.Body.Close()
-	moveMeta, _ := tpl.DecodeFDPResponse(moveBytes)
+	moveMeta, _ := decodeFDPResponse(moveBytes)
 	if moveMeta.Get("historyCount") != "2" || moveMeta.Get("canUndo") != "true" {
 		t.Fatalf("expected node move to increment historyCount to 2, got %q", moveMeta.Get("historyCount"))
 	}
@@ -104,7 +104,7 @@ func TestEditorUndoRedoAndVersionHistory(t *testing.T) {
 	}
 	undo1Bytes, _ := io.ReadAll(respUndo1.Body)
 	_ = respUndo1.Body.Close()
-	undo1Meta, _ := tpl.DecodeFDPResponse(undo1Bytes)
+	undo1Meta, _ := decodeFDPResponse(undo1Bytes)
 	if undo1Meta.Get("historyCount") != "1" || undo1Meta.Get("canRedo") != "true" {
 		t.Fatalf("unexpected meta after UndoEditor 1: count=%q redo=%q", undo1Meta.Get("historyCount"), undo1Meta.Get("canRedo"))
 	}
@@ -115,7 +115,7 @@ func TestEditorUndoRedoAndVersionHistory(t *testing.T) {
 	}
 	undo2Bytes, _ := io.ReadAll(respUndo2.Body)
 	_ = respUndo2.Body.Close()
-	undo2Meta, _ := tpl.DecodeFDPResponse(undo2Bytes)
+	undo2Meta, _ := decodeFDPResponse(undo2Bytes)
 	if undo2Meta.Get("historyCount") != "0" || undo2Meta.Get("canUndo") != "false" || undo2Meta.Get("canRedo") != "true" {
 		t.Fatalf("unexpected meta at baseline after UndoEditor 2: count=%q undo=%q redo=%q",
 			undo2Meta.Get("historyCount"), undo2Meta.Get("canUndo"), undo2Meta.Get("canRedo"))
@@ -130,7 +130,7 @@ func TestEditorUndoRedoAndVersionHistory(t *testing.T) {
 	respRedo2, _ := http.PostForm(ts.URL+"/api/action", url.Values{"action": {"RedoEditor"}})
 	redo2Bytes, _ := io.ReadAll(respRedo2.Body)
 	_ = respRedo2.Body.Close()
-	redo2Meta, _ := tpl.DecodeFDPResponse(redo2Bytes)
+	redo2Meta, _ := decodeFDPResponse(redo2Bytes)
 	if len(srv.State.Editor.ActiveBook.Scenes) != 3 || redo2Meta.Get("historyCount") != "2" {
 		t.Fatalf("expected 3 scenes and count=2 after RedoEditor twice, got scenes=%d count=%q",
 			len(srv.State.Editor.ActiveBook.Scenes), redo2Meta.Get("historyCount"))
@@ -156,7 +156,7 @@ func TestEditorUndoRedoAndVersionHistory(t *testing.T) {
 	}
 	saveVerBytes, _ := io.ReadAll(respSaveVer.Body)
 	_ = respSaveVer.Body.Close()
-	saveVerMeta, _ := tpl.DecodeFDPResponse(saveVerBytes)
+	saveVerMeta, _ := decodeFDPResponse(saveVerBytes)
 	if saveVerMeta.Get("historyCount") != "0" || saveVerMeta.Get("canUndo") != "false" {
 		t.Fatalf("expected SaveHistoryVersion to collapse unnamed edits (count=0, canUndo=false), got count=%q undo=%q",
 			saveVerMeta.Get("historyCount"), saveVerMeta.Get("canUndo"))
@@ -175,7 +175,7 @@ func TestEditorUndoRedoAndVersionHistory(t *testing.T) {
 	}
 	restoreBytes, _ := io.ReadAll(respRestore.Body)
 	_ = respRestore.Body.Close()
-	restoreMeta, _ := tpl.DecodeFDPResponse(restoreBytes)
+	restoreMeta, _ := decodeFDPResponse(restoreBytes)
 	if len(srv.State.Editor.ActiveBook.Scenes) != 2 {
 		t.Fatalf("expected 2 scenes after restoring r1, got %d", len(srv.State.Editor.ActiveBook.Scenes))
 	}
@@ -238,7 +238,7 @@ func TestHistoryPreviewClickPlayAndEditLock(t *testing.T) {
 	}
 	prevHTMLBytes, _ := io.ReadAll(respPrev.Body)
 	_ = respPrev.Body.Close()
-	prevMeta, prevHTML := tpl.DecodeFDPResponse(prevHTMLBytes)
+	prevMeta, prevHTML := decodeFDPResponse(prevHTMLBytes)
 
 	if prevMeta.Get("historyPreview") != "true" {
 		t.Fatalf("expected historyPreview=true when previewing past revision, got %q", prevMeta.Get("historyPreview"))
@@ -332,7 +332,7 @@ func TestHistoryPreviewClickPlayAndEditLock(t *testing.T) {
 	}
 	exitBytes, _ := io.ReadAll(respExit.Body)
 	_ = respExit.Body.Close()
-	exitMeta, _ := tpl.DecodeFDPResponse(exitBytes)
+	exitMeta, _ := decodeFDPResponse(exitBytes)
 	if exitMeta.Get("historyPreview") != "false" {
 		t.Fatalf("expected historyPreview=false after clicking active head revision, got %q", exitMeta.Get("historyPreview"))
 	}
@@ -423,7 +423,7 @@ func TestChapterPortsAndOneWayChapterConnectionsInStudio(t *testing.T) {
 	}
 	backBytes, _ := io.ReadAll(rBack.Body)
 	_ = rBack.Body.Close()
-	backMeta, _ := tpl.DecodeFDPResponse(backBytes)
+	backMeta, _ := decodeFDPResponse(backBytes)
 	if !strings.Contains(backMeta.Get("toast"), "jednokierunkowa") {
 		t.Fatalf("expected backward chapter transition to be rejected with toast, got toast=%q", backMeta.Get("toast"))
 	}
@@ -782,7 +782,7 @@ func TestScreenplayModeEndToEndFlow(t *testing.T) {
 	openExpBytes, _ := io.ReadAll(openExpModalResp.Body)
 	_ = openExpModalResp.Body.Close()
 	openExpHTML := string(openExpBytes)
-	if !srv.State.ModalExport.Open || !strings.Contains(openExpHTML, `id="modal-export-project"`) || !strings.Contains(openExpHTML, `data-format="playbook"`) || !strings.Contains(openExpHTML, `data-format="wasm"`) || !strings.Contains(openExpHTML, `data-format="pdf"`) || !strings.Contains(openExpHTML, `3 WYBRANE`) {
+	if !srv.State.Export.Open || !strings.Contains(openExpHTML, `id="export-view"`) || !strings.Contains(openExpHTML, `data-format="playbook"`) || !strings.Contains(openExpHTML, `data-format="wasm"`) || !strings.Contains(openExpHTML, `data-format="pdf"`) || !strings.Contains(openExpHTML, `3 WYBRANE`) {
 		t.Fatalf("expected Export Modal with multi-select playbook/wasm/pdf options and 3 WYBRANE counter, got:\n%s", openExpHTML)
 	}
 
@@ -796,7 +796,7 @@ func TestScreenplayModeEndToEndFlow(t *testing.T) {
 		t.Fatalf("ExportProject (pdf) failed: status=%v err=%v", expProjResp.StatusCode, err)
 	}
 	_ = expProjResp.Body.Close()
-	if srv.State.ModalExport.Open {
+	if srv.State.Export.Open {
 		t.Fatalf("expected ExportModalOpen=false after successful ExportProject")
 	}
 	if _, err := os.Stat(filepath.Join(customExportDir, srv.State.Editor.ActiveBook.ID+".pdf")); err != nil {
@@ -1058,7 +1058,7 @@ func TestWFPProtocolAndZeroRepoSavesOrAppState(t *testing.T) {
 		"author":     {""},
 		"text":       {"Pierwszy akapit z polskimi znakami: Zażółć gęślą jaźń.\n\nDrugi akapit ze strzałką \\-> w treści."},
 	}
-	fdpFrame := tpl.EncodeFDPForm(orig)
+	fdpFrame := encodeFDPForm(orig)
 	if !bytes.Contains(fdpFrame, []byte("_body=text\n")) || !bytes.Contains(fdpFrame, []byte("\n\nPierwszy akapit")) {
 		t.Fatalf("expected FDP frame to place multiline text in raw body after \\n\\n, got:\n%s", string(fdpFrame))
 	}
@@ -1082,7 +1082,7 @@ func TestWFPProtocolAndZeroRepoSavesOrAppState(t *testing.T) {
 	defer ts.Close()
 
 	postWFP := func(vals url.Values) *http.Response {
-		req, err := http.NewRequest(http.MethodPost, ts.URL+"/api/action", bytes.NewReader(tpl.EncodeFDPForm(vals)))
+		req, err := http.NewRequest(http.MethodPost, ts.URL+"/api/action", bytes.NewReader(encodeFDPForm(vals)))
 		if err != nil {
 			t.Fatalf("NewRequest failed: %v", err)
 		}
@@ -1195,7 +1195,7 @@ func TestVariablesPanelChoiceTripleStackAndThreeStateScenePreview(t *testing.T) 
 	}
 	body, _ := io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
-	if !strings.Contains(string(body), `id="editor-variables-panel"`) || !strings.Contains(string(body), `data-kind="bool"`) || !strings.Contains(string(body), `data-kind="int"`) || !strings.Contains(string(body), `data-kind="enum"`) {
+	if !strings.Contains(string(body), `id="editor-variables-view"`) || !strings.Contains(string(body), `data-kind="bool"`) || !strings.Contains(string(body), `data-kind="int"`) || !strings.Contains(string(body), `data-kind="enum"`) {
 		t.Fatalf("expected #editor-variables-panel to be rendered and visible")
 	}
 
@@ -1502,8 +1502,8 @@ func TestSeparatePlayerAndStudioBooksAndPlaybookUnpackWarning(t *testing.T) {
 	packedBytes, _ := io.ReadAll(rOpenPacked.Body)
 	_ = rOpenPacked.Body.Close()
 	packedHTML := string(packedBytes)
-	if srv.State.ModalConfirm.PendingAction != actions.UnpackPlaybookForStudio {
-		t.Fatalf("expected ConfirmPendingAction=%q, got %q", actions.UnpackPlaybookForStudio, srv.State.ModalConfirm.PendingAction)
+	if srv.State.Confirm.PendingAction != actions.UnpackPlaybookForStudio {
+		t.Fatalf("expected ConfirmPendingAction=%q, got %q", actions.UnpackPlaybookForStudio, srv.State.Confirm.PendingAction)
 	}
 	if !strings.Contains(packedHTML, "CC BY-NC-ND 4.0") || !strings.Contains(packedHTML, "Anna Twórczyni") {
 		t.Fatalf("expected unpack confirmation modal to display author and license warning, got:\n%s", packedHTML)
@@ -1597,7 +1597,7 @@ func TestSceneTextSlideOutPanelUnifiedChoicesAndSyntaxHoverTooltip(t *testing.T)
 	body, _ := io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
 	html := string(body)
-	if !strings.Contains(html, `class="modal-backdrop scene-text-fullscreen-backdrop mode-half has-right-panel" id="modal-scene-text"`) {
+	if !strings.Contains(html, `class="modal-backdrop scene-text-fullscreen-backdrop mode-half has-right-panel" id="text-editor-view"`) {
 		t.Fatalf("expected #modal-scene-text to have .mode-half .has-right-panel when #editor-variables-panel is open, got:\n%s", html)
 	}
 	if !strings.Contains(html, `id="btn-collapse-scene-text"`) || !strings.Contains(html, `id="btn-expand-scene-text-full"`) || !strings.Contains(html, "choice-triple-stack") || !strings.Contains(html, `name="choice_target_0"`) || !strings.Contains(html, `name="choice_label_0"`) {
@@ -1617,7 +1617,7 @@ func TestSceneTextSlideOutPanelUnifiedChoicesAndSyntaxHoverTooltip(t *testing.T)
 	}
 	fullBody, _ := io.ReadAll(respFull.Body)
 	_ = respFull.Body.Close()
-	if !strings.Contains(string(fullBody), `class="modal-backdrop scene-text-fullscreen-backdrop mode-full has-right-panel" id="modal-scene-text"`) {
+	if !strings.Contains(string(fullBody), `class="modal-backdrop scene-text-fullscreen-backdrop mode-full has-right-panel" id="text-editor-view"`) {
 		t.Fatalf("expected #modal-scene-text to switch to .mode-full on SetSceneTextWidthMode=full, got:\n%s", string(fullBody))
 	}
 
@@ -1846,7 +1846,7 @@ func TestNewSceneIDAndTitleEditsNeverOverwriteFirstSceneAndSyncChapterSlugs(t *t
 		}
 		body, _ := io.ReadAll(resp.Body)
 		_ = resp.Body.Close()
-		meta, _ := tpl.DecodeFDPResponse(body)
+		meta, _ := decodeFDPResponse(body)
 		return meta
 	}
 
@@ -1974,7 +1974,7 @@ func TestNewSceneIDAndTitleEditsNeverOverwriteFirstSceneAndSyncChapterSlugs(t *t
 }
 
 func BenchmarkParseActionRequestWFP(b *testing.B) {
-	payload := tpl.EncodeFDPForm(url.Values{
+	payload := encodeFDPForm(url.Values{
 		"action":    {"SaveEditorState"},
 		"scene_id":  {"poczatek"},
 		"pan_x":     {"120"},

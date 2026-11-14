@@ -1,5 +1,3 @@
-//go:build !(js && wasm)
-
 package tpl
 
 import (
@@ -8,33 +6,16 @@ import (
 	"sync"
 )
 
+const (
+	templateStructSuffix = "Template"
+	templateNameSuffix   = "_view"
+)
+
 type structTypeMeta struct {
 	byName map[string][]int
 }
 
 var structMetaCache sync.Map // map[reflect.Type]*structTypeMeta
-
-var templateNameByStructType = map[string]string{
-	"appShellTemplate":            "app_shell",
-	"topbarTemplate":              "topbar",
-	"playerTemplate":              "player_view",
-	"sceneTemplate":               "scene_view",
-	"audioDeckTemplate":           "audio_deck",
-	"studioTemplate":              "studio_view",
-	"libraryTemplate":             "library_view",
-	"editorContextPanelTemplate":  "editor_context_panel",
-	"editorBreakdownTemplate":     "editor_breakdown_panel",
-	"editorVariablesTemplate":     "editor_variables_panel",
-	"editorHistoryTemplate":       "editor_history_panel",
-	"textEditorTemplate":          "text_editor",
-	"modalAddBookTemplate":        "modal_add_book",
-	"modalConfirmTemplate":        "confirm_modal",
-	"modalEditorHelpTemplate":     "modal_editor_help",
-	"modalExportTemplate":         "modal_export",
-	"modalNewBookTemplate":        "modal_new_book",
-	"modalQRTemplate":             "modal_qr",
-	"modalStudioProjectsTemplate": "modal_studio_projects",
-}
 
 func chunkTemplateName(v any) string {
 	if v == nil {
@@ -44,7 +25,11 @@ func chunkTemplateName(v any) string {
 	for rt.Kind() == reflect.Pointer {
 		rt = rt.Elem()
 	}
-	return templateNameByStructType[rt.Name()]
+	name := strings.TrimSuffix(rt.Name(), templateStructSuffix)
+	if name == "" {
+		return ""
+	}
+	return pascalToSnake(name) + templateNameSuffix
 }
 
 func pascalToSnake(s string) string {
@@ -76,19 +61,6 @@ func registerStructField(sf reflect.StructField, idx []int, byName map[string][]
 	if _, exists := byName[sf.Name]; !exists {
 		byName[sf.Name] = idx
 	}
-	if tag := strings.TrimSpace(sf.Tag.Get("tpl")); tag != "" && tag != "*" && tag != "-" {
-		if _, exists := byName[tag]; !exists {
-			byName[tag] = idx
-		}
-	}
-	snake := pascalToSnake(sf.Name)
-	if _, exists := byName[snake]; !exists {
-		byName[snake] = idx
-	}
-	lower := strings.ToLower(sf.Name)
-	if _, exists := byName[lower]; !exists {
-		byName[lower] = idx
-	}
 }
 
 type structWalkItem struct {
@@ -111,7 +83,7 @@ func collectStructFields(rootType reflect.Type, byName map[string][]int) {
 		}
 		for i := 0; i < n; i++ {
 			sf := cur.typ.Field(i)
-			if sf.Anonymous || sf.Tag.Get("tpl") == "*" {
+			if sf.Anonymous {
 				idx := append(append([]int(nil), cur.prefix...), i)
 				subType := sf.Type
 				if subType.Kind() == reflect.Pointer {
@@ -120,9 +92,7 @@ func collectStructFields(rootType reflect.Type, byName map[string][]int) {
 				if subType.Kind() == reflect.Struct && len(idx) <= 4 {
 					queue = append(queue, structWalkItem{typ: subType, prefix: idx})
 				}
-				if sf.Anonymous {
-					registerStructField(sf, idx, byName)
-				}
+				registerStructField(sf, idx, byName)
 			}
 		}
 	}
@@ -132,7 +102,7 @@ func getStructTypeMeta(t reflect.Type) *structTypeMeta {
 	if cached, ok := structMetaCache.Load(t); ok {
 		return cached.(*structTypeMeta)
 	}
-	byName := make(map[string][]int, t.NumField()*2)
+	byName := make(map[string][]int, t.NumField())
 	collectStructFields(t, byName)
 	meta := &structTypeMeta{
 		byName: byName,
@@ -174,9 +144,6 @@ func lookupStructField(curr any, part string) (any, bool) {
 	}
 	meta := getStructTypeMeta(rv.Type())
 	if idx, ok := meta.byName[part]; ok {
-		return resolveStructFieldIndex(rv, idx)
-	}
-	if idx, ok := meta.byName[strings.ToLower(part)]; ok {
 		return resolveStructFieldIndex(rv, idx)
 	}
 	return nil, false

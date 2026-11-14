@@ -9,7 +9,7 @@
   padding 20px
   z-index 120
 
-#modal-confirm
+#confirm-view
   z-index 130
 
 .modal-card
@@ -149,7 +149,7 @@
   width 100%
 
 // Export Project Modal (Multi-Select Formats & Collapsible Advanced Section)
-#modal-export-project
+#export-view .modal-card
   overflow visible
 
 .export-selection-count

@@ -47,9 +47,9 @@ html lang: "{lang}"
 
                 .device-frame
                     #app.app-root
-                        @app_shell
+                        @app_shell_view
         {else}
             #app.app-root
-                @app_shell
+                @app_shell_view
 
         script src: /app.js

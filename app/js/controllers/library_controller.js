@@ -15,7 +15,7 @@ const LibraryController = {
         click: Dispatcher.action("ExtractEmbeddedBook")
       },
       // @dev-only-end
-      "#view-library article.book-card button.book-cover-wrap": {
+      "#library-view article.book-card button.book-cover-wrap": {
         click: this.openBook
       },
       "#btn-switch-to-studio": {

@@ -104,14 +104,14 @@ type sampleScript struct {
 	bookId string
 	count  int
 }
-func ViewSample() tpl.TemplateChunk {
+func SampleView() tpl.TemplateChunk {
 	return tpl.TemplateChunk{
 		TemplateData: &sampleTemplate{},
 		ScriptData: &sampleScript{bookId: "a", count: 1},
 	}
 }
 `
-	if err := os.WriteFile(filepath.Join(viewsDir, "view_sample.go"), []byte(viewSrc), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(viewsDir, "sample_view.go"), []byte(viewSrc), 0644); err != nil {
 		t.Fatal(err)
 	}
 

@@ -131,7 +131,6 @@ const CanvasModel = {
   selectedChapterName: "",
   editorSelectionCleared: false,
   activeCanvasGesture: null,
-  viewportSaveTimer: null,
   pendingContextMenuWorldPos: { x: 768, y: 120 },
   suppressNextTouchClickUntil: 0,
   lastPointerClientPos: { x: null, y: null },
@@ -163,7 +162,7 @@ const CanvasModel = {
   },
 
   isHistoryPreview() {
-    const view = document.querySelector("#view-editor");
+    const view = document.querySelector("#studio-view");
     return Boolean(view && view.getAttribute("data-history-preview") === "true");
   },
 

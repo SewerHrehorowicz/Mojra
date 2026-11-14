@@ -49,11 +49,9 @@ var nonPlayerModulePrefixes = []string{
 	"msdf_",
 	"text_editor",
 	"library",
-	"modal_add_book",
-	"modal_editor_help",
-	"modal_export",
-	"modal_new_book",
-	"modal_studio_projects",
+	"add_book",
+	"export",
+	"new_book",
 }
 
 var devOnlyBlockRe = regexp.MustCompile(`(?s)/\*\s*@dev-only-start\s*\*/.*?/\*\s*@dev-only-end\s*\*/[ \t]*\r?\n?|(?s)//\s*@dev-only-start\b.*?//\s*@dev-only-end\b[ \t]*\r?\n?`)

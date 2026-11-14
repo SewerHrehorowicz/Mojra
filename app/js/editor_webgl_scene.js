@@ -301,7 +301,7 @@ const EditorWebglScene = {
   },
 
   render() {
-    const sceneModal = document.querySelector("#modal-scene-text");
+    const sceneModal = document.querySelector("#text-editor-view");
     if (sceneModal && (sceneModal.classList.contains("mode-full") || sceneModal.classList.contains("has-right-panel"))) {
       return;
     }

@@ -713,10 +713,10 @@ func checkUnusedActionsAndTplVars(rootDir string, fset *token.FileSet, goFiles [
 		})
 	}
 
-	// Check vars["key"] in internal/views/view_*.go vs .tpl usage
+	// Check vars["key"] in internal/views/*_view.go vs .tpl usage
 	varsIndexRe := regexp.MustCompile(`\bvars\["([A-Za-z0-9_]+)"\]\s*=`)
 	for _, pf := range goFiles {
-		if pf.isTest || (!strings.HasPrefix(pf.relPath, "internal/gui/view_") && !strings.HasPrefix(pf.relPath, "internal/views/view_")) {
+		if pf.isTest || !strings.HasPrefix(pf.relPath, "internal/views/") || !strings.HasSuffix(pf.relPath, "_view.go") {
 			continue
 		}
 		lines := strings.Split(string(pf.src), "\n")

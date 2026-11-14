@@ -129,42 +129,42 @@ type Config struct {
 
 // GraphView represents the root view model passed to graph.tpl and WriteTextGraph.
 type GraphView struct {
-	Scope        string    `tpl:"scope"`
-	TotalDirs    int       `tpl:"total_dirs"`
-	TotalFiles   int       `tpl:"total_files"`
-	TotalSymbols int       `tpl:"total_symbols"`
-	Dirs         []DirView `tpl:"dirs"`
+	Scope        string
+	TotalDirs    int
+	TotalFiles   int
+	TotalSymbols int
+	Dirs         []DirView
 }
 
 // DirView groups scanned files under a single relative directory path.
 type DirView struct {
-	Path  string     `tpl:"path"`
-	Files []FileView `tpl:"files"`
+	Path  string
+	Files []FileView
 }
 
 // FileView holds all symbols discovered inside a single source file.
 type FileView struct {
-	RelPath string       `tpl:"rel_path"`
-	Name    string       `tpl:"name"`
-	Symbols []SymbolView `tpl:"symbols"`
+	RelPath string
+	Name    string
+	Symbols []SymbolView
 }
 
 // SymbolView describes a declared type, function, method, template, component, or action.
 type SymbolView struct {
-	ID        string     `tpl:"id"`
-	Kind      string     `tpl:"kind"`
-	Name      string     `tpl:"name"`
-	LineRange string     `tpl:"line_range"`
-	Fields    []string   `tpl:"fields"`
-	OutEdges  []EdgeView `tpl:"out_edges"`
-	InEdges   []EdgeView `tpl:"in_edges"`
+	ID        string
+	Kind      string
+	Name      string
+	LineRange string
+	Fields    []string
+	OutEdges  []EdgeView
+	InEdges   []EdgeView
 }
 
 // EdgeView represents a resolved directional dependency between two symbols.
 type EdgeView struct {
-	Kind        string `tpl:"kind"`
-	TargetID    string `tpl:"target_id"`
-	TargetLabel string `tpl:"target_label"`
+	Kind        string
+	TargetID    string
+	TargetLabel string
 }
 
 // rawEdge represents an unresolved reference emitted by a file scanner before global linking.

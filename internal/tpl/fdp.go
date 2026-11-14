@@ -6,25 +6,20 @@ import (
 	"io"
 	"net/url"
 	"reflect"
-	"sort"
 	"strconv"
 	"strings"
 )
 
 const (
-	ContentTypeFDP   = "text/x-fdp;charset=UTF-8"
-	fdpKeyAction     = "action"
-	fdpKeyText       = "text"
-	fdpKeyTarget     = "target"
-	fdpKeyKeepScroll = "keepScroll"
-	fdpKeyResetCanv  = "resetCanvas"
-	fdpKeyToast      = "toast"
-	fdpKeyNativeCmd  = "nativeCmd"
-	fdpKeyVoicePeak  = "voicePeak"
-	fdpKeySaveHex    = "saveHex"
-	fdpKeyModalID    = "modalId"
-	fdpKeyBody       = "_body"
-	fdpBodyHTML      = "html"
+	ContentTypeFDP       = "text/x-fdp;charset=UTF-8"
+	fdpKeyController     = "controller"
+	fdpKeyTarget         = "target"
+	fdpTargetNone        = "none"
+	fdpKeyBody           = "_body"
+	fdpBodyHTML          = "html"
+	scriptStructSuffix   = "Script"
+	controllerNameSuffix = "Controller"
+	fdpFrameSep          = "\n---\n"
 
 	trueLiteral      = "true"
 	falseLiteral     = "false"
@@ -39,20 +34,16 @@ const (
 )
 
 var (
-	fdpSepLF   = []byte("\n\n")
-	fdpSepCRLF = []byte("\r\n\r\n")
+	fdpSepLF         = []byte("\n\n")
+	fdpSepCRLF       = []byte("\r\n\r\n")
+	fdpFrameSepBytes = []byte(fdpFrameSep)
 )
 
-// FDPFrameMeta holds transport-level metadata serialized into the flat FDP header block.
-type FDPFrameMeta struct {
-	Target      string
-	KeepScroll  bool
-	ResetCanvas bool
-	Toast       string
-	NativeCmd   string
-	VoicePeak   string
-	SaveHex     string
-	ModalID     string
+// FDPFrame represents a single controller-isolated frame in a multi-frame FDP payload.
+type FDPFrame struct {
+	Target   string
+	HTMLBody []byte
+	Chunk    TemplateChunk
 }
 
 // EscapeFDPLineVal escapes backslashes and line breaks for single-line FDP header values.
@@ -105,68 +96,6 @@ func UnescapeFDPLineVal(s string) string {
 		b.WriteByte(s[i])
 	}
 	return b.String()
-}
-
-// EncodeFDPForm serializes key/value parameters into an FDP wire frame (key=val lines + optional \n\n raw body).
-func EncodeFDPForm(vals url.Values) []byte {
-	if len(vals) == 0 {
-		return nil
-	}
-	keys := make([]string, 0, len(vals))
-	for k := range vals {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-
-	var bodyKey, bodyVal string
-	for _, k := range keys {
-		v := vals.Get(k)
-		if strings.ContainsAny(v, fdpLineBreakChars) {
-			if bodyKey == "" || k == fdpKeyText || k == fdpBodyHTML {
-				bodyKey = k
-				bodyVal = v
-			}
-		}
-	}
-	if bodyKey == "" {
-		if htmlVal := vals.Get(fdpBodyHTML); htmlVal != "" {
-			bodyKey = fdpBodyHTML
-			bodyVal = htmlVal
-		}
-	}
-
-	var b bytes.Buffer
-	b.Grow(128 + len(bodyVal))
-	if act := vals.Get(fdpKeyAction); act != "" {
-		b.WriteString(fdpKeyAction)
-		b.WriteByte('=')
-		b.WriteString(EscapeFDPLineVal(act))
-		b.WriteByte('\n')
-	}
-	for _, k := range keys {
-		if k == fdpKeyAction {
-			continue
-		}
-		v := vals.Get(k)
-		if k == bodyKey {
-			b.WriteString(fdpKeyBody)
-			b.WriteByte('=')
-			b.WriteString(k)
-			b.WriteByte('\n')
-			continue
-		}
-		b.WriteString(k)
-		b.WriteByte('=')
-		b.WriteString(EscapeFDPLineVal(v))
-		b.WriteByte('\n')
-	}
-	if bodyKey != "" {
-		b.WriteByte('\n')
-		b.WriteString(bodyVal)
-	} else if b.Len() > 0 && b.Bytes()[b.Len()-1] == '\n' {
-		b.Truncate(b.Len() - 1)
-	}
-	return b.Bytes()
 }
 
 // DecodeFDPBytes decodes an FDP wire frame (key=val header lines + optional \n\n raw body) into dst.
@@ -231,13 +160,59 @@ func DecodeFDPBytes(raw []byte, dst url.Values) bool {
 	return true
 }
 
-// DecodeFDPResponse parses an FDP response payload into header key-values and the HTML body.
-func DecodeFDPResponse(raw []byte) (url.Values, string) {
-	vals := make(url.Values, 16)
-	if !DecodeFDPBytes(raw, vals) {
-		return vals, string(raw)
+// DecodeFDPFrames splits a multi-frame FDP payload on \n---\n and decodes each frame into url.Values.
+func DecodeFDPFrames(raw []byte) []url.Values {
+	if len(raw) == 0 {
+		return nil
 	}
-	return vals, vals.Get(fdpBodyHTML)
+	parts := bytes.Split(raw, fdpFrameSepBytes)
+	out := make([]url.Values, 0, len(parts))
+	for _, part := range parts {
+		if len(bytes.TrimSpace(part)) == 0 {
+			continue
+		}
+		vals := make(url.Values, 16)
+		if DecodeFDPBytes(part, vals) {
+			out = append(out, vals)
+		}
+	}
+	return out
+}
+
+func formatControllerName(stem string) string {
+	if stem == "" {
+		return ""
+	}
+	return strings.ToUpper(stem[:1]) + stem[1:] + controllerNameSuffix
+}
+
+func scriptControllerName(script any) string {
+	if script == nil {
+		return ""
+	}
+	rt := reflect.TypeOf(script)
+	for rt.Kind() == reflect.Pointer {
+		rt = rt.Elem()
+	}
+	name := strings.TrimSuffix(rt.Name(), scriptStructSuffix)
+	return formatControllerName(name)
+}
+
+func chunkControllerName(chunk TemplateChunk) string {
+	if chunk.ScriptData != nil {
+		if c := scriptControllerName(chunk.ScriptData); c != "" {
+			return c
+		}
+	}
+	if chunk.TemplateData != nil {
+		rt := reflect.TypeOf(chunk.TemplateData)
+		for rt.Kind() == reflect.Pointer {
+			rt = rt.Elem()
+		}
+		name := strings.TrimSuffix(rt.Name(), templateStructSuffix)
+		return formatControllerName(name)
+	}
+	return ""
 }
 
 func writeFDPLine(buf *bytes.Buffer, key, val string) {
@@ -258,59 +233,63 @@ func writeFDPBoolLine(buf *bytes.Buffer, key string, val bool) {
 	}
 }
 
-// WriteFDPResponse serializes meta, all non-nil ScriptData across the chunks tree, and optional htmlBody as a flat FDP frame.
-func WriteFDPResponse(w io.Writer, meta FDPFrameMeta, htmlBody []byte, chunks ...TemplateChunk) error {
+// WriteFDPFrames serializes 1..N controller-isolated FDP frames separated by \n---\n.
+func WriteFDPFrames(w io.Writer, frames ...FDPFrame) error {
 	buf := AcquireBuffer()
 	defer ReleaseBuffer(buf)
 
-	if meta.Target != "" {
-		writeFDPLine(buf, fdpKeyTarget, meta.Target)
-	}
-	if meta.KeepScroll {
-		writeFDPLine(buf, fdpKeyKeepScroll, trueLiteral)
-	}
-	if meta.ResetCanvas {
-		writeFDPLine(buf, fdpKeyResetCanv, trueLiteral)
-	}
-	if meta.Toast != "" {
-		writeFDPLine(buf, fdpKeyToast, meta.Toast)
-	}
-	if meta.NativeCmd != "" {
-		writeFDPLine(buf, fdpKeyNativeCmd, meta.NativeCmd)
-	}
-	if meta.VoicePeak != "" {
-		writeFDPLine(buf, fdpKeyVoicePeak, meta.VoicePeak)
-	}
-	if meta.SaveHex != "" {
-		writeFDPLine(buf, fdpKeySaveHex, meta.SaveHex)
-	}
-	if meta.ModalID != "" {
-		writeFDPLine(buf, fdpKeyModalID, meta.ModalID)
-	}
+	expanded := make([]FDPFrame, 0, len(frames)+4)
+	seenCtrl := make(map[string]bool, len(frames)+4)
 
-	queue := make([]TemplateChunk, 0, len(chunks)+8)
-	queue = append(queue, chunks...)
-	for step := 0; step < maxDataWalkSteps && len(queue) > 0; step++ {
-		cur := queue[0]
-		queue = queue[1:]
-		if cur.ScriptData != nil {
-			writeFDPScriptValue(buf, cur.ScriptData)
+	for _, f := range frames {
+		ctrl := chunkControllerName(f.Chunk)
+		expanded = append(expanded, f)
+		if ctrl != "" {
+			seenCtrl[ctrl] = true
 		}
-		tplData := cur.TemplateData
-		if tplData == nil {
-			tplData = cur.Data
-		}
-		if tplData != nil {
-			queue = collectChildChunks(tplData, queue)
+
+		if f.Chunk.TemplateData != nil {
+			queue := collectChildChunks(f.Chunk.TemplateData, nil)
+			for step := 0; step < maxDataWalkSteps && len(queue) > 0; step++ {
+				cur := queue[0]
+				queue = queue[1:]
+				if cur.ScriptData != nil {
+					childCtrl := scriptControllerName(cur.ScriptData)
+					if childCtrl != "" && !seenCtrl[childCtrl] {
+						seenCtrl[childCtrl] = true
+						expanded = append(expanded, FDPFrame{
+							Target: fdpTargetNone,
+							Chunk:  TemplateChunk{ScriptData: cur.ScriptData},
+						})
+					}
+				}
+				if cur.TemplateData != nil {
+					queue = collectChildChunks(cur.TemplateData, queue)
+				}
+			}
 		}
 	}
 
-	if len(htmlBody) > 0 {
-		writeFDPLine(buf, fdpKeyBody, fdpBodyHTML)
-		buf.WriteByte('\n')
-		buf.Write(htmlBody)
-	} else if buf.Len() > 0 && buf.Bytes()[buf.Len()-1] == '\n' {
-		buf.Truncate(buf.Len() - 1)
+	for i, f := range expanded {
+		if i > 0 {
+			buf.WriteString(fdpFrameSep)
+		}
+		if ctrl := chunkControllerName(f.Chunk); ctrl != "" {
+			writeFDPLine(buf, fdpKeyController, ctrl)
+		}
+		if f.Target != "" {
+			writeFDPLine(buf, fdpKeyTarget, f.Target)
+		}
+		if f.Chunk.ScriptData != nil {
+			writeFDPScriptValue(buf, f.Chunk.ScriptData)
+		}
+		if len(f.HTMLBody) > 0 {
+			writeFDPLine(buf, fdpKeyBody, fdpBodyHTML)
+			buf.WriteByte('\n')
+			buf.Write(bytes.TrimRight(f.HTMLBody, fdpLineBreakChars))
+		} else if buf.Len() > 0 && buf.Bytes()[buf.Len()-1] == '\n' {
+			buf.Truncate(buf.Len() - 1)
+		}
 	}
 
 	_, err := w.Write(buf.Bytes())
@@ -318,26 +297,6 @@ func WriteFDPResponse(w io.Writer, meta FDPFrameMeta, htmlBody []byte, chunks ..
 }
 
 func writeFDPScriptValue(buf *bytes.Buffer, script any) {
-	if m, ok := script.(map[string]any); ok {
-		keys := make([]string, 0, len(m))
-		for k := range m {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		for _, k := range keys {
-			switch typed := m[k].(type) {
-			case bool:
-				writeFDPBoolLine(buf, k, typed)
-			case int:
-				writeFDPLine(buf, k, strconv.Itoa(typed))
-			case float64:
-				writeFDPLine(buf, k, fmt.Sprintf(floatFmt, typed))
-			case string:
-				writeFDPLine(buf, k, typed)
-			}
-		}
-		return
-	}
 	rv := reflect.ValueOf(script)
 	for rv.Kind() == reflect.Pointer || rv.Kind() == reflect.Interface {
 		if rv.IsNil() {
@@ -368,18 +327,6 @@ func writeFDPScriptValue(buf *bytes.Buffer, script any) {
 }
 
 func collectChildChunks(tplData any, queue []TemplateChunk) []TemplateChunk {
-	if m, ok := tplData.(map[string]any); ok {
-		var singleChunks []TemplateChunk
-		for _, v := range m {
-			switch typed := v.(type) {
-			case TemplateChunk:
-				singleChunks = append(singleChunks, typed)
-			case []TemplateChunk:
-				queue = append(queue, typed...)
-			}
-		}
-		return append(queue, singleChunks...)
-	}
 	rv := reflect.ValueOf(tplData)
 	for rv.Kind() == reflect.Pointer || rv.Kind() == reflect.Interface {
 		if rv.IsNil() {

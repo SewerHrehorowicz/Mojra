@@ -1,4 +1,4 @@
-section.view-panel#view-player
+section.view-panel#player-view
     .player-layout#player-layout .is-imageless?: {ImagelessMode}
         .player-bg-stage#player-bg-stage
             {if not ImagelessMode}
@@ -46,17 +46,3 @@ section.view-panel#view-player
                 progress.reader-book-progress
                     value: "{BookProgressPct}"
                     max: 100
-
-{def confirm_modal}
-    {if ShowConfirmModal}
-        .modal-backdrop#modal-confirm
-            .modal-card
-                .modal-header
-                    h3.modal-title {ConfirmTitle}
-                .modal-body
-                    p.modal-desc {ConfirmMessage}
-                    .modal-actions
-                        button.btn.btn-confirm-cancel
-                            "{t_cancel}"
-                        button.btn.btn-confirm-accept .btn-danger?: {ConfirmIsDanger} .btn-primary?: {!ConfirmIsDanger}
-                            "{t_confirm_btn}"

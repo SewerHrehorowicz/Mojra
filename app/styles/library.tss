@@ -1,11 +1,11 @@
-#view-library, .studio-home-container
+#library-view, .studio-home-container
   padding 16px 24px
   overflow-y auto
   max-width 1680px
   margin 0 auto
   width 100%
 
-#view-editor:has(> .studio-home-container)
+#studio-view:has(> .studio-home-container)
   overflow-y auto
 
 .library-top-actions
@@ -264,7 +264,7 @@ body[data-ui-scale="large"]
     grid-template-columns repeat(3, minmax(0, 1fr))
 
 @media (max-width: 600px)
-  #view-library, .studio-home-container
+  #library-view, .studio-home-container
     padding 12px 14px
 
   .book-card
@@ -288,7 +288,7 @@ body[data-ui-scale="large"]
     portrait, landscape
       grid-template-columns 1fr !important
 
-#view-library, .studio-home-container
+#library-view, .studio-home-container
   @switch preview
     portrait
       padding 12px 14px

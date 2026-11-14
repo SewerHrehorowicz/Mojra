@@ -2,10 +2,8 @@
 
 const Fdp = {
   settings: {
-    actionKey: "action",
     bodyKey: "_body",
-    htmlKey: "html",
-    textKey: "text",
+    frameSep: "\n---\n",
     sepLF: "\n\n",
     sepCRLF: "\r\n\r\n",
     nl: "\n",
@@ -14,8 +12,7 @@ const Fdp = {
     bs: "\\",
     escNL: "\\n",
     escCR: "\\r",
-    escBS: "\\\\",
-    escQuote: '\\"'
+    escBS: "\\\\"
   },
 
   escapeVal(val) {
@@ -34,7 +31,7 @@ const Fdp = {
       .replace(/\\\\/g, st.bs);
   },
 
-  encode(paramsObj) {
+  encodeFrame(paramsObj) {
     if (!paramsObj) return "";
     const st = this.settings;
     const keys = Object.keys(paramsObj).sort();
@@ -43,20 +40,14 @@ const Fdp = {
     for (let i = 0; i < keys.length; i++) {
       const k = keys[i];
       const v = String(paramsObj[k] === undefined || paramsObj[k] === null ? "" : paramsObj[k]);
-      if (v.indexOf(st.nl) >= 0 || v.indexOf(st.cr) >= 0) {
-        if (!bodyKey || k === st.textKey || k === st.htmlKey) {
-          bodyKey = k;
-          bodyVal = v;
-        }
+      if (!bodyKey && (v.indexOf(st.nl) >= 0 || v.indexOf(st.cr) >= 0)) {
+        bodyKey = k;
+        bodyVal = v;
       }
     }
     const lines = [];
-    if (paramsObj[st.actionKey] !== undefined) {
-      lines.push(st.actionKey + st.eq + this.escapeVal(paramsObj[st.actionKey]));
-    }
     for (let i = 0; i < keys.length; i++) {
       const k = keys[i];
-      if (k === st.actionKey) continue;
       if (k === bodyKey) {
         lines.push(st.bodyKey + st.eq + k);
         continue;
@@ -69,9 +60,22 @@ const Fdp = {
     return lines.join(st.nl);
   },
 
-  decode(rawStr) {
+  encode(input) {
+    if (!input) return "";
+    if (Array.isArray(input)) {
+      const out = [];
+      for (let i = 0; i < input.length; i++) {
+        const encoded = this.encodeFrame(input[i]);
+        if (encoded) out.push(encoded);
+      }
+      return out.join(this.settings.frameSep);
+    }
+    return this.encodeFrame(input);
+  },
+
+  decodeFrame(rawFrame) {
     const out = {};
-    const s = String(rawStr || "");
+    const s = String(rawFrame || "");
     if (!s) return out;
     const st = this.settings;
     let head = s;
@@ -107,5 +111,18 @@ const Fdp = {
       out[bodyKey] = body;
     }
     return out;
+  },
+
+  decode(rawStr) {
+    const s = String(rawStr || "");
+    if (!s) return [];
+    const parts = s.split(this.settings.frameSep);
+    const frames = [];
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i];
+      if (!part || !part.trim()) continue;
+      frames.push(this.decodeFrame(part));
+    }
+    return frames;
   }
 };

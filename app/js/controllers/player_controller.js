@@ -5,6 +5,7 @@ const PlayerController = {
     bookId: "",
     sensitivity: "medium",
     imagelessMode: false,
+    saveHex: "",
     isAutoAdvancing: false,
     overscrollAccum: 0,
     springResetTimer: null
@@ -39,7 +40,7 @@ const PlayerController = {
       railTicks: "#story-history-rail .history-rail-tick",
       bgImg: "#player-bg-img",
       scrollCue: ".scroll-more-cue",
-      confirmModal: "#modal-confirm"
+      confirmModal: "#confirm-view"
     },
     classes: {
       overscroll: "is-overscrolling",
@@ -79,6 +80,12 @@ const PlayerController = {
     try {
       window.localStorage.setItem(this.wasmSaveKey(), saveHex);
     } catch (_) {}
+  },
+
+  onHydrate(frame) {
+    if (frame && frame.saveHex) {
+      this.saveWasmProgress(frame.saveHex);
+    }
   },
 
   async bootWasm(params) {

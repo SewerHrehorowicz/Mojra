@@ -7,39 +7,39 @@ const EditorHistoryController = {
 
   bindings() {
     return {
-      "#editor-history-panel .btn-close-history": {
+      "#editor-history-view .btn-close-history": {
         click: Dispatcher.action("CloseEditorHistoryPanel")
       },
-      "#editor-history-panel .history-version-save-form": {
+      "#editor-history-view .history-version-save-form": {
         submit: Dispatcher.action("SaveHistoryVersion")
       },
       "#history-graph-scroll": {
         scroll: this.updateScrollCue
       },
-      "#editor-history-panel .history-rail-hit": {
+      "#editor-history-view .history-rail-hit": {
         click: Dispatcher.action("SwitchHistoryBranch")
       },
-      "#editor-history-panel .history-rail-node-active-branch": {
+      "#editor-history-view .history-rail-node-active-branch": {
         pointerdown: this.startNodeDrag,
         pointermove: this.moveNodeDrag,
         pointerup: this.endNodeDrag,
         click: Dispatcher.action("PreviewHistoryRevision")
       },
-      "#editor-history-panel .history-rail-node-other-branch": {
+      "#editor-history-view .history-rail-node-other-branch": {
         pointerdown: this.startNodeDrag,
         pointermove: this.moveNodeDrag,
         pointerup: this.endNodeDrag,
         click: Dispatcher.action("SwitchHistoryBranch")
       },
-      "#editor-history-panel .history-row-grip": {
+      "#editor-history-view .history-row-grip": {
         pointerdown: this.startNodeDrag,
         pointermove: this.moveNodeDrag,
         pointerup: this.endNodeDrag
       },
-      "#editor-history-panel .history-row-box": {
+      "#editor-history-view .history-row-box": {
         click: Dispatcher.action("PreviewHistoryRevision")
       },
-      "#editor-history-panel .history-branch-create-form": {
+      "#editor-history-view .history-branch-create-form": {
         submit: Dispatcher.action("PromptCreateHistoryBranch")
       }
     };

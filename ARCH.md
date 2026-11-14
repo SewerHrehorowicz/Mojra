@@ -15,7 +15,7 @@ Canonical specification for how state, views, templates, chunks, and client cont
 1. **`internal/state`**: Pure in-memory application state (`AppState`, `PlayerState`, `EditorState`, `Settings`). Zero HTTP, template, or view-formatting logic.
 2. **`internal/actions`**: Handles `POST /api/action` requests decoded via `FDP` (`FlatDataProtocol`), mutates `state`, selects the target view chunk (`tpl.TemplateChunk`) and DOM target (`target`), and streams the `FDP` response frame.
 3. **`internal/views`**: Transforms `state` into strongly-typed view chunks (`tpl.TemplateChunk`) with strict separation between presentational `TemplateData` (`*<name>Template`) and client controller state `ScriptData` (`*<name>Script`).
-   - **Strict Separation Rule**: Each `view_<name>.go` file defines at most one template struct (`<name>Template`) for `.tpl` rendering and one optional script struct (`<name>Script`) for `FDP` controller hydration. Every view is a first-class peer `tpl.TemplateChunk` (there are no "sub-views" or helper view structs)—views compose other views solely via `tpl.TemplateChunk` or `[]tpl.TemplateChunk` fields on `TemplateData`, and reuse domain structs from `internal/book` directly.
+   - **Strict Separation Rule**: Each `<name>_view.go` file defines at most one template struct (`<name>Template`) for `.tpl` rendering and one optional script struct (`<name>Script`) for `FDP` controller hydration. Every view is a first-class peer `tpl.TemplateChunk` (there are no "sub-views" or helper view structs)—views compose other views solely via `tpl.TemplateChunk` or `[]tpl.TemplateChunk` fields on `TemplateData`, and reuse domain structs from `internal/book` directly.
 4. **`internal/tpl` & `app/templates/*.tpl`**: Pure presentational HTML rendering from `TemplateData` + flat `FDP` key-value serialization exclusively from `ScriptData`.
 5. **`app/js/fdp.js` (`Fdp`) & `app/js/dispatcher.js` (`Dispatcher`)**: Universal client codec and runtime. `Fdp` encodes/decodes flat `key=val\n...\n\n<body>` frames in both directions; `Dispatcher` owns `POST /api/action` transport, strict contract hydration (`key in ctrl.data`), `target` DOM swapping, delegated event routing, and `init` lifecycle mounting. There is **no `Core` module**.
 6. **`app/js/controllers/<name>_controller.js` (`<Name>Controller`)**: Isolated UI controllers paired 1:1 with their view/template triad, stored in `app/js/controllers/`.
@@ -24,30 +24,22 @@ Canonical specification for how state, views, templates, chunks, and client cont
 
 ## 2. The 1:1 Triad Convention
 
-Every interactive UI unit forms a strict 1:1:1 triad with matching names:
+Every interactive UI unit forms a strict 1:1:1 triad derived by convention from its domain `<name>` (`snake_case` / `camelCase` / `PascalCase` / `kebab-case`) with the role suffix at the end and zero presentation-style leaks (`modal_`, `_panel`):
 
-| Go View (`internal/views/`) | Constructor (`tpl.TemplateChunk`) | `TemplateData` / `ScriptData` | Template (`app/templates/`) | JS Controller (`app/js/controllers/`) | Registered Name |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| `view_app_shell.go` | `ViewAppShell` | `appShellTemplate` / `appShellScript` | `app_shell.tpl` | `app_shell_controller.js` | `AppShellController` |
-| `view_topbar.go` | `ViewTopbar` | `topbarTemplate` / `nil` | `topbar.tpl` | `topbar_controller.js` | `TopbarController` |
-| `view_library.go` | `ViewLibrary` | `libraryTemplate` / `libraryScript` | `library_view.tpl` | `library_controller.js` | `LibraryController` |
-| `view_player.go` | `ViewPlayer` | `playerTemplate` / `playerScript` | `player_view.tpl` | `player_controller.js` | `PlayerController` |
-| `view_scene.go` | `ViewScene` | `sceneTemplate` / `sceneScript` | `scene_view.tpl` | `scene_controller.js` | `SceneController` |
-| `view_audio_deck.go` | `ViewAudioDeck` | `audioDeckTemplate` / `audioDeckScript` | `audio_deck.tpl` | `audio_deck_controller.js` | `AudioDeckController` |
-| `view_studio.go` | `ViewStudio` | `studioTemplate` / `studioScript` | `studio_view.tpl` | `studio_controller.js` | `StudioController` |
-| `view_editor_context_panel.go` | `ViewEditorContextPanel` | `editorContextPanelTemplate` / `editorContextPanelScript` | `editor_context_panel.tpl` | `editor_context_panel_controller.js` | `EditorContextPanelController` |
-| `view_editor_breakdown.go` | `ViewEditorBreakdown` | `editorBreakdownTemplate` / `nil` | `editor_breakdown_panel.tpl` | `editor_breakdown_controller.js` | `EditorBreakdownController` |
-| `view_editor_variables.go` | `ViewEditorVariables` | `editorVariablesTemplate` / `nil` | `editor_variables_panel.tpl` | `editor_variables_controller.js` | `EditorVariablesController` |
-| `view_editor_history.go` | `ViewEditorHistory` | `editorHistoryTemplate` / `nil` | `editor_history_panel.tpl` | `editor_history_controller.js` | `EditorHistoryController` |
-| `view_text_editor.go` | `ViewTextEditor` | `textEditorTemplate` / `textEditorScript` | `text_editor.tpl` | `text_editor_controller.js` | `TextEditorController` |
-| `view_modal_add_book.go` | `ViewModalAddBook` | `modalAddBookTemplate` / `nil` | `modal_add_book.tpl` | `modal_add_book_controller.js` | `ModalAddBookController` |
-| `view_modal_confirm.go` | `ViewModalConfirm` | `modalConfirmTemplate` / `nil` | `confirm_modal` | `modal_confirm_controller.js` | `ModalConfirmController` |
-| `view_modal_editor_help.go` | `ViewModalEditorHelp` | `modalEditorHelpTemplate` / `nil` | `modal_editor_help.tpl` | `modal_editor_help_controller.js` | `ModalEditorHelpController` |
-| `view_modal_export.go` | `ViewModalExport` | `modalExportTemplate` / `nil` | `modal_export.tpl` | `modal_export_controller.js` | `ModalExportController` |
-| `view_modal_new_book.go` | `ViewModalNewBook` | `modalNewBookTemplate` / `nil` | `modal_new_book.tpl` | `modal_new_book_controller.js` | `ModalNewBookController` |
-| `view_modal_qr.go` | `ViewModalQR` | `modalQRTemplate` / `modalQRScript` | `modal_qr.tpl` | `modal_qr_controller.js` | `ModalQRController` |
-| `view_modal_studio_projects.go` | `ViewModalStudioProjects` | `modalStudioProjectsTemplate` / `nil` | `modal_studio_projects.tpl` | `modal_studio_projects_controller.js` | `ModalStudioProjectsController` |
+| Artifact | Naming Convention | Example (`player`) | Example (`editor_context`) |
+| :--- | :--- | :--- | :--- |
+| Go View (`internal/views/`) | `<name>_view.go` | `player_view.go` | `editor_context_view.go` |
+| Go Constructor | `<PascalName>View` | `PlayerView` | `EditorContextView` |
+| `TemplateData` / `ScriptData` | `<camelName>Template` / `<camelName>Script` | `playerTemplate` / `playerScript` | `editorContextTemplate` / `editorContextScript` |
+| Template (`app/templates/`) | `<name>_view.tpl` | `player_view.tpl` | `editor_context_view.tpl` |
+| JS Controller (`app/js/controllers/`) | `<name>_controller.js` (`<PascalName>Controller`) | `player_controller.js` (`PlayerController`) | `editor_context_controller.js` (`EditorContextController`) |
+| Go State (`internal/state/`) | `<name>_state.go` | `player_state.go` | `studio_state.go` |
+| Go Actions (`internal/actions/`) | `<name>_actions.go` | `player_actions.go` | `studio_scene_actions.go` |
+| Root DOM ID | `#<kebab-name>-view` | `#player-view` | `#editor-context-view` |
 
+- **Zero Hardcoded Maps**:
+  - `chunkTemplateName` derives `<name>_view` automatically from `*<camelName>Template`.
+  - `scriptControllerName` derives `<PascalName>Controller` automatically from `*<camelName>Script`.
 - **Isolation Rule**: A controller may only query or manipulate DOM elements belonging to its own template, or call public methods on another controller (e.g., `PlayerController` delegates `.scene-card` queries/focus to `SceneController`).
 
 ---
@@ -104,29 +96,35 @@ In `.tpl` files, `@FieldName` renders a `tpl.TemplateChunk` or `[]tpl.TemplateCh
 - When `@HistoryScenes` is evaluated, `tpl_render.go` loops over the `[]tpl.TemplateChunk` slice (`ScriptData: nil` on historical items) and renders each item's `TemplateData` in order.
 
 ### 3.3 FlatDataProtocol (`FDP` — `fdp.go` / `fdp.js`)
-One unified, zero-nesting codec (`Content-Type: text/x-fdp;charset=UTF-8`) handles both requests and responses:
+One unified, zero-nesting multi-frame codec (`Content-Type: text/x-fdp;charset=UTF-8`) handles both requests and responses (`1 frame = 1 controller`, separated by `\n---\n`):
 
 ```text
+controller=PlayerController
 target=#workspace
 bookId=metro
 sensitivity=medium
 imagelessMode=false
 _body=html
 
-<div class="player-view">...</div>
+<section class="view-panel" id="player-view">...</section>
+---
+controller=SceneController
+target=none
+isPresent=true
+---
+controller=AppShellController
+target=none
+theme=dark
 ```
 
 1. **Request (`Fdp.encode(params)`)**: Client sends `POST /api/action` with flat `key=val` lines + optional `_body=<key>\n\n<raw UTF-8>`.
-2. **Response (`Fdp.decode(raw)`)**: Server responds with a single `FDP` frame:
-   - **Flat Header Lines (before `\n\n`)**: `target` (`#app`, `#workspace`, `#modals-root`, `#editor-context-panel`, or `none`) + flat `key=val` scalar fields collected from non-nil `chunk.ScriptData` across the `TemplateChunk` tree + `_body=html`. Zero `X-Data` or custom `X-*` HTTP headers.
-   - **Raw Body (after `\n\n`)**: Rendered HTML of the root `TemplateChunk.TemplateData` streamed directly from pooled `sync.Pool` buffers (`tpl.RenderTemplateTo`). `Fdp.decode` strips the header lines before `\n\n` so only pure HTML enters `innerHTML`.
+2. **Response (`Fdp.decode(raw)`)**: Server responds with `1..N` controller-isolated `FDP` frames separated by `\n---\n`:
+   - **Flat Header Lines (before `\n\n`)**: `controller=<Name>Controller` + `target` (`#app`, `#workspace`, `#modals-root`, `#editor-context-view`, or `none`) + flat `key=val` scalar fields from that controller's `chunk.ScriptData` + optional `_body=html`. Zero `X-Data` or custom `X-*` HTTP headers.
+   - **Raw Body (after `\n\n`)**: Rendered HTML of the frame's `TemplateChunk.TemplateData` streamed directly from pooled `sync.Pool` buffers (`tpl.RenderTemplateTo`). `Fdp.decode` returns an array of decoded frames.
 
 ### 3.4 Automatic `FDP` Hydration (`chunk.ScriptData -> JS Controller.data`)
-- The Go `FDP` encoder walks the `TemplateChunk` tree (traversing child `TemplateChunk` / `[]TemplateChunk` fields on `TemplateData`) and serializes **exclusively** `chunk.ScriptData` as flat `key=val` lines:
-  - If `chunk.ScriptData == nil`, nothing is emitted for that chunk.
-  - Zero nesting (`Controller.field` prefixes are not needed) and zero field-filtering heuristics (`key == "prose"` or `maxHeaderStrLen = 120` guards are eliminated because presentational strings live solely in `TemplateData`).
-  - Zero case-conversion helpers: `ScriptData` fields are emitted 1:1 with their declared names.
-- On the client, `Dispatcher.hydrate(decoded)` iterates over the flat `decoded` map from `Fdp.decode` and updates any registered controller whose `ctrl.data` declares that key (`if (key in ctrl.data)`) **before** swapping `decoded.html` into `decoded.target` or running `init` hooks. Presentational fields can never leak into `ctrl.data`.
+- `WriteFDPFrames` emits one frame per controller (`controller=<Name>Controller`), walking child `TemplateChunk`s in `TemplateData` and emitting `target=none` script frames for any child chunk with non-nil `ScriptData`.
+- On the client, `Dispatcher.applyResponse` first hydrates `this.controllers[frame.controller].data` (`if (key in ctrl.data)`) for every frame, then swaps DOM targets for frames with `target != "none"`, and finally invokes `ctrl.onHydrate(frame, action, params)` exclusively on `this.controllers[frame.controller]`. Frame order does not matter.
 
 ---
 
@@ -251,7 +249,7 @@ Dispatcher.register("PlayerController", PlayerController);
        }
        ```
 3. **1:1 `ScriptData` <-> `Controller.data` Mapping (`JS_CONTROLLER_DATA_MAP`)**:
-   - Every field in a Go view's `<name>Script` struct (`internal/views/view_<name>.go`) must be declared 1:1 in the paired `<Name>Controller.data` (`app/js/controllers/<name>_controller.js`) with a matching default literal type (`bool` -> `true`/`false`, `int`/`float64` -> numeric literal, `string` -> string literal) so `Dispatcher.hydrate` (`key in ctrl.data`) and `Dispatcher.assignDataValue` coerce values accurately.
+   - Every field in a Go view's `<name>Script` struct (`internal/views/<name>_view.go`) must be declared 1:1 in the paired `<Name>Controller.data` (`app/js/controllers/<name>_controller.js`) with a matching default literal type (`bool` -> `true`/`false`, `int`/`float64` -> numeric literal, `string` -> string literal) so `Dispatcher.hydrate` (`key in ctrl.data`) and `Dispatcher.assignDataValue` coerce values accurately.
    - Every `this.data.<field>` and `<Name>Controller.data.<field>` access in JS must reference a key declared in that controller's `data` object.
 4. **Pre-Indexed Sibling Index (`params.idx` in $O(1)$)**:
    - On initial boot and after every DOM swap (`swapTarget`), `Dispatcher.mountAll()` queries each bound selector **once** and assigns `el._idx = k` on every matched element.

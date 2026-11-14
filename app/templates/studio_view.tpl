@@ -1,4 +1,4 @@
-section.view-panel#view-editor .is-history-preview?: {IsHistoryPreview}
+section.view-panel#studio-view .is-history-preview?: {IsHistoryPreview}
     data-history-preview: "{HistoryPreviewAttr}"
     {if HasEditorBook}
         .studio-workspace-full

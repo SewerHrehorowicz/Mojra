@@ -23,13 +23,13 @@ implementuj <plan>.md zgodnie z @AGENTS.md nie lap za szerokiego kontekstu, nie 
 
 ## 1. ALWAYS Keep the Top Bar (`header.topbar#topbar`) Visible — NEVER VIOLATE
 - **THE TOP BAR MUST ALWAYS REMAIN VISIBLE AND INTERACTIVE IN EVERY VIEW AND MODAL**:
-  - `header.topbar#topbar` (`app/templates/topbar.tpl`, included at the top of `app/templates/app_shell.tpl`) contains the `Mojra` brand logotype and symbol (`app/icons/mojra.svg`), the primary navigation tabs (`Biblioteka`, active book `<Title>`, `Playbook Studio`), and the global window/UI controls (imageless mode, UI zoom, dark/light theme, fullscreen, and quit `✕`).
-  - **NEVER** hide, remove, replace, or cover `header.topbar#topbar` in any view (`#view-library`, `#view-player`, `#view-editor`) or in any modal/overlay—**especially when editing scene text (`#modal-scene-text` / `.scene-text-fullscreen-backdrop`)**.
+  - `header.topbar#topbar` (`app/templates/topbar_view.tpl`, included at the top of `app/templates/app_shell_view.tpl`) contains the `Mojra` brand logotype and symbol (`app/icons/mojra.svg`), the primary navigation tabs (`Biblioteka`, active book `<Title>`, `Playbook Studio`), and the global window/UI controls (imageless mode, UI zoom, dark/light theme, fullscreen, and quit `✕`).
+  - **NEVER** hide, remove, replace, or cover `header.topbar#topbar` in any view (`#library-view`, `#player-view`, `#studio-view`) or in any modal/overlay—**especially when editing scene text (`#text-editor-view` / `.scene-text-fullscreen-backdrop`)**.
   - Layout and stacking rules that MUST be preserved forever:
     1. `.app-root` (`app/styles/app.tss`) uses a 2-row grid (`grid-template-rows: auto 1fr`) where row `1` is exclusively `header.topbar#topbar` (`grid-row: 1; z-index: 200`) and row `2` (`grid-row: 2`) contains `main.workspace#workspace` and `.modals-root#modals-root`.
     2. `.modal-backdrop` and `.modal-backdrop.scene-text-fullscreen-backdrop` (`app/styles/modals.tss`) must use `position: absolute; inset: 0` inside `.modals-root` (row `2` below `.topbar`), **NEVER** `position: fixed; inset: 0` over the entire viewport, and their `z-index` (`120`) must always remain lower than `.topbar` (`200`).
-    3. Clicking any navigation tab (`SwitchView` / `OpenBook`) in `#topbar` while `#modal-scene-text` (or any modal) is open must close the modal (`s.SceneTextModalID = ""`) and switch cleanly to the requested view.
-    4. All right-side topbar actions (`ToggleImageless`, `ToggleUIScale`, `ToggleTheme`, `ToggleFullscreen`, `QuitApp`) must remain accessible and functional while editing scene text in `#modal-scene-text`.
+    3. Clicking any navigation tab (`SwitchView` / `OpenBook`) in `#topbar` while `#text-editor-view` (or any modal) is open must close the modal (`s.Editor.SceneText.SceneID = ""`) and switch cleanly to the requested view.
+    4. All right-side topbar actions (`ToggleImageless`, `ToggleUIScale`, `ToggleTheme`, `ToggleFullscreen`, `QuitApp`) must remain accessible and functional while editing scene text in `#text-editor-view`.
 
 ## 2. File & Data Formats — ZERO JSON / ZERO YAML / ZERO SQL
 - **NEVER use JSON (`encoding/json`, `JSON.stringify`, `JSON.parse`, `.json` files) anywhere** in backend, frontend, configuration, or disk persistence.

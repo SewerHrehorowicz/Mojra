@@ -5,28 +5,28 @@ const EditorVariablesController = {
 
   bindings() {
     return {
-      "#editor-variables-panel .btn-close-variables": {
+      "#editor-variables-view .btn-close-variables": {
         click: Dispatcher.action("CloseEditorVariablesPanel")
       },
-      "#editor-variables-panel .var-section-add-btn": {
+      "#editor-variables-view .var-section-add-btn": {
         click: Dispatcher.action("AddBookVariable")
       },
-      "#editor-variables-panel .var-panel-inline-form": {
+      "#editor-variables-view .var-panel-inline-form": {
         submit: Dispatcher.action("UpdateBookVariable")
       },
-      "#editor-variables-panel .var-name-input, #editor-variables-panel .var-val-input, #editor-variables-panel .var-options-input": {
+      "#editor-variables-view .var-name-input, #editor-variables-view .var-val-input, #editor-variables-view .var-options-input": {
         change: Dispatcher.action("UpdateBookVariable")
       },
-      "#editor-variables-panel .var-bool-toggle-btn": {
+      "#editor-variables-view .var-bool-toggle-btn": {
         click: Dispatcher.action("ToggleBookVariableBool")
       },
-      "#editor-variables-panel .var-remove-btn": {
+      "#editor-variables-view .var-remove-btn": {
         click: Dispatcher.action("RemoveBookVariable")
       },
-      "#editor-variables-panel .var-enum-add-opt-btn": {
+      "#editor-variables-view .var-enum-add-opt-btn": {
         click: Dispatcher.action("AddBookEnumOption")
       },
-      "#editor-variables-panel .var-enum-opt-remove-btn": {
+      "#editor-variables-view .var-enum-opt-remove-btn": {
         click: Dispatcher.action("RemoveBookEnumOption")
       }
     };

@@ -12,11 +12,6 @@ const AppShellController = {
     lang: "pl",
     toast: "",
     nativeCmd: "",
-    keepScroll: false,
-    resetCanvas: false,
-    voicePeak: "",
-    saveHex: "",
-    sceneId: "",
     toastTimer: null,
     activeTooltipTarget: null
   },
@@ -300,25 +295,6 @@ const AppShellController = {
     if (decoded.target && decoded.target !== v.none) {
       this.hideTooltip();
     }
-    if (decoded.resetCanvas === v.trueStr && typeof CanvasModel !== v.undefType) {
-      CanvasModel.editorCanvasState.initialized = false;
-    }
-
-    const newSceneId = decoded.sceneId || "";
-    const oldSceneId = (params && (params.scene_id || params.scene)) || "";
-    if (newSceneId && oldSceneId && newSceneId !== oldSceneId && typeof CanvasModel !== v.undefType) {
-      const gState = CanvasModel.studioGraphState;
-      const nd = gState.nodeById.get(oldSceneId);
-      if (nd) {
-        gState.nodeById.delete(oldSceneId);
-        nd.id = newSceneId;
-        gState.nodeById.set(newSceneId, nd);
-      }
-      if (CanvasModel.selectedNodeIds.has(oldSceneId)) {
-        CanvasModel.selectedNodeIds.delete(oldSceneId);
-        CanvasModel.selectedNodeIds.add(newSceneId);
-      }
-    }
 
     if (decoded.theme && b) {
       b.setAttribute(a.theme, this.data.theme);
@@ -395,14 +371,6 @@ const AppShellController = {
         window.mojraNative.postMessage(decoded.nativeCmd);
       }
       this.execNativeCommand(decoded.nativeCmd);
-    }
-
-    if (decoded.voicePeak !== undefined && typeof EditorVoice !== v.undefType) {
-      EditorVoice.handlePeakHeader(decoded.voicePeak);
-    }
-
-    if (decoded.saveHex && typeof PlayerController !== v.undefType) {
-      PlayerController.saveWasmProgress(decoded.saveHex);
     }
   }
 };

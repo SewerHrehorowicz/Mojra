@@ -413,7 +413,7 @@ func (s *Server) handleRootAndAssets(w http.ResponseWriter, r *http.Request) {
 		defer s.State.Mu.Unlock()
 
 		templates := s.ensureTemplatesLoaded()
-		appShellChunk := views.ViewAppShell(s.State)
+		appShellChunk := views.AppShellView(s.State)
 		_, appShellData := appShellChunk.Resolve()
 		ctx := views.NewViewContext(views.LangOf(s.State), appShellData)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")

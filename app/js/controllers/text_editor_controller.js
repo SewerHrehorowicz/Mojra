@@ -17,13 +17,13 @@ const TextEditorController = {
         keydown: this.onRuleKeydown,
         blur: this.onRuleBlur
       },
-      "#modal-scene-text": {
+      "#text-editor-view": {
         click: this.onModalBackdrop
       },
-      "#modal-scene-text .btn-play-from-scene": {
+      "#text-editor-view .btn-play-from-scene": {
         click: Dispatcher.action("PlayFromScene")
       },
-      "#modal-scene-text .btn-prompt-delete-scene": {
+      "#text-editor-view .btn-prompt-delete-scene": {
         click: Dispatcher.action("PromptDeleteScene")
       },
       "#btn-collapse-scene-text": {
@@ -38,7 +38,15 @@ const TextEditorController = {
       "#form-scene-text .incoming-choice-btn, #form-scene-text .modal-choice-nav-btn": {
         click: Dispatcher.action("NavigateSceneTextModal")
       },
-      "#form-scene-text input.scene-title, #form-scene-text input.node-inline-chapter, #form-scene-text input[name='explicit_id'], #modal-slugline-input, #form-scene-text textarea[name='synopsis'], #form-scene-text textarea.choice-label-text": {
+      "#form-scene-text input.scene-title": {
+        input: this.onSceneTitleInput,
+        change: Dispatcher.action("AutoSaveScene")
+      },
+      "#form-scene-text textarea.choice-label-text": {
+        input: this.onChoiceLabelInput,
+        change: Dispatcher.action("AutoSaveScene")
+      },
+      "#form-scene-text input.node-inline-chapter, #form-scene-text input[name='explicit_id'], #modal-slugline-input, #form-scene-text textarea[name='synopsis']": {
         change: Dispatcher.action("AutoSaveScene")
       },
       "#form-scene-text textarea.node-meta-textarea": {
@@ -117,6 +125,7 @@ const TextEditorController = {
     varNameAttr: "data-var-name",
     selectors: {
       textTextarea: "#modal-scene-textarea",
+      sceneIdInput: '#form-scene-text input[name="scene_id"]',
       modalDropdown: "#modal-syn-autocomplete-dropdown",
       enumSelectRoot: ".test-var-enum-select"
     },
@@ -153,28 +162,43 @@ const TextEditorController = {
     el.style.height = Math.max(s.minMetaHeightPx, el.scrollHeight || 0) + s.pxUnit;
   },
 
+  onHydrate() {
+    if (!this.data.sceneId) return;
+    const inp = document.querySelector(this.settings.selectors.sceneIdInput);
+    if (inp) inp.value = this.data.sceneId;
+  },
+
+  onSceneTitleInput(_params, el) {
+    EditorContextController.syncCanvasNodeTitle(this.data.sceneId, el ? el.value : "");
+  },
+
+  onChoiceLabelInput(params, el) {
+    this.autoResizeMeta(params, el);
+    EditorContextController.syncCanvasChoiceLabel(this.data.sceneId, params ? params.idx : 0, el ? el.value : "");
+  },
+
   onTextareaInput(p, el, e) {
     this.autoResize(el);
-    EditorContextPanelController.onRuleInput(p, el, e, document.querySelector(this.settings.selectors.modalDropdown));
+    EditorContextController.onRuleInput(p, el, e, document.querySelector(this.settings.selectors.modalDropdown));
   },
 
   onRuleInput(p, el, e) {
-    EditorContextPanelController.onRuleInput(p, el, e, document.querySelector(this.settings.selectors.modalDropdown));
+    EditorContextController.onRuleInput(p, el, e, document.querySelector(this.settings.selectors.modalDropdown));
   },
 
   onRuleKeydown(p, el, e) {
     if (!el) return;
-    EditorContextPanelController.onRuleKeydown(p, el, e);
+    EditorContextController.onRuleKeydown(p, el, e);
   },
 
   onRuleBlur(p, el) {
     if (!el) return;
-    EditorContextPanelController.onRuleBlur(p, el);
+    EditorContextController.onRuleBlur(p, el);
   },
 
   chooseAutocompleteItem(_params, el, e) {
     if (e) e.preventDefault();
-    EditorContextPanelController.applyAutocompleteItem(el);
+    EditorContextController.applyAutocompleteItem(el);
   },
 
   updateTestIntVar(p) {
