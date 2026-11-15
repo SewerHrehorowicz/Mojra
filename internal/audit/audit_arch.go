@@ -113,7 +113,8 @@ func RunArch(rootDir string) ([]Finding, error) {
 }
 
 func isGeneratedOrWindowFile(relPath string) bool {
-	return strings.HasPrefix(relPath, "internal/gui/window_") ||
+	return strings.HasPrefix(relPath, "engine/osbridge/window_") ||
+		strings.HasPrefix(relPath, "internal/gui/window_") ||
 		strings.HasPrefix(relPath, "internal/osbridge/window_") ||
 		strings.HasPrefix(relPath, "internal/audit/")
 }

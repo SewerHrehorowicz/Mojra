@@ -97,19 +97,12 @@ const AppShellController = {
     },
     keys: {
       escape: "Escape",
-      z: "z",
-      y: "y",
       f12: "F12"
     },
     devToolsAllowed: false
     // @dev-only-start
     || true
     // @dev-only-end
-    ,
-    historyActions: {
-      undo: "UndoEditor",
-      redo: "RedoEditor"
-    }
   },
 
   initShell() {
@@ -131,10 +124,12 @@ const AppShellController = {
   },
 
   tr(key) {
-    if (!window.mojraI18n) return key;
-    const lang = this.activeLang();
-    const dict = window.mojraI18n[lang] || window.mojraI18n[this.settings.vals.defaultLang];
-    return (dict && dict[key]) || key;
+    const u = this.settings.vals.undefType;
+    if (typeof I18N_TABLE === u || typeof I18N_LANGS === u) return key;
+    const row = I18N_TABLE[key];
+    if (!row) return key;
+    const idx = I18N_LANGS[this.activeLang()];
+    return row[idx !== undefined ? idx : 0] || row[0] || key;
   },
 
   showToast(msg) {
@@ -238,21 +233,6 @@ const AppShellController = {
     if (!s.devToolsAllowed && e.key === s.keys.f12) {
       e.preventDefault();
       return;
-    }
-    const target = e.target;
-    const isEditable = Boolean(target && target.closest && target.closest(s.editableSelector));
-    if (!isEditable && (e.metaKey || e.ctrlKey)) {
-      const k = (e.key || "").toLowerCase();
-      if (k === s.keys.z) {
-        e.preventDefault();
-        Dispatcher.post(e.shiftKey ? s.historyActions.redo : s.historyActions.undo, {});
-        return;
-      }
-      if (k === s.keys.y) {
-        e.preventDefault();
-        Dispatcher.post(s.historyActions.redo, {});
-        return;
-      }
     }
     if (e.key === s.keys.escape) {
       const backdrops = document.querySelectorAll(s.selectors.modalBackdrops);

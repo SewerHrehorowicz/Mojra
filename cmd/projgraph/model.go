@@ -28,6 +28,8 @@ const (
 	modulePrefix = "mojra/"
 	moduleRoot   = "mojra"
 
+	dirEngine   = "engine"
+	dirDomain   = "domain"
 	dirInternal = "internal"
 	dirCmd      = "cmd"
 	dirApp      = "app"
@@ -91,7 +93,7 @@ const (
 )
 
 var (
-	defaultScanRoots = []string{dirInternal, dirCmd, dirApp, dirWWW}
+	defaultScanRoots = []string{dirEngine, dirDomain, dirInternal, dirCmd, dirApp, dirWWW}
 
 	goBuiltinTypes = map[string]bool{
 		"any":        true,

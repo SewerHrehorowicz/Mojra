@@ -13,8 +13,6 @@ const StudioController = {
     sceneTitle: "",
     sceneChapter: "",
     startSceneId: "",
-    studioGraphPayload: "",
-    resetCanvas: false,
     voicePeak: "",
     historyCount: 0,
     canUndo: false,
@@ -25,9 +23,6 @@ const StudioController = {
 
   bindings() {
     return {
-      "#studio-canvas": {
-        init: this.initCanvas
-      },
       ".canvas-toolbar .btn-open-new-book": {
         click: Dispatcher.action("OpenNewBookModal")
       },
@@ -97,9 +92,6 @@ const StudioController = {
       "#btn-toggle-status-warnings": {
         click: Dispatcher.action("ToggleBookWarnings")
       },
-      "#btn-context-reset-view": {
-        click: this.fitAllNodes
-      },
       "#btn-new-book, #btn-new-screenplay": {
         click: Dispatcher.action("OpenNewBookModal")
       },
@@ -119,29 +111,10 @@ const StudioController = {
   },
 
   settings: {
-    camera: {
-      minZoom: 0.25,
-      maxZoom: 2.2,
-      defaultZoom: 1,
-      zoomStep: 0.15,
-      zoomEpsilon: 0.001,
-      half: 0.5,
-      startFocusXRatio: 0.25,
-      fallbackWidth: 900,
-      fallbackHeight: 600,
-      minStartPan: 32,
-      emptyPan: 80,
-      fitPad: 96,
-      fitPadSides: 2,
-      minFitBoxW: 240,
-      minFitBoxH: 160,
-      maxFitZoom: 1.15
-    },
     selectors: {
       viewport: "#timeline-scroll-viewport",
       expandSceneBtn: "#btn-expand-scene-text",
       expandSceneTitle: "#scene-text-expand-title",
-      graphDataPre: "#studio-graph-data",
       selectRoot: "[data-select-root]",
       openSelects: '[data-select-root][data-select-open="true"]',
       selectMenu: "[data-select-menu]",
@@ -158,7 +131,6 @@ const StudioController = {
       disabled: "is-disabled"
     },
     attrs: {
-      bookId: "data-book-id",
       dataScene: "data-scene",
       selectOpen: "data-select-open",
       activeWhen: "data-active-when",
@@ -175,147 +147,57 @@ const StudioController = {
       openSceneText: "OpenSceneTextModal",
       switchView: "SwitchView"
     },
+    i18n: {
+      badgeTitle: "search_badge_title",
+      badgeSlug: "search_badge_slug",
+      badgeChapter: "search_badge_chapter",
+      badgeSynopsis: "search_badge_synopsis",
+      badgeChoices: "search_badge_choices",
+      badgeProse: "search_badge_prose"
+    },
     values: {
       trueStr: "true",
       falseStr: "false",
       undefType: "undefined",
       libraryView: "library"
-    },
-    types: {
-      number: "number",
-      fn: "function",
-      bool: "boolean"
     }
   },
 
   openSearchSceneText(p) {
-    Dispatcher.post(this.settings.actions.openSceneText, {
-      scene: p.search_open_text || p.scene || ""
-    });
+    const sc = p.search_open_text || p.scene || "";
+    NodeCanvasController.focusNode(sc);
+    NodeCanvasController.flushSync();
+    Dispatcher.post(this.settings.actions.openSceneText, { scene: sc });
   },
 
   selectSearchScene(p) {
-    Dispatcher.post(this.settings.actions.selectScene, {
-      scene: p.search_scene || p.scene || ""
-    });
+    const sc = p.search_scene || p.scene || "";
+    NodeCanvasController.focusNode(sc);
+    NodeCanvasController.flushSync();
+    Dispatcher.post(this.settings.actions.selectScene, { scene: sc });
   },
 
   switchToReader() {
+    NodeCanvasController.flushSync();
     Dispatcher.post(this.settings.actions.switchView, {
       view: this.settings.values.libraryView
     });
   },
 
-  resolveViewport(candidate) {
-    const s = this.settings;
-    return candidate && typeof candidate.getBoundingClientRect === s.types.fn
-      ? candidate
-      : document.querySelector(s.selectors.viewport);
-  },
-
-  applyTransform() {
-    CanvasOverlays.updateFloatingInputTransform();
-    EditorWebglScene.render();
-  },
-
-  clampZoom(val) {
-    const c = this.settings.camera;
-    return Math.min(c.maxZoom, Math.max(c.minZoom, val));
-  },
-
-  zoomAtPoint(newZoom, pivotX, pivotY) {
-    const viewport = this.resolveViewport();
-    if (!viewport) return;
-    const c = this.settings.camera;
-    const t = this.settings.types;
-    const state = CanvasModel.editorCanvasState;
-    const targetZoom = this.clampZoom(newZoom);
-    const oldZoom = state.zoom || c.defaultZoom;
-    if (Math.abs(targetZoom - oldZoom) < c.zoomEpsilon) return;
-
-    const rect = viewport.getBoundingClientRect();
-    const px = typeof pivotX === t.number ? pivotX : rect.width * c.half;
-    const py = typeof pivotY === t.number ? pivotY : rect.height * c.half;
-    const worldX = (px - state.panX) / oldZoom;
-    const worldY = (py - state.panY) / oldZoom;
-
-    state.zoom = targetZoom;
-    state.panX = Math.round(px - worldX * targetZoom);
-    state.panY = Math.round(py - worldY * targetZoom);
-    this.applyTransform();
-  },
-
   zoomIn() {
-    const c = this.settings.camera;
-    this.zoomAtPoint((CanvasModel.editorCanvasState.zoom || c.defaultZoom) + c.zoomStep);
+    NodeCanvasController.zoomIn();
   },
 
   zoomOut() {
-    const c = this.settings.camera;
-    this.zoomAtPoint((CanvasModel.editorCanvasState.zoom || c.defaultZoom) - c.zoomStep);
+    NodeCanvasController.zoomOut();
   },
 
-  resetToFirstNode(viewport, forceCenter) {
-    const vp = this.resolveViewport(viewport);
-    if (!vp) return;
-    const c = this.settings.camera;
-    const shouldForce = typeof forceCenter === this.settings.types.bool ? forceCenter : false;
-    const state = CanvasModel.editorCanvasState;
-    const gState = CanvasModel.studioGraphState;
-    if (!shouldForce && gState.hasSavedView) {
-      state.panX = gState.savedPanX;
-      state.panY = gState.savedPanY;
-      state.zoom = this.clampZoom(gState.savedZoom || c.defaultZoom);
-      state.initialized = true;
-      this.applyTransform();
-      return;
-    }
-    const vRect = vp.getBoundingClientRect();
-    const vw = vRect.width || c.fallbackWidth;
-    const vh = vRect.height || c.fallbackHeight;
-    const nodes = gState.nodes;
-    const firstNode = nodes.find((n) => n.isStart) || nodes[0] || null;
-    state.zoom = c.defaultZoom;
-    if (firstNode) {
-      state.panX = Math.max(c.minStartPan, Math.round(vw * c.startFocusXRatio - firstNode.x));
-      state.panY = Math.max(c.minStartPan, Math.round(vh * c.half - (firstNode.y + firstNode.h * c.half)));
-    } else {
-      state.panX = c.emptyPan;
-      state.panY = c.emptyPan;
-    }
-    state.initialized = true;
-    this.applyTransform();
+  resetToFirstNode(_params, _el, e) {
+    NodeCanvasController.resetToFirstNode(Boolean(e), this.data.startSceneId || this.data.selectedSceneId);
   },
 
-  fitAllNodes(viewport) {
-    const vp = this.resolveViewport(viewport);
-    if (!vp) return;
-    const c = this.settings.camera;
-    const nodes = CanvasModel.studioGraphState.nodes;
-    if (!nodes.length) {
-      this.resetToFirstNode(vp, true);
-      return;
-    }
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    for (let i = 0; i < nodes.length; i++) {
-      const n = nodes[i];
-      if (n.x < minX) minX = n.x;
-      if (n.y < minY) minY = n.y;
-      if (n.x + n.w > maxX) maxX = n.x + n.w;
-      if (n.y + n.h > maxY) maxY = n.y + n.h;
-    }
-    const vRect = vp.getBoundingClientRect();
-    const vw = vRect.width || c.fallbackWidth;
-    const vh = vRect.height || c.fallbackHeight;
-    const pad = c.fitPad;
-    const boxW = Math.max(c.minFitBoxW, maxX - minX);
-    const boxH = Math.max(c.minFitBoxH, maxY - minY);
-    const state = CanvasModel.editorCanvasState;
-    state.zoom = this.clampZoom(Math.min((vw - pad * c.fitPadSides) / boxW, (vh - pad * c.fitPadSides) / boxH, c.maxFitZoom));
-    state.panX = Math.round((vw - boxW * state.zoom) * c.half - minX * state.zoom);
-    state.panY = Math.round((vh - boxH * state.zoom) * c.half - minY * state.zoom);
-    state.initialized = true;
-    this.applyTransform();
+  fitAllNodes() {
+    NodeCanvasController.fitAllNodes();
   },
 
   syncViewportVisibility() {
@@ -396,60 +278,10 @@ const StudioController = {
     }
   },
 
-  initCanvas(_params, canvasEl) {
+  onHydrate(frame) {
     const s = this.settings;
-    if (
-      typeof EditorWebgl !== s.values.undefType &&
-      EditorWebgl.studioGL.canvas &&
-      canvasEl &&
-      canvasEl !== EditorWebgl.studioGL.canvas &&
-      canvasEl.parentElement
-    ) {
-      canvasEl.parentElement.replaceChild(EditorWebgl.studioGL.canvas, canvasEl);
-    }
-    const viewport = document.querySelector(s.selectors.viewport);
-    if (!viewport) return;
-    const bookId = viewport.getAttribute(s.attrs.bookId) || "";
-    const state = CanvasModel.editorCanvasState;
-    CanvasModel.parseStudioGraphPayload();
-    EditorWires.route();
-    if (!state.initialized || state.bookId !== bookId) {
-      state.bookId = bookId;
-      this.resetToFirstNode(viewport, false);
-    } else {
-      this.applyTransform();
-    }
-    this.syncViewportVisibility();
-  },
-
-  onHydrate(frame, _action, params) {
-    const s = this.settings;
-    if (this.data.resetCanvas && typeof CanvasModel !== s.values.undefType) {
-      CanvasModel.editorCanvasState.initialized = false;
-      this.data.resetCanvas = false;
-    }
     if (frame && frame.voicePeak && typeof EditorVoice !== s.values.undefType) {
       EditorVoice.handlePeakHeader(frame.voicePeak);
-    }
-    const newSceneId = this.data.sceneId || this.data.selectedSceneId || "";
-    const oldSceneId = this.data.scenePrevId || (params && (params.scene_id || params.scene)) || "";
-    if (newSceneId && oldSceneId && newSceneId !== oldSceneId && typeof CanvasModel !== s.values.undefType) {
-      const gState = CanvasModel.studioGraphState;
-      const nd = gState.nodeById.get(oldSceneId);
-      if (nd) {
-        gState.nodeById.delete(oldSceneId);
-        nd.id = newSceneId;
-        gState.nodeById.set(newSceneId, nd);
-      }
-      if (CanvasModel.selectedNodeIds.has(oldSceneId)) {
-        CanvasModel.selectedNodeIds.delete(oldSceneId);
-        CanvasModel.selectedNodeIds.add(newSceneId);
-      }
-    }
-    if (this.data.selectedSceneId && typeof CanvasModel !== s.values.undefType) {
-      CanvasModel.editorSelectionCleared = false;
-      CanvasModel.selectedNodeIds.clear();
-      CanvasModel.selectedNodeIds.add(this.data.selectedSceneId);
     }
     const expandBtn = document.querySelector(s.selectors.expandSceneBtn);
     if (expandBtn && this.data.selectedSceneId) {
@@ -458,13 +290,6 @@ const StudioController = {
     const expandTitle = document.querySelector(s.selectors.expandSceneTitle);
     if (expandTitle && this.data.sceneTitle) {
       expandTitle.textContent = decodeURIComponent(this.data.sceneTitle.replace(/\+/g, " "));
-    }
-    if (frame && frame.studioGraphPayload && typeof CanvasModel !== s.values.undefType && document.querySelector(s.selectors.viewport)) {
-      const pre = document.querySelector(s.selectors.graphDataPre);
-      if (pre) pre.textContent = this.data.studioGraphPayload;
-      CanvasModel.parseStudioGraphPayload(this.data.studioGraphPayload);
-      EditorWires.route();
-      this.applyTransform();
     }
   }
 };

@@ -9,8 +9,9 @@ import (
 	"runtime"
 	"strings"
 
-	"mojra/internal/book"
-	"mojra/internal/tpl"
+	_ "mojra/domain"
+	"mojra/domain/book"
+	"mojra/engine"
 )
 
 const (
@@ -519,7 +520,7 @@ func prepareBuildAssets(rootDir string) error {
 			return fmt.Errorf(errMissingIconFmt, iconPath, err)
 		}
 	}
-	if err := tpl.BuildApp(appDir); err != nil {
+	if err := engine.BuildApp(appDir); err != nil {
 		return fmt.Errorf(errBuildAssetsFmt, err)
 	}
 	if entries, rErr := os.ReadDir(booksDir); rErr == nil {

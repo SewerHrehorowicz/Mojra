@@ -32,13 +32,18 @@ func loadAllJSFiles(rootDir string) []jsFileData {
 		return nil
 	}
 	var out []jsFileData
-	readJSDir := func(dir, relPrefix string) {
+	var readJSDir func(dir, relPrefix string)
+	readJSDir = func(dir, relPrefix string) {
 		dirEntries, err := os.ReadDir(dir)
 		if err != nil {
 			return
 		}
 		for _, e := range dirEntries {
-			if e.IsDir() || !strings.HasSuffix(e.Name(), ".js") {
+			if e.IsDir() {
+				readJSDir(filepath.Join(dir, e.Name()), relPrefix+e.Name()+"/")
+				continue
+			}
+			if !strings.HasSuffix(e.Name(), ".js") {
 				continue
 			}
 			raw, err := os.ReadFile(filepath.Join(dir, e.Name()))
@@ -54,7 +59,6 @@ func loadAllJSFiles(rootDir string) []jsFileData {
 		}
 	}
 	readJSDir(jsDir, "app/js/")
-	readJSDir(filepath.Join(jsDir, "controllers"), "app/js/controllers/")
 	return out
 }
 
@@ -648,7 +652,8 @@ func checkSecurityLoopsAndReliability(rootDir string, fset *token.FileSet, goFil
 			continue
 		}
 		lines := strings.Split(string(pf.src), "\n")
-		isNativeWindowLoopFile := strings.HasPrefix(pf.relPath, "internal/gui/window_") ||
+		isNativeWindowLoopFile := strings.HasPrefix(pf.relPath, "engine/osbridge/window_") ||
+			strings.HasPrefix(pf.relPath, "internal/gui/window_") ||
 			strings.HasPrefix(pf.relPath, "internal/osbridge/window_")
 
 		for _, decl := range pf.file.Decls {
@@ -715,7 +720,7 @@ func checkSecurityLoopsAndReliability(rootDir string, fset *token.FileSet, goFil
 					}
 
 					// HOT_PATH_ALLOC: Disk I/O or heavy analysis inside *_view.go
-					if strings.HasPrefix(pf.relPath, "internal/views/") && strings.HasSuffix(pf.relPath, "_view.go") {
+					if (strings.HasPrefix(pf.relPath, "domain/views/") || strings.HasPrefix(pf.relPath, "internal/views/")) && strings.HasSuffix(pf.relPath, "_view.go") {
 						if callName == "os.Stat" || callName == "os.ReadFile" || callName == "os.ReadDir" || callName == "book.AnalyzeScreenplay" || callName == "book.CompareBookBranches" {
 							out = append(out, Finding{
 								File:     pf.relPath,
@@ -1174,7 +1179,7 @@ func checkJSControllersAndDataContracts(rootDir string, fset *token.FileSet, goF
 
 	// 9c. Verify 1:1 mapping between Go *_view.go *Script structs (ScriptData) and JS Controller.data
 	for _, pf := range goFiles {
-		if pf.isTest || !strings.HasPrefix(pf.relPath, "internal/views/") || !strings.HasSuffix(pf.relPath, "_view.go") {
+		if pf.isTest || (!strings.HasPrefix(pf.relPath, "domain/views/") && !strings.HasPrefix(pf.relPath, "internal/views/")) || !strings.HasSuffix(pf.relPath, "_view.go") {
 			continue
 		}
 		viewBase := filepath.Base(pf.relPath) // <snake>_view.go

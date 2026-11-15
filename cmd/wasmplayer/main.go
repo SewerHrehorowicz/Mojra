@@ -13,9 +13,10 @@ import (
 	"syscall/js"
 
 	"mojra"
-	"mojra/internal/book"
-	"mojra/internal/i18n"
-	"mojra/internal/tpl"
+	"mojra/domain/book"
+	_ "mojra/domain/i18n"
+	"mojra/engine"
+	"mojra/engine/templates"
 )
 
 type playerTemplate struct {
@@ -23,15 +24,15 @@ type playerTemplate struct {
 	IsScreenplayMode  bool
 	IsHistoryPreview  bool
 	HasHistory        bool
-	HistoryScenes     []tpl.TemplateChunk
+	HistoryScenes     []templates.TemplateChunk
 	HistoryTicks      []string
 	HeaderMeta        string
 	RailTitle         string
 	HasBgImage        bool
 	BgImageURL        string
-	CurrentScene      tpl.TemplateChunk
+	CurrentScene      templates.TemplateChunk
 	ShowAudioDeck     bool
-	AudioDeck         tpl.TemplateChunk
+	AudioDeck         templates.TemplateChunk
 	PrefetchMediaURLs string
 	BookProgressPct   int
 }
@@ -120,7 +121,7 @@ type wasmPlayerRuntime struct {
 	media                map[string][]byte
 	blobURLs             map[string]string
 	save                 *book.SaveState
-	templates            map[string]*tpl.ParsedTemplate
+	templates            map[string]*templates.ParsedTemplate
 	confirmTitle         string
 	confirmMessage       string
 	confirmPendingAction string
@@ -135,7 +136,7 @@ var rt = &wasmPlayerRuntime{
 }
 
 func main() {
-	templates, err := tpl.LoadTemplatesFromDir("", mojra.WasmAppFS)
+	templates, err := templates.LoadTemplatesFromDir("", mojra.WasmAppFS)
 	if err == nil {
 		rt.templates = templates
 	}
@@ -223,10 +224,10 @@ func wasmBoot(_ js.Value, args []js.Value) any {
 
 	fullHTML := `<main class="workspace" id="workspace">` + playerHTML + `</main><div class="modals-root" id="modals-root">` + modalsHTML + `</div><div class="toast hidden" id="toast-banner"></div><div class="ui-tooltip hidden" id="ui-tooltip"></div>`
 	var out bytes.Buffer
-	_ = tpl.WriteFDPFrames(
+	_ = engine.WriteFDPFrames(
 		&out,
-		tpl.FDPFrame{Target: "#app", HTMLBody: []byte(fullHTML), Chunk: playerChunk},
-		tpl.FDPFrame{Target: "none", Chunk: tpl.TemplateChunk{ScriptData: &appShellScript{imageless: b.Imageless, imagelessLocked: b.Imageless}}},
+		engine.FDPFrame{Target: "#app", HTMLBody: []byte(fullHTML), Chunk: playerChunk},
+		engine.FDPFrame{Target: "none", Chunk: templates.TemplateChunk{ScriptData: &appShellScript{imageless: b.Imageless, imagelessLocked: b.Imageless}}},
 	)
 	return out.String()
 }
@@ -236,7 +237,7 @@ func wasmAction(_ js.Value, args []js.Value) any {
 		return ""
 	}
 	rawReq := args[0].String()
-	frames := tpl.DecodeFDPFrames([]byte(rawReq))
+	frames := engine.DecodeFDPFrames([]byte(rawReq))
 	if len(frames) == 0 {
 		return ""
 	}
@@ -425,32 +426,32 @@ func wasmAction(_ js.Value, args []js.Value) any {
 		target = "none"
 	}
 
-	var fdpFrames []tpl.FDPFrame
+	var fdpFrames []engine.FDPFrame
 	switch target {
 	case "#workspace":
 		playerChunk := rt.buildPlayerChunk()
-		fdpFrames = append(fdpFrames, tpl.FDPFrame{
+		fdpFrames = append(fdpFrames, engine.FDPFrame{
 			Target:   "#workspace",
 			HTMLBody: []byte(rt.renderChunk(playerChunk)),
 			Chunk:    playerChunk,
 		})
 	case "#modals-root":
 		confirmChunk := rt.buildConfirmChunk()
-		fdpFrames = append(fdpFrames, tpl.FDPFrame{
+		fdpFrames = append(fdpFrames, engine.FDPFrame{
 			Target:   "#modals-root",
 			HTMLBody: []byte(rt.renderChunk(confirmChunk)),
 			Chunk:    confirmChunk,
 		})
 	default:
 		playerChunk := rt.buildPlayerChunk()
-		fdpFrames = append(fdpFrames, tpl.FDPFrame{
+		fdpFrames = append(fdpFrames, engine.FDPFrame{
 			Target: "none",
 			Chunk:  playerChunk,
 		})
 	}
-	fdpFrames = append(fdpFrames, tpl.FDPFrame{
+	fdpFrames = append(fdpFrames, engine.FDPFrame{
 		Target: "none",
-		Chunk: tpl.TemplateChunk{
+		Chunk: templates.TemplateChunk{
 			ScriptData: &appShellScript{
 				imageless:       rt.book.Imageless,
 				imagelessLocked: rt.book.Imageless,
@@ -460,7 +461,7 @@ func wasmAction(_ js.Value, args []js.Value) any {
 	})
 
 	var out bytes.Buffer
-	_ = tpl.WriteFDPFrames(&out, fdpFrames...)
+	_ = engine.WriteFDPFrames(&out, fdpFrames...)
 	return out.String()
 }
 
@@ -523,7 +524,7 @@ func (r *wasmPlayerRuntime) executeChoiceTransition(fromScene *book.Scene, choic
 	return ""
 }
 
-func (r *wasmPlayerRuntime) renderChunk(chunk tpl.TemplateChunk) string {
+func (r *wasmPlayerRuntime) renderChunk(chunk templates.TemplateChunk) string {
 	if r.templates == nil {
 		return ""
 	}
@@ -532,17 +533,17 @@ func (r *wasmPlayerRuntime) renderChunk(chunk tpl.TemplateChunk) string {
 		return ""
 	}
 	baseVars := make(map[string]any, 64)
-	i18n.PopulateI18nContext(baseVars, i18n.LangPL)
-	ctx := tpl.NewContext(baseVars).WithStruct(tplData)
+	engine.PopulateI18nContext(baseVars, engine.DefaultLang)
+	ctx := templates.NewContext(baseVars).WithStruct(tplData)
 	var buf bytes.Buffer
-	if err := tpl.RenderTemplateTo(&buf, tplName, r.templates, ctx); err != nil {
+	if err := templates.RenderTemplateTo(&buf, tplName, r.templates, ctx); err != nil {
 		return ""
 	}
 	return buf.String()
 }
 
-func (r *wasmPlayerRuntime) buildConfirmChunk() tpl.TemplateChunk {
-	return tpl.TemplateChunk{
+func (r *wasmPlayerRuntime) buildConfirmChunk() templates.TemplateChunk {
+	return templates.TemplateChunk{
 		TemplateData: &confirmTemplate{
 			ShowConfirmModal: r.confirmPendingAction != "",
 			ConfirmTitle:     r.confirmTitle,
@@ -552,7 +553,7 @@ func (r *wasmPlayerRuntime) buildConfirmChunk() tpl.TemplateChunk {
 	}
 }
 
-func (r *wasmPlayerRuntime) buildPlayerChunk() tpl.TemplateChunk {
+func (r *wasmPlayerRuntime) buildPlayerChunk() templates.TemplateChunk {
 	b := r.book
 	v := &playerTemplate{}
 	sc := &playerScript{
@@ -562,7 +563,7 @@ func (r *wasmPlayerRuntime) buildPlayerChunk() tpl.TemplateChunk {
 		sc.saveHex = hex.EncodeToString(book.EncodeSaveStateBytes(r.save))
 	}
 	if b == nil || len(b.Scenes) == 0 {
-		return tpl.TemplateChunk{TemplateData: v, ScriptData: sc}
+		return templates.TemplateChunk{TemplateData: v, ScriptData: sc}
 	}
 	curScene := r.currentScene()
 	if curScene == nil {
@@ -584,7 +585,7 @@ func (r *wasmPlayerRuntime) buildPlayerChunk() tpl.TemplateChunk {
 
 	lastImageURL := ""
 	if histCount > 0 {
-		histChunks := make([]tpl.TemplateChunk, 0, histCount)
+		histChunks := make([]templates.TemplateChunk, 0, histCount)
 		histTicks := make([]string, 0, histCount)
 		for _, entry := range r.save.History {
 			pastScene := findSceneByID(b, entry.SceneID)
@@ -640,7 +641,7 @@ func (r *wasmPlayerRuntime) buildPlayerChunk() tpl.TemplateChunk {
 		speed = 1
 	}
 	if b.Narrated {
-		v.AudioDeck = tpl.TemplateChunk{
+		v.AudioDeck = templates.TemplateChunk{
 			TemplateData: &audioDeckTemplate{
 				AudioDurationLabel: curQueueDurLbl,
 				AudioSpeed:         fmt.Sprintf("%.2g", speed),
@@ -679,13 +680,13 @@ func (r *wasmPlayerRuntime) buildPlayerChunk() tpl.TemplateChunk {
 		progressPct = 100
 	}
 	v.BookProgressPct = progressPct
-	return tpl.TemplateChunk{
+	return templates.TemplateChunk{
 		TemplateData: v,
 		ScriptData:   sc,
 	}
 }
 
-func buildWasmSceneChunk(b *book.Book, sc *book.Scene, vars map[string]string, normStd string, imageless, isPresent bool) tpl.TemplateChunk {
+func buildWasmSceneChunk(b *book.Book, sc *book.Scene, vars map[string]string, normStd string, imageless, isPresent bool) templates.TemplateChunk {
 	imgURL := ""
 	if !imageless && sc.ImageURL != "" {
 		imgURL = sc.ImageURL
@@ -733,7 +734,7 @@ func buildWasmSceneChunk(b *book.Book, sc *book.Scene, vars map[string]string, n
 			isBranching:      hasMultiple,
 		}
 	}
-	return tpl.TemplateChunk{
+	return templates.TemplateChunk{
 		TemplateData: &sceneTemplate{
 			IsPresent:        isPresent,
 			IsScreenplayMode: isScreenplay,

@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"mojra/internal/tpl"
+	"mojra/engine/templates"
 )
 
 // WriteTextGraph formats and writes the plain-text AI dependency graph to outPath.
@@ -47,27 +47,27 @@ func WriteTextGraph(outPath string, g GraphView) error {
 	return os.WriteFile(outPath, buf.Bytes(), 0644)
 }
 
-// WriteHTMLGraph compiles graph.tss and graph.tpl via internal/tpl and writes a self-contained HTML file to outPath.
+// WriteHTMLGraph compiles graph.tss and graph.tpl via engine/templates and writes a self-contained HTML file to outPath.
 func WriteHTMLGraph(tplDir, outPath string, g GraphView) error {
 	if err := os.MkdirAll(filepath.Dir(outPath), 0755); err != nil {
 		return err
 	}
 
 	tssPath := filepath.Join(tplDir, tssFileNameGraph)
-	cssStr, err := tpl.TranspileCSSFilesToString([]string{tssPath}, true, nil)
+	cssStr, err := templates.TranspileCSSFilesToString([]string{tssPath}, true, nil)
 	if err != nil {
 		return err
 	}
 
-	templates, err := tpl.LoadTemplatesFromDir(tplDir, nil)
+	loadedTemplates, err := templates.LoadTemplatesFromDir(tplDir, nil)
 	if err != nil {
 		return err
 	}
 
-	ctx := tpl.NewContext(nil).WithStruct(&g)
+	ctx := templates.NewContext(nil).WithStruct(&g)
 	var htmlBuf bytes.Buffer
 	htmlBuf.Grow(128 * 1024)
-	if err := tpl.RenderTemplateTo(&htmlBuf, tplNameGraph, templates, ctx); err != nil {
+	if err := templates.RenderTemplateTo(&htmlBuf, tplNameGraph, loadedTemplates, ctx); err != nil {
 		return err
 	}
 

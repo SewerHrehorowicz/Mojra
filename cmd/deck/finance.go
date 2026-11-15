@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"mojra/internal/tpl"
+	"mojra/engine/templates"
 )
 
 type deckYearCalc struct {
@@ -47,7 +47,7 @@ type deckMonthRow struct {
 // (36-month simulation M1-M36, stakeholder pie split between Lead Architect 78%, Business Co-Founder 12%,
 // and Investors 10%, plus 3 realism scenarios), writes docs/kalkulator-finansowy.csv and docs/symulacja-36-miesiecy.csv,
 // and returns a *tpl.RenderContext.
-func LoadDeckFinanceContext(rootDir string) *tpl.RenderContext {
+func LoadDeckFinanceContext(rootDir string) *templates.RenderContext {
 	var cfg financeConfig
 	for _, fd := range financeConfigSchema {
 		*fd.ptr(&cfg) = fd.defaultVal
@@ -314,7 +314,7 @@ func LoadDeckFinanceContext(rootDir string) *tpl.RenderContext {
 		vars[yk.months] = monthsByYear[yr]
 	}
 
-	return tpl.NewContext(vars)
+	return templates.NewContext(vars)
 }
 
 func distribute12Months(total float64, weights [12]float64) [12]int64 {

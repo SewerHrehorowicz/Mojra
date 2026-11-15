@@ -4,21 +4,33 @@ Canonical specification for how state, views, templates, chunks, and client cont
 
 ---
 
-## 1. Subsystem Separation of Concerns
+## 1. Subsystem Separation of Concerns (`engine/` vs `domain/`)
 
 ```
-[ state ]  -->  [ actions ]  -->  [ views ]          -->  [ tpl + fdp ]  ==(FDP / HTTP)==>  [ Dispatcher ]  -->  [ <Name>Controller ]
-(in-memory)     (mutations &      (TemplateData +         (key=val +                        (Fdp.decode, DOM     (data, bindings(),
-                 routing)          ScriptData)             \n\n HTML)                        swap, hydration)     settings, methods)
+[ domain/state ] --> [ domain/actions ] --> [ domain/views ]   --> [ engine/templates + engine/fdp ] ==(FDP / HTTP)==> [ Dispatcher ] --> [ <Name>Controller ]
+(in-memory)          (ActionHandler ->      (TemplateData +        (key=val + \n\n HTML)                                (Fdp.decode, DOM   (data, bindings(),
+                      []ActionFrame)         ScriptData)                                                                 swap, hydration)   settings, methods)
 ```
 
-1. **`internal/state`**: Pure in-memory application state (`AppState`, `PlayerState`, `EditorState`, `Settings`). Zero HTTP, template, or view-formatting logic.
-2. **`internal/actions`**: Handles `POST /api/action` requests decoded via `FDP` (`FlatDataProtocol`), mutates `state`, selects the target view chunk (`tpl.TemplateChunk`) and DOM target (`target`), and streams the `FDP` response frame.
-3. **`internal/views`**: Transforms `state` into strongly-typed view chunks (`tpl.TemplateChunk`) with strict separation between presentational `TemplateData` (`*<name>Template`) and client controller state `ScriptData` (`*<name>Script`).
-   - **Strict Separation Rule**: Each `<name>_view.go` file defines at most one template struct (`<name>Template`) for `.tpl` rendering and one optional script struct (`<name>Script`) for `FDP` controller hydration. Every view is a first-class peer `tpl.TemplateChunk` (there are no "sub-views" or helper view structs)—views compose other views solely via `tpl.TemplateChunk` or `[]tpl.TemplateChunk` fields on `TemplateData`, and reuse domain structs from `internal/book` directly.
-4. **`internal/tpl` & `app/templates/*.tpl`**: Pure presentational HTML rendering from `TemplateData` + flat `FDP` key-value serialization exclusively from `ScriptData`.
-5. **`app/js/fdp.js` (`Fdp`) & `app/js/dispatcher.js` (`Dispatcher`)**: Universal client codec and runtime. `Fdp` encodes/decodes flat `key=val\n...\n\n<body>` frames in both directions; `Dispatcher` owns `POST /api/action` transport, strict contract hydration (`key in ctrl.data`), `target` DOM swapping, delegated event routing, and `init` lifecycle mounting. There is **no `Core` module**.
-6. **`app/js/controllers/<name>_controller.js` (`<Name>Controller`)**: Isolated UI controllers paired 1:1 with their view/template triad, stored in `app/js/controllers/`.
+### 1.1 Generic Engine (`engine/` — Zero Imports from `domain/`)
+1. **`engine/templates`**: Compiler, validator, and streaming renderer for `.tpl` templates (`TemplateChunk`, `RenderTemplateTo`) and `.tss` stylesheets.
+2. **`engine/osbridge`**: Native OS windowing (Cocoa/`WKWebView`, Win32, Linux, Android), native file pickers, and audio capture.
+3. **`engine`** (`server.go`, `dispatcher.go`, `fdp.go`, `bundle.go`, `i18n.go`, `qr.go`, `telemetry.go`):
+   - `EngineServer` (`server.go`): Generic HTTP server (`GET /`, static/bundled asset cache, CSP/COOP/COEP headers, `GET /api/lan-qr.png`, `POST /api/action`).
+   - `dispatcher.go` & `fdp.go`: `FlatDataProtocol` (`FDP`) multi-frame codec (`DecodeFDPBytes`, `WriteFDPFrames`), same-origin/CSRF/loopback validation, and `WriteRenderedActionFrames`.
+   - `bundle.go`: `.tpl`/`.tss`/`.js` bundler parameterized via `JSHeaderBuilder`, `GeneratedAssetBuilders`, and `NonPlayerModulePrefixes`.
+   - `i18n.go`: Generic `.cfg` catalog parser, `RegisterCatalog`, `T`/`Tf`/`Plural`, `PopulateI18nContext`, `NewViewContext`, and `BuildJSI18nHeader`.
+
+### 1.2 Application Domain (`domain/` — Built on `engine/`)
+1. **`domain` (`domain/app_main.go`)**: Application entry point (`NewServerWithOptions`) that boots `state.AppState` (`settings.ini`, library `books/`, `PlayerState`, `EditorState`) and wires `views.AppShellView`, `actions.HandleAction`, and `/api/books/` media routes into `engine.EngineServer`.
+2. **`domain/i18n` (`keys.go`, `pl.cfg`, `en.cfg`)**: Embedded Mojra translation catalogs and `Tr*` keys registered via `engine.RegisterCatalog`.
+3. **`domain/book`**: `.playtxt`/`.playbook` model, parser, mutator, exporters, media verifier, and `BuildStudioUIAtlas` (`studio_atlas.go`).
+4. **`domain/state`**: Pure in-memory application state (`AppState`, `PlayerState`, `EditorState`, `Settings`). Zero HTTP, template, or view-formatting logic.
+5. **`domain/actions`**: Handles `POST /api/action` requests decoded via `FDP`, mutates `state`, and returns explicit `[]engine.ActionFrame` slices (`frameApp`, `frameWorkspace`, `frameModals`, `frameInspector`, `frameSceneForm`, `frameUndoRedo`). Each `<name>_actions.go` registers its own `ActionHandler` functions directly into `Handlers` (`registerActions` / `registerLANActions` / `registerStandaloneActions`)—there is **no `specs.go`**, **no `action.go`**, and **no `ActionSpec` struct**.
+6. **`domain/views`**: Transforms `state` into strongly-typed view chunks (`templates.TemplateChunk`) with strict separation between presentational `TemplateData` (`*<name>Template`) and client controller state `ScriptData` (`*<name>Script`).
+   - **Strict Separation Rule**: Each `<name>_view.go` file defines at most one template struct (`<name>Template`) for `.tpl` rendering and one optional script struct (`<name>Script`) for `FDP` controller hydration. Every view is a first-class peer `templates.TemplateChunk` (there are no "sub-views" or helper view structs)—views compose other views solely via `templates.TemplateChunk` or `[]templates.TemplateChunk` fields on `TemplateData`, and reuse domain structs from `domain/book` directly.
+7. **`app/js/fdp.js` (`Fdp`) & `app/js/dispatcher.js` (`Dispatcher`)**: Universal client codec and runtime. `Fdp` encodes/decodes flat `key=val\n...\n\n<body>` frames in both directions; `Dispatcher` owns `POST /api/action` transport, strict contract hydration (`key in ctrl.data`), `target` DOM swapping, delegated event routing, and `init` lifecycle mounting. There is **no `Core` module**.
+8. **`app/js/controllers/<name>_controller.js` (`<Name>Controller`)**: Isolated UI controllers paired 1:1 with their view/template triad, stored in `app/js/controllers/`.
 
 ---
 
@@ -28,13 +40,13 @@ Every interactive UI unit forms a strict 1:1:1 triad derived by convention from 
 
 | Artifact | Naming Convention | Example (`player`) | Example (`editor_context`) |
 | :--- | :--- | :--- | :--- |
-| Go View (`internal/views/`) | `<name>_view.go` | `player_view.go` | `editor_context_view.go` |
+| Go View (`domain/views/`) | `<name>_view.go` | `player_view.go` | `editor_context_view.go` |
 | Go Constructor | `<PascalName>View` | `PlayerView` | `EditorContextView` |
 | `TemplateData` / `ScriptData` | `<camelName>Template` / `<camelName>Script` | `playerTemplate` / `playerScript` | `editorContextTemplate` / `editorContextScript` |
 | Template (`app/templates/`) | `<name>_view.tpl` | `player_view.tpl` | `editor_context_view.tpl` |
 | JS Controller (`app/js/controllers/`) | `<name>_controller.js` (`<PascalName>Controller`) | `player_controller.js` (`PlayerController`) | `editor_context_controller.js` (`EditorContextController`) |
-| Go State (`internal/state/`) | `<name>_state.go` | `player_state.go` | `studio_state.go` |
-| Go Actions (`internal/actions/`) | `<name>_actions.go` | `player_actions.go` | `studio_scene_actions.go` |
+| Go State (`domain/state/`) | `<name>_state.go` | `player_state.go` | `studio_state.go` |
+| Go Actions (`domain/actions/`) | `<name>_actions.go` | `player_actions.go` | `studio_scene_actions.go` |
 | Root DOM ID | `#<kebab-name>-view` | `#player-view` | `#editor-context-view` |
 
 - **Zero Hardcoded Maps**:
@@ -46,8 +58,8 @@ Every interactive UI unit forms a strict 1:1:1 triad derived by convention from 
 
 ## 3. `TemplateChunk` Composition & FlatDataProtocol (`FDP`)
 
-### 3.1 Building Chunks in Go (`internal/views/`)
-Every view is an independent `tpl.TemplateChunk` splitting presentational data from controller state (with no `Template string` field):
+### 3.1 Building Chunks in Go (`domain/views/`)
+Every view is an independent `templates.TemplateChunk` splitting presentational data from controller state (with no `Template string` field):
 
 ```go
 type TemplateChunk struct {
@@ -56,7 +68,7 @@ type TemplateChunk struct {
 }
 ```
 
-- **`TemplateData`**: Consumed exclusively by the `.tpl` HTML renderer. Holds presentational strings (`HeaderMeta`, `RailTitle`, `Name`, `Slugline`, `AudioDurationLabel`, `Prose`) and nested `tpl.TemplateChunk` or `[]tpl.TemplateChunk` child chunks. Never serialized into the `FDP` key-value header block.
+- **`TemplateData`**: Consumed exclusively by the `.tpl` HTML renderer. Holds presentational strings (`HeaderMeta`, `RailTitle`, `Name`, `Slugline`, `AudioDurationLabel`, `Prose`) and nested `templates.TemplateChunk` or `[]templates.TemplateChunk` child chunks. Never serialized into the `FDP` key-value header block.
 - **`ScriptData`**: Consumed exclusively by the `FDP` serializer (`ScriptData` -> flat `key=val` lines -> `ctrl.data`). Holds only scalar runtime state required by client JS controllers. When a chunk requires no client state hydration (e.g., historical scene cards), set `ScriptData: nil` so zero keys are emitted.
 
 ```go
@@ -64,8 +76,8 @@ type playerTemplate struct {
     ImagelessMode bool
     HeaderMeta    string
     HasHistory    bool
-    HistoryScenes []tpl.TemplateChunk
-    CurrentScene  tpl.TemplateChunk
+    HistoryScenes []templates.TemplateChunk
+    CurrentScene  templates.TemplateChunk
 }
 
 type playerScript struct {

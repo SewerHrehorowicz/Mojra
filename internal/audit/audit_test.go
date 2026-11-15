@@ -98,14 +98,14 @@ func TestAuditRejectsLogicInJSBindingsAndBrokenControllerDataMap(t *testing.T) {
 	}
 
 	viewSrc := `package views
-import "mojra/internal/tpl"
+import "mojra/engine/templates"
 type sampleTemplate struct{}
 type sampleScript struct {
 	bookId string
 	count  int
 }
-func SampleView() tpl.TemplateChunk {
-	return tpl.TemplateChunk{
+func SampleView() templates.TemplateChunk {
+	return templates.TemplateChunk{
 		TemplateData: &sampleTemplate{},
 		ScriptData: &sampleScript{bookId: "a", count: 1},
 	}

@@ -10,11 +10,11 @@ import (
 	"time"
 
 	"mojra"
+	"mojra/domain"
+	"mojra/domain/book"
+	"mojra/engine"
+	"mojra/engine/osbridge"
 	"mojra/internal/audit"
-	"mojra/internal/book"
-	"mojra/internal/logging"
-	"mojra/internal/osbridge"
-	"mojra/internal/server"
 )
 
 const (
@@ -23,7 +23,7 @@ const (
 	flagDashTelemetry     = "--telemetry"
 	flagShortTelemetry    = "-telemetry"
 	argTelemetry          = "telemetry"
-	ldflagTelemetryEnable = " -X mojra/internal/logging.buildEnabled=true"
+	ldflagTelemetryEnable = " -X mojra/engine.buildEnabled=true"
 
 	cmdDefault     = "run"
 	cmdBuild       = "build"
@@ -393,14 +393,14 @@ func runCmd(args []string, forceDev bool) {
 	}
 
 	rootDir := resolveRootDir()
-	logging.Init(book.ResolveSavesDir(rootDir), t0, *telemetryFlag)
-	logging.Active.MarkStep(logging.StageResolveRoot, t0, rootDir)
+	engine.Init(book.ResolveSavesDir(rootDir), t0, *telemetryFlag)
+	engine.Active.MarkStep(engine.StageResolveRoot, t0, rootDir)
 	if err := book.CheckBetaBuildExpiry(betaExpiryRFC3339, os.Getenv(envBetaKey), betaPubKeyHex, time.Time{}); err != nil {
 		fmt.Fprintf(os.Stderr, msgBetaAuthErr, err)
 		os.Exit(1)
 	}
-	srv := server.NewServerWithOptions(rootDir, mojra.AppFS, devMode)
-	if err := osbridge.LaunchWithOptions(rootDir, *port, *headless, devMode, srv.Handler(), srv.State.Config.ShutdownCh, srv.State.Config.TriggerShutdown, func(p int) { srv.State.Config.Port = p }); err != nil {
+	srv := domain.NewServerWithOptions(rootDir, mojra.AppFS, devMode)
+	if err := osbridge.LaunchWithOptions(srv.State.Config.SavesDir, *port, *headless, devMode, srv.Handler(), srv.State.Config.ShutdownCh, srv.State.Config.TriggerShutdown, func(p int) { srv.State.Config.Port = p }); err != nil {
 		fmt.Fprintf(os.Stderr, msgLaunchErr, err)
 		os.Exit(1)
 	}

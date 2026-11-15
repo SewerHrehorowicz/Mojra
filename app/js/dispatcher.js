@@ -13,10 +13,10 @@ const Dispatcher = {
   lastAction: "",
   lastParams: null,
   events: [
-    "click", "input", "change", "submit", "focus", "blur",
+    "click", "dblclick", "contextmenu", "input", "change", "submit", "focus", "blur",
     "keydown", "keyup", "scroll", "wheel",
     "pointerdown", "pointermove", "pointerup",
-    "mouseover", "mouseout", "mousemove", "mousedown",
+    "mouseover", "mouseout", "mousemove", "mousedown", "mouseup",
     "timeupdate", "ended"
   ],
 
@@ -50,6 +50,7 @@ const Dispatcher = {
       click: "click",
       change: "change",
       submit: "submit",
+      wheel: "wheel",
       pointerdown: "pointerdown",
       pointermove: "pointermove",
       pointerup: "pointerup"
@@ -224,21 +225,25 @@ const Dispatcher = {
     const isDefaultEvt = e.type === ev.click || e.type === ev.change || e.type === ev.submit;
     const boundList = this.bindingsByEvent[e.type];
     if (boundList && !(isDefaultEvt && t.closest(s.selectors.action))) {
-      let bestEntry = null;
+      let bestEntries = null;
       let bestEl = null;
       for (let i = 0; i < boundList.length; i++) {
         const entry = boundList[i];
         const matchedEl = t.closest(entry.selector);
-        if (matchedEl && (!bestEl || (bestEl !== matchedEl && bestEl.contains && bestEl.contains(matchedEl)))) {
-          bestEntry = entry;
+        if (!matchedEl) continue;
+        if (!bestEl || (bestEl !== matchedEl && bestEl.contains && bestEl.contains(matchedEl))) {
           bestEl = matchedEl;
+          bestEntries = [entry];
+        } else if (matchedEl === bestEl) {
+          bestEntries.push(entry);
         }
       }
-      if (bestEntry && bestEl) {
+      if (bestEntries && bestEl) {
         return {
           el: bestEl,
-          ctrl: bestEntry.ctrl,
-          handler: bestEntry.handler,
+          entries: bestEntries,
+          ctrl: bestEntries[0].ctrl,
+          handler: bestEntries[0].handler,
           idx: bestEl._idx !== undefined ? bestEl._idx : 0,
           eventPrefix: ""
         };
@@ -378,6 +383,15 @@ const Dispatcher = {
     const isPreventEvt = e.type === ev.click || e.type === ev.submit;
     if (isPreventEvt && !hit.handler) e.preventDefault();
     const params = this.collectParams(hit, e);
+    if (hit.entries) {
+      if (e.type === ev.submit) e.preventDefault();
+      if (params.idx === undefined) params.idx = hit.idx;
+      for (let i = 0; i < hit.entries.length; i++) {
+        const entry = hit.entries[i];
+        entry.handler.call(entry.ctrl, params, hit.el, e, hit);
+      }
+      return;
+    }
     if (hit.handler) {
       if (e.type === ev.submit) e.preventDefault();
       if (params.idx === undefined) params.idx = hit.idx;
@@ -391,7 +405,8 @@ const Dispatcher = {
 
   bind() {
     const handler = (e) => this.handle(e);
-    this.events.forEach((evt) => document.addEventListener(evt, handler, true));
+    const w = this.settings.evNames.wheel;
+    this.events.forEach((evt) => document.addEventListener(evt, handler, evt === w ? { capture: true, passive: false } : true));
   },
 
   boot() {

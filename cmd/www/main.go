@@ -6,8 +6,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"mojra/internal/book"
-	"mojra/internal/tpl"
+	_ "mojra/domain"
+	"mojra/domain/book"
+	"mojra/engine"
+	"mojra/engine/templates"
 )
 
 const (
@@ -94,29 +96,29 @@ func buildSite(rootDir string) error {
 	if err := os.MkdirAll(filepath.Join(outDir, dirFonts), 0755); err != nil {
 		return fmt.Errorf(errMkdirFmt, outDir, err)
 	}
-	templates, err := tpl.LoadTemplatesFromDir(wwwDir, nil)
+	loadedTemplates, err := templates.LoadTemplatesFromDir(wwwDir, nil)
 	if err != nil {
 		return fmt.Errorf(errTplLoadFmt, err)
 	}
-	if _, ok := templates[tplIndexName]; !ok {
+	if _, ok := loadedTemplates[tplIndexName]; !ok {
 		return fmt.Errorf(errMissingIndex, wwwDir)
 	}
 	for _, name := range wwwSiteTemplates {
-		tmpl, ok := templates[name]
+		tmpl, ok := loadedTemplates[name]
 		if !ok {
 			continue
 		}
 		htmlPath := filepath.Join(outDir, name+extHTML)
-		htmlStr := tpl.TranspileStaticHTML(tmpl, templates)
+		htmlStr := templates.TranspileStaticHTML(tmpl, loadedTemplates)
 		relHTML := strings.ReplaceAll(htmlStr, srcAbsAppJS, srcRelAppJS)
 		if err := os.WriteFile(htmlPath, []byte(relHTML), 0644); err != nil {
 			return fmt.Errorf(errWriteFmt, htmlPath, err)
 		}
 	}
 	styleCSSPath := filepath.Join(outDir, styleCSSFile)
-	wwwCSSFiles := append([]string{}, tpl.CSSPlayerModuleFiles(appDir)...)
+	wwwCSSFiles := append([]string{}, engine.CSSPlayerModuleFiles(appDir)...)
 	wwwCSSFiles = append(wwwCSSFiles, filepath.Join(wwwDir, styleTSSFile))
-	if err := tpl.BundleCSSFiles(wwwCSSFiles, styleCSSPath); err != nil {
+	if err := engine.BundleCSSFiles(wwwCSSFiles, styleCSSPath); err != nil {
 		return fmt.Errorf(errCSSBundleFmt, err)
 	}
 	if rawCSS, err := os.ReadFile(styleCSSPath); err == nil {
@@ -130,9 +132,9 @@ func buildSite(rootDir string) error {
 	if _, err := os.Stat(wasmExecPath); err == nil {
 		wwwJSFiles = append(wwwJSFiles, wasmExecPath)
 	}
-	wwwJSFiles = append(wwwJSFiles, tpl.JSPlayerModuleFiles(appDir)...)
+	wwwJSFiles = append(wwwJSFiles, engine.JSPlayerModuleFiles(appDir)...)
 	wwwJSFiles = append(wwwJSFiles, filepath.Join(wwwDir, appJSFile))
-	if err := tpl.BundleJSFiles(wwwJSFiles, filepath.Join(outDir, appJSFile)); err != nil {
+	if err := engine.BundleJSFiles(wwwJSFiles, filepath.Join(outDir, appJSFile)); err != nil {
 		return fmt.Errorf(errJSBundleFmt, err)
 	}
 

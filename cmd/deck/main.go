@@ -11,7 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"mojra/internal/tpl"
+	_ "mojra/domain"
+	"mojra/engine"
+	"mojra/engine/templates"
 )
 
 const (
@@ -133,27 +135,27 @@ func buildDeckHTML(rootDir string) error {
 	if err := os.MkdirAll(filepath.Join(outDir, dirFonts), 0755); err != nil {
 		return fmt.Errorf(errMkdirFmt, outDir, err)
 	}
-	templates, err := tpl.LoadTemplatesFromDir(wwwDir, nil)
+	loadedTemplates, err := templates.LoadTemplatesFromDir(wwwDir, nil)
 	if err != nil {
 		return fmt.Errorf(errTplLoadFmt, err)
 	}
 	financeCtx := LoadDeckFinanceContext(rootDir)
 	for _, name := range deckTemplateNames {
-		tmpl, ok := templates[name]
+		tmpl, ok := loadedTemplates[name]
 		if !ok {
 			continue
 		}
 		htmlPath := filepath.Join(outDir, name+extHTML)
-		htmlStr := tpl.TranspileStaticHTMLWithContext(tmpl, templates, financeCtx)
+		htmlStr := templates.TranspileStaticHTMLWithContext(tmpl, loadedTemplates, financeCtx)
 		relHTML := strings.ReplaceAll(htmlStr, srcAbsAppJS, srcRelAppJS)
 		if err := os.WriteFile(htmlPath, []byte(relHTML), 0644); err != nil {
 			return fmt.Errorf(errWriteFmt, htmlPath, err)
 		}
 	}
 	styleCSSPath := filepath.Join(outDir, styleCSSFile)
-	wwwCSSFiles := append([]string{}, tpl.CSSPlayerModuleFiles(appDir)...)
+	wwwCSSFiles := append([]string{}, engine.CSSPlayerModuleFiles(appDir)...)
 	wwwCSSFiles = append(wwwCSSFiles, filepath.Join(wwwDir, styleTSSFile))
-	if err := tpl.BundleCSSFiles(wwwCSSFiles, styleCSSPath); err != nil {
+	if err := engine.BundleCSSFiles(wwwCSSFiles, styleCSSPath); err != nil {
 		return fmt.Errorf(errCSSBundleFmt, err)
 	}
 	if rawCSS, err := os.ReadFile(styleCSSPath); err == nil {

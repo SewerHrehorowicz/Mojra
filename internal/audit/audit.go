@@ -348,6 +348,12 @@ func exprTypeName(e ast.Expr) string {
 	}
 }
 
+func isCoreProdGoPath(relPath string) bool {
+	return strings.HasPrefix(relPath, "engine/") ||
+		strings.HasPrefix(relPath, "domain/") ||
+		strings.HasPrefix(relPath, "internal/")
+}
+
 // 1. DEAD_CODE: Unused Go functions/methods & struct fields
 func checkDeadGoFuncsAndStructs(fset *token.FileSet, files []*parsedGoFile) []Finding {
 	type funcDef struct {
@@ -368,7 +374,7 @@ func checkDeadGoFuncsAndStructs(fset *token.FileSet, files []*parsedGoFile) []Fi
 	}
 
 	for _, pf := range files {
-		if !pf.isTest && strings.HasPrefix(pf.relPath, "internal/") {
+		if !pf.isTest && isCoreProdGoPath(pf.relPath) {
 			for _, decl := range pf.file.Decls {
 				fn, ok := decl.(*ast.FuncDecl)
 				if !ok || fn.Name == nil {
@@ -522,13 +528,18 @@ func checkJSGhostAndUnusedFuncs(rootDir string) []Finding {
 	funcDeclRe := regexp.MustCompile(`^\s*(?:async\s+)?function\s+([A-Za-z0-9_]+)\s*\(`)
 	typeofFnRe := regexp.MustCompile(`typeof\s+([A-Za-z0-9_]+)\s*===\s*"function"`)
 
-	readAuditJSDir := func(dir, relPrefix string) {
+	var readAuditJSDir func(dir, relPrefix string)
+	readAuditJSDir = func(dir, relPrefix string) {
 		dirEntries, err := os.ReadDir(dir)
 		if err != nil {
 			return
 		}
 		for _, e := range dirEntries {
-			if e.IsDir() || !strings.HasSuffix(e.Name(), ".js") {
+			if e.IsDir() {
+				readAuditJSDir(filepath.Join(dir, e.Name()), relPrefix+e.Name()+"/")
+				continue
+			}
+			if !strings.HasSuffix(e.Name(), ".js") {
 				continue
 			}
 			fullPath := filepath.Join(dir, e.Name())
@@ -553,7 +564,6 @@ func checkJSGhostAndUnusedFuncs(rootDir string) []Finding {
 		}
 	}
 	readAuditJSDir(jsDir, "app/js/")
-	readAuditJSDir(filepath.Join(jsDir, "controllers"), "app/js/controllers/")
 
 	var out []Finding
 	browserGlobals := map[string]bool{
@@ -635,33 +645,34 @@ func checkUnusedActionsAndTplVars(rootDir string, fset *token.FileSet, goFiles [
 
 	var allJSContent strings.Builder
 	jsDir := filepath.Join(rootDir, "app", "js")
-	for _, sub := range []string{jsDir, filepath.Join(jsDir, "controllers")} {
-		if entries, err := os.ReadDir(sub); err == nil {
-			for _, e := range entries {
-				if !e.IsDir() && strings.HasSuffix(e.Name(), ".js") {
-					if raw, err := os.ReadFile(filepath.Join(sub, e.Name())); err == nil {
-						allJSContent.Write(raw)
-						allJSContent.WriteByte('\n')
-					}
-				}
+	_ = filepath.WalkDir(jsDir, func(path string, d os.DirEntry, err error) error {
+		if err == nil && !d.IsDir() && strings.HasSuffix(d.Name(), ".js") {
+			if raw, err := os.ReadFile(path); err == nil {
+				allJSContent.Write(raw)
+				allJSContent.WriteByte('\n')
 			}
 		}
-	}
+		return nil
+	})
 	jsText := allJSContent.String()
 
 	var out []Finding
 
-	// Check actionSpecs entries vs .tpl and .js usage
+	// Check registered actions in domain/actions/*_actions.go vs .tpl and .js usage
 	for _, pf := range goFiles {
-		if pf.relPath != "internal/gui/actions_dispatch.go" && pf.relPath != "internal/actions/actions_dispatch.go" && pf.relPath != "internal/actions/specs.go" {
+		if !strings.HasPrefix(pf.relPath, "domain/actions/") && !strings.HasPrefix(pf.relPath, "internal/actions/") {
 			continue
 		}
 		ast.Inspect(pf.file, func(n ast.Node) bool {
-			vs, ok := n.(*ast.ValueSpec)
-			if !ok || len(vs.Names) == 0 || (vs.Names[0].Name != "actionSpecs" && vs.Names[0].Name != "ActionSpecs") || len(vs.Values) == 0 {
+			call, ok := n.(*ast.CallExpr)
+			if !ok || len(call.Args) == 0 {
 				return true
 			}
-			cl, ok := vs.Values[0].(*ast.CompositeLit)
+			ident, ok := call.Fun.(*ast.Ident)
+			if !ok || (ident.Name != "registerActions" && ident.Name != "registerLANActions" && ident.Name != "registerStandaloneActions") {
+				return true
+			}
+			cl, ok := call.Args[0].(*ast.CompositeLit)
 			if !ok {
 				return true
 			}
@@ -678,21 +689,20 @@ func checkUnusedActionsAndTplVars(rootDir string, fset *token.FileSet, goFiles [
 				} else if sel, ok := kv.Key.(*ast.SelectorExpr); ok {
 					actName = sel.Sel.Name
 					keyPos = sel.Pos()
-				} else if ident, ok := kv.Key.(*ast.Ident); ok {
-					actName = ident.Name
-					keyPos = ident.Pos()
+				} else if id, ok := kv.Key.(*ast.Ident); ok {
+					actName = id.Name
+					keyPos = id.Pos()
 				}
 				if actName == "" {
 					continue
 				}
 				if !strings.Contains(tplText, actName) && !strings.Contains(jsText, actName) {
-					// Check if referenced in ConfirmPendingAction in Go
 					usedInConfirm := false
 					for _, gf := range goFiles {
-						if gf.relPath == pf.relPath || strings.HasPrefix(gf.relPath, "internal/gui/action/") || gf.relPath == "internal/actions/action.go" {
+						if gf.relPath == pf.relPath {
 							continue
 						}
-						if strings.Contains(string(gf.src), `"`+actName+`"`) || strings.Contains(string(gf.src), "action."+actName) || strings.Contains(string(gf.src), actName) {
+						if strings.Contains(string(gf.src), `"`+actName+`"`) || strings.Contains(string(gf.src), actName) {
 							usedInConfirm = true
 							break
 						}
@@ -702,9 +712,9 @@ func checkUnusedActionsAndTplVars(rootDir string, fset *token.FileSet, goFiles [
 						out = append(out, Finding{
 							File:     pf.relPath,
 							Line:     pos.Line,
-							FuncName: "ActionSpecs",
+							FuncName: ident.Name,
 							Category: "DEAD_CODE",
-							Message:  fmt.Sprintf("akcja serwera %q w ActionSpecs nie występuje w żadnym .tpl ani .js", actName),
+							Message:  fmt.Sprintf("akcja serwera %q w %s nie występuje w żadnym .tpl ani .js", actName, ident.Name),
 						})
 					}
 				}
@@ -713,10 +723,10 @@ func checkUnusedActionsAndTplVars(rootDir string, fset *token.FileSet, goFiles [
 		})
 	}
 
-	// Check vars["key"] in internal/views/*_view.go vs .tpl usage
+	// Check vars["key"] in domain/views/*_view.go vs .tpl usage
 	varsIndexRe := regexp.MustCompile(`\bvars\["([A-Za-z0-9_]+)"\]\s*=`)
 	for _, pf := range goFiles {
-		if pf.isTest || !strings.HasPrefix(pf.relPath, "internal/views/") || !strings.HasSuffix(pf.relPath, "_view.go") {
+		if pf.isTest || (!strings.HasPrefix(pf.relPath, "domain/views/") && !strings.HasPrefix(pf.relPath, "internal/views/")) || !strings.HasSuffix(pf.relPath, "_view.go") {
 			continue
 		}
 		lines := strings.Split(string(pf.src), "\n")
@@ -802,7 +812,7 @@ func checkHardcodedGeometryAndDOM(fset *token.FileSet, goFiles []*parsedGoFile) 
 	htmlTagRe := regexp.MustCompile(`<(?:div|span|svg|button|input|p|hr|ul|li|form|section|header|footer)\b`)
 
 	for _, pf := range goFiles {
-		if pf.isTest || !strings.HasPrefix(pf.relPath, "internal/") {
+		if pf.isTest || !isCoreProdGoPath(pf.relPath) {
 			continue
 		}
 
@@ -829,7 +839,7 @@ func checkHardcodedGeometryAndDOM(fset *token.FileSet, goFiles []*parsedGoFile) 
 					Category: "DOM_ID_IN_GO",
 					Message:  fmt.Sprintf("selektor DOM %q zaszyty bezpośrednio w kodzie Go", val),
 				})
-			} else if htmlTagRe.MatchString(val) && !strings.HasPrefix(pf.relPath, "internal/tpl/") && pf.relPath != "internal/book/sanitize.go" {
+			} else if htmlTagRe.MatchString(val) && !strings.HasPrefix(pf.relPath, "engine/templates/") && !strings.HasPrefix(pf.relPath, "internal/tpl/") && pf.relPath != "domain/book/sanitize.go" && pf.relPath != "internal/book/sanitize.go" {
 				out = append(out, Finding{
 					File:     pf.relPath,
 					Line:     pos.Line,
@@ -853,14 +863,51 @@ func checkSuspiciousStrings(fset *token.FileSet, goFiles []*parsedGoFile) []Find
 	ipAddrRe := regexp.MustCompile(`\b(?:\d{1,3}\.){3}\d{1,3}\b`)
 	secretKeyRe := regexp.MustCompile(`(?i)(api[_-]?key|secret|password|passwd|private[_-]?key|bearer\s+[a-z0-9_\-\.]{12,}|sk-[a-z0-9]{16,}|ghp_[a-z0-9]{16,})`)
 	uiExplainRe := regexp.MustCompile(`(?i)(kliknij,?\s+aby|kliknij\s+przycisk|przeciągnij,?\s+aby|przeciągnij\s+przewód|kliknij\s+kwadrat)`)
+	polishDiacriticRe := regexp.MustCompile(`[ąćęłńóśźżĄĆĘŁŃÓŚŹŻ]`)
 
 	for _, pf := range goFiles {
 		if pf.isTest {
 			continue
 		}
+		if strings.HasPrefix(pf.relPath, "engine/") {
+			for _, imp := range pf.file.Imports {
+				if imp.Path != nil && strings.Contains(imp.Path.Value, "mojra/domain") {
+					pos := fset.Position(imp.Pos())
+					out = append(out, Finding{
+						File:     pf.relPath,
+						Line:     pos.Line,
+						FuncName: "<import>",
+						Category: "ARCH_BOUNDARY",
+						Message:  fmt.Sprintf("pakiet silnikowy %s nie może importować domeny %s", pf.relPath, imp.Path.Value),
+					})
+				}
+			}
+		}
+		isViewsPkg := strings.HasPrefix(pf.relPath, "domain/views/") || strings.HasPrefix(pf.relPath, "internal/views/")
+		if isViewsPkg || pf.relPath == "domain/book/variables_validate.go" || pf.relPath == "internal/book/variables_validate.go" {
+			for _, decl := range pf.file.Decls {
+				if fn, ok := decl.(*ast.FuncDecl); ok && fn.Body != nil && fn.Name != nil {
+					out = collectGoBodyMagicStrings(fset, pf.relPath, funcSymbolName(fn), fn.Body, out)
+				}
+			}
+		}
 		ast.Inspect(pf.file, func(n ast.Node) bool {
 			if _, ok := n.(*ast.ImportSpec); ok {
 				return false
+			}
+			if sel, ok := n.(*ast.SelectorExpr); ok {
+				if pkgIdent, ok := sel.X.(*ast.Ident); ok && (pkgIdent.Name == "i18n" || pkgIdent.Name == "engine") && (sel.Sel.Name == "LangEN" || sel.Sel.Name == "LangPL") {
+					if !strings.HasPrefix(pf.relPath, "engine/") && !strings.HasPrefix(pf.relPath, "domain/i18n/") && !strings.HasPrefix(pf.relPath, "internal/i18n/") && pf.relPath != "domain/book/screenplay.go" && pf.relPath != "internal/book/screenplay.go" {
+						pos := fset.Position(sel.Pos())
+						out = append(out, Finding{
+							File:     pf.relPath,
+							Line:     pos.Line,
+							FuncName: enclosingFuncName(pf.file, sel.Pos()),
+							Category: "I18N_BYPASS",
+							Message:  fmt.Sprintf("bezpośrednie odwołanie do i18n.%s poza pakietem i18n (użyj i18n.T / i18n.Tf / i18n.Plural)", sel.Sel.Name),
+						})
+					}
+				}
 			}
 			lit, ok := n.(*ast.BasicLit)
 			if !ok || lit.Kind != token.STRING {
@@ -872,6 +919,16 @@ func checkSuspiciousStrings(fset *token.FileSet, goFiles []*parsedGoFile) []Find
 			}
 			pos := fset.Position(lit.Pos())
 			fnName := enclosingFuncName(pf.file, lit.Pos())
+
+			if isViewsPkg && polishDiacriticRe.MatchString(val) {
+				out = append(out, Finding{
+					File:     pf.relPath,
+					Line:     pos.Line,
+					FuncName: fnName,
+					Category: "I18N_BYPASS",
+					Message:  fmt.Sprintf("zahardkodowany polski tekst UI w pakiecie views poza słownikiem i18n: %q", truncateStr(val, 60)),
+				})
+			}
 
 			if absPathRe.MatchString(val) {
 				out = append(out, Finding{
@@ -935,7 +992,7 @@ func checkASTDuplicatesAndAntiPatterns(fset *token.FileSet, goFiles []*parsedGoF
 	var fps []funcFingerprint
 
 	for _, pf := range goFiles {
-		if pf.isTest || !strings.HasPrefix(pf.relPath, "internal/") {
+		if pf.isTest || !isCoreProdGoPath(pf.relPath) {
 			continue
 		}
 		for _, decl := range pf.file.Decls {
@@ -994,7 +1051,7 @@ func checkASTDuplicatesAndAntiPatterns(fset *token.FileSet, goFiles []*parsedGoF
 	// 6c. Repeated >=4 line blocks repeated >=3 times across Go files
 	var goData []jsFileData
 	for _, pf := range goFiles {
-		if pf.isTest || !strings.HasPrefix(pf.relPath, "internal/") {
+		if pf.isTest || !isCoreProdGoPath(pf.relPath) {
 			continue
 		}
 		goData = append(goData, jsFileData{

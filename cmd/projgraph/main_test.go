@@ -16,7 +16,7 @@ func TestBuildAndRenderProjectGraph(t *testing.T) {
 
 	cfg := Config{
 		RootDir:     rootDir,
-		FilterDirs:  []string{"cmd/projgraph", "internal/tpl"},
+		FilterDirs:  []string{"cmd/projgraph", "engine/templates"},
 		OutTxtPath:  outTxt,
 		OutHTMLPath: outHTML,
 	}
@@ -26,7 +26,7 @@ func TestBuildAndRenderProjectGraph(t *testing.T) {
 		t.Fatalf("BuildGraph failed: %v", err)
 	}
 	if g.TotalDirs != 2 {
-		t.Fatalf("expected 2 dirs for filter [cmd/projgraph, internal/tpl], got %d", g.TotalDirs)
+		t.Fatalf("expected 2 dirs for filter [cmd/projgraph, engine/templates], got %d", g.TotalDirs)
 	}
 	if g.TotalFiles == 0 || g.TotalSymbols == 0 {
 		t.Fatalf("expected non-empty files/symbols, got files=%d symbols=%d", g.TotalFiles, g.TotalSymbols)
@@ -44,7 +44,7 @@ func TestBuildAndRenderProjectGraph(t *testing.T) {
 		"dir cmd/projgraph",
 		"file cmd/projgraph/graph_builder.go",
 		"func BuildGraph",
-		"-> calls: internal/tpl/LoadTemplatesFromDir",
+		"-> calls: engine/templates/LoadTemplatesFromDir",
 	} {
 		if !strings.Contains(txtStr, needle) {
 			t.Errorf("expected text graph to contain %q", needle)
@@ -63,7 +63,7 @@ func TestBuildAndRenderProjectGraph(t *testing.T) {
 		"<style>",
 		`<details class="node-branch tree-dir"`,
 		`id="cmd-projgraph-BuildGraph"`,
-		`href="#internal-tpl-LoadTemplatesFromDir"`,
+		`href="#engine-templates-LoadTemplatesFromDir"`,
 	} {
 		if !strings.Contains(htmlStr, needle) {
 			t.Errorf("expected HTML graph to contain %q", needle)

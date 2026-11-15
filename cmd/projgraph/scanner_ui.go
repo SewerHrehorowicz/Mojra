@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	dirInternalActions = "internal/actions"
+	dirInternalActions = "domain/actions"
 )
 
 var (

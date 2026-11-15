@@ -202,12 +202,9 @@ const EditorContextController = {
   initContextPanel() {
     const s = this.settings;
     if (Dispatcher.lastAction === s.selectSceneAction && Dispatcher.lastParams && Dispatcher.lastParams.scene) {
-      CanvasModel.editorSelectionCleared = false;
-      CanvasModel.selectedNodeIds.clear();
-      CanvasModel.selectedNodeIds.add(Dispatcher.lastParams.scene);
-    }
-    if (document.querySelector(s.selectors.viewport)) {
-      EditorWebglScene.render();
+      NodeCanvasController.selectSceneNode(Dispatcher.lastParams.scene);
+    } else if (document.querySelector(s.selectors.viewport)) {
+      NodeCanvasController.applyTransform();
     }
   },
 
@@ -221,21 +218,13 @@ const EditorContextController = {
   syncCanvasNodeTitle(sceneId, rawTitle) {
     const id = sceneId || this.data.selectedSceneId;
     if (!id) return;
-    const nd = CanvasModel.studioGraphState.nodeById.get(id);
-    if (!nd) return;
-    nd.name = rawTitle || id;
-    CanvasModel.studioGraphState.staticBatchDirty = true;
-    EditorWebglScene.render();
+    NodeCanvasController.previewNodeEdit(id, true, -1, rawTitle || id);
   },
 
   syncCanvasChoiceLabel(sceneId, choiceIdx, rawLabel) {
     const id = sceneId || this.data.selectedSceneId;
     if (!id) return;
-    const nd = CanvasModel.studioGraphState.nodeById.get(id);
-    if (!nd || !nd.ports || !nd.ports[choiceIdx]) return;
-    nd.ports[choiceIdx].label = rawLabel || "";
-    CanvasModel.studioGraphState.staticBatchDirty = true;
-    EditorWebglScene.render();
+    NodeCanvasController.previewNodeEdit(id, false, choiceIdx, rawLabel || "");
   },
 
   onSceneTitleInput(_params, el) {

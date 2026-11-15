@@ -136,11 +136,10 @@ section.view-panel#studio-view .is-history-preview?: {IsHistoryPreview}
                                             data-hint: "{t_open_scene_text_hint}"
                                             svg.action-icon src: /icons/edit.svg
                                     .studio-search-row-chapter {sr.ChapterUpper}
-                                    .studio-search-row-snippet
+                                     .studio-search-row-snippet
                                         span.studio-search-snip-pre {sr.DefaultSnippet}
                                         strong.studio-search-snip-hit ""
                                         span.studio-search-snip-post ""
-                    canvas.studio-canvas#studio-canvas
                     .editor-status-bar#editor-status-bar
                         {if HasBookWarnings}
                             .editor-status-warnings#editor-status-warnings
@@ -156,31 +155,7 @@ section.view-panel#studio-view .is-history-preview?: {IsHistoryPreview}
                                 {else}
                                     .editor-status-warnings-bar.is-single
                                         span.editor-status-warnings-text "⚠ {FirstBookWarning}"
-                    pre.hidden#studio-graph-data {StudioGraphPayload}
-                    input.chapter-group-title-input.canvas-floating-chapter-input.hidden#canvas-chapter-input
-                        type: text
-                        placeholder: "{EditorChapterTitlePlaceholder}"
-                    input.canvas-floating-node-input.hidden#canvas-node-title-input
-                        type: text
-                        placeholder: "{t_scene_title_placeholder}"
-                        autocomplete: "off"
-                    input.canvas-floating-choice-input.hidden#canvas-choice-input
-                        type: text
-                        placeholder: "{t_choice_text_placeholder}"
-                        autocomplete: "off"
-                    .canvas-context-menu.hidden#canvas-context-menu
-                        {if not IsHistoryPreview}
-                            button.canvas-context-item#btn-context-add-node
-                                "{t_ctx_add_node}"
-                            button.canvas-context-item#btn-context-add-chapter
-                                {if IsScreenplayMode}
-                                    "{t_ctx_add_act}"
-                                {else}
-                                    "{t_ctx_add_chapter}"
-                            button.canvas-context-item.btn-auto-layout-nodes
-                                "{t_auto_layout_hint}"
-                        button.canvas-context-item#btn-context-reset-view
-                            "{t_ctx_fit_view}"
+                    @NodeCanvas
     {else}
         .studio-home-container#editor-empty-state
             .library-top-actions
