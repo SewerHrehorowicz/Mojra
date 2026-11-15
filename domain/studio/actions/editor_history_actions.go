@@ -3,7 +3,6 @@
 package actions
 
 import (
-	"net/http"
 	"strconv"
 	"strings"
 
@@ -102,7 +101,7 @@ func commitScenesMutation(s *state.StudioState, toast, kind, coalesceKey string)
 	return toast
 }
 
-func withBookMutation(s *state.StudioState, r *http.Request, flushFormScene bool, fn func(b *book.Book) (toast, kind, coalesceKey string, saveScenes bool)) string {
+func withBookMutation(s *state.StudioState, r *transport.ActionRequest, flushFormScene bool, fn func(b *book.Book) (toast, kind, coalesceKey string, saveScenes bool)) string {
 	if isHistoryPreview(s) {
 		return tr(s, i18n.TrHistoryPreviewLocked)
 	}
@@ -145,7 +144,7 @@ func reloadActiveBookAfterHistoryRestore(s *state.StudioState, selSceneID string
 	}
 }
 
-func undoEditor(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func undoEditor(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	if isHistoryPreview(s) {
 		exitHistoryPreview(s)
 	}
@@ -162,7 +161,7 @@ func undoEditor(s *state.StudioState, r *http.Request) []transport.ActionFrame {
 	return frameUndoRedo(s, toast)
 }
 
-func redoEditor(s *state.StudioState, _ *http.Request) []transport.ActionFrame {
+func redoEditor(s *state.StudioState, _ *transport.ActionRequest) []transport.ActionFrame {
 	if isHistoryPreview(s) {
 		exitHistoryPreview(s)
 	}
@@ -178,7 +177,7 @@ func redoEditor(s *state.StudioState, _ *http.Request) []transport.ActionFrame {
 	return frameUndoRedo(s, toast)
 }
 
-func toggleEditorHistoryPanel(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func toggleEditorHistoryPanel(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	_ = flushFormSceneIfPresent(s, r)
 	if s.Editor.RightPanel == state.PanelHistory {
 		s.Editor.ActivateRightPanel(state.PanelNone)
@@ -189,21 +188,21 @@ func toggleEditorHistoryPanel(s *state.StudioState, r *http.Request) []transport
 	return frameWorkspace(s, "")
 }
 
-func openEditorHistoryPanel(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func openEditorHistoryPanel(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	_ = flushFormSceneIfPresent(s, r)
 	activateRightPanel(s, state.PanelHistory)
 	s.Editor.History.EnsureBaseline(s.Editor.ActiveBook, s.Editor.SelectedSceneID)
 	return frameWorkspace(s, "")
 }
 
-func closeEditorHistoryPanel(s *state.StudioState, _ *http.Request) []transport.ActionFrame {
+func closeEditorHistoryPanel(s *state.StudioState, _ *transport.ActionRequest) []transport.ActionFrame {
 	if s.Editor.RightPanel == state.PanelHistory {
 		s.Editor.ActivateRightPanel(state.PanelNone)
 	}
 	return frameWorkspace(s, "")
 }
 
-func saveHistoryVersion(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func saveHistoryVersion(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	_ = flushFormSceneIfPresent(s, r)
 	if isHistoryPreview(s) {
 		return frameWorkspace(s, tr(s, i18n.TrHistoryPreviewLocked))
@@ -226,7 +225,7 @@ func saveHistoryVersion(s *state.StudioState, r *http.Request) []transport.Actio
 	return frameWorkspace(s, toast)
 }
 
-func previewHistoryRevisionToast(s *state.StudioState, r *http.Request) string {
+func previewHistoryRevisionToast(s *state.StudioState, r *transport.ActionRequest) string {
 	_ = flushFormSceneIfPresent(s, r)
 	b := s.Editor.ActiveBook
 	if b == nil || b.IsPacked || s.Config.StandaloneMode {
@@ -324,11 +323,11 @@ func previewHistoryRevisionToast(s *state.StudioState, r *http.Request) string {
 	return trf(s, i18n.TrPreviewVersionReadonlyFmt, targetRev.Label)
 }
 
-func previewHistoryRevision(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func previewHistoryRevision(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	return frameUndoRedo(s, previewHistoryRevisionToast(s, r))
 }
 
-func exitHistoryPreviewAction(s *state.StudioState, _ *http.Request) []transport.ActionFrame {
+func exitHistoryPreviewAction(s *state.StudioState, _ *transport.ActionRequest) []transport.ActionFrame {
 	toast := ""
 	if isHistoryPreview(s) {
 		exitHistoryPreview(s)
@@ -337,7 +336,7 @@ func exitHistoryPreviewAction(s *state.StudioState, _ *http.Request) []transport
 	return frameUndoRedo(s, toast)
 }
 
-func playHistoryRevision(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func playHistoryRevision(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	if r != nil {
 		revID := strings.TrimSpace(r.FormValue(formKeyRevision))
 		if revID == "" {
@@ -369,7 +368,7 @@ func playHistoryRevision(s *state.StudioState, r *http.Request) []transport.Acti
 	return frameApp(s, toast)
 }
 
-func restoreHistoryRevisionToast(s *state.StudioState, r *http.Request) string {
+func restoreHistoryRevisionToast(s *state.StudioState, r *transport.ActionRequest) string {
 	if r != nil && strings.TrimSpace(r.FormValue(formKeyTargetBranch)) != "" {
 		return copyHistoryRevisionToBranchToast(s, r)
 	}
@@ -394,11 +393,11 @@ func restoreHistoryRevisionToast(s *state.StudioState, r *http.Request) string {
 	return ""
 }
 
-func restoreHistoryRevision(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func restoreHistoryRevision(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	return frameUndoRedo(s, restoreHistoryRevisionToast(s, r))
 }
 
-func copyHistoryRevisionToBranchToast(s *state.StudioState, r *http.Request) string {
+func copyHistoryRevisionToBranchToast(s *state.StudioState, r *transport.ActionRequest) string {
 	_ = flushFormSceneIfPresent(s, r)
 	if s.Editor.ActiveBook != nil && !s.Editor.ActiveBook.IsPacked {
 		revID := ""
@@ -430,7 +429,7 @@ func copyHistoryRevisionToBranchToast(s *state.StudioState, r *http.Request) str
 	return ""
 }
 
-func copyHistoryRevisionToBranchAction(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func copyHistoryRevisionToBranchAction(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	return frameUndoRedo(s, copyHistoryRevisionToBranchToast(s, r))
 }
 
@@ -455,7 +454,7 @@ func createHistoryBranchByName(s *state.StudioState, branchName, fromRev string)
 	return ""
 }
 
-func createHistoryBranchAction(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func createHistoryBranchAction(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	_ = flushFormSceneIfPresent(s, r)
 	branchName := strings.TrimSpace(r.FormValue(formKeyBranchName))
 	if branchName == "" {
@@ -465,7 +464,7 @@ func createHistoryBranchAction(s *state.StudioState, r *http.Request) []transpor
 	return frameWorkspace(s, createHistoryBranchByName(s, branchName, fromRev))
 }
 
-func switchHistoryBranchAction(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func switchHistoryBranchAction(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	_ = flushFormSceneIfPresent(s, r)
 	if isHistoryPreview(s) {
 		exitHistoryPreview(s)
@@ -486,7 +485,7 @@ func switchHistoryBranchAction(s *state.StudioState, r *http.Request) []transpor
 	return frameAppResetCanvas(s, toast)
 }
 
-func promptCreateHistoryBranchAction(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func promptCreateHistoryBranchAction(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	_ = flushFormSceneIfPresent(s, r)
 	b := s.Editor.ActiveBook
 	if b == nil || b.IsPacked {

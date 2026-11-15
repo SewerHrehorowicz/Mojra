@@ -343,7 +343,7 @@
                                 .voice-section-isolation-bar#voice-section-isolation-bar
                                     span.voice-section-isolation-title {SelectedNode.ActiveVoiceSectionHeader}
                             .scene-prose-edit-wrap .hidden?: {!IsScenePreviewNormal}
-                                .scene-prose.modal-scene-prose-hl#modal-scene-prose-hl .is-screenplay?: {IsScreenplayMode}
+                                pre.scene-prose.modal-scene-prose-hl#modal-scene-prose-hl .is-screenplay?: {IsScreenplayMode}
                                     aria-hidden: "true"
                                     {for seg in SceneTextModalHlSegments}
                                         span.prose-hl-seg .is-syntax?: {seg.is_syntax} {seg.text}

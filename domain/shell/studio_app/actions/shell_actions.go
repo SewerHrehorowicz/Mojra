@@ -54,28 +54,21 @@ const (
 	formKeyView           = "view"
 	viewStudioAlias       = "studio"
 	formKeyScene          = "scene"
-	formKeySceneID        = "scene_id"
-	formKeyKind           = "kind"
-	formKeyMediaKind      = "media_kind"
-	formKeyPath           = "path"
 	formFieldSilent       = "silent"
 	formValTrue           = "true"
-	mediaKindAudio        = "audio"
-	mediaKindVoice        = "voice"
-	actSaveEditorState    = "SaveEditorState"
-	actSaveAudioTime      = "SaveAudioTime"
-	actStartWindowDrag    = "StartWindowDrag"
-	actConfirmModalAccept = "ConfirmModalAccept"
-	actAutoSaveScene      = "AutoSaveScene"
 	pendingQuitApp        = "QuitApp"
 	nativeCmdQuit         = "quit"
+	assetStudioAtlas      = "studio-atlas.png"
+	assetStudioUI         = "studio-ui.png"
+	stageLoadLibrary      = engine.Stage("boot.load_library")
+	stageInitPlayerState  = engine.Stage("boot.init_player_state")
 )
 
 func init() {
 	if rawIcon, ok := templates.ReadModuleAsset([]fs.FS{common.FS}, filepath.ToSlash(filepath.Join(iconsSubDir, iconPNGFile))); ok {
 		osbridge.AppIconPNG = rawIcon
 	}
-	transport.GeneratedAssetBuilders["studio-ui.png"] = book.BuildStudioUIAtlas
+	transport.GeneratedAssetBuilders[assetStudioUI] = book.BuildStudioUIAtlas
 	book.BookPlayerModules = bookplayeractions.ModuleFSList()
 }
 
@@ -153,11 +146,11 @@ func newServerWithMode(rootDir, booksDir, savesDir string, devMode bool, embedde
 		appState.Config.StandaloneBookID = books[0].ID
 		appState.Settings.ActiveBookID = books[0].ID
 	}
-	engine.Active.MarkStep(engine.StageLoadLibrary, tBooks, fmt.Sprintf("books=%d", len(books)))
+	engine.Active.MarkStep(stageLoadLibrary, tBooks, fmt.Sprintf("books=%d", len(books)))
 
 	tInit := time.Now()
 	s.initializeActiveBooks(books)
-	engine.Active.MarkStep(engine.StageInitPlayerState, tInit, appState.Settings.ActiveView)
+	engine.Active.MarkStep(stageInitPlayerState, tInit, appState.Settings.ActiveView)
 
 	modFSList, modSubDirs := StudioAppModules()
 	s.engine = transport.NewEngineServer(transport.EngineConfig{
@@ -165,6 +158,7 @@ func newServerWithMode(rootDir, booksDir, savesDir string, devMode bool, embedde
 		EngineFS:         engine.FS,
 		ModuleFSList:     modFSList,
 		ModuleSubDirs:    modSubDirs,
+		ModuleRootAssets: []string{assetStudioAtlas},
 		DevMode:          devMode,
 		StandaloneMode:   standalone,
 		CSPExemptPrefix:  routeBooksPrefix,
@@ -427,7 +421,7 @@ func (s *Server) serveMedia(w http.ResponseWriter, r *http.Request) {
 }
 
 // ActionHandler defines the signature for a studio_app shell action handler.
-type ActionHandler func(s *state.AppState, req *http.Request) []transport.ActionFrame
+type ActionHandler func(s *state.AppState, req *transport.ActionRequest) []transport.ActionFrame
 
 var (
 	// Handlers aliases the global action registry in domain/common/actions.
@@ -446,7 +440,7 @@ func shellFromUI(ui *commonstate.UIState) *state.AppState {
 func registerActions(actionMap map[string]ActionHandler) bool {
 	for actionName, handler := range actionMap {
 		fn := handler
-		commonactions.RegisterAction(actionName, false, false, func(ui *commonstate.UIState, req *http.Request) []transport.ActionFrame {
+		commonactions.RegisterAction(actionName, false, false, func(ui *commonstate.UIState, req *transport.ActionRequest) []transport.ActionFrame {
 			app := shellFromUI(ui)
 			if app == nil {
 				return nil
@@ -460,7 +454,7 @@ func registerActions(actionMap map[string]ActionHandler) bool {
 func registerLANActions(actionMap map[string]ActionHandler) bool {
 	for actionName, handler := range actionMap {
 		fn := handler
-		commonactions.RegisterAction(actionName, true, false, func(ui *commonstate.UIState, req *http.Request) []transport.ActionFrame {
+		commonactions.RegisterAction(actionName, true, false, func(ui *commonstate.UIState, req *transport.ActionRequest) []transport.ActionFrame {
 			app := shellFromUI(ui)
 			if app == nil {
 				return nil
@@ -709,7 +703,7 @@ func WireShellHooks(s *state.AppState) {
 	}
 }
 
-func switchView(s *state.AppState, req *http.Request) []transport.ActionFrame {
+func switchView(s *state.AppState, req *transport.ActionRequest) []transport.ActionFrame {
 	_ = studioactions.FlushFormSceneIfPresent(&s.Editor, req)
 	view := strings.TrimSpace(req.FormValue(formKeyView))
 	prevView := ""
@@ -760,7 +754,7 @@ func switchView(s *state.AppState, req *http.Request) []transport.ActionFrame {
 	return s.Hooks.RenderAppFrames()
 }
 
-func playFromScene(s *state.AppState, req *http.Request) []transport.ActionFrame {
+func playFromScene(s *state.AppState, req *transport.ActionRequest) []transport.ActionFrame {
 	_ = studioactions.FlushFormSceneIfPresent(&s.Editor, req)
 	if scID := strings.TrimSpace(req.FormValue(formKeyScene)); scID != "" {
 		s.Editor.SelectedSceneID = scID
@@ -823,13 +817,17 @@ func HandleAction(appState *state.AppState, writer http.ResponseWriter, request 
 	}
 	tAction := time.Now()
 	transport.ParseActionRequest(request)
-	act := strings.TrimSpace(request.FormValue(formFieldAction))
+	isLoopback := transport.IsLoopbackRequest(request)
+	actionReq := &transport.ActionRequest{
+		Form:       request.Form,
+		IsLoopback: isLoopback,
+	}
+	act := strings.TrimSpace(actionReq.FormValue(formFieldAction))
 	handler := commonactions.Handlers[act]
 
 	appState.Mu.Lock()
-	if !transport.IsLoopbackRequest(request) {
-		lanOK := commonactions.LANAllowedActions[act] || (act == actConfirmModalAccept && (appState.Confirm.PendingAction == playeractions.PendingRewindStep || appState.Confirm.PendingAction == playeractions.PendingResetProgress))
-		if !lanOK {
+	if !isLoopback {
+		if !commonactions.LANAllowedActions[act] {
 			appState.Mu.Unlock()
 			http.Error(writer, errForbiddenLAN, http.StatusForbidden)
 			return
@@ -844,8 +842,8 @@ func HandleAction(appState *state.AppState, writer http.ResponseWriter, request 
 		}
 	}
 
-	if act != actSaveAudioTime && appState.Player.Book != nil && appState.Player.Save != nil {
-		if rawAudioTime := strings.TrimSpace(request.FormValue(formFieldAudioTime)); rawAudioTime != "" {
+	if !commonactions.ImmediateNoContentActions[act] && appState.Player.Book != nil && appState.Player.Save != nil {
+		if rawAudioTime := strings.TrimSpace(actionReq.FormValue(formFieldAudioTime)); rawAudioTime != "" {
 			if parsedTime, err := strconv.ParseFloat(rawAudioTime, 64); err == nil && parsedTime >= 0 {
 				if parsedTime > 0.2 || appState.Player.Save.UpdatedAtUnix > 0 || len(appState.Player.Save.History) > 0 {
 					appState.Player.Save.AudioTime = parsedTime
@@ -859,9 +857,9 @@ func HandleAction(appState *state.AppState, writer http.ResponseWriter, request 
 		}
 	}
 
-	if act == actSaveAudioTime || act == actStartWindowDrag {
+	if commonactions.ImmediateNoContentActions[act] {
 		if handler != nil {
-			_ = handler(appState.UIState, request)
+			_ = handler(appState.UIState, actionReq)
 		}
 		scriptChunk := views.AppShellScriptView(appState)
 		lang := views.LangOf(appState)
@@ -871,15 +869,13 @@ func HandleAction(appState *state.AppState, writer http.ResponseWriter, request 
 	}
 
 	var frames []transport.ActionFrame
-	if act == "BrowseAddBookMedia" || act == "AddBookMediaFromDisk" {
-		frames = handleBookMediaAction(appState, request, act == "BrowseAddBookMedia")
-	} else if handler != nil {
-		frames = handler(appState.UIState, request)
+	if handler != nil {
+		frames = handler(appState.UIState, actionReq)
 	} else {
 		frames = appState.Hooks.RenderAppFrames()
 	}
 
-	if request.FormValue(formFieldSilent) == formValTrue && act != actAutoSaveScene {
+	if actionReq.FormValue(formFieldSilent) == formValTrue && !commonactions.IgnoreSilentActions[act] {
 		frames = nil
 	}
 
@@ -898,64 +894,8 @@ func HandleAction(appState *state.AppState, writer http.ResponseWriter, request 
 	engine.Active.MarkStep(engine.StageActionTotal, tAction, fmt.Sprintf("act=%s frames=%d", act, len(actionFrames)))
 }
 
-func handleBookMediaAction(s *state.AppState, req *http.Request, isBrowse bool) []transport.ActionFrame {
-	hadFormScene := studioactions.FlushFormSceneIfPresent(&s.Editor, req)
-	if s.Hooks.IsHistoryPreview() {
-		s.Overlays.Toast = commonviews.Tr(s.UIState, i18n.TrHistoryPreviewLocked)
-		return renderSceneFormFrames(s, hadFormScene)
-	}
-	if s.Editor.ActiveBook == nil || s.Editor.ActiveBook.IsPacked {
-		return renderSceneFormFrames(s, hadFormScene)
-	}
-	kind := strings.ToLower(strings.TrimSpace(req.FormValue(formKeyKind)))
-	if kind == "" {
-		kind = strings.ToLower(strings.TrimSpace(req.FormValue(formKeyMediaKind)))
-	}
-	if !s.Editor.ActiveBook.Narrated && (kind == mediaKindAudio || kind == mediaKindVoice) {
-		s.Overlays.Toast = commonviews.Tr(s.UIState, i18n.TrBookNoNarrationMedia)
-		return renderSceneFormFrames(s, hadFormScene)
-	}
-	scID := strings.TrimSpace(req.FormValue(formKeyScene))
-	if scID == "" {
-		scID = strings.TrimSpace(req.FormValue(formKeySceneID))
-	}
-	rawPath := strings.TrimSpace(req.FormValue(formKeyPath))
-	if rawPath != "" || !isBrowse {
-		s.Overlays.Toast = studioactions.AddBookMediaFromDiskPaths(&s.Editor, []string{rawPath}, kind, scID)
-		return renderSceneFormFrames(s, hadFormScene)
-	}
-	var picked []string
-	s.WithUnlocked(func() {
-		picked = osbridge.PickNativeMediaPaths(kind)
-	})
-	if len(picked) == 0 {
-		req.Form.Set(formFieldSilent, formValTrue)
-		return renderSceneFormFrames(s, hadFormScene)
-	}
-	s.Overlays.Toast = studioactions.AddBookMediaFromDiskPaths(&s.Editor, picked, kind, scID)
-	return renderSceneFormFrames(s, hadFormScene)
-}
-
-func renderSceneFormFrames(s *state.AppState, hadFormScene bool) []transport.ActionFrame {
-	if s.Confirm.IsOpen() {
-		return []transport.ActionFrame{s.Hooks.RenderModalsFrame()}
-	}
-	if s.Editor.SceneText.IsOpen() {
-		return []transport.ActionFrame{
-			s.Hooks.RenderModalsFrame(),
-			{Target: commonstate.TargetEditorContext, Chunks: []templates.TemplateChunk{studioviews.EditorContextView(&s.Editor)}},
-		}
-	}
-	if !hadFormScene && state.ActiveWorkspaceView(s) == state.ViewEditor && !s.Config.StandaloneMode && !s.Editor.StudioHome {
-		return []transport.ActionFrame{
-			{Target: commonstate.TargetEditorContext, Chunks: []templates.TemplateChunk{studioviews.EditorContextView(&s.Editor)}},
-		}
-	}
-	return s.Hooks.RenderWorkspaceFrames()
-}
-
 func finalizeActionFrames(appState *state.AppState, act string, actionFrames []transport.ActionFrame) ([]transport.ActionFrame, []templates.TemplateChunk) {
-	if act != actSaveEditorState && act != actSaveAudioTime && !appState.Config.StandaloneMode && !appState.Hooks.IsHistoryPreview() {
+	if !commonactions.SkipSettingsSyncActions[act] && !appState.Config.StandaloneMode && !appState.Hooks.IsHistoryPreview() {
 		if appState.Editor.SyncToSettings(appState.Settings) {
 			appState.SaveSettings()
 		}
@@ -980,7 +920,7 @@ func finalizeActionFrames(appState *state.AppState, act string, actionFrames []t
 		}
 	}
 	if !appState.Config.StandaloneMode && !hasStudio {
-		if !(act == actAutoSaveScene && requestFormSilent(actionFrames)) {
+		if !(commonactions.IgnoreSilentActions[act] && requestFormSilent(actionFrames)) {
 			globalScriptChunks = append(globalScriptChunks,
 				studioviews.StudioScriptView(&appState.Editor),
 				studioviews.NodeCanvasScriptView(&appState.Editor),

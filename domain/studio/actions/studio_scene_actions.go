@@ -4,7 +4,6 @@ package actions
 
 import (
 	"fmt"
-	"net/http"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -14,6 +13,7 @@ import (
 	"mojra/domain/i18n"
 	"mojra/domain/studio/state"
 	"mojra/domain/studio/views"
+	"mojra/engine/osbridge"
 	"mojra/engine/templates"
 	"mojra/engine/transport"
 )
@@ -84,6 +84,8 @@ var _ = registerActions(map[string]ActionHandler{
 	"DeleteScenes":             deleteScenesFromForm,
 	"ApplySluglineToken":       applySluglineTokenAction,
 	"InsertScreenplayBlock":    insertScreenplayBlockAction,
+	"BrowseAddBookMedia":       browseAddBookMediaAction,
+	"AddBookMediaFromDisk":     addBookMediaFromDiskAction,
 })
 
 func splitInlineChoiceLabelAndTarget(raw string) (label string, target string, hasArrow bool) {
@@ -96,7 +98,7 @@ func splitInlineChoiceLabelAndTarget(raw string) (label string, target string, h
 	return strings.TrimSpace(cleaned), "", false
 }
 
-func resolveEditorSceneFromRequest(s *state.StudioState, r *http.Request, fallbackActive bool) (string, *book.Scene) {
+func resolveEditorSceneFromRequest(s *state.StudioState, r *transport.ActionRequest, fallbackActive bool) (string, *book.Scene) {
 	if s.Editor.ActiveBook == nil {
 		return "", nil
 	}
@@ -118,7 +120,7 @@ func resolveEditorSceneFromRequest(s *state.StudioState, r *http.Request, fallba
 	return scID, s.Editor.ActiveBook.FindScene(scID)
 }
 
-func selectStudioScene(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func selectStudioScene(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	hadFormScene := flushFormSceneIfPresent(s, r)
 	scID := strings.TrimSpace(r.FormValue(formKeyScene))
 	if found := s.Editor.ActiveBook.FindScene(scID); found != nil {
@@ -137,7 +139,7 @@ func selectStudioScene(s *state.StudioState, r *http.Request) []transport.Action
 	return frameInspector(s, "", hadFormScene)
 }
 
-func selectPrimaryBranchScene(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func selectPrimaryBranchScene(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	if isHistoryPreview(s) {
 		return frameWorkspace(s, tr(s, i18n.TrHistoryPreviewLocked))
 	}
@@ -162,7 +164,7 @@ func selectPrimaryBranchScene(s *state.StudioState, r *http.Request) []transport
 	return frameWorkspace(s, commitScenesMutation(s, tr(s, i18n.TrPromotedPrimaryPrefix)+target.DisplayName(), historyScopeGraph, ""))
 }
 
-func hasSceneTextModalChanges(s *state.StudioState, curSc *book.Scene, r *http.Request) bool {
+func hasSceneTextModalChanges(s *state.StudioState, curSc *book.Scene, r *transport.ActionRequest) bool {
 	if curSc == nil || r == nil {
 		return false
 	}
@@ -284,7 +286,7 @@ func hasSceneTextModalChanges(s *state.StudioState, curSc *book.Scene, r *http.R
 	return false
 }
 
-func applySceneFormFields(s *state.StudioState, target *book.Scene, r *http.Request) {
+func applySceneFormFields(s *state.StudioState, target *book.Scene, r *transport.ActionRequest) {
 	b := s.Editor.ActiveBook
 	if target == nil || b == nil || r == nil {
 		return
@@ -476,7 +478,7 @@ func resolveEditedChoiceTarget(b *book.Book, target *book.Scene, tgt string) str
 	return tgt
 }
 
-func applySceneFormChoices(s *state.StudioState, b *book.Book, target *book.Scene, r *http.Request) {
+func applySceneFormChoices(s *state.StudioState, b *book.Book, target *book.Scene, r *transport.ActionRequest) {
 	if len(target.Choices) >= 2 {
 		updatedChoices := make([]book.Choice, 0, len(target.Choices))
 		for i, ch := range target.Choices {
@@ -589,7 +591,7 @@ func commitTargetSceneChoicesMutation(s *state.StudioState, target *book.Scene, 
 	return msg
 }
 
-func addChoiceToScene(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func addChoiceToScene(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	hadFormScene := hasFormScene(r)
 	prevSceneTextID := s.Editor.SceneText.SceneID
 	reqSc := strings.TrimSpace(r.FormValue(formKeyScene))
@@ -617,7 +619,7 @@ func addChoiceToScene(s *state.StudioState, r *http.Request) []transport.ActionF
 	return frameSceneForm(s, toast, hadFormScene, false)
 }
 
-func removeChoiceFromScene(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func removeChoiceFromScene(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	hadFormScene := hasFormScene(r)
 	if isHistoryPreview(s) {
 		return frameSceneForm(s, tr(s, i18n.TrHistoryPreviewLocked), hadFormScene, false)
@@ -657,7 +659,7 @@ func removeChoiceBySceneAndIndex(s *state.StudioState, scID string, choiceIdx in
 	return commitTargetSceneChoicesMutation(s, target, tr(s, i18n.TrChoiceRemovedPrefix))
 }
 
-func reorderChoiceOnScene(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func reorderChoiceOnScene(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	hadFormScene := hasFormScene(r)
 	if isHistoryPreview(s) {
 		return frameSceneForm(s, tr(s, i18n.TrHistoryPreviewLocked), hadFormScene, false)
@@ -684,7 +686,7 @@ func reorderChoiceOnScene(s *state.StudioState, r *http.Request) []transport.Act
 	return frameSceneForm(s, commitTargetSceneChoicesMutation(s, target, tr(s, i18n.TrChoiceReorderedPrefix)), hadFormScene, false)
 }
 
-func branchSceneFromChoice(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func branchSceneFromChoice(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	if isHistoryPreview(s) {
 		return frameUndoRedo(s, tr(s, i18n.TrHistoryPreviewLocked))
 	}
@@ -736,7 +738,7 @@ const (
 	sceneFlushTextModal
 )
 
-func autoSaveSceneAction(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func autoSaveSceneAction(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	toast := ""
 	if !isHistoryPreview(s) {
 		savedPref := tr(s, i18n.TrSavedInFilePrefix)
@@ -763,7 +765,7 @@ func autoSaveSceneAction(s *state.StudioState, r *http.Request) []transport.Acti
 	return frameNone(s, toast)
 }
 
-func saveSceneAction(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func saveSceneAction(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	if isHistoryPreview(s) {
 		return frameWorkspace(s, tr(s, i18n.TrHistoryPreviewLocked))
 	}
@@ -776,7 +778,7 @@ func saveSceneAction(s *state.StudioState, r *http.Request) []transport.ActionFr
 	return frameWorkspace(s, toast)
 }
 
-func commitSceneForm(s *state.StudioState, r *http.Request, mode sceneFormSaveMode) (bool, string) {
+func commitSceneForm(s *state.StudioState, r *transport.ActionRequest, mode sceneFormSaveMode) (bool, string) {
 	if isHistoryPreview(s) {
 		if mode == sceneSaveAuto || mode == sceneFlushTextModal {
 			return false, ""
@@ -887,7 +889,7 @@ func finishInsertedScene(s *state.StudioState, inserted *book.Scene, err error) 
 	return toast
 }
 
-func insertScene(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func insertScene(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	_ = flushFormSceneIfPresent(s, r)
 	if isHistoryPreview(s) {
 		return frameUndoRedo(s, tr(s, i18n.TrHistoryPreviewLocked))
@@ -906,7 +908,7 @@ func insertScene(s *state.StudioState, r *http.Request) []transport.ActionFrame 
 	return frameUndoRedo(s, finishInsertedScene(s, inserted, err))
 }
 
-func insertSceneBefore(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func insertSceneBefore(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	_ = flushFormSceneIfPresent(s, r)
 	if isHistoryPreview(s) {
 		return frameUndoRedo(s, tr(s, i18n.TrHistoryPreviewLocked))
@@ -927,7 +929,7 @@ func insertSceneBefore(s *state.StudioState, r *http.Request) []transport.Action
 	return frameUndoRedo(s, finishInsertedScene(s, inserted, err))
 }
 
-func createSceneAt(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func createSceneAt(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	_ = flushFormSceneIfPresent(s, r)
 	if isHistoryPreview(s) {
 		return frameUndoRedo(s, tr(s, i18n.TrHistoryPreviewLocked))
@@ -977,7 +979,7 @@ func createSceneAt(s *state.StudioState, r *http.Request) []transport.ActionFram
 	return frameUndoRedo(s, toast)
 }
 
-func deleteScenesFromForm(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func deleteScenesFromForm(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	if isHistoryPreview(s) {
 		return frameApp(s, tr(s, i18n.TrHistoryPreviewLocked))
 	}
@@ -1032,7 +1034,7 @@ func finalizeScenesDeletion(s *state.StudioState, deleted []*book.Scene) string 
 	return msg
 }
 
-func prepareScreenplaySceneEdit(s *state.StudioState, r *http.Request) *book.Scene {
+func prepareScreenplaySceneEdit(s *state.StudioState, r *transport.ActionRequest) *book.Scene {
 	if s.Editor.ActiveBook == nil || s.Editor.ActiveBook.IsPacked {
 		return nil
 	}
@@ -1045,7 +1047,7 @@ func prepareScreenplaySceneEdit(s *state.StudioState, r *http.Request) *book.Sce
 	return target
 }
 
-func applySluglineTokenAction(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func applySluglineTokenAction(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	hadFormScene := hasFormScene(r)
 	if isHistoryPreview(s) {
 		return frameSceneForm(s, tr(s, i18n.TrHistoryPreviewLocked), hadFormScene, false)
@@ -1083,7 +1085,7 @@ func applySluglineTokenAction(s *state.StudioState, r *http.Request) []transport
 	return frameSceneForm(s, commitScenesMutation(s, tr(s, i18n.TrSluglineUpdatedPrefix)+target.Slugline, historyScopeScene, coalesceSluglinePref+target.ID), hadFormScene, false)
 }
 
-func insertScreenplayBlockAction(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func insertScreenplayBlockAction(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	hadFormScene := hasFormScene(r)
 	if isHistoryPreview(s) {
 		return frameSceneForm(s, tr(s, i18n.TrHistoryPreviewLocked), hadFormScene, false)
@@ -1127,7 +1129,7 @@ var _ = registerActions(map[string]ActionHandler{
 	"PromptRemoveChoice": promptRemoveChoiceFromScene,
 })
 
-func promptDeleteScenesFromForm(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func promptDeleteScenesFromForm(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	if isHistoryPreview(s) {
 		return frameModals(s, tr(s, i18n.TrHistoryPreviewLocked))
 	}
@@ -1196,7 +1198,7 @@ func promptDeleteScenesFromForm(s *state.StudioState, r *http.Request) []transpo
 	return frameModals(s, "")
 }
 
-func promptRemoveChoiceFromScene(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func promptRemoveChoiceFromScene(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	if isHistoryPreview(s) {
 		return frameModals(s, tr(s, i18n.TrHistoryPreviewLocked))
 	}
@@ -1331,4 +1333,50 @@ func AddBookMediaFromDiskPaths(s *state.StudioState, paths []string, kind, scene
 	msg := trf(s, i18n.TrAddedMediaMultiFmt, len(imported))
 	s.Editor.History.RecordStep(s.Editor.ActiveBook, msg, historyScopeScene, "", s.Editor.SelectedSceneID)
 	return msg
+}
+
+func browseAddBookMediaAction(s *state.StudioState, req *transport.ActionRequest) []transport.ActionFrame {
+	return handleBookMediaAction(s, req, true)
+}
+
+func addBookMediaFromDiskAction(s *state.StudioState, req *transport.ActionRequest) []transport.ActionFrame {
+	return handleBookMediaAction(s, req, false)
+}
+
+func handleBookMediaAction(s *state.StudioState, req *transport.ActionRequest, isBrowse bool) []transport.ActionFrame {
+	hadFormScene := flushFormSceneIfPresent(s, req)
+	if isHistoryPreview(s) {
+		return frameSceneForm(s, tr(s, i18n.TrHistoryPreviewLocked), hadFormScene, true)
+	}
+	if s.Editor.ActiveBook == nil || s.Editor.ActiveBook.IsPacked {
+		return frameSceneForm(s, "", hadFormScene, true)
+	}
+	kind := strings.ToLower(strings.TrimSpace(req.FormValue(formKeyKind)))
+	if kind == "" {
+		kind = strings.ToLower(strings.TrimSpace(req.FormValue(formKeyMediaKind)))
+	}
+	if !s.Editor.ActiveBook.Narrated && (kind == mediaKindAudio || kind == mediaKindVoice) {
+		return frameSceneForm(s, tr(s, i18n.TrBookNoNarrationMedia), hadFormScene, true)
+	}
+	scID := strings.TrimSpace(req.FormValue(formKeyScene))
+	if scID == "" {
+		scID = strings.TrimSpace(req.FormValue(formKeySceneID))
+	}
+	rawPath := strings.TrimSpace(req.FormValue(formKeyPath))
+	if rawPath != "" || !isBrowse {
+		toast := AddBookMediaFromDiskPaths(s, []string{rawPath}, kind, scID)
+		return frameSceneForm(s, toast, hadFormScene, true)
+	}
+	var picked []string
+	s.WithUnlocked(func() {
+		picked = osbridge.PickNativeMediaPaths(kind)
+	})
+	if len(picked) == 0 {
+		if req != nil && req.Form != nil {
+			req.Form.Set(formFieldSilent, formValTrue)
+		}
+		return frameSceneForm(s, "", hadFormScene, true)
+	}
+	toast := AddBookMediaFromDiskPaths(s, picked, kind, scID)
+	return frameSceneForm(s, toast, hadFormScene, true)
 }

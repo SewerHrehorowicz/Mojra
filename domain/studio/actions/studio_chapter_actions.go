@@ -3,7 +3,6 @@
 package actions
 
 import (
-	"net/http"
 	"strconv"
 	"strings"
 
@@ -39,7 +38,7 @@ var _ = registerActions(map[string]ActionHandler{
 	"ConnectChapter":        connectChapterTransition,
 })
 
-func selectStudioChapter(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func selectStudioChapter(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	hadFormScene := flushFormSceneIfPresent(s, r)
 	chKey := strings.TrimSpace(r.FormValue(formKeyChapter))
 	if s.Editor.ActiveBook != nil && chKey != "" {
@@ -51,7 +50,7 @@ func selectStudioChapter(s *state.StudioState, r *http.Request) []transport.Acti
 	return frameInspector(s, "", hadFormScene)
 }
 
-func renameActiveBookChapterToast(s *state.StudioState, r *http.Request) string {
+func renameActiveBookChapterToast(s *state.StudioState, r *transport.ActionRequest) string {
 	if isHistoryPreview(s) {
 		return tr(s, i18n.TrHistoryPreviewLocked)
 	}
@@ -129,11 +128,11 @@ func renameActiveBookChapterToast(s *state.StudioState, r *http.Request) string 
 	})
 }
 
-func renameActiveBookChapter(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func renameActiveBookChapter(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	return frameUndoRedo(s, renameActiveBookChapterToast(s, r))
 }
 
-func setChapterStartSceneToast(s *state.StudioState, r *http.Request) string {
+func setChapterStartSceneToast(s *state.StudioState, r *transport.ActionRequest) string {
 	if s.Editor.ActiveBook == nil || s.Editor.ActiveBook.IsPacked {
 		return ""
 	}
@@ -175,11 +174,11 @@ func setChapterStartSceneToast(s *state.StudioState, r *http.Request) string {
 	})
 }
 
-func setChapterStartScene(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func setChapterStartScene(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	return frameUndoRedo(s, setChapterStartSceneToast(s, r))
 }
 
-func saveChapterSettings(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func saveChapterSettings(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	if isHistoryPreview(s) {
 		return frameUndoRedo(s, tr(s, i18n.TrHistoryPreviewLocked))
 	}
@@ -192,7 +191,7 @@ func saveChapterSettings(s *state.StudioState, r *http.Request) []transport.Acti
 	return frameUndoRedo(s, toast)
 }
 
-func assignChapterToScenes(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func assignChapterToScenes(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	if isHistoryPreview(s) {
 		return frameUndoRedo(s, tr(s, i18n.TrHistoryPreviewLocked))
 	}
@@ -236,7 +235,7 @@ func assignChapterToScenes(s *state.StudioState, r *http.Request) []transport.Ac
 	return frameUndoRedo(s, toast)
 }
 
-func createChapterGroup(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func createChapterGroup(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	_ = flushFormSceneIfPresent(s, r)
 	if isHistoryPreview(s) {
 		return frameUndoRedo(s, tr(s, i18n.TrHistoryPreviewLocked))
@@ -349,7 +348,7 @@ func applyChapterLinkToScene(s *state.StudioState, fromSc *book.Scene, idx int, 
 	return false, ""
 }
 
-func connectChoiceOnScene(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func connectChoiceOnScene(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	if isHistoryPreview(s) {
 		return frameUndoRedo(s, tr(s, i18n.TrHistoryPreviewLocked))
 	}
@@ -489,7 +488,7 @@ func connectChoiceOnScene(s *state.StudioState, r *http.Request) []transport.Act
 	return frameUndoRedo(s, resToast)
 }
 
-func connectChapterTransition(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func connectChapterTransition(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	_ = flushFormSceneIfPresent(s, r)
 	if isHistoryPreview(s) {
 		return frameUndoRedo(s, tr(s, i18n.TrHistoryPreviewLocked))

@@ -12,6 +12,8 @@ import (
 	"mojra/engine/templates"
 )
 
+const stageViewLibrary = engine.Stage("view.library")
+
 type libraryTemplate struct {
 	DevMode bool
 	Books   []book.Book
@@ -26,7 +28,7 @@ func LibraryView(s *state.LibraryState) templates.TemplateChunk {
 		s.Library = s
 	}
 	tLib := time.Now()
-	defer engine.Active.MarkStep(engine.StageViewLibrary, tLib, s.Config.BooksDir)
+	defer engine.Active.MarkStep(stageViewLibrary, tLib, s.Config.BooksDir)
 	books := s.Library.Books
 	isHistPreview := false
 	if s.Hooks.IsHistoryPreview != nil {

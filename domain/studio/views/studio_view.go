@@ -19,10 +19,14 @@ import (
 )
 
 const (
-	endTargetID  = "END"
-	zeroDuration = "0:00"
-	versionFmt   = "%s?v=%d"
-	metaSep      = " • "
+	endTargetID               = "END"
+	zeroDuration              = "0:00"
+	versionFmt                = "%s?v=%d"
+	metaSep                   = " • "
+	stageStudioHomePackedScan = engine.Stage("studio.home_packed_scan")
+	stageEditorGraphPayload   = engine.Stage("studio.graph_payload")
+	stageEditorSearchCtx      = engine.Stage("studio.search_ctx")
+	stageEditorBreakdownCtx   = engine.Stage("studio.breakdown_ctx")
 )
 
 var (
@@ -304,7 +308,7 @@ func populateStudioHomeContext(s *state.StudioState, v *studioTemplate, books []
 	}
 	tPacked := time.Now()
 	packedBooks := book.LoadPackedBooks(s.Config.BooksDir, extPaths)
-	engine.Active.MarkStep(engine.StageStudioHomePackedScan, tPacked, s.Config.BooksDir)
+	engine.Active.MarkStep(stageStudioHomePackedScan, tPacked, s.Config.BooksDir)
 	seenPackedRoots := make(map[string]bool, len(packedBooks))
 	for _, pb := range packedBooks {
 		seenPackedRoots[filepath.Clean(pb.RootPath)] = true
@@ -389,13 +393,13 @@ func populateEditorContext(s *state.StudioState, v *studioTemplate) {
 	tGraph := time.Now()
 	orderedScenes := orderStudioScenes(b)
 	v.NodeCanvas = NodeCanvasView(s, orderedScenes)
-	engine.Active.MarkStep(engine.StageEditorGraphPayload, tGraph, b.ID)
+	engine.Active.MarkStep(stageEditorGraphPayload, tGraph, b.ID)
 	tSearch := time.Now()
 	populateEditorSearchContext(s, v, orderedScenes)
-	engine.Active.MarkStep(engine.StageEditorSearchCtx, tSearch, b.ID)
+	engine.Active.MarkStep(stageEditorSearchCtx, tSearch, b.ID)
 	tBreakdown := time.Now()
 	v.BreakdownPanel = EditorBreakdownView(s)
-	engine.Active.MarkStep(engine.StageEditorBreakdownCtx, tBreakdown, b.ID)
+	engine.Active.MarkStep(stageEditorBreakdownCtx, tBreakdown, b.ID)
 }
 
 func populateEditorSearchContext(s *state.StudioState, v *studioTemplate, orderedScenes []*book.Scene) {

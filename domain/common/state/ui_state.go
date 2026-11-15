@@ -86,8 +86,6 @@ type ShellHooks struct {
 	PlayBookWithSave      func(targetBook *model.Book, save *model.SaveState, isHistPreview bool, histLabel string)
 	ExitHistoryPreview    func() string
 	UnpackPlaybookForEdit func(bookID string) (string, bool)
-	BrowseAddBookMedia    func(mediaKind string) ([]transport.ActionFrame, bool)
-	AddBookMediaFromDisk  func(mediaKind, sourcePath string) ([]transport.ActionFrame, bool)
 	ExecutePendingConfirm func(pendingAction, pendingParam string) ([]transport.ActionFrame, bool)
 }
 

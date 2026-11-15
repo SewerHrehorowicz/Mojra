@@ -1,4 +1,4 @@
-//go:build (!darwin || !cgo) && !windows && !linux && !(js && wasm)
+//go:build (!darwin || !cgo) && !windows && !linux
 
 package osbridge
 

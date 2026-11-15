@@ -1,9 +1,6 @@
-//go:build !(js && wasm)
-
 package actions
 
 import (
-	"net/http"
 	"strings"
 
 	book "mojra/domain/book/actions"
@@ -33,15 +30,16 @@ const (
 	previewFull        = "full"
 	nativeCmdFullscr   = "toggle_fullscreen"
 	nativeCmdQuit      = "quit"
-	paramKeyLang       = "lang"
-	paramKeyLevel      = "level"
-	paramKeyScale      = "scale"
-	paramKeyMode       = "mode"
-	paramKeyDir        = "dir"
+	paramKeyLang        = "lang"
+	paramKeyLevel       = "level"
+	paramKeySensitivity = "sensitivity"
+	paramKeyScale       = "scale"
+	paramKeyMode        = "mode"
+	paramKeyDir         = "dir"
 )
 
 // ActionHandler defines the signature for a UIState action handler.
-type ActionHandler func(ui *state.UIState, req *http.Request) []transport.ActionFrame
+type ActionHandler func(ui *state.UIState, req *transport.ActionRequest) []transport.ActionFrame
 
 var (
 	// Handlers maps every registered action name to its handler across all domain modules.
@@ -50,6 +48,20 @@ var (
 	LANAllowedActions = map[string]bool{}
 	// StandaloneAllowedActions lists actions permitted in standalone single-book mode.
 	StandaloneAllowedActions = map[string]bool{}
+	// ImmediateNoContentActions lists actions that return only global script state without rendering view frames.
+	ImmediateNoContentActions = map[string]bool{
+		"SaveAudioTime":   true,
+		"StartWindowDrag": true,
+	}
+	// IgnoreSilentActions lists actions that must still emit frames even when silent=true is present.
+	IgnoreSilentActions = map[string]bool{
+		"AutoSaveScene": true,
+	}
+	// SkipSettingsSyncActions lists high-frequency actions that skip syncing Studio state to settings.ini.
+	SkipSettingsSyncActions = map[string]bool{
+		"SaveEditorState": true,
+		"SaveAudioTime":   true,
+	}
 )
 
 // RegisterAction registers a single action handler in the global registry.
@@ -102,7 +114,7 @@ var (
 	})
 )
 
-func toggleTheme(ui *state.UIState, _ *http.Request) []transport.ActionFrame {
+func toggleTheme(ui *state.UIState, _ *transport.ActionRequest) []transport.ActionFrame {
 	if ui.Settings.Theme == themeLight {
 		ui.Settings.Theme = themeDark
 	} else {
@@ -115,7 +127,7 @@ func toggleTheme(ui *state.UIState, _ *http.Request) []transport.ActionFrame {
 	return views.ToastFrames(ui, "")
 }
 
-func toggleUIScale(ui *state.UIState, req *http.Request) []transport.ActionFrame {
+func toggleUIScale(ui *state.UIState, req *transport.ActionRequest) []transport.ActionFrame {
 	reqScale := strings.ToLower(strings.TrimSpace(req.FormValue(paramKeyScale)))
 	if reqScale == "" {
 		reqScale = strings.ToLower(strings.TrimSpace(req.FormValue(paramKeyMode)))
@@ -142,7 +154,7 @@ func toggleUIScale(ui *state.UIState, req *http.Request) []transport.ActionFrame
 	return views.ToastFrames(ui, "")
 }
 
-func toggleImageless(ui *state.UIState, _ *http.Request) []transport.ActionFrame {
+func toggleImageless(ui *state.UIState, _ *transport.ActionRequest) []transport.ActionFrame {
 	if !ui.BookLockedImageless() {
 		ui.Settings.Imageless = !ui.Settings.Imageless
 		ui.SaveSettings()
@@ -156,7 +168,7 @@ func toggleImageless(ui *state.UIState, _ *http.Request) []transport.ActionFrame
 	return views.ToastFrames(ui, "")
 }
 
-func setLanguage(ui *state.UIState, req *http.Request) []transport.ActionFrame {
+func setLanguage(ui *state.UIState, req *transport.ActionRequest) []transport.ActionFrame {
 	reqLang := strings.TrimSpace(req.FormValue(paramKeyLang))
 	if reqLang != "" {
 		ui.Settings.Language = engine.NormalizeLangCode(reqLang)
@@ -171,8 +183,11 @@ func setLanguage(ui *state.UIState, req *http.Request) []transport.ActionFrame {
 	return views.ToastFrames(ui, "")
 }
 
-func setScrollSensitivity(ui *state.UIState, req *http.Request) []transport.ActionFrame {
+func setScrollSensitivity(ui *state.UIState, req *transport.ActionRequest) []transport.ActionFrame {
 	rawSens := strings.TrimSpace(req.FormValue(paramKeyLevel))
+	if rawSens == "" {
+		rawSens = strings.TrimSpace(req.FormValue(paramKeySensitivity))
+	}
 	if rawSens == "" {
 		switch book.NormalizeScrollSensitivity(ui.Settings.ScrollSensitivity) {
 		case "high":
@@ -193,7 +208,7 @@ func setScrollSensitivity(ui *state.UIState, req *http.Request) []transport.Acti
 	return views.ToastFrames(ui, "")
 }
 
-func setDeviceMode(ui *state.UIState, req *http.Request) []transport.ActionFrame {
+func setDeviceMode(ui *state.UIState, req *transport.ActionRequest) []transport.ActionFrame {
 	if ui.Config.DevMode {
 		mode := strings.ToLower(strings.TrimSpace(req.FormValue(paramKeyMode)))
 		switch mode {
@@ -216,18 +231,18 @@ func setDeviceMode(ui *state.UIState, req *http.Request) []transport.ActionFrame
 	return views.ToastFrames(ui, "")
 }
 
-func toggleFullscreen(ui *state.UIState, _ *http.Request) []transport.ActionFrame {
+func toggleFullscreen(ui *state.UIState, _ *transport.ActionRequest) []transport.ActionFrame {
 	ui.Overlays.NativeCmd = nativeCmdFullscr
 	osbridge.ToggleNativeWindowFullscreen()
 	return views.ToastFrames(ui, "")
 }
 
-func startWindowDrag(_ *state.UIState, _ *http.Request) []transport.ActionFrame {
+func startWindowDrag(_ *state.UIState, _ *transport.ActionRequest) []transport.ActionFrame {
 	osbridge.StartNativeWindowDrag()
 	return nil
 }
 
-func quitApp(ui *state.UIState, _ *http.Request) []transport.ActionFrame {
+func quitApp(ui *state.UIState, _ *transport.ActionRequest) []transport.ActionFrame {
 	ui.Confirm.Clear()
 	ui.Overlays.NativeCmd = nativeCmdQuit
 	go func() {

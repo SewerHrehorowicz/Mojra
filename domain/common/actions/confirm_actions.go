@@ -1,10 +1,6 @@
-//go:build !(js && wasm)
-
 package actions
 
 import (
-	"net/http"
-
 	"mojra/domain/common/state"
 	"mojra/domain/common/views"
 	"mojra/engine/templates"
@@ -16,7 +12,7 @@ var _ = registerStandaloneActions(map[string]ActionHandler{
 	"ConfirmModalClose":  confirmModalClose,
 })
 
-func confirmModalClose(ui *state.UIState, _ *http.Request) []transport.ActionFrame {
+func confirmModalClose(ui *state.UIState, _ *transport.ActionRequest) []transport.ActionFrame {
 	ui.Confirm.Clear()
 	if ui.Hooks.RenderModalsFrame != nil {
 		return []transport.ActionFrame{
@@ -28,8 +24,8 @@ func confirmModalClose(ui *state.UIState, _ *http.Request) []transport.ActionFra
 	}
 }
 
-func confirmModalAccept(ui *state.UIState, req *http.Request) []transport.ActionFrame {
-	isLAN := !transport.IsLoopbackRequest(req)
+func confirmModalAccept(ui *state.UIState, req *transport.ActionRequest) []transport.ActionFrame {
+	isLAN := req != nil && !req.IsLoopback
 	if isLAN && !ui.Confirm.AllowLAN {
 		ui.Confirm.Clear()
 		return confirmModalClose(ui, req)

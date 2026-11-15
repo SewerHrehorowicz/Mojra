@@ -29,7 +29,7 @@ const (
 	errInvalidURLFmt          = "invalid URL: %w"
 	errUnsupportedScheme      = "unsupported URL scheme (only http:// and https:// are allowed)"
 	errMissingHost            = "missing host in URL"
-	errBlockedLocalAddressFmt = "blocked connection to local or private address (%s)"
+	errBlockedLocalAddressFmt = "blocked connection to local or private address (SSRF: %s)"
 	errDNSErrorFmt            = "DNS lookup failed for %s: %w"
 	errNoPublicAddressFmt     = "no public IP address found for %s"
 	errDialFailedFmt          = "connection failed: %w"
@@ -41,6 +41,17 @@ const (
 	bytesPerMegabyte          = 1 << 20
 	testFlagName              = "test.v"
 )
+
+// IsRunningUnderGoTest reports whether the current process is executing under `go test`.
+func IsRunningUnderGoTest() bool {
+	if flag.Lookup(testFlagName) != nil {
+		return true
+	}
+	if len(os.Args) > 0 && (strings.HasSuffix(os.Args[0], ".test") || strings.HasSuffix(os.Args[0], ".test.exe")) {
+		return true
+	}
+	return false
+}
 
 // DefaultStorage is the default OS filesystem storage instance.
 var DefaultStorage Storage = NewFSStorage()
@@ -158,7 +169,7 @@ func (storage *FSStorage) FetchURLBytes(rawURL string, maxBytes int64) ([]byte, 
 	if parsedURL.Hostname() == "" {
 		return nil, "", errors.New(errMissingHost)
 	}
-	allowLoopback := storage.AllowLoopbackInTests && flag.Lookup(testFlagName) != nil
+	allowLoopback := storage.AllowLoopbackInTests && IsRunningUnderGoTest()
 	if checkErr := validateSSRFSafeHost(parsedURL.Hostname(), allowLoopback); checkErr != nil {
 		return nil, "", checkErr
 	}

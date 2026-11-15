@@ -2,7 +2,6 @@ package actions
 
 import (
 	"math/rand"
-	"net/url"
 	"strconv"
 	"strings"
 
@@ -12,40 +11,19 @@ import (
 	"mojra/domain/i18n"
 	"mojra/domain/player/state"
 	"mojra/engine"
+	"mojra/engine/transport"
 )
 
 const (
-	targetSelApp       = "#app"
-	targetSelWorkspace = "#workspace"
-	targetSelModals    = "#modals-root"
-	targetSelNone      = "none"
-
-	formFieldAudioTime = "audio_time"
-	formKeyTime        = "time"
-	formKeyChoiceIdx   = "choice_idx"
-	formKeyStep        = "step"
-	formKeyDelay       = "delay"
-	formKeySensitivity = "sensitivity"
-	formValEND         = "END"
-	strategyRandom     = "random"
+	formKeyTime      = "time"
+	formKeyChoiceIdx = "choice_idx"
+	formKeyStep      = "step"
+	formKeyDelay     = "delay"
+	formValEND       = "END"
+	strategyRandom   = "random"
 
 	PendingRewindStep    = "RewindStep"
 	PendingResetProgress = "ResetProgress"
-
-	actSaveAudioTime       = "SaveAudioTime"
-	actChooseBranch        = "ChooseBranch"
-	actAutoAdvanceImplicit = "AutoAdvanceImplicit"
-	actAudioEnded          = "AudioEnded"
-	actSetAutoChoiceDelay  = "SetAutoChoiceDelay"
-	actCycleAudioSpeed     = "CycleAudioSpeed"
-	actToggleAutoChoice    = "ToggleAutoChoice"
-	actPromptRewindStep    = "PromptRewindStep"
-	actPromptResetProgress = "PromptResetProgress"
-	actConfirmModalClose   = "ConfirmModalClose"
-	actConfirmModalAccept  = "ConfirmModalAccept"
-	actRevealHistory       = "RevealHistory"
-	actFocusHistoryStep    = "FocusHistoryStep"
-	actFocusPresent        = "FocusPresent"
 )
 
 var audioSpeedSteps = [...]float64{0.75, 1.0, 1.25, 1.5, 2.0}
@@ -74,6 +52,13 @@ func ExecutePlayerChoiceTransition(playerState *state.PlayerState, fromScene *bo
 		return ""
 	}
 	if choice.IsEnding || choice.TargetSceneID == formValEND {
+		var onAccept func() []transport.ActionFrame
+		if playerState.Hooks.ExecutePendingConfirm == nil {
+			onAccept = func() []transport.ActionFrame {
+				toast := ResetPlayerBookProgress(playerState)
+				return renderPlayerWorkspace(playerState, toast)
+			}
+		}
 		playerState.Confirm.Prompt(commonstate.ConfirmState{
 			Title:         tr(playerState, i18n.TrConfirmEndingTitle),
 			Message:       tr(playerState, i18n.TrConfirmEndingMsg),
@@ -81,6 +66,7 @@ func ExecutePlayerChoiceTransition(playerState *state.PlayerState, fromScene *bo
 			PendingParam:  "",
 			Danger:        false,
 			AllowLAN:      true,
+			OnAccept:      onAccept,
 		})
 		return ""
 	}
@@ -314,119 +300,4 @@ func ResetPlayerBookProgress(playerState *state.PlayerState) string {
 		playerState.PersistSave(playerState.Config.SavesDir)
 	}
 	return tr(playerState, i18n.TrResetProgressToast)
-}
-
-// DispatchPlayerStandaloneAction executes a standalone/WASM player action and returns the target selector and toast message.
-func DispatchPlayerStandaloneAction(playerState *state.PlayerState, actionName string, form url.Values) (string, string) {
-	if playerState == nil || playerState.Book == nil || playerState.Save == nil {
-		return targetSelNone, ""
-	}
-	if actionName != actSaveAudioTime {
-		if rawAudioTime := strings.TrimSpace(form.Get(formFieldAudioTime)); rawAudioTime != "" {
-			if parsedTime, err := strconv.ParseFloat(rawAudioTime, 64); err == nil && parsedTime >= 0 {
-				playerState.Save.AudioTime = parsedTime
-			}
-		}
-	}
-
-	target := targetSelWorkspace
-	toast := ""
-
-	switch actionName {
-	case actSaveAudioTime:
-		if parsedTime, err := strconv.ParseFloat(form.Get(formKeyTime), 64); err == nil && parsedTime >= 0 {
-			playerState.Save.AudioTime = parsedTime
-		}
-		target = targetSelNone
-
-	case actChooseBranch:
-		if choiceIdx, err := strconv.Atoi(form.Get(formKeyChoiceIdx)); err == nil {
-			curScene := playerState.Book.CurrentScene(playerState.Save)
-			if curScene != nil && choiceIdx >= 0 && choiceIdx < len(curScene.Choices) {
-				toast = ExecutePlayerChoiceTransition(playerState, curScene, curScene.Choices[choiceIdx])
-			}
-		}
-		if playerState.Confirm.IsOpen() {
-			target = targetSelModals
-		}
-
-	case actAutoAdvanceImplicit:
-		curScene := playerState.Book.CurrentScene(playerState.Save)
-		if curScene != nil && len(curScene.Choices) == 1 && !curScene.Choices[0].IsEnding && curScene.Choices[0].TargetSceneID != formValEND {
-			toast = ExecutePlayerChoiceTransition(playerState, curScene, curScene.Choices[0])
-		}
-		if playerState.Confirm.IsOpen() {
-			target = targetSelModals
-		}
-
-	case actAudioEnded:
-		toast = ExecutePlayerAudioEnded(playerState)
-		if playerState.Confirm.IsOpen() {
-			target = targetSelModals
-		}
-
-	case actSetAutoChoiceDelay:
-		SetPlayerAutoChoiceDelay(playerState, form.Get(formKeyDelay))
-		target = targetSelNone
-
-	case actCycleAudioSpeed:
-		CyclePlayerAudioSpeed(playerState)
-		target = targetSelNone
-
-	case actToggleAutoChoice:
-		TogglePlayerAutoChoice(playerState)
-		target = targetSelNone
-
-	case actPromptRewindStep:
-		PromptPlayerRewindStep(playerState, form.Get(formKeyStep))
-		target = targetSelModals
-
-	case actPromptResetProgress:
-		playerState.Confirm.Prompt(commonstate.ConfirmState{
-			Title:         tr(playerState, i18n.TrConfirmResetTitle),
-			Message:       trf(playerState, i18n.TrConfirmResetMsgFmt, playerState.Book.Title),
-			PendingAction: PendingResetProgress,
-			PendingParam:  playerState.Book.ID,
-			Danger:        false,
-			AllowLAN:      true,
-		})
-		target = targetSelModals
-
-	case actConfirmModalClose:
-		playerState.Confirm.Reset()
-		target = targetSelModals
-
-	case actConfirmModalAccept:
-		pending := playerState.Confirm.PendingAction
-		param := playerState.Confirm.PendingParam
-		playerState.Confirm.Reset()
-		switch pending {
-		case PendingRewindStep:
-			toast = RewindPlayerToStep(playerState, param)
-		case PendingResetProgress:
-			toast = ResetPlayerBookProgress(playerState)
-		}
-		target = targetSelWorkspace
-
-	case actRevealHistory:
-		if len(playerState.Save.History) > 0 {
-			playerState.HistoryRevealed = true
-			playerState.FocusedHistoryIdx = len(playerState.Save.History) - 1
-		}
-		target = targetSelNone
-
-	case actFocusHistoryStep:
-		if stepIdx, err := strconv.Atoi(form.Get(formKeyStep)); err == nil && stepIdx >= 0 && stepIdx < len(playerState.Save.History) {
-			playerState.HistoryRevealed = true
-			playerState.FocusedHistoryIdx = stepIdx
-		}
-		target = targetSelNone
-
-	case actFocusPresent:
-		playerState.FocusedHistoryIdx = -1
-		playerState.HistoryRevealed = false
-		target = targetSelNone
-	}
-
-	return target, toast
 }

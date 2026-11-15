@@ -4,7 +4,6 @@ package actions
 
 import (
 	"io/fs"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -33,14 +32,12 @@ const (
 	formKeyView                 = "view"
 	formKeyTargetView           = "target_view"
 	formKeyMode                 = "mode"
-	formKeyKind                 = "kind"
-	formKeyMediaKind            = "media_kind"
 	formKeyPath                 = "path"
 	booksEmbedDir               = "books"
 	booksSlashPrefix            = "books/"
 )
 
-type ActionHandler func(s *state.LibraryState, req *http.Request) []transport.ActionFrame
+type ActionHandler func(s *state.LibraryState, req *transport.ActionRequest) []transport.ActionFrame
 
 func libraryFromUI(ui *commonstate.UIState) *state.LibraryState {
 	if ui != nil && ui.Hooks.LibraryState != nil {
@@ -54,7 +51,7 @@ func libraryFromUI(ui *commonstate.UIState) *state.LibraryState {
 func registerActions(actionMap map[string]ActionHandler) bool {
 	for actionName, handler := range actionMap {
 		fn := handler
-		commonactions.RegisterAction(actionName, false, false, func(ui *commonstate.UIState, req *http.Request) []transport.ActionFrame {
+		commonactions.RegisterAction(actionName, false, false, func(ui *commonstate.UIState, req *transport.ActionRequest) []transport.ActionFrame {
 			ls := libraryFromUI(ui)
 			if ls == nil {
 				return nil
@@ -68,7 +65,7 @@ func registerActions(actionMap map[string]ActionHandler) bool {
 func registerStandaloneActions(actionMap map[string]ActionHandler) bool {
 	for actionName, handler := range actionMap {
 		fn := handler
-		commonactions.RegisterAction(actionName, true, true, func(ui *commonstate.UIState, req *http.Request) []transport.ActionFrame {
+		commonactions.RegisterAction(actionName, true, true, func(ui *commonstate.UIState, req *transport.ActionRequest) []transport.ActionFrame {
 			ls := libraryFromUI(ui)
 			if ls == nil {
 				return nil
@@ -116,11 +113,9 @@ func frameLibraryModals(s *state.LibraryState, toast string) []transport.ActionF
 }
 
 var _ = registerActions(map[string]ActionHandler{
-	"OpenBook":             openBook,
-	"BrowseAddBookMedia":   browseAddBookMedia,
-	"AddBookMediaFromDisk": addBookMediaFromDisk,
-	"RemoveBook":           removeBookFromForm,
-	"ExtractEmbeddedBook":  extractEmbeddedBookAction,
+	"OpenBook":            openBook,
+	"RemoveBook":          removeBookFromForm,
+	"ExtractEmbeddedBook": extractEmbeddedBookAction,
 })
 
 func pickNativeBookPathUnlocked(s *state.LibraryState, chooseDir bool) string {
@@ -131,7 +126,7 @@ func pickNativeBookPathUnlocked(s *state.LibraryState, chooseDir bool) string {
 	return picked
 }
 
-func pickDiskBookPath(s *state.LibraryState, req *http.Request) string {
+func pickDiskBookPath(s *state.LibraryState, req *transport.ActionRequest) string {
 	mode := strings.ToLower(strings.TrimSpace(req.FormValue(formKeyMode)))
 	return pickNativeBookPathUnlocked(s, mode != modeValFile)
 }
@@ -141,7 +136,7 @@ func isScreenplayImportFile(rawPath string) bool {
 	return ext == extFountain || ext == extFDX
 }
 
-func openBook(s *state.LibraryState, req *http.Request) []transport.ActionFrame {
+func openBook(s *state.LibraryState, req *transport.ActionRequest) []transport.ActionFrame {
 	bookID := book.SanitizeBookID(req.FormValue(formKeyBook))
 	targetView := strings.TrimSpace(req.FormValue(formKeyView))
 	if targetView == "" {
@@ -190,30 +185,7 @@ func ImportScreenplayFromDiskFile(s *state.LibraryState, rawPath string, openInS
 	return tr(s, i18n.TrImportedScreenplayPrefix) + imported.Title
 }
 
-func browseAddBookMedia(s *state.LibraryState, req *http.Request) []transport.ActionFrame {
-	if s.Hooks.BrowseAddBookMedia != nil {
-		if frames, ok := s.Hooks.BrowseAddBookMedia(req.URL.RawQuery); ok {
-			_ = req
-			return frames
-		}
-	}
-	return frameLibraryModals(s, "")
-}
-
-func addBookMediaFromDisk(s *state.LibraryState, req *http.Request) []transport.ActionFrame {
-	if s.Hooks.AddBookMediaFromDisk != nil {
-		kind := strings.ToLower(strings.TrimSpace(req.FormValue(formKeyKind)))
-		if kind == "" {
-			kind = strings.ToLower(strings.TrimSpace(req.FormValue(formKeyMediaKind)))
-		}
-		if frames, ok := s.Hooks.AddBookMediaFromDisk(kind, strings.TrimSpace(req.FormValue(formKeyPath))); ok {
-			return frames
-		}
-	}
-	return frameLibraryModals(s, "")
-}
-
-func removeBookFromForm(s *state.LibraryState, req *http.Request) []transport.ActionFrame {
+func removeBookFromForm(s *state.LibraryState, req *transport.ActionRequest) []transport.ActionFrame {
 	bookID := book.SanitizeBookID(req.FormValue(formKeyBook))
 	toast := ""
 	if s.Hooks.RemoveBookByID != nil {
@@ -248,7 +220,7 @@ func RemoveBookByID(s *state.LibraryState, bookID string) string {
 	return msg
 }
 
-func extractEmbeddedBookAction(s *state.LibraryState, _ *http.Request) []transport.ActionFrame {
+func extractEmbeddedBookAction(s *state.LibraryState, _ *transport.ActionRequest) []transport.ActionFrame {
 	toast := ""
 	if s.Config.DevMode && !s.Config.StandaloneMode {
 		toast = extractEmbeddedDefaultBook(s)

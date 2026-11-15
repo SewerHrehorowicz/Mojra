@@ -3,7 +3,6 @@
 package actions
 
 import (
-	"net/http"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -21,7 +20,7 @@ import (
 	"mojra/engine/transport"
 )
 
-type ActionHandler func(s *state.StudioState, req *http.Request) []transport.ActionFrame
+type ActionHandler func(s *state.StudioState, req *transport.ActionRequest) []transport.ActionFrame
 
 func studioFromUI(ui *commonstate.UIState) *state.StudioState {
 	if ui != nil && ui.Hooks.StudioState != nil {
@@ -35,7 +34,7 @@ func studioFromUI(ui *commonstate.UIState) *state.StudioState {
 func registerActions(actionMap map[string]ActionHandler) bool {
 	for actionName, handler := range actionMap {
 		fn := handler
-		commonactions.RegisterAction(actionName, false, false, func(ui *commonstate.UIState, req *http.Request) []transport.ActionFrame {
+		commonactions.RegisterAction(actionName, false, false, func(ui *commonstate.UIState, req *transport.ActionRequest) []transport.ActionFrame {
 			st := studioFromUI(ui)
 			if st == nil {
 				return nil
@@ -49,7 +48,7 @@ func registerActions(actionMap map[string]ActionHandler) bool {
 func registerStandaloneActions(actionMap map[string]ActionHandler) bool {
 	for actionName, handler := range actionMap {
 		fn := handler
-		commonactions.RegisterAction(actionName, true, true, func(ui *commonstate.UIState, req *http.Request) []transport.ActionFrame {
+		commonactions.RegisterAction(actionName, true, true, func(ui *commonstate.UIState, req *transport.ActionRequest) []transport.ActionFrame {
 			st := studioFromUI(ui)
 			if st == nil {
 				return nil
@@ -63,7 +62,7 @@ func registerStandaloneActions(actionMap map[string]ActionHandler) bool {
 func registerLANActions(actionMap map[string]ActionHandler) bool {
 	for actionName, handler := range actionMap {
 		fn := handler
-		commonactions.RegisterAction(actionName, true, false, func(ui *commonstate.UIState, req *http.Request) []transport.ActionFrame {
+		commonactions.RegisterAction(actionName, true, false, func(ui *commonstate.UIState, req *transport.ActionRequest) []transport.ActionFrame {
 			st := studioFromUI(ui)
 			if st == nil {
 				return nil
@@ -86,15 +85,15 @@ func isHistoryPreview(s *state.StudioState) bool {
 	return s != nil && !s.Config.StandaloneMode && s.Editor.History.IsPreview(s.Editor.ActiveBook)
 }
 
-func hasFormScene(r *http.Request) bool {
+func hasFormScene(r *transport.ActionRequest) bool {
 	return r != nil && strings.TrimSpace(r.FormValue(formKeySceneID)) != ""
 }
 
-func FlushFormSceneIfPresent(s *state.StudioState, r *http.Request) bool {
+func FlushFormSceneIfPresent(s *state.StudioState, r *transport.ActionRequest) bool {
 	return flushFormSceneIfPresent(s, r)
 }
 
-func flushFormSceneIfPresent(s *state.StudioState, r *http.Request) bool {
+func flushFormSceneIfPresent(s *state.StudioState, r *transport.ActionRequest) bool {
 	if !hasFormScene(r) || isHistoryPreview(s) {
 		return hasFormScene(r)
 	}
@@ -298,7 +297,7 @@ func activateRightPanel(s *state.StudioState, panel state.EditorRightPanel) {
 	}
 }
 
-func openEditorHelpModal(s *state.StudioState, _ *http.Request) []transport.ActionFrame {
+func openEditorHelpModal(s *state.StudioState, _ *transport.ActionRequest) []transport.ActionFrame {
 	if s.Editor.RightPanel == state.PanelHelp {
 		s.Editor.ActivateRightPanel(state.PanelNone)
 	} else {
@@ -307,14 +306,14 @@ func openEditorHelpModal(s *state.StudioState, _ *http.Request) []transport.Acti
 	return frameWorkspace(s, "")
 }
 
-func closeEditorHelpModal(s *state.StudioState, _ *http.Request) []transport.ActionFrame {
+func closeEditorHelpModal(s *state.StudioState, _ *transport.ActionRequest) []transport.ActionFrame {
 	if s.Editor.RightPanel == state.PanelHelp {
 		s.Editor.ActivateRightPanel(state.PanelNone)
 	}
 	return frameWorkspace(s, "")
 }
 
-func closeBookSettings(s *state.StudioState, _ *http.Request) []transport.ActionFrame {
+func closeBookSettings(s *state.StudioState, _ *transport.ActionRequest) []transport.ActionFrame {
 	if s.Editor.RightPanel == state.PanelBook || s.Editor.RightPanel == state.PanelChapter {
 		s.Editor.ActivateRightPanel(state.PanelNone)
 	} else {
@@ -323,7 +322,7 @@ func closeBookSettings(s *state.StudioState, _ *http.Request) []transport.Action
 	return frameWorkspace(s, "")
 }
 
-func toggleBookSettings(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func toggleBookSettings(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	_ = flushFormSceneIfPresent(s, r)
 	open := s.Editor.RightPanel != state.PanelBook
 	switch r.FormValue(formKeyOpen) {
@@ -340,7 +339,7 @@ func toggleBookSettings(s *state.StudioState, r *http.Request) []transport.Actio
 	return frameWorkspace(s, "")
 }
 
-func saveBookSettings(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func saveBookSettings(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	if isHistoryPreview(s) {
 		return frameApp(s, tr(s, i18n.TrHistoryPreviewLocked))
 	}
@@ -423,7 +422,7 @@ func saveBookSettings(s *state.StudioState, r *http.Request) []transport.ActionF
 	return frameApp(s, toast)
 }
 
-func renameBook(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func renameBook(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	if isHistoryPreview(s) {
 		return frameApp(s, tr(s, i18n.TrHistoryPreviewLocked))
 	}
@@ -453,7 +452,7 @@ func renameBook(s *state.StudioState, r *http.Request) []transport.ActionFrame {
 	return frameApp(s, toast)
 }
 
-func setStartScene(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func setStartScene(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	syncSceneTextSettingsOpen(s, r)
 	toast := withBookMutation(s, r, false, func(b *book.Book) (string, string, string, bool) {
 		scID := strings.TrimSpace(r.FormValue(formKeyScene))
@@ -487,7 +486,7 @@ func setStartScene(s *state.StudioState, r *http.Request) []transport.ActionFram
 	return frameUndoRedo(s, toast)
 }
 
-func setBookStartChapter(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func setBookStartChapter(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	toast := withBookMutation(s, r, false, func(b *book.Book) (string, string, string, bool) {
 		chKey := strings.TrimSpace(r.FormValue(formKeyChapter))
 		if chKey == "" {
@@ -529,7 +528,7 @@ func setBookStartChapter(s *state.StudioState, r *http.Request) []transport.Acti
 	return frameUndoRedo(s, toast)
 }
 
-func toggleBookNarrated(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func toggleBookNarrated(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	toast := withBookMutation(s, r, false, func(b *book.Book) (string, string, string, bool) {
 		if b.IsScreenplay() {
 			return "", "", "", false
@@ -551,7 +550,7 @@ func toggleBookNarrated(s *state.StudioState, r *http.Request) []transport.Actio
 	return frameWorkspace(s, toast)
 }
 
-func toggleBookImageless(s *state.StudioState, _ *http.Request) []transport.ActionFrame {
+func toggleBookImageless(s *state.StudioState, _ *transport.ActionRequest) []transport.ActionFrame {
 	if isHistoryPreview(s) {
 		return frameApp(s, tr(s, i18n.TrHistoryPreviewLocked))
 	}
@@ -575,7 +574,7 @@ func toggleBookImageless(s *state.StudioState, _ *http.Request) []transport.Acti
 	return frameApp(s, toast)
 }
 
-func autoLayoutNodes(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func autoLayoutNodes(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	_ = flushFormSceneIfPresent(s, r)
 	s.Overlays.ResetCanvas = true
 	if isHistoryPreview(s) {
@@ -598,7 +597,7 @@ func autoLayoutNodes(s *state.StudioState, r *http.Request) []transport.ActionFr
 	return frameUndoRedo(s, toast)
 }
 
-func applyEditorViewportParams(b *book.Book, r *http.Request) {
+func applyEditorViewportParams(b *book.Book, r *transport.ActionRequest) {
 	if b == nil {
 		return
 	}
@@ -622,7 +621,7 @@ func applyEditorViewportParams(b *book.Book, r *http.Request) {
 	}
 }
 
-func saveEditorViewportAndNodePositions(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func saveEditorViewportAndNodePositions(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	b := s.Editor.ActiveBook
 	if b == nil || b.IsPacked {
 		return frameNone(s, "")
@@ -760,7 +759,7 @@ func saveEditorViewportAndNodePositions(s *state.StudioState, r *http.Request) [
 	return frameNone(s, "")
 }
 
-func pickExpandedBookDirectory(s *state.StudioState, r *http.Request, formKey string) (string, string, bool) {
+func pickExpandedBookDirectory(s *state.StudioState, r *transport.ActionRequest, formKey string) (string, string, bool) {
 	if isHistoryPreview(s) {
 		return "", tr(s, i18n.TrHistoryPreviewLocked), false
 	}
@@ -782,7 +781,7 @@ func pickExpandedBookDirectory(s *state.StudioState, r *http.Request, formKey st
 	return expanded, "", true
 }
 
-func browseBookExportFolder(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func browseBookExportFolder(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	expanded, errToast, ok := pickExpandedBookDirectory(s, r, formKeyExportDir)
 	if !ok {
 		return frameWorkspace(s, errToast)
@@ -796,7 +795,7 @@ func browseBookExportFolder(s *state.StudioState, r *http.Request) []transport.A
 	return frameWorkspace(s, toast)
 }
 
-func browseBookSaveFolder(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func browseBookSaveFolder(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	expanded, errToast, ok := pickExpandedBookDirectory(s, r, newBookFormSavePath)
 	if !ok {
 		return frameWorkspace(s, errToast)
@@ -822,7 +821,7 @@ func browseBookSaveFolder(s *state.StudioState, r *http.Request) []transport.Act
 	return frameWorkspace(s, tr(s, i18n.TrMovedProjectToPrefix)+reloaded.RootPath)
 }
 
-func toggleStudioSearchAction(s *state.StudioState, _ *http.Request) []transport.ActionFrame {
+func toggleStudioSearchAction(s *state.StudioState, _ *transport.ActionRequest) []transport.ActionFrame {
 	s.Editor.SearchOpen = !s.Editor.SearchOpen
 	if !s.Editor.SearchOpen {
 		s.Editor.SearchQuery = ""
@@ -830,19 +829,19 @@ func toggleStudioSearchAction(s *state.StudioState, _ *http.Request) []transport
 	return frameWorkspace(s, "")
 }
 
-func closeStudioSearchAction(s *state.StudioState, _ *http.Request) []transport.ActionFrame {
+func closeStudioSearchAction(s *state.StudioState, _ *transport.ActionRequest) []transport.ActionFrame {
 	s.Editor.SearchOpen = false
 	s.Editor.SearchQuery = ""
 	return frameWorkspace(s, "")
 }
 
-func filterStudioSearchAction(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func filterStudioSearchAction(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	s.Editor.SearchOpen = true
 	s.Editor.SearchQuery = strings.TrimSpace(r.FormValue(formKeySearchQuery))
 	return frameWorkspace(s, "")
 }
 
-func toggleBookWarningsAction(s *state.StudioState, _ *http.Request) []transport.ActionFrame {
+func toggleBookWarningsAction(s *state.StudioState, _ *transport.ActionRequest) []transport.ActionFrame {
 	s.Editor.WarningsOpen = !s.Editor.WarningsOpen
 	return frameWorkspace(s, "")
 }

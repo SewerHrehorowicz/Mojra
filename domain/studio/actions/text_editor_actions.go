@@ -3,7 +3,6 @@
 package actions
 
 import (
-	"net/http"
 	"strconv"
 	"strings"
 
@@ -50,7 +49,7 @@ var (
 	})
 )
 
-func syncSceneTextSettingsOpen(s *state.StudioState, r *http.Request) {
+func syncSceneTextSettingsOpen(s *state.StudioState, r *transport.ActionRequest) {
 	if r != nil {
 		if _, ok := r.Form[formKeySceneSettingsOpen]; ok {
 			s.Editor.SceneText.SettingsOpen = r.FormValue(formKeySceneSettingsOpen) == formValTrue
@@ -58,7 +57,7 @@ func syncSceneTextSettingsOpen(s *state.StudioState, r *http.Request) {
 	}
 }
 
-func resolveSceneTextTarget(s *state.StudioState, r *http.Request) *book.Scene {
+func resolveSceneTextTarget(s *state.StudioState, r *transport.ActionRequest) *book.Scene {
 	b := s.Editor.ActiveBook
 	if b == nil {
 		return nil
@@ -82,14 +81,14 @@ func resolveSceneTextTarget(s *state.StudioState, r *http.Request) *book.Scene {
 	return nil
 }
 
-func flushSceneTextChanges(s *state.StudioState, r *http.Request) (saved bool, errToast string) {
+func flushSceneTextChanges(s *state.StudioState, r *transport.ActionRequest) (saved bool, errToast string) {
 	if !s.Editor.SceneText.IsOpen() {
 		return false, ""
 	}
 	return commitSceneForm(s, r, sceneFlushTextModal)
 }
 
-func openSceneTextModal(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func openSceneTextModal(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	hadFormScene := flushFormSceneIfPresent(s, r)
 	sc := resolveSceneTextTarget(s, r)
 	if sc != nil {
@@ -108,7 +107,7 @@ func openSceneTextModal(s *state.StudioState, r *http.Request) []transport.Actio
 	return frameModals(s, "")
 }
 
-func setSceneTextWidthModeAction(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func setSceneTextWidthModeAction(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	raw := r.FormValue(formKeyMode)
 	if raw == "" {
 		raw = r.FormValue(formKeyWidth)
@@ -117,7 +116,7 @@ func setSceneTextWidthModeAction(s *state.StudioState, r *http.Request) []transp
 	return frameModals(s, "")
 }
 
-func closeSceneTextModal(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func closeSceneTextModal(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	_, errToast := flushSceneTextChanges(s, r)
 	s.Editor.SceneText.Close()
 	s.Editor.SelectedVoiceSectionKey = defaultVoiceSectionKey
@@ -128,18 +127,18 @@ func closeSceneTextModal(s *state.StudioState, r *http.Request) []transport.Acti
 	return frameApp(s, errToast)
 }
 
-func toggleSceneTextSettings(s *state.StudioState, _ *http.Request) []transport.ActionFrame {
+func toggleSceneTextSettings(s *state.StudioState, _ *transport.ActionRequest) []transport.ActionFrame {
 	s.Editor.SceneText.SettingsOpen = !s.Editor.SceneText.SettingsOpen
 	return frameModals(s, "")
 }
 
-func saveSceneTextModal(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func saveSceneTextModal(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	syncSceneTextSettingsOpen(s, r)
 	_, toast := commitSceneForm(s, r, sceneSaveTextModal)
 	return frameModals(s, toast)
 }
 
-func navigateSceneTextModal(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func navigateSceneTextModal(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	s.Editor.SceneText.SettingsOpen = false
 	_, errToast := flushSceneTextChanges(s, r)
 	b := s.Editor.ActiveBook
@@ -171,7 +170,7 @@ func navigateSceneTextModal(s *state.StudioState, r *http.Request) []transport.A
 	return frameModals(s, errToast)
 }
 
-func toggleChoiceRuleAction(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func toggleChoiceRuleAction(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	hadFormScene := flushFormSceneIfPresent(s, r)
 	b := s.Editor.ActiveBook
 	if b == nil || len(b.Variables) == 0 {
@@ -192,7 +191,7 @@ func toggleChoiceRuleAction(s *state.StudioState, r *http.Request) []transport.A
 	return frameSceneForm(s, "", hadFormScene, false)
 }
 
-func toggleSyntaxHelpAction(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func toggleSyntaxHelpAction(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	hadFormScene := flushFormSceneIfPresent(s, r)
 	if s.Editor.ActiveBook == nil || len(s.Editor.ActiveBook.Variables) == 0 {
 		s.Editor.SceneText.SyntaxHelpOpen = false
@@ -202,7 +201,7 @@ func toggleSyntaxHelpAction(s *state.StudioState, r *http.Request) []transport.A
 	return frameSceneForm(s, "", hadFormScene, false)
 }
 
-func setSceneTextPreviewModeAction(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func setSceneTextPreviewModeAction(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	_ = flushFormSceneIfPresent(s, r)
 	b := s.Editor.ActiveBook
 	if b == nil || len(b.Variables) == 0 {
@@ -220,7 +219,7 @@ func setSceneTextPreviewModeAction(s *state.StudioState, r *http.Request) []tran
 	return frameModals(s, "")
 }
 
-func toggleSceneTestVarsPopoverAction(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func toggleSceneTestVarsPopoverAction(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	_ = flushFormSceneIfPresent(s, r)
 	b := s.Editor.ActiveBook
 	if b == nil || len(b.Variables) == 0 {
@@ -234,7 +233,7 @@ func toggleSceneTestVarsPopoverAction(s *state.StudioState, r *http.Request) []t
 	return frameModals(s, "")
 }
 
-func updateSceneTextTestVarAction(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func updateSceneTextTestVarAction(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	_ = flushFormSceneIfPresent(s, r)
 	b := s.Editor.ActiveBook
 	varName := book.SanitizeVarName(r.FormValue(formKeyVarName))

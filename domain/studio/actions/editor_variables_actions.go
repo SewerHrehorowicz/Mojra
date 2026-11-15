@@ -4,7 +4,6 @@ package actions
 
 import (
 	"fmt"
-	"net/http"
 	"strconv"
 	"strings"
 
@@ -49,7 +48,7 @@ var _ = registerActions(map[string]ActionHandler{
 	"RemoveBookEnumOption":       removeBookEnumOptionAction,
 })
 
-func toggleEditorVariablesPanel(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func toggleEditorVariablesPanel(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	_ = flushFormSceneIfPresent(s, r)
 	if s.Editor.RightPanel == state.PanelVariables {
 		s.Editor.ActivateRightPanel(state.PanelNone)
@@ -59,7 +58,7 @@ func toggleEditorVariablesPanel(s *state.StudioState, r *http.Request) []transpo
 	return frameWorkspace(s, "")
 }
 
-func closeEditorVariablesPanel(s *state.StudioState, _ *http.Request) []transport.ActionFrame {
+func closeEditorVariablesPanel(s *state.StudioState, _ *transport.ActionRequest) []transport.ActionFrame {
 	if s.Editor.RightPanel == state.PanelVariables {
 		s.Editor.ActivateRightPanel(state.PanelNone)
 	}
@@ -79,7 +78,7 @@ func nextUniqueVariableName(b *book.Book, prefix string) string {
 	return prefix
 }
 
-func addBookVariableAction(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func addBookVariableAction(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	hadFormScene := flushFormSceneIfPresent(s, r)
 	if isHistoryPreview(s) {
 		return frameSceneForm(s, tr(s, i18n.TrHistoryPreviewLocked), hadFormScene, false)
@@ -153,7 +152,7 @@ func commitBookVariableMutation(s *state.StudioState, label, coalesceKey string)
 	return ""
 }
 
-func mutateVariableAtFormIndex(s *state.StudioState, r *http.Request, fn func(idx int, v *book.VariableDef) string) string {
+func mutateVariableAtFormIndex(s *state.StudioState, r *transport.ActionRequest, fn func(idx int, v *book.VariableDef) string) string {
 	if isHistoryPreview(s) {
 		return tr(s, i18n.TrHistoryPreviewLocked)
 	}
@@ -168,7 +167,7 @@ func mutateVariableAtFormIndex(s *state.StudioState, r *http.Request, fn func(id
 	return fn(idx, &b.Variables[idx])
 }
 
-func toggleBookVariableBoolAction(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func toggleBookVariableBoolAction(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	toast := mutateVariableAtFormIndex(s, r, func(_ int, v *book.VariableDef) string {
 		s.Editor.History.EnsureBaseline(s.Editor.ActiveBook, s.Editor.SelectedSceneID)
 		v.BoolVal = !v.BoolVal
@@ -193,7 +192,7 @@ func parseEnumOptionsSlice(rawItems []string) []string {
 	return opts
 }
 
-func extractEnumOptionsFromForm(r *http.Request) ([]string, bool) {
+func extractEnumOptionsFromForm(r *transport.ActionRequest) ([]string, bool) {
 	if rawVal, hasVal := r.Form[formKeyVarValue]; hasVal && len(rawVal) > 0 {
 		return parseEnumOptionsSlice(rawVal), true
 	}
@@ -253,7 +252,7 @@ func nextUniqueEnumOptionName(opts []string) string {
 	return defaultEnumOptBase
 }
 
-func applyVariableFormEdits(s *state.StudioState, idx int, v *book.VariableDef, r *http.Request) bool {
+func applyVariableFormEdits(s *state.StudioState, idx int, v *book.VariableDef, r *transport.ActionRequest) bool {
 	b := s.Editor.ActiveBook
 	changed := false
 	if rawName, hasName := r.Form[formKeyVarName]; hasName && len(rawName) > 0 {
@@ -313,7 +312,7 @@ func applyVariableFormEdits(s *state.StudioState, idx int, v *book.VariableDef, 
 	return changed
 }
 
-func updateBookVariableAction(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func updateBookVariableAction(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	toast := mutateVariableAtFormIndex(s, r, func(idx int, v *book.VariableDef) string {
 		if applyVariableFormEdits(s, idx, v, r) {
 			book.ResolveBookVariableTypes(s.Editor.ActiveBook)
@@ -324,7 +323,7 @@ func updateBookVariableAction(s *state.StudioState, r *http.Request) []transport
 	return frameUndoRedo(s, toast)
 }
 
-func addBookEnumOptionAction(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func addBookEnumOptionAction(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	if isHistoryPreview(s) {
 		return frameUndoRedo(s, tr(s, i18n.TrHistoryPreviewLocked))
 	}
@@ -353,7 +352,7 @@ func addBookEnumOptionAction(s *state.StudioState, r *http.Request) []transport.
 	return frameUndoRedo(s, commitBookVariableMutation(s, trf(s, i18n.TrAddedEnumOptFmt, nextOpt, v.Name), coalesceAddEnumOpt))
 }
 
-func removeBookEnumOptionAction(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func removeBookEnumOptionAction(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	if isHistoryPreview(s) {
 		return frameUndoRedo(s, tr(s, i18n.TrHistoryPreviewLocked))
 	}
@@ -386,7 +385,7 @@ func removeBookEnumOptionAction(s *state.StudioState, r *http.Request) []transpo
 	return frameUndoRedo(s, commitBookVariableMutation(s, trf(s, i18n.TrRemovedEnumOptFmt, removedOpt, v.Name), coalesceRemoveEnumOpt))
 }
 
-func removeBookVariableAction(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func removeBookVariableAction(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	if isHistoryPreview(s) {
 		return frameUndoRedo(s, tr(s, i18n.TrHistoryPreviewLocked))
 	}

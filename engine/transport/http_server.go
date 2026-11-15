@@ -41,8 +41,6 @@ const (
 	mimeTTF               = "font/ttf"
 	routeStyleCSS         = "/style.css"
 	routeAppJS            = "/app.js"
-	routeStudioAtlas      = "/studio-atlas.png"
-	routeStudioUI         = "/studio-ui.png"
 	routeLANQR            = "/api/lan-qr.png"
 	routeIconPNG          = "/icon.png"
 	routeFaviconICO       = "/favicon.ico"
@@ -50,8 +48,6 @@ const (
 	routeFontsPrefix      = "/fonts/"
 	routeAPIAction        = "/api/action"
 	routeRoot             = "/"
-	assetRelStudioAtlas   = "studio-atlas.png"
-	assetRelStudioUI      = "studio-ui.png"
 	extSVG                = ".svg"
 	extPNG                = ".png"
 	extTTF                = ".ttf"
@@ -187,6 +183,7 @@ type EngineConfig struct {
 	EngineFS         fs.FS
 	ModuleFSList     []fs.FS
 	ModuleSubDirs    []string
+	ModuleRootAssets []string
 	DevMode          bool
 	StandaloneMode   bool
 	CSPExemptPrefix  string
@@ -344,8 +341,18 @@ func (srv *EngineServer) buildMux() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc(routeStyleCSS, srv.serveUIAsset(routeStyleCSS, mimeCSSUTF8))
 	mux.HandleFunc(routeAppJS, srv.serveUIAsset(routeAppJS, mimeJSUTF8))
-	mux.HandleFunc(routeStudioAtlas, srv.serveStudioAtlas)
-	mux.HandleFunc(routeStudioUI, srv.serveStudioUI)
+	for _, assetName := range srv.cfg.ModuleRootAssets {
+		cleanAsset := strings.TrimPrefix(assetName, "/")
+		if cleanAsset != "" {
+			mux.HandleFunc("/"+cleanAsset, srv.serveModuleRootAsset(cleanAsset))
+		}
+	}
+	for genName := range GeneratedAssetBuilders {
+		cleanGen := strings.TrimPrefix(genName, "/")
+		if cleanGen != "" {
+			mux.HandleFunc("/"+cleanGen, srv.serveGeneratedAsset(cleanGen))
+		}
+	}
 	mux.HandleFunc(routeLANQR, srv.handleLANQR)
 	mux.HandleFunc(routeIconPNG, srv.serveAppIcon)
 	mux.HandleFunc(routeFaviconICO, srv.serveAppIcon)
@@ -377,16 +384,18 @@ func (srv *EngineServer) withSecurityHeaders(next http.Handler) http.Handler {
 	})
 }
 
-func (srv *EngineServer) serveStudioUI(writer http.ResponseWriter, _ *http.Request) {
-	if buildFn, ok := GeneratedAssetBuilders[assetRelStudioUI]; ok && buildFn != nil {
-		if pngBytes, err := buildFn(); err == nil && len(pngBytes) > 0 {
-			writer.Header().Set(headerContentType, mimePNG)
-			writer.Header().Set(headerCacheControl, cacheImmutableAsset)
-			_, _ = writer.Write(pngBytes)
-			return
+func (srv *EngineServer) serveGeneratedAsset(assetName string) http.HandlerFunc {
+	return func(writer http.ResponseWriter, _ *http.Request) {
+		if buildFn, ok := GeneratedAssetBuilders[assetName]; ok && buildFn != nil {
+			if pngBytes, err := buildFn(); err == nil && len(pngBytes) > 0 {
+				writer.Header().Set(headerContentType, mimePNG)
+				writer.Header().Set(headerCacheControl, cacheImmutableAsset)
+				_, _ = writer.Write(pngBytes)
+				return
+			}
 		}
+		http.NotFound(writer, nil)
 	}
-	http.NotFound(writer, nil)
 }
 
 func (srv *EngineServer) handleLANQR(writer http.ResponseWriter, req *http.Request) {
@@ -407,15 +416,17 @@ func (srv *EngineServer) handleLANQR(writer http.ResponseWriter, req *http.Reque
 	_, _ = writer.Write(pngBytes)
 }
 
-func (srv *EngineServer) serveStudioAtlas(writer http.ResponseWriter, _ *http.Request) {
-	modList, _ := srv.activeModules()
-	if data, found := templates.ReadModuleAsset(modList, assetRelStudioAtlas); found {
-		writer.Header().Set(headerContentType, mimePNG)
-		writer.Header().Set(headerCacheControl, cacheImmutableAsset)
-		_, _ = writer.Write(data)
-		return
+func (srv *EngineServer) serveModuleRootAsset(assetName string) http.HandlerFunc {
+	return func(writer http.ResponseWriter, _ *http.Request) {
+		modList, _ := srv.activeModules()
+		if data, found := templates.ReadModuleAsset(modList, assetName); found {
+			writer.Header().Set(headerContentType, mimePNG)
+			writer.Header().Set(headerCacheControl, cacheImmutableAsset)
+			_, _ = writer.Write(data)
+			return
+		}
+		http.NotFound(writer, nil)
 	}
-	http.NotFound(writer, nil)
 }
 
 func (srv *EngineServer) serveAppIcon(writer http.ResponseWriter, _ *http.Request) {

@@ -3,7 +3,6 @@
 package actions
 
 import (
-	"net/http"
 	"path/filepath"
 	"strings"
 
@@ -34,7 +33,7 @@ var _ = registerActions(map[string]ActionHandler{
 	"CreateNewBook":       createNewBook,
 })
 
-func openNewBookModal(s *state.LibraryState, req *http.Request) []transport.ActionFrame {
+func openNewBookModal(s *state.LibraryState, req *transport.ActionRequest) []transport.ActionFrame {
 	s.Overlays.QR = false
 	s.Overlays.AddBook = false
 	s.NewBook.Reset()
@@ -49,12 +48,12 @@ func openNewBookModal(s *state.LibraryState, req *http.Request) []transport.Acti
 	return frameLibraryModals(s, "")
 }
 
-func closeNewBookModal(s *state.LibraryState, _ *http.Request) []transport.ActionFrame {
+func closeNewBookModal(s *state.LibraryState, _ *transport.ActionRequest) []transport.ActionFrame {
 	s.NewBook.Reset()
 	return frameLibraryModals(s, "")
 }
 
-func syncNewBookModalForm(s *state.LibraryState, req *http.Request) {
+func syncNewBookModalForm(s *state.LibraryState, req *transport.ActionRequest) {
 	if req == nil {
 		return
 	}
@@ -77,12 +76,12 @@ func syncNewBookModalForm(s *state.LibraryState, req *http.Request) {
 	}
 }
 
-func setNewBookModalModeAction(s *state.LibraryState, req *http.Request) []transport.ActionFrame {
+func setNewBookModalModeAction(s *state.LibraryState, req *transport.ActionRequest) []transport.ActionFrame {
 	syncNewBookModalForm(s, req)
 	return frameLibraryModals(s, "")
 }
 
-func browseNewBookFolder(s *state.LibraryState, req *http.Request) []transport.ActionFrame {
+func browseNewBookFolder(s *state.LibraryState, req *transport.ActionRequest) []transport.ActionFrame {
 	syncNewBookModalForm(s, req)
 	picked := pickNativeBookPathUnlocked(s, true)
 	if picked != "" {
@@ -98,7 +97,7 @@ func browseNewBookFolder(s *state.LibraryState, req *http.Request) []transport.A
 	return frameLibraryModals(s, "")
 }
 
-func createNewBook(s *state.LibraryState, req *http.Request) []transport.ActionFrame {
+func createNewBook(s *state.LibraryState, req *transport.ActionRequest) []transport.ActionFrame {
 	title := req.FormValue(newBookFormTitle)
 	author := req.FormValue(newBookFormAuthor)
 	mode := req.FormValue(newBookFormMode)

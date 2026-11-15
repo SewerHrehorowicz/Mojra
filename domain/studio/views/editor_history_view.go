@@ -15,15 +15,17 @@ import (
 )
 
 const (
-	branchMain       = "main"
-	branchBookAlias  = "book"
-	revInitialID     = "r1"
-	attrTrue         = "true"
-	attrFalse        = "false"
-	historyTimeToday = "15:04"
-	historyTimeDate  = "01-02 15:04"
-	historyMetaSep   = " • "
-	historyMetaFmt   = "%s • %s"
+	branchMain              = "main"
+	branchBookAlias         = "book"
+	revInitialID            = "r1"
+	attrTrue                = "true"
+	attrFalse               = "false"
+	historyTimeToday        = "15:04"
+	historyTimeDate         = "01-02 15:04"
+	historyMetaSep          = " • "
+	historyMetaFmt          = "%s • %s"
+	stageEditorHistoryDisk  = engine.Stage("studio.history_disk")
+	stageEditorHistoryGraph = engine.Stage("studio.history_graph")
 )
 
 type editorHistoryTemplate struct {
@@ -618,7 +620,7 @@ func EditorHistoryView(s *state.StudioState) templates.TemplateChunk {
 			}
 			tDisk := time.Now()
 			h := s.Editor.History.RefreshFromDisk(b)
-			engine.Active.MarkStep(engine.StageEditorHistoryDisk, tDisk, b.ID)
+			engine.Active.MarkStep(stageEditorHistoryDisk, tDisk, b.ID)
 			if h != nil {
 				activeBranchName = h.NormalizedActiveBranch()
 				branchesCount = len(h.Branches)
@@ -655,7 +657,7 @@ func EditorHistoryView(s *state.StudioState) templates.TemplateChunk {
 				if isHistoryPanelOpen {
 					tGraph := time.Now()
 					graphRows, _ = buildHistoryGraphRows(b, h, curIdx, viewedIdx, isHistPreview, LangOf(s))
-					engine.Active.MarkStep(engine.StageEditorHistoryGraph, tGraph, b.ID)
+					engine.Active.MarkStep(stageEditorHistoryGraph, tGraph, b.ID)
 				}
 
 				for _, idx := range h.ActiveBranchRevisions() {

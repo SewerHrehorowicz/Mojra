@@ -3,7 +3,6 @@
 package actions
 
 import (
-	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -30,7 +29,7 @@ var _ = registerActions(map[string]ActionHandler{
 	"OpenStudioProjectFromDisk": openStudioProjectFromDisk,
 })
 
-func pickDiskBookPath(s *state.StudioState, r *http.Request) string {
+func pickDiskBookPath(s *state.StudioState, r *transport.ActionRequest) string {
 	mode := strings.ToLower(strings.TrimSpace(r.FormValue(formKeyMode)))
 	return pickNativeBookPathUnlocked(s, mode != modeValFile)
 }
@@ -95,7 +94,7 @@ func importScreenplayFromDiskFile(s *state.StudioState, rawPath string, openInSt
 	return tr(s, i18n.TrImportedScreenplayPrefix) + imported.Title
 }
 
-func openStudioProjectModal(s *state.StudioState, _ *http.Request) []transport.ActionFrame {
+func openStudioProjectModal(s *state.StudioState, _ *transport.ActionRequest) []transport.ActionFrame {
 	s.Overlays.QR = false
 	s.Overlays.AddBook = false
 	s.Export.Open = false
@@ -103,12 +102,12 @@ func openStudioProjectModal(s *state.StudioState, _ *http.Request) []transport.A
 	return frameModals(s, "")
 }
 
-func closeStudioProjectModal(s *state.StudioState, _ *http.Request) []transport.ActionFrame {
+func closeStudioProjectModal(s *state.StudioState, _ *transport.ActionRequest) []transport.ActionFrame {
 	s.Overlays.StudioProjects = false
 	return frameModals(s, "")
 }
 
-func openStudioProjectAction(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func openStudioProjectAction(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	bookID := book.SanitizeBookID(r.FormValue(formKeyBook))
 	if s.Hooks.ListAllBooks != nil {
 		for _, b := range s.Hooks.ListAllBooks() {
@@ -120,7 +119,7 @@ func openStudioProjectAction(s *state.StudioState, r *http.Request) []transport.
 	return frameAppResetCanvas(s, tr(s, i18n.TrProjectNotFound))
 }
 
-func browseOpenStudioProject(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func browseOpenStudioProject(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	toast := ""
 	if picked := pickDiskBookPath(s, r); picked != "" {
 		toast = openStudioProjectFromDiskPath(s, picked)
@@ -128,7 +127,7 @@ func browseOpenStudioProject(s *state.StudioState, r *http.Request) []transport.
 	return frameAppResetCanvas(s, toast)
 }
 
-func openStudioProjectFromDisk(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func openStudioProjectFromDisk(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	rawPath := strings.TrimSpace(r.FormValue(formKeyPath))
 	return frameAppResetCanvas(s, openStudioProjectFromDiskPath(s, rawPath))
 }

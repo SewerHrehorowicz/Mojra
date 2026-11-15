@@ -5,14 +5,11 @@ package actions
 import (
 	"archive/zip"
 	"bytes"
-	"context"
 	"encoding/binary"
-	"flag"
 	"fmt"
 	"hash/fnv"
 	"io"
 	"io/fs"
-	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -24,6 +21,7 @@ import (
 
 	"mojra/domain/book/model"
 	"mojra/engine"
+	"mojra/engine/osbridge"
 )
 
 func init() {
@@ -37,6 +35,7 @@ const (
 	extZip                = ".zip"
 	rebindHashIDFormat    = "%s-%s"
 	rebindHashSeqIDFormat = "%s-%s-%d"
+	stageLoadBookItem     = engine.Stage("boot.load_book_item")
 )
 
 // LoadBooksFromDirectory scans booksDir for unpacked book folders and packed .playbook/.zip archives.
@@ -73,7 +72,7 @@ func LoadBooksFromDirectory(booksDir string) ([]*Book, error) {
 				if loadErr != nil || b == nil {
 					return
 				}
-				engine.Active.MarkStep(engine.StageLoadBookItem, tBook, b.ID)
+				engine.Active.MarkStep(stageLoadBookItem, tBook, b.ID)
 				loadedDirs[idx] = b
 			}(i, dirName)
 		}
@@ -121,7 +120,7 @@ func LoadBooksFromDirectory(booksDir string) ([]*Book, error) {
 				if loadErr != nil || b == nil {
 					return
 				}
-				engine.Active.MarkStep(engine.StageLoadBookItem, tBook, b.ID)
+				engine.Active.MarkStep(stageLoadBookItem, tBook, b.ID)
 				loadedZips[idx] = b
 			}(i, zipName)
 		}
@@ -255,7 +254,7 @@ func LoadLibraryBooks(booksDir string, externalPaths []string) ([]*Book, error) 
 				if loadErr != nil || b == nil {
 					return
 				}
-				engine.Active.MarkStep(engine.StageLoadBookItem, tBook, b.ID)
+				engine.Active.MarkStep(stageLoadBookItem, tBook, b.ID)
 				loadedExt[idx] = b
 			}(i, extPath)
 		}
@@ -676,37 +675,6 @@ func ResolveDiskBookPaths(rawPath string) ([]string, error) {
 
 const maxBookDownloadBytes = 250 * 1024 * 1024
 
-func isRunningUnderGoTest() bool {
-	if flag.Lookup("test.v") != nil {
-		return true
-	}
-	if len(os.Args) > 0 && (strings.HasSuffix(os.Args[0], ".test") || strings.HasSuffix(os.Args[0], ".test.exe")) {
-		return true
-	}
-	return false
-}
-
-func isBlockedSSRFIp(ip net.IP) bool {
-	if ip == nil {
-		return true
-	}
-	if ip.IsUnspecified() || ip.IsMulticast() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsPrivate() {
-		return true
-	}
-	if ip.IsLoopback() {
-		return !isRunningUnderGoTest()
-	}
-	if ip4 := ip.To4(); ip4 != nil {
-		if ip4[0] == 100 && (ip4[1]&0xc0) == 64 {
-			return true
-		}
-		if ip4[0] == 169 && ip4[1] == 254 {
-			return true
-		}
-	}
-	return false
-}
-
 // DownloadBookFromURL downloads a .playbook or .zip archive (or plain .txt story) from an HTTP/HTTPS URL and stores it as a .playbook package in booksDir.
 func DownloadBookFromURL(booksDir, rawURL string) (*Book, error) {
 	trimmedURL := strings.TrimSpace(rawURL)
@@ -722,65 +690,12 @@ func DownloadBookFromURL(booksDir, rawURL string) (*Book, error) {
 		return nil, err
 	}
 
-	dialer := &net.Dialer{
-		Timeout:   15 * time.Second,
-		KeepAlive: 15 * time.Second,
+	payload, contentDisposition, fetchErr := osbridge.DefaultStorage.FetchURLBytes(trimmedURL, maxBookDownloadBytes)
+	if fetchErr != nil {
+		return nil, fetchErr
 	}
-	transport := &http.Transport{
-		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			host, port, err := net.SplitHostPort(addr)
-			if err != nil {
-				return nil, err
-			}
-			if parsedIP := net.ParseIP(host); parsedIP != nil {
-				if isBlockedSSRFIp(parsedIP) {
-					return nil, fmt.Errorf("zablokowano połączenie z adresem wewnętrznym/prywatnym (SSRF): %s", parsedIP.String())
-				}
-				return dialer.DialContext(ctx, network, net.JoinHostPort(parsedIP.String(), port))
-			}
-			ipAddrs, err := net.DefaultResolver.LookupIPAddr(ctx, host)
-			if err != nil || len(ipAddrs) == 0 {
-				if err != nil {
-					return nil, err
-				}
-				return nil, fmt.Errorf("nie można rozwiązać nazwy hosta: %s", host)
-			}
-			for _, ia := range ipAddrs {
-				if isBlockedSSRFIp(ia.IP) {
-					return nil, fmt.Errorf("zablokowano połączenie z adresem wewnętrznym/prywatnym (SSRF): %s", ia.IP.String())
-				}
-			}
-			return dialer.DialContext(ctx, network, net.JoinHostPort(ipAddrs[0].IP.String(), port))
-		},
-	}
-
-	client := &http.Client{
-		Timeout:   60 * time.Second,
-		Transport: transport,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if len(via) >= 5 {
-				return fmt.Errorf("zbyt wiele przekierowań HTTP")
-			}
-			if req.URL == nil || (req.URL.Scheme != "http" && req.URL.Scheme != "https") {
-				return fmt.Errorf("niedozwolony protokół przekierowania")
-			}
-			return nil
-		},
-	}
-	req, err := http.NewRequest(http.MethodGet, trimmedURL, nil)
-	if err != nil {
-		return nil, fmt.Errorf("błąd tworzenia żądania HTTP: %w", err)
-	}
-	req.Header.Set("User-Agent", "Mojra/1.0")
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("błąd pobierania z URL: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("serwer zwrócił błąd HTTP %d (%s)", resp.StatusCode, resp.Status)
+	if len(payload) == 0 {
+		return nil, fmt.Errorf("pobrany plik z adresu URL jest pusty")
 	}
 
 	tmpFile, err := os.CreateTemp(booksDir, ".playbook-download-*.tmp")
@@ -788,23 +703,16 @@ func DownloadBookFromURL(booksDir, rawURL string) (*Book, error) {
 		return nil, err
 	}
 	tmpPath := tmpFile.Name()
+	_ = tmpFile.Close()
 	defer func() {
 		_ = os.Remove(tmpPath)
 	}()
 
-	written, err := io.Copy(tmpFile, io.LimitReader(resp.Body, maxBookDownloadBytes+1))
-	_ = tmpFile.Close()
-	if err != nil {
+	if err := os.WriteFile(tmpPath, payload, 0644); err != nil {
 		return nil, fmt.Errorf("błąd zapisu pobieranego pliku: %w", err)
 	}
-	if written == 0 {
-		return nil, fmt.Errorf("pobrany plik z adresu URL jest pusty")
-	}
-	if written > maxBookDownloadBytes {
-		return nil, fmt.Errorf("pobrany plik przekracza dopuszczalny limit rozmiaru (250 MB)")
-	}
 
-	urlBase := extractFilenameFromURLOrHeader(parsedURL, resp.Header.Get("Content-Disposition"))
+	urlBase := extractFilenameFromURLOrHeader(parsedURL, contentDisposition)
 	urlExt := strings.ToLower(filepath.Ext(urlBase))
 	urlStem := strings.TrimSuffix(urlBase, filepath.Ext(urlBase))
 
@@ -1441,7 +1349,7 @@ func DefaultAppDataDir() string {
 	if envDir := strings.TrimSpace(os.Getenv("MOJRA_DATA_DIR")); envDir != "" {
 		return filepath.Clean(envDir)
 	}
-	if isRunningUnderGoTest() {
+	if osbridge.IsRunningUnderGoTest() {
 		defaultTestAppDataOnce.Do(func() {
 			if td, err := os.MkdirTemp("", "mojra-test-appdata-*"); err == nil && td != "" {
 				defaultTestAppDataDir = td

@@ -3,7 +3,6 @@
 package actions
 
 import (
-	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -32,7 +31,7 @@ var _ = registerActions(map[string]ActionHandler{
 	"ExportProject":             exportProjectAction,
 })
 
-func openExportModal(s *state.StudioState, _ *http.Request) []transport.ActionFrame {
+func openExportModal(s *state.StudioState, _ *transport.ActionRequest) []transport.ActionFrame {
 	b := s.Editor.ActiveBook
 	if b == nil {
 		return frameModals(s, tr(s, i18n.TrNoActiveProject))
@@ -56,12 +55,12 @@ func openExportModal(s *state.StudioState, _ *http.Request) []transport.ActionFr
 	return frameModals(s, "")
 }
 
-func closeExportModal(s *state.StudioState, _ *http.Request) []transport.ActionFrame {
+func closeExportModal(s *state.StudioState, _ *transport.ActionRequest) []transport.ActionFrame {
 	s.Export.Reset()
 	return frameModals(s, "")
 }
 
-func toggleExportFormat(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func toggleExportFormat(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	if dir := strings.TrimSpace(r.FormValue(formKeyExportDir)); dir != "" {
 		s.Export.Dir = dir
 	}
@@ -82,7 +81,7 @@ func toggleExportFormat(s *state.StudioState, r *http.Request) []transport.Actio
 	return frameModals(s, "")
 }
 
-func toggleExportModalAdvanced(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func toggleExportModalAdvanced(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	if dir := strings.TrimSpace(r.FormValue(formKeyExportDir)); dir != "" {
 		s.Export.Dir = dir
 	}
@@ -93,7 +92,7 @@ func toggleExportModalAdvanced(s *state.StudioState, r *http.Request) []transpor
 	return frameModals(s, "")
 }
 
-func setExportModalStandard(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func setExportModalStandard(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	if dir := strings.TrimSpace(r.FormValue(formKeyExportDir)); dir != "" {
 		s.Export.Dir = dir
 	}
@@ -103,7 +102,7 @@ func setExportModalStandard(s *state.StudioState, r *http.Request) []transport.A
 	return frameModals(s, "")
 }
 
-func browseExportModalFolder(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func browseExportModalFolder(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	if fmtVal := strings.ToLower(strings.TrimSpace(r.FormValue(formKeyFormat))); fmtVal != "" {
 		s.Export.Format = fmtVal
 	}
@@ -129,7 +128,7 @@ func browseExportModalFolder(s *state.StudioState, r *http.Request) []transport.
 	return frameModals(s, "")
 }
 
-func resolveOrPickBookExportDir(s *state.StudioState, r *http.Request) (string, string, bool) {
+func resolveOrPickBookExportDir(s *state.StudioState, r *transport.ActionRequest) (string, string, bool) {
 	b := s.Editor.ActiveBook
 	if b == nil {
 		return "", tr(s, i18n.TrNoActiveProject), false
@@ -171,11 +170,11 @@ func resolveOrPickBookExportDir(s *state.StudioState, r *http.Request) (string, 
 	return defDir, "", true
 }
 
-func exportProjectAction(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func exportProjectAction(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	return frameModals(s, exportProjectToast(s, r))
 }
 
-func exportProjectToast(s *state.StudioState, r *http.Request) string {
+func exportProjectToast(s *state.StudioState, r *transport.ActionRequest) string {
 	b := s.Editor.ActiveBook
 	if b == nil {
 		return tr(s, i18n.TrNoActiveProject)

@@ -3,7 +3,6 @@
 package actions
 
 import (
-	"net/http"
 	"path/filepath"
 	"strings"
 
@@ -28,7 +27,7 @@ var _ = registerActions(map[string]ActionHandler{
 	"AddBookFromURL":        addBookFromURLAction,
 })
 
-func openAddBookModal(s *state.LibraryState, _ *http.Request) []transport.ActionFrame {
+func openAddBookModal(s *state.LibraryState, _ *transport.ActionRequest) []transport.ActionFrame {
 	s.Overlays.QR = false
 	s.NewBook.Open = false
 	s.Overlays.StudioProjects = false
@@ -36,12 +35,12 @@ func openAddBookModal(s *state.LibraryState, _ *http.Request) []transport.Action
 	return frameLibraryModals(s, "")
 }
 
-func closeAddBookModal(s *state.LibraryState, _ *http.Request) []transport.ActionFrame {
+func closeAddBookModal(s *state.LibraryState, _ *transport.ActionRequest) []transport.ActionFrame {
 	s.Overlays.AddBook = false
 	return frameLibraryModals(s, "")
 }
 
-func browseAddBookFromDisk(s *state.LibraryState, req *http.Request) []transport.ActionFrame {
+func browseAddBookFromDisk(s *state.LibraryState, req *transport.ActionRequest) []transport.ActionFrame {
 	toast := ""
 	if picked := pickDiskBookPath(s, req); picked != "" {
 		toast = AddBookFromDiskPath(s, picked)
@@ -49,7 +48,7 @@ func browseAddBookFromDisk(s *state.LibraryState, req *http.Request) []transport
 	return frameLibraryAppResetCanvas(s, toast)
 }
 
-func addBookFromDisk(s *state.LibraryState, req *http.Request) []transport.ActionFrame {
+func addBookFromDisk(s *state.LibraryState, req *transport.ActionRequest) []transport.ActionFrame {
 	rawPath := strings.TrimSpace(req.FormValue(formKeyPath))
 	lowerPath := strings.ToLower(rawPath)
 	if strings.HasPrefix(lowerPath, httpPrefix) || strings.HasPrefix(lowerPath, httpsPrefix) {
@@ -99,7 +98,7 @@ func AddBookFromDiskPath(s *state.LibraryState, rawPath string) string {
 	return tr(s, i18n.TrAddedDiskGeneric)
 }
 
-func addBookFromURLAction(s *state.LibraryState, req *http.Request) []transport.ActionFrame {
+func addBookFromURLAction(s *state.LibraryState, req *transport.ActionRequest) []transport.ActionFrame {
 	rawURL := strings.TrimSpace(req.FormValue(formKeyURL))
 	return frameLibraryAppResetCanvas(s, addBookFromURL(s, rawURL))
 }

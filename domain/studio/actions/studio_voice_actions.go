@@ -5,7 +5,6 @@ package actions
 import (
 	"encoding/base64"
 	"fmt"
-	"net/http"
 	"strconv"
 	"strings"
 
@@ -45,7 +44,7 @@ var _ = registerActions(map[string]ActionHandler{
 	"DeleteSceneVoice":         deleteSceneVoiceAction,
 })
 
-func activeVoiceSectionKeyForRequest(s *state.StudioState, sc *book.Scene, r *http.Request) string {
+func activeVoiceSectionKeyForRequest(s *state.StudioState, sc *book.Scene, r *transport.ActionRequest) string {
 	var cand string
 	if r != nil {
 		cand = strings.TrimSpace(r.FormValue(formKeyVoiceSection))
@@ -59,7 +58,7 @@ func activeVoiceSectionKeyForRequest(s *state.StudioState, sc *book.Scene, r *ht
 	return resolveSceneVoiceSectionKey(s, sc, cand)
 }
 
-func formVoiceSectionKeyForRequest(s *state.StudioState, sc *book.Scene, r *http.Request) string {
+func formVoiceSectionKeyForRequest(s *state.StudioState, sc *book.Scene, r *transport.ActionRequest) string {
 	var cand string
 	if r != nil {
 		cand = strings.TrimSpace(r.FormValue(formKeyIsolatedVoiceSection))
@@ -91,12 +90,12 @@ func resolveSceneVoiceSectionKey(s *state.StudioState, sc *book.Scene, cand stri
 	return cand
 }
 
-func resolveVoiceActionTargetScene(s *state.StudioState, r *http.Request) *book.Scene {
+func resolveVoiceActionTargetScene(s *state.StudioState, r *transport.ActionRequest) *book.Scene {
 	_, target := resolveEditorSceneFromRequest(s, r, true)
 	return target
 }
 
-func flushVoiceTargetChangesIfPresent(s *state.StudioState, target *book.Scene, r *http.Request) (*book.Scene, string) {
+func flushVoiceTargetChangesIfPresent(s *state.StudioState, target *book.Scene, r *transport.ActionRequest) (*book.Scene, string) {
 	b := s.Editor.ActiveBook
 	if target == nil || b == nil || isHistoryPreview(s) || b.IsPacked {
 		return target, ""
@@ -118,7 +117,7 @@ func flushVoiceTargetChangesIfPresent(s *state.StudioState, target *book.Scene, 
 	return target, ""
 }
 
-func toggleSceneVoiceRecorderAction(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func toggleSceneVoiceRecorderAction(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	hadFormScene := hasFormScene(r)
 	if s.Editor.ActiveBook == nil {
 		return frameSceneForm(s, "", hadFormScene, true)
@@ -137,9 +136,9 @@ func toggleSceneVoiceRecorderAction(s *state.StudioState, r *http.Request) []tra
 	return frameSceneForm(s, "", hadFormScene, true)
 }
 
-func selectSceneVoiceSectionAction(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func selectSceneVoiceSectionAction(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	hadFormScene := hasFormScene(r)
-	if !s.Config.StandaloneMode && transport.IsLoopbackRequest(r) {
+	if !s.Config.StandaloneMode && (r == nil || r.IsLoopback) {
 		s.WithUnlocked(func() {
 			_, _, _ = osbridge.StopNativeAudioCapture()
 		})
@@ -172,7 +171,7 @@ func selectSceneVoiceSectionAction(s *state.StudioState, r *http.Request) []tran
 	return frameSceneForm(s, "", hadFormScene, true)
 }
 
-func startSceneVoiceCaptureAction(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func startSceneVoiceCaptureAction(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	if isHistoryPreview(s) {
 		s.Overlays.VoicePeak = voicePeakStopped
 		return frameNone(s, tr(s, i18n.TrHistoryPreviewLocked))
@@ -181,7 +180,7 @@ func startSceneVoiceCaptureAction(s *state.StudioState, r *http.Request) []trans
 		s.Overlays.VoicePeak = voicePeakStopped
 		return frameNone(s, tr(s, i18n.TrVoiceNoNarratedBook))
 	}
-	if !s.Config.StandaloneMode && transport.IsLoopbackRequest(r) {
+	if !s.Config.StandaloneMode && (r == nil || r.IsLoopback) {
 		var startErr error
 		s.WithUnlocked(func() {
 			startErr = osbridge.StartNativeAudioCapture()
@@ -194,7 +193,7 @@ func startSceneVoiceCaptureAction(s *state.StudioState, r *http.Request) []trans
 	return frameNone(s, "")
 }
 
-func pollSceneVoiceCaptureAction(s *state.StudioState, _ *http.Request) []transport.ActionFrame {
+func pollSceneVoiceCaptureAction(s *state.StudioState, _ *transport.ActionRequest) []transport.ActionFrame {
 	peak, active := osbridge.PollNativeAudioCapturePeak()
 	if active {
 		s.Overlays.VoicePeak = fmt.Sprintf(voicePeakFmt, peak)
@@ -224,7 +223,7 @@ func commitSceneVoiceFile(s *state.StudioState, target *book.Scene, secKey, relP
 	return ""
 }
 
-func stopSceneVoiceCaptureAction(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func stopSceneVoiceCaptureAction(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	hadFormScene := hasFormScene(r)
 	if isHistoryPreview(s) {
 		return frameSceneForm(s, tr(s, i18n.TrHistoryPreviewLocked), hadFormScene, false)
@@ -232,7 +231,7 @@ func stopSceneVoiceCaptureAction(s *state.StudioState, r *http.Request) []transp
 	var pcmLE []byte
 	var sampleRate int
 	var stopErr error
-	if !s.Config.StandaloneMode && transport.IsLoopbackRequest(r) {
+	if !s.Config.StandaloneMode && (r == nil || r.IsLoopback) {
 		s.WithUnlocked(func() {
 			pcmLE, sampleRate, stopErr = osbridge.StopNativeAudioCapture()
 		})
@@ -262,7 +261,7 @@ func stopSceneVoiceCaptureAction(s *state.StudioState, r *http.Request) []transp
 	return frameSceneForm(s, commitSceneVoiceFile(s, target, secKey, relPath, tr(s, i18n.TrVoiceSavedPrefix)), hadFormScene, false)
 }
 
-func saveSceneVoiceRecordingAction(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func saveSceneVoiceRecordingAction(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	hadFormScene := hasFormScene(r)
 	if isHistoryPreview(s) {
 		return frameSceneForm(s, tr(s, i18n.TrHistoryPreviewLocked), hadFormScene, false)
@@ -309,12 +308,12 @@ func saveSceneVoiceRecordingAction(s *state.StudioState, r *http.Request) []tran
 	return frameSceneForm(s, commitSceneVoiceFile(s, target, secKey, relPath, tr(s, i18n.TrVoiceSavedPrefix)), hadFormScene, false)
 }
 
-func trimSceneVoiceAction(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func trimSceneVoiceAction(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	hadFormScene := hasFormScene(r)
 	return frameSceneForm(s, trimSceneVoiceToast(s, r), hadFormScene, true)
 }
 
-func trimSceneVoiceToast(s *state.StudioState, r *http.Request) string {
+func trimSceneVoiceToast(s *state.StudioState, r *transport.ActionRequest) string {
 	if isHistoryPreview(s) {
 		return tr(s, i18n.TrHistoryPreviewLocked)
 	}
@@ -416,7 +415,7 @@ func trimSceneVoiceToast(s *state.StudioState, r *http.Request) string {
 	return commitSceneVoiceFile(s, target, secKey, relPath, tr(s, i18n.TrVoiceTrimmedPermPrefix))
 }
 
-func deleteSceneVoiceAction(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func deleteSceneVoiceAction(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	hadFormScene := hasFormScene(r)
 	if isHistoryPreview(s) {
 		return frameSceneForm(s, tr(s, i18n.TrHistoryPreviewLocked), hadFormScene, false)

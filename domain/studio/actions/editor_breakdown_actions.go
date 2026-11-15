@@ -3,7 +3,6 @@
 package actions
 
 import (
-	"net/http"
 	"strings"
 
 	book "mojra/domain/book/actions"
@@ -28,7 +27,7 @@ var _ = registerActions(map[string]ActionHandler{
 	"RenameLocation":             renameLocationAction,
 })
 
-func toggleEditorBreakdownPanel(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func toggleEditorBreakdownPanel(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	_ = flushFormSceneIfPresent(s, r)
 	if s.Editor.RightPanel == state.PanelBreakdown {
 		s.Editor.ActivateRightPanel(state.PanelNone)
@@ -38,7 +37,7 @@ func toggleEditorBreakdownPanel(s *state.StudioState, r *http.Request) []transpo
 	return frameWorkspace(s, "")
 }
 
-func closeEditorBreakdownPanel(s *state.StudioState, _ *http.Request) []transport.ActionFrame {
+func closeEditorBreakdownPanel(s *state.StudioState, _ *transport.ActionRequest) []transport.ActionFrame {
 	if s.Editor.RightPanel == state.PanelBreakdown {
 		s.Editor.ActivateRightPanel(state.PanelNone)
 	}
@@ -66,7 +65,7 @@ func renameScreenplayEntityAction(s *state.StudioState, oldVal, newVal string, e
 	return trf(s, okFmtKey, strings.ToUpper(oldVal), strings.ToUpper(newVal), count)
 }
 
-func renameCharacterAction(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func renameCharacterAction(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	oldName := strings.TrimSpace(r.FormValue(formKeyOldName))
 	if oldName == "" {
 		oldName = strings.TrimSpace(r.FormValue(formKeyCharacter))
@@ -75,7 +74,7 @@ func renameCharacterAction(s *state.StudioState, r *http.Request) []transport.Ac
 	return frameUndoRedo(s, renameScreenplayEntityAction(s, oldName, newName, i18n.TrNoCuesToRename, i18n.TrRenamedCharacterFmt, book.RenameScreenplayCharacter))
 }
 
-func renameLocationAction(s *state.StudioState, r *http.Request) []transport.ActionFrame {
+func renameLocationAction(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	oldLoc := strings.TrimSpace(r.FormValue(formKeyOldLocation))
 	if oldLoc == "" {
 		oldLoc = strings.TrimSpace(r.FormValue(formKeyLocation))

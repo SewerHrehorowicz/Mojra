@@ -1,9 +1,6 @@
-//go:build !(js && wasm)
-
 package actions
 
 import (
-	"net/http"
 	"strconv"
 	"strings"
 
@@ -20,13 +17,14 @@ import (
 
 const (
 	paramKeyZen  = "zen"
+	paramKeyBook = "book"
 	boolValTrue  = "true"
 	boolValFalse = "false"
 	boolValOn    = "on"
 	boolValOff   = "off"
 )
 
-type ActionHandler func(s *state.PlayerState, req *http.Request) []transport.ActionFrame
+type ActionHandler func(s *state.PlayerState, req *transport.ActionRequest) []transport.ActionFrame
 
 func playerFromUI(ui *commonstate.UIState) *state.PlayerState {
 	if ui != nil && ui.Hooks.PlayerState != nil {
@@ -40,7 +38,7 @@ func playerFromUI(ui *commonstate.UIState) *state.PlayerState {
 func registerStandaloneActions(actionMap map[string]ActionHandler) bool {
 	for actionName, handler := range actionMap {
 		fn := handler
-		commonactions.RegisterAction(actionName, true, true, func(ui *commonstate.UIState, req *http.Request) []transport.ActionFrame {
+		commonactions.RegisterAction(actionName, true, true, func(ui *commonstate.UIState, req *transport.ActionRequest) []transport.ActionFrame {
 			ps := playerFromUI(ui)
 			if ps == nil {
 				return nil
@@ -54,7 +52,7 @@ func registerStandaloneActions(actionMap map[string]ActionHandler) bool {
 func registerLANActions(actionMap map[string]ActionHandler) bool {
 	for actionName, handler := range actionMap {
 		fn := handler
-		commonactions.RegisterAction(actionName, true, false, func(ui *commonstate.UIState, req *http.Request) []transport.ActionFrame {
+		commonactions.RegisterAction(actionName, true, false, func(ui *commonstate.UIState, req *transport.ActionRequest) []transport.ActionFrame {
 			ps := playerFromUI(ui)
 			if ps == nil {
 				return nil
@@ -108,11 +106,11 @@ func renderPlayerModals(s *state.PlayerState, toast string) []transport.ActionFr
 	}
 }
 
-func saveAudioTime(s *state.PlayerState, req *http.Request) []transport.ActionFrame {
+func saveAudioTime(s *state.PlayerState, req *transport.ActionRequest) []transport.ActionFrame {
 	if s.Book != nil && s.Save != nil {
 		if timeVal, err := strconv.ParseFloat(req.FormValue(formKeyTime), 64); err == nil && timeVal >= 0 {
 			s.Save.AudioTime = timeVal
-			if !isHistoryPreview(s) {
+			if !s.Config.StandaloneMode && !isHistoryPreview(s) {
 				if err := book.UpdateSaveAudioTimeInPlace(s.Config.SavesDir, s.Book.ID, timeVal, s.Book.StartSceneID); err != nil {
 					s.PersistSave(s.Config.SavesDir)
 				}
@@ -122,7 +120,7 @@ func saveAudioTime(s *state.PlayerState, req *http.Request) []transport.ActionFr
 	return nil
 }
 
-func chooseBranch(s *state.PlayerState, req *http.Request) []transport.ActionFrame {
+func chooseBranch(s *state.PlayerState, req *transport.ActionRequest) []transport.ActionFrame {
 	idx, err := strconv.Atoi(req.FormValue(formKeyChoiceIdx))
 	cur := s.Book.CurrentScene(s.Save)
 	toast := ""
@@ -132,7 +130,7 @@ func chooseBranch(s *state.PlayerState, req *http.Request) []transport.ActionFra
 	return renderPlayerWorkspace(s, toast)
 }
 
-func autoAdvanceImplicit(s *state.PlayerState, _ *http.Request) []transport.ActionFrame {
+func autoAdvanceImplicit(s *state.PlayerState, _ *transport.ActionRequest) []transport.ActionFrame {
 	cur := s.Book.CurrentScene(s.Save)
 	toast := ""
 	if cur != nil && len(cur.Choices) == 1 && !cur.Choices[0].IsEnding && cur.Choices[0].TargetSceneID != formValEND {
@@ -141,11 +139,11 @@ func autoAdvanceImplicit(s *state.PlayerState, _ *http.Request) []transport.Acti
 	return renderPlayerWorkspace(s, toast)
 }
 
-func audioEnded(s *state.PlayerState, _ *http.Request) []transport.ActionFrame {
+func audioEnded(s *state.PlayerState, _ *transport.ActionRequest) []transport.ActionFrame {
 	return renderPlayerWorkspace(s, ExecutePlayerAudioEnded(s))
 }
 
-func revealHistory(s *state.PlayerState, _ *http.Request) []transport.ActionFrame {
+func revealHistory(s *state.PlayerState, _ *transport.ActionRequest) []transport.ActionFrame {
 	if s.Save != nil && len(s.Save.History) > 0 {
 		s.HistoryRevealed = true
 		s.FocusedHistoryIdx = len(s.Save.History) - 1
@@ -153,7 +151,7 @@ func revealHistory(s *state.PlayerState, _ *http.Request) []transport.ActionFram
 	return renderPlayerWorkspace(s, "")
 }
 
-func focusHistoryStep(s *state.PlayerState, req *http.Request) []transport.ActionFrame {
+func focusHistoryStep(s *state.PlayerState, req *transport.ActionRequest) []transport.ActionFrame {
 	if stepIdx, err := strconv.Atoi(req.FormValue(formKeyStep)); err == nil && s.Save != nil && stepIdx >= 0 && stepIdx < len(s.Save.History) {
 		s.HistoryRevealed = true
 		s.FocusedHistoryIdx = stepIdx
@@ -161,13 +159,13 @@ func focusHistoryStep(s *state.PlayerState, req *http.Request) []transport.Actio
 	return renderPlayerWorkspace(s, "")
 }
 
-func focusPresent(s *state.PlayerState, _ *http.Request) []transport.ActionFrame {
+func focusPresent(s *state.PlayerState, _ *transport.ActionRequest) []transport.ActionFrame {
 	s.FocusedHistoryIdx = -1
 	s.HistoryRevealed = false
 	return renderPlayerWorkspace(s, "")
 }
 
-func cycleAudioSpeed(s *state.PlayerState, _ *http.Request) []transport.ActionFrame {
+func cycleAudioSpeed(s *state.PlayerState, _ *transport.ActionRequest) []transport.ActionFrame {
 	CyclePlayerAudioSpeed(s)
 	if s.Hooks.RenderToastFrames != nil {
 		return s.Hooks.RenderToastFrames("")
@@ -175,7 +173,7 @@ func cycleAudioSpeed(s *state.PlayerState, _ *http.Request) []transport.ActionFr
 	return commonviews.ToastFrames(s.UIState, "")
 }
 
-func toggleAutoChoice(s *state.PlayerState, _ *http.Request) []transport.ActionFrame {
+func toggleAutoChoice(s *state.PlayerState, _ *transport.ActionRequest) []transport.ActionFrame {
 	TogglePlayerAutoChoice(s)
 	if s.Hooks.RenderToastFrames != nil {
 		return s.Hooks.RenderToastFrames("")
@@ -183,7 +181,7 @@ func toggleAutoChoice(s *state.PlayerState, _ *http.Request) []transport.ActionF
 	return commonviews.ToastFrames(s.UIState, "")
 }
 
-func setAutoChoiceDelay(s *state.PlayerState, req *http.Request) []transport.ActionFrame {
+func setAutoChoiceDelay(s *state.PlayerState, req *transport.ActionRequest) []transport.ActionFrame {
 	SetPlayerAutoChoiceDelay(s, req.FormValue(formKeyDelay))
 	if s.Hooks.RenderToastFrames != nil {
 		return s.Hooks.RenderToastFrames("")
@@ -191,7 +189,7 @@ func setAutoChoiceDelay(s *state.PlayerState, req *http.Request) []transport.Act
 	return commonviews.ToastFrames(s.UIState, "")
 }
 
-func promptRewindStep(s *state.PlayerState, req *http.Request) []transport.ActionFrame {
+func promptRewindStep(s *state.PlayerState, req *transport.ActionRequest) []transport.ActionFrame {
 	PromptPlayerRewindStep(s, req.FormValue(formKeyStep))
 	if s.Confirm.IsOpen() {
 		param := s.Confirm.PendingParam
@@ -203,10 +201,10 @@ func promptRewindStep(s *state.PlayerState, req *http.Request) []transport.Actio
 	return renderPlayerModals(s, "")
 }
 
-func promptResetProgress(s *state.PlayerState, req *http.Request) []transport.ActionFrame {
+func promptResetProgress(s *state.PlayerState, req *transport.ActionRequest) []transport.ActionFrame {
 	targetID := ""
 	if req != nil {
-		targetID = book.SanitizeBookID(req.FormValue("book"))
+		targetID = book.SanitizeBookID(req.FormValue(paramKeyBook))
 	}
 	targetTitle := targetID
 	if s.Book != nil && (targetID == "" || targetID == s.Book.ID) {
@@ -234,7 +232,7 @@ func promptResetProgress(s *state.PlayerState, req *http.Request) []transport.Ac
 	return renderPlayerModals(s, "")
 }
 
-func toggleZenMode(s *state.PlayerState, req *http.Request) []transport.ActionFrame {
+func toggleZenMode(s *state.PlayerState, req *transport.ActionRequest) []transport.ActionFrame {
 	if s.Settings.ActiveView != string(commonstate.ViewPlayer) || s.Book == nil || s.Book.IsScreenplay() {
 		s.ZenMode = false
 		return commonviews.ToastFrames(s.UIState, "")

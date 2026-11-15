@@ -513,7 +513,7 @@ func beginElementNode(buf *bytes.Buffer, n *Node, ctx *RenderContext, indent int
 	}
 
 	childIndent := indent + 1
-	if indent < 0 || n.Tag == "p" || n.Tag == "span" || n.Tag == "pre" || n.Tag == "code" || n.Tag == "textarea" || n.ID == "modal-scene-prose-hl" {
+	if indent < 0 || n.Tag == "p" || n.Tag == "span" || n.Tag == "pre" || n.Tag == "code" || n.Tag == "textarea" {
 		childIndent = -1
 	}
 
