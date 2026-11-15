@@ -120,6 +120,7 @@ func linkGraphEdges(view *GraphView, allRawEdges []rawEdge) {
 	byID := make(map[string]symRefMeta, view.TotalSymbols)
 	byPkgAndName := make(map[string]string, view.TotalSymbols)
 	byPkgAndMethod := make(map[string]string, view.TotalSymbols)
+	byBareActionName := make(map[string]string, 128)
 
 	for dIdx := range view.Dirs {
 		pkgDir := view.Dirs[dIdx].Path
@@ -136,6 +137,9 @@ func linkGraphEdges(view *GraphView, allRawEdges []rawEdge) {
 				}
 				byID[sym.ID] = meta
 				byPkgAndName[pkgDir+":"+sym.Name] = sym.ID
+				if strings.HasSuffix(pkgDir, "/actions") {
+					byBareActionName[sym.Name] = sym.ID
+				}
 				if sym.Kind == kindMethod {
 					if dotIdx := strings.IndexByte(sym.Name, '.'); dotIdx > 0 {
 						mKey := pkgDir + ":." + sym.Name[dotIdx+1:]
@@ -157,6 +161,13 @@ func linkGraphEdges(view *GraphView, allRawEdges []rawEdge) {
 		targetID, okTo := byPkgAndName[re.ToPkg+":"+re.ToName]
 		if !okTo {
 			targetID, okTo = byPkgAndMethod[re.ToPkg+":."+re.ToName]
+		}
+		if !okTo && re.ToPkg == "" {
+			targetID, okTo = byBareActionName[re.ToName]
+			if !okTo && len(re.ToName) > 0 {
+				lowerName := strings.ToLower(re.ToName[:1]) + re.ToName[1:]
+				targetID, okTo = byBareActionName[lowerName]
+			}
 		}
 		if !okTo || targetID == re.FromID {
 			continue

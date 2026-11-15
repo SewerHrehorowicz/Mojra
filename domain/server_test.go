@@ -12,16 +12,100 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"testing"
 
-	"mojra"
-	"mojra/domain/book"
+	book "mojra/domain/book/actions"
 	_ "mojra/domain/i18n"
-	"mojra/domain/state"
+	bookplayeractions "mojra/domain/shell/book_player/actions"
+	studioactions "mojra/domain/shell/studio_app/actions"
+	"mojra/domain/shell/studio_app/state"
 	"mojra/engine"
 	"mojra/engine/templates"
+	"mojra/engine/transport"
 )
+
+type Server = studioactions.Server
+
+var (
+	StudioAppModules     = studioactions.StudioAppModules
+	NewServerWithOptions = studioactions.NewServerWithOptions
+	Handlers             = studioactions.Handlers
+)
+
+func NewStandaloneServer(rootDir string, embeddedFS fs.FS, standaloneBook *book.Book) *Server {
+	srv := NewServerWithOptions(rootDir, embeddedFS, false)
+	srv.State.Config.StandaloneMode = true
+	srv.State.Settings.ActiveView = string(state.ViewPlayer)
+	if standaloneBook != nil {
+		srv.State.Config.StandaloneBookID = standaloneBook.ID
+		srv.State.Library.Set([]*book.Book{standaloneBook})
+		srv.State.Editor.SetBook(standaloneBook, srv.State.Settings)
+		srv.State.Player.SetBook(srv.State.Config.SavesDir, srv.State.Settings, standaloneBook)
+	}
+	return srv
+}
+
+func repoRootDir() string {
+	cur, err := os.Getwd()
+	if err != nil {
+		return filepath.Clean(filepath.Join("..", "..", "..", ".."))
+	}
+	for step := 0; step < 8; step++ {
+		if _, statErr := os.Stat(filepath.Join(cur, "go.mod")); statErr == nil {
+			return cur
+		}
+		parent := filepath.Dir(cur)
+		if parent == cur {
+			break
+		}
+		cur = parent
+	}
+	return filepath.Clean(filepath.Join("..", "..", "..", ".."))
+}
+
+var testAppFS fs.FS = os.DirFS(repoRootDir())
+
+func collectStudioTplFiles() []string {
+	root := repoRootDir()
+	_, subDirs := StudioAppModules()
+	var out []string
+	for _, sub := range subDirs {
+		modDir := filepath.Join(root, "domain", filepath.FromSlash(sub))
+		for _, dirName := range []string{"ui_components", "templates"} {
+			matches, _ := filepath.Glob(filepath.Join(modDir, dirName, "*.tpl"))
+			sort.Strings(matches)
+			out = append(out, matches...)
+		}
+	}
+	return out
+}
+
+func collectStudioJSFiles() []string {
+	root := repoRootDir()
+	var out []string
+	for _, name := range []string{"fdp.js", "transport_http.js", "transport_wasm.js", "dispatcher.js"} {
+		p := filepath.Join(root, "engine", "scripts", name)
+		if _, err := os.Stat(p); err == nil {
+			out = append(out, p)
+		}
+	}
+	_, subDirs := StudioAppModules()
+	for _, sub := range subDirs {
+		modDir := filepath.Join(root, "domain", filepath.FromSlash(sub))
+		_ = filepath.WalkDir(filepath.Join(modDir, "scripts"), func(path string, d fs.DirEntry, err error) error {
+			if err == nil && !d.IsDir() && strings.HasSuffix(d.Name(), ".js") {
+				out = append(out, path)
+			}
+			return nil
+		})
+		matches, _ := filepath.Glob(filepath.Join(modDir, "controllers", "*.js"))
+		sort.Strings(matches)
+		out = append(out, matches...)
+	}
+	return out
+}
 
 func NewServer(rootDir string, embeddedFS fs.FS) *Server {
 	return NewServerWithOptions(rootDir, embeddedFS, false)
@@ -50,7 +134,7 @@ func encodeFDPForm(vals url.Values) []byte {
 		}
 		b.WriteString(k)
 		b.WriteByte('=')
-		b.WriteString(engine.EscapeFDPLineVal(v))
+		b.WriteString(transport.EscapeFDPLineVal(v))
 		b.WriteByte('\n')
 	}
 	if bodyKey != "" {
@@ -63,7 +147,7 @@ func encodeFDPForm(vals url.Values) []byte {
 }
 
 func decodeFDPResponse(raw []byte) (url.Values, string) {
-	frames := engine.DecodeFDPFrames(raw)
+	frames := transport.DecodeFDPFrames(raw)
 	if len(frames) == 0 {
 		return make(url.Values), string(raw)
 	}
@@ -96,54 +180,9 @@ func decodeFDPResponse(raw []byte) (url.Values, string) {
 	return merged, htmlStr
 }
 
-func NewStandaloneServer(rootDir string, embeddedFS fs.FS, standaloneBook *book.Book) *Server {
-	savesDir := book.ResolveSavesDir(rootDir)
-	_ = os.MkdirAll(savesDir, 0755)
-
-	settings := book.LoadAppSettings(savesDir)
-	settings.PreviewMode = "full"
-	settings.ActiveView = state.ViewPlayer.String()
-
-	appState := &state.AppState{
-		Config: state.RuntimeConfig{
-			RootDir:        rootDir,
-			BooksDir:       filepath.Join(rootDir, "books"),
-			SavesDir:       savesDir,
-			AppDir:         filepath.Join(rootDir, "app"),
-			EmbeddedFS:     embeddedFS,
-			DevMode:        false,
-			StandaloneMode: true,
-			ShutdownCh:     make(chan struct{}),
-		},
-		Settings: settings,
-	}
-	appState.Player.FocusedHistoryIdx = -1
-
-	s := &Server{
-		State: appState,
-	}
-	s.EngineServer = engine.EngineServer{
-		Config:                      s.engineConfig,
-		RenderRootView:              s.renderRootView,
-		HandleAction:                s.handleAction,
-		CustomRoutes:                map[string]http.HandlerFunc{routeBooksPrefix: s.handleBookMediaRoute},
-		ExcludedStandaloneTemplates: standaloneExcludedTemplates,
-		CSPExemptPrefix:             routeBooksPrefix,
-	}
-	s.EnsureTemplatesLoaded()
-
-	if standaloneBook != nil {
-		appState.Config.StandaloneBookID = standaloneBook.ID
-		appState.Library.Set([]*book.Book{standaloneBook})
-		appState.Editor.SetBook(standaloneBook, settings)
-		appState.Player.SetBook(savesDir, settings, standaloneBook)
-	}
-	return s
-}
-
 func TestServerActionLifecycleAndSecurity(t *testing.T) {
 	rootDir := t.TempDir()
-	srv := NewServer(rootDir, mojra.AppFS)
+	srv := NewServer(rootDir, testAppFS)
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
@@ -531,8 +570,8 @@ func TestServerActionLifecycleAndSecurity(t *testing.T) {
 	}
 	helpHTML, _ := io.ReadAll(helpResp.Body)
 	_ = helpResp.Body.Close()
-	if !strings.Contains(string(helpHTML), `id="editor-help-panel"`) || strings.Contains(string(helpHTML), `id="editor-help-panel" class="editor-help-panel hidden"`) {
-		t.Fatalf("expected visible #editor-help-panel in rendered workspace HTML")
+	if srv.State.Editor.RightPanel != state.PanelHelp || strings.Contains(string(helpHTML), `editor-help-panel hidden`) {
+		t.Fatalf("expected visible help panel in rendered workspace HTML")
 	}
 
 	closeHelpForm := url.Values{}
@@ -621,7 +660,7 @@ func TestServerActionLifecycleAndSecurity(t *testing.T) {
 		t.Fatalf("expected 404 Not Found for /api/lan-qr.png in prod mode, got %d", qrProdResp.StatusCode)
 	}
 
-	devQRServer := NewServerWithOptions(rootDir, mojra.AppFS, true)
+	devQRServer := NewServerWithOptions(rootDir, testAppFS, true)
 	devQRTS := httptest.NewServer(devQRServer.Handler())
 	defer devQRTS.Close()
 
@@ -705,7 +744,7 @@ end: true
 	}))
 	defer remoteSrv.Close()
 
-	srv := NewServer(rootDir, mojra.AppFS)
+	srv := NewServer(rootDir, testAppFS)
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
@@ -856,7 +895,7 @@ func TestDevicePreviewStrippedInProductionAndEnabledInDev(t *testing.T) {
 	_ = os.WriteFile(filepath.Join(savesDir, "settings.ini"), []byte("[display]\ntheme = dark\npreview_mode = portrait\n"), 0644)
 
 	// 1. Production server (default NewServer) must strip device preview completely
-	prodSrv := NewServer(rootDir, mojra.AppFS)
+	prodSrv := NewServer(rootDir, testAppFS)
 	prodTS := httptest.NewServer(prodSrv.Handler())
 	defer prodTS.Close()
 
@@ -900,7 +939,7 @@ func TestDevicePreviewStrippedInProductionAndEnabledInDev(t *testing.T) {
 	}
 
 	// 2. Development server (NewServerWithOptions with devMode=true) includes device preview and QR code
-	devSrv := NewServerWithOptions(rootDir, mojra.AppFS, true)
+	devSrv := NewServerWithOptions(rootDir, testAppFS, true)
 	devTS := httptest.NewServer(devSrv.Handler())
 	defer devTS.Close()
 
@@ -1002,7 +1041,7 @@ id: sikawa_kapitana
 end: true
 Dopiero kapitan Arvo wszystko mu wytłumaczył.
 `), 0644)
-	srv := NewServer(rootDir, mojra.AppFS)
+	srv := NewServer(rootDir, testAppFS)
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
@@ -1307,8 +1346,8 @@ Dopiero kapitan Arvo wszystko mu wytłumaczył.
 	if helpMeta.Get("target") != "#workspace" {
 		t.Fatalf("expected target=#workspace for OpenEditorHelpModal, got %q", helpMeta.Get("target"))
 	}
-	if !strings.Contains(helpChunk, `id="editor-help-panel"`) || strings.Contains(helpChunk, `id="editor-help-panel" class="editor-help-panel hidden"`) {
-		t.Fatalf("expected visible #editor-help-panel in workspace chunk, got:\n%s", helpChunk)
+	if srv.State.Editor.RightPanel != state.PanelHelp || !strings.Contains(helpChunk, `class="editor-help-panel"`) || strings.Contains(helpChunk, `editor-help-panel hidden`) {
+		t.Fatalf("expected visible editor-help-panel in workspace chunk, got:\n%s", helpChunk)
 	}
 	if strings.Contains(helpChunk, `id="topbar"`) {
 		t.Fatalf("workspace chunk must not include #topbar, got:\n%s", helpChunk)
@@ -1365,7 +1404,7 @@ func TestStandaloneBookModeSecurity(t *testing.T) {
 	_ = os.WriteFile(filepath.Join(rootDir, "app", "app.js"), []byte("FAKE_DISK_OVERRIDE"), 0644)
 	_ = os.WriteFile(filepath.Join(rootDir, "build", "app", "app.js"), []byte("FAKE_DISK_OVERRIDE"), 0644)
 
-	srv := NewStandaloneServer(rootDir, mojra.AppFS, reloadedBook)
+	srv := NewStandaloneServer(rootDir, testAppFS, reloadedBook)
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
@@ -1512,7 +1551,7 @@ func TestSecurityCSRFMediaMagicBytesAndExternalTxtValidation(t *testing.T) {
 	_ = os.WriteFile(disguisedMP3, []byte("#!/bin/sh\necho pwned\n"), 0644)
 	_ = os.WriteFile(disguisedWAV, []byte("RIFF\x24\x00\x00\x00WAVEfmt "), 0644)
 
-	srv := NewServer(rootDir, mojra.AppFS)
+	srv := NewServer(rootDir, testAppFS)
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
@@ -1670,7 +1709,7 @@ func TestSecurityCSRFMediaMagicBytesAndExternalTxtValidation(t *testing.T) {
 }
 
 func TestTopbarAlwaysVisibleIncludingSceneTextEditor(t *testing.T) {
-	repoRoot := filepath.Clean("..")
+	repoRoot := repoRootDir()
 
 	// 1. Verify AGENTS.md exists and enforces the topbar rule
 	agentsBytes, err := os.ReadFile(filepath.Join(repoRoot, "AGENTS.md"))
@@ -1690,9 +1729,13 @@ func TestTopbarAlwaysVisibleIncludingSceneTextEditor(t *testing.T) {
 	}
 
 	// 2. Rebuild app assets and verify CSS/template invariants so #topbar is never covered by #text-editor-view
-	appDir := filepath.Join(repoRoot, "app")
-	if err := engine.BuildApp(appDir); err != nil {
-		t.Fatalf("engine.BuildApp failed: %v", err)
+	modFSList, modSubDirs := StudioAppModules()
+	diskMods, diskEngine := templates.BuildDiskOrEmbeddedModules(repoRoot, modSubDirs, modFSList)
+	if diskEngine == nil {
+		diskEngine = engine.FS
+	}
+	if err := templates.BuildModuleAppToDir(diskEngine, diskMods, "shell_view", filepath.Join(repoRoot, "build", "app"), true); err != nil {
+		t.Fatalf("BuildModuleAppToDir failed: %v", err)
 	}
 
 	cssBytes, err := os.ReadFile(filepath.Join(repoRoot, "build", "app", "style.css"))
@@ -1743,7 +1786,7 @@ func TestTopbarAlwaysVisibleIncludingSceneTextEditor(t *testing.T) {
 
 	// 3. Verify runtime behavior when opening #text-editor-view and clicking topbar navigation tabs
 	rootDir := t.TempDir()
-	srv := NewServer(rootDir, mojra.AppFS)
+	srv := NewServer(rootDir, testAppFS)
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
@@ -1808,7 +1851,7 @@ func TestTopbarAlwaysVisibleIncludingSceneTextEditor(t *testing.T) {
 
 func TestBookImagelessSettingAndTopbarLock(t *testing.T) {
 	rootDir := t.TempDir()
-	srv := NewServer(rootDir, mojra.AppFS)
+	srv := NewServer(rootDir, testAppFS)
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
@@ -1926,7 +1969,7 @@ func TestBookImagelessSettingAndTopbarLock(t *testing.T) {
 
 func TestNodeEditorEmptyLibraryRenameFitAndRootScene(t *testing.T) {
 	rootDir := t.TempDir()
-	srv := NewServer(rootDir, mojra.AppFS)
+	srv := NewServer(rootDir, testAppFS)
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
@@ -2077,7 +2120,7 @@ func TestNodeEditorEmptyLibraryRenameFitAndRootScene(t *testing.T) {
 
 func TestNarrationlessAllOrNothingAndMinimalProgressBar(t *testing.T) {
 	rootDir := t.TempDir()
-	srv := NewServer(rootDir, mojra.AppFS)
+	srv := NewServer(rootDir, testAppFS)
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
@@ -2240,7 +2283,7 @@ func TestNarrationlessAllOrNothingAndMinimalProgressBar(t *testing.T) {
 
 func TestUnreachableScenesGrayedOutInNodeEditor(t *testing.T) {
 	rootDir := t.TempDir()
-	srv := NewServer(rootDir, mojra.AppFS)
+	srv := NewServer(rootDir, testAppFS)
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
@@ -2324,10 +2367,10 @@ func TestMultilingualUISwitchAndI18nTableCompleteness(t *testing.T) {
 		}
 	}
 
-	// 2. Verify all {t_*} variables referenced in app/templates/*.tpl are populated by PopulateI18nContext.
-	tplMatches, err := filepath.Glob(filepath.Join("..", "app", "templates", "*.tpl"))
-	if err != nil || len(tplMatches) == 0 {
-		t.Fatalf("failed to glob app/templates/*.tpl: %v", err)
+	// 2. Verify all {t_*} variables referenced in module templates/*.tpl are populated by PopulateI18nContext.
+	tplMatches := collectStudioTplFiles()
+	if len(tplMatches) == 0 {
+		t.Fatalf("failed to discover module .tpl files")
 	}
 	var allTplBuilder strings.Builder
 	for _, p := range tplMatches {
@@ -2368,9 +2411,9 @@ func TestMultilingualUISwitchAndI18nTableCompleteness(t *testing.T) {
 		jsKeySet[key] = true
 	}
 
-	jsMatches := engine.JSModuleFiles(filepath.Join("..", "app"))
+	jsMatches := collectStudioJSFiles()
 	if len(jsMatches) == 0 {
-		t.Fatalf("failed to discover JS modules in app/js")
+		t.Fatalf("failed to discover JS modules")
 	}
 	jsTrCallRe := regexp.MustCompile(`\b(?:tr|trf)\(\s*"([a-z0-9_]+)"|\btrStd\([^,]+,\s*"([a-z0-9_]+)"`)
 	jsI18nBlockRe := regexp.MustCompile(`i18n:\s*\{([^}]*)\}`)
@@ -2449,7 +2492,7 @@ func TestMultilingualUISwitchAndI18nTableCompleteness(t *testing.T) {
 
 	// 4. Verify ToggleLanguage and SetLanguage switch UI between PL and EN and persist to settings.ini.
 	rootDir := t.TempDir()
-	srv := NewServer(rootDir, mojra.AppFS)
+	srv := NewServer(rootDir, testAppFS)
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
@@ -2508,7 +2551,7 @@ func TestMultilingualUISwitchAndI18nTableCompleteness(t *testing.T) {
 
 func TestEditorUIStatePersistenceAcrossSessionsAndRotatedExpandTitle(t *testing.T) {
 	rootDir := t.TempDir()
-	srv1 := NewServer(rootDir, mojra.AppFS)
+	srv1 := NewServer(rootDir, testAppFS)
 	ts1 := httptest.NewServer(srv1.Handler())
 	defer ts1.Close()
 
@@ -2560,7 +2603,7 @@ func TestEditorUIStatePersistenceAcrossSessionsAndRotatedExpandTitle(t *testing.
 	})
 
 	// Simulate starting a brand new session on the same rootDir/savesDir
-	srv2 := NewServer(rootDir, mojra.AppFS)
+	srv2 := NewServer(rootDir, testAppFS)
 	ts2 := httptest.NewServer(srv2.Handler())
 	defer ts2.Close()
 
@@ -2593,22 +2636,23 @@ func TestEditorUIStatePersistenceAcrossSessionsAndRotatedExpandTitle(t *testing.
 	_, _ = http.PostForm(ts2.URL+"/api/action", url.Values{
 		"action": {"CloseSceneTextModal"},
 	})
-	srv3 := NewServer(rootDir, mojra.AppFS)
+	srv3 := NewServer(rootDir, testAppFS)
 	if srv3.State.Editor.SelectedSceneID != "s1" || srv3.State.Editor.SceneText.SceneID != "" {
 		t.Fatalf("expected srv3 to restore SelectedSceneID='s1' and closed SceneTextModalID='', got sel=%q modal=%q", srv3.State.Editor.SelectedSceneID, srv3.State.Editor.SceneText.SceneID)
 	}
 }
 
 func TestBuildWorkspaceAppAssets(t *testing.T) {
-	appDir := filepath.Clean(filepath.Join("..", "app"))
-	if _, err := os.Stat(filepath.Join(appDir, "templates", "index.tpl")); err != nil {
-		t.Skip("workspace app/templates/index.tpl not found")
+	repoRoot := repoRootDir()
+	modFSList, modSubDirs := StudioAppModules()
+	diskMods, diskEngine := templates.BuildDiskOrEmbeddedModules(repoRoot, modSubDirs, modFSList)
+	if diskEngine == nil {
+		diskEngine = engine.FS
 	}
-	if err := engine.BuildApp(appDir); err != nil {
-		t.Fatalf("BuildApp on workspace appDir failed: %v", err)
+	outDir := filepath.Join(repoRoot, "build", "app")
+	if err := templates.BuildModuleAppToDir(diskEngine, diskMods, "shell_view", outDir, true); err != nil {
+		t.Fatalf("BuildModuleAppToDir failed: %v", err)
 	}
-
-	outDir := filepath.Join(filepath.Dir(appDir), "build", "app")
 	indexBytes, err := os.ReadFile(filepath.Join(outDir, "index.html"))
 	if err != nil {
 		t.Fatalf("read build/app/index.html: %v", err)
@@ -2652,7 +2696,7 @@ func TestBuildWorkspaceAppAssets(t *testing.T) {
 			t.Fatalf("expected %q in build/app/style.css", wantMediaSel)
 		}
 	}
-	topbarTSSBytes, err := os.ReadFile(filepath.Join(appDir, "styles", "topbar.tss"))
+	topbarTSSBytes, err := os.ReadFile(filepath.Join(repoRoot, "domain", "shell", "studio_app", "styles", "topbar.tss"))
 	if err != nil {
 		t.Fatalf("read topbar.tss: %v", err)
 	}
@@ -2665,7 +2709,7 @@ func TestBuildWorkspaceAppAssets(t *testing.T) {
 		}
 	}
 
-	libTplBytes, err := os.ReadFile(filepath.Join(appDir, "templates", "library_view.tpl"))
+	libTplBytes, err := os.ReadFile(filepath.Join(repoRoot, "domain", "library", "templates", "library_view.tpl"))
 	if err != nil {
 		t.Fatalf("read library_view.tpl: %v", err)
 	}
@@ -2698,8 +2742,9 @@ func TestBuildWorkspaceAppAssets(t *testing.T) {
 	}
 
 	playerOutDir := t.TempDir()
-	if err := buildPlayerOnlyApp(appDir, playerOutDir); err != nil {
-		t.Fatalf("buildPlayerOnlyApp failed: %v", err)
+	playerMods, _ := templates.BuildDiskOrEmbeddedModules(repoRoot, book.BookPlayerModuleSubDirs, bookplayeractions.ModuleFSList())
+	if err := templates.BuildModuleAppToDir(diskEngine, playerMods, "shell_view", playerOutDir, true); err != nil {
+		t.Fatalf("BuildModuleAppToDir(book_player) failed: %v", err)
 	}
 	playerJSBytes, err := os.ReadFile(filepath.Join(playerOutDir, "app.js"))
 	if err != nil {
@@ -2712,7 +2757,7 @@ func TestBuildWorkspaceAppAssets(t *testing.T) {
 	if !strings.Contains(string(playerJSBytes), "focusPresent") {
 		t.Fatalf("expected focusPresent in player-only app.js")
 	}
-	for _, forbiddenEditorJS := range []string{"const StudioView =", "const EditorWires =", "EDITOR_GRID_SIZE"} {
+	for _, forbiddenEditorJS := range []string{"const StudioController =", "const NodeCanvasController =", "EDITOR_GRID_SIZE"} {
 		if strings.Contains(string(playerJSBytes), forbiddenEditorJS) {
 			t.Fatalf("expected %q to be omitted from player-only app.js", forbiddenEditorJS)
 		}
@@ -2725,8 +2770,7 @@ func TestBuildWorkspaceAppAssets(t *testing.T) {
 }
 
 func TestNoHTMLStringLiteralsInClientJS(t *testing.T) {
-	appDir := filepath.Clean(filepath.Join("..", "app"))
-	jsFiles := engine.JSModuleFiles(appDir)
+	jsFiles := collectStudioJSFiles()
 	forbidden := []string{"<div", "<span", "<button", "<input", "<label", "<svg", "</", "createElement("}
 	for _, path := range jsFiles {
 		raw, err := os.ReadFile(path)
@@ -2740,30 +2784,4 @@ func TestNoHTMLStringLiteralsInClientJS(t *testing.T) {
 			}
 		}
 	}
-}
-
-func buildPlayerOnlyApp(appDir, outDir string) error {
-	if outDir == "" {
-		outDir = filepath.Join(filepath.Dir(filepath.Clean(appDir)), "build", "app")
-	}
-	if err := os.MkdirAll(outDir, 0755); err != nil {
-		return err
-	}
-	loadedTemplates, err := templates.LoadTemplatesFromDir(filepath.Join(appDir, "templates"), nil)
-	if err != nil {
-		return err
-	}
-	for _, ex := range standaloneExcludedTemplates {
-		delete(loadedTemplates, ex)
-	}
-	engine.StripDevNodesFromTemplates(loadedTemplates)
-	idxTpl := loadedTemplates["index"]
-	htmlStr := templates.TranspileStaticHTML(idxTpl, loadedTemplates)
-	if err := os.WriteFile(filepath.Join(outDir, "index.html"), []byte(htmlStr), 0644); err != nil {
-		return err
-	}
-	if err := engine.BundleCSSFiles(engine.CSSPlayerModuleFiles(appDir), filepath.Join(outDir, "style.css")); err != nil {
-		return err
-	}
-	return engine.BundleJSFiles(engine.JSPlayerModuleFiles(appDir), filepath.Join(outDir, "app.js"))
 }

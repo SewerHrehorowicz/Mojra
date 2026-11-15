@@ -12,16 +12,14 @@ import (
 	"strings"
 	"testing"
 
-	"mojra"
-	"mojra/domain/actions"
-	"mojra/domain/book"
-	"mojra/engine"
+	book "mojra/domain/book/actions"
 	"mojra/engine/osbridge"
+	"mojra/engine/transport"
 )
 
 func TestEditorUndoRedoAndVersionHistory(t *testing.T) {
 	rootDir := t.TempDir()
-	srv := NewServer(rootDir, mojra.AppFS)
+	srv := NewServer(rootDir, testAppFS)
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
@@ -190,7 +188,7 @@ func TestEditorUndoRedoAndVersionHistory(t *testing.T) {
 
 func TestHistoryPreviewClickPlayAndEditLock(t *testing.T) {
 	rootDir := t.TempDir()
-	srv := NewServer(rootDir, mojra.AppFS)
+	srv := NewServer(rootDir, testAppFS)
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
@@ -240,8 +238,8 @@ func TestHistoryPreviewClickPlayAndEditLock(t *testing.T) {
 	_ = respPrev.Body.Close()
 	prevMeta, prevHTML := decodeFDPResponse(prevHTMLBytes)
 
-	if prevMeta.Get("historyPreview") != "true" {
-		t.Fatalf("expected historyPreview=true when previewing past revision, got %q", prevMeta.Get("historyPreview"))
+	if prevMeta.Get("isHistoryPreview") != "true" {
+		t.Fatalf("expected isHistoryPreview=true when previewing past revision, got %q", prevMeta.Get("isHistoryPreview"))
 	}
 	if prevMeta.Get("historyCount") != "0" {
 		t.Fatalf("expected previewing past revision NOT to create a revert commit (historyCount=0), got %q", prevMeta.Get("historyCount"))
@@ -333,8 +331,8 @@ func TestHistoryPreviewClickPlayAndEditLock(t *testing.T) {
 	exitBytes, _ := io.ReadAll(respExit.Body)
 	_ = respExit.Body.Close()
 	exitMeta, _ := decodeFDPResponse(exitBytes)
-	if exitMeta.Get("historyPreview") != "false" {
-		t.Fatalf("expected historyPreview=false after clicking active head revision, got %q", exitMeta.Get("historyPreview"))
+	if exitMeta.Get("isHistoryPreview") != "false" {
+		t.Fatalf("expected isHistoryPreview=false after clicking active head revision, got %q", exitMeta.Get("isHistoryPreview"))
 	}
 	if len(srv.State.Editor.ActiveBook.Scenes) != 3 {
 		t.Fatalf("expected 3 scenes restored after exiting preview, got %d", len(srv.State.Editor.ActiveBook.Scenes))
@@ -357,7 +355,7 @@ func TestHistoryPreviewClickPlayAndEditLock(t *testing.T) {
 
 func TestChapterPortsAndOneWayChapterConnectionsInStudio(t *testing.T) {
 	rootDir := t.TempDir()
-	srv := NewServer(rootDir, mojra.AppFS)
+	srv := NewServer(rootDir, testAppFS)
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
@@ -473,7 +471,7 @@ Czwarta scena (Hop 3 - poza kolejką 2 kroków).
 		_ = os.WriteFile(filepath.Join(bookDir, "voice", id+".ogg"), []byte("OggS\x00\x02"), 0644)
 	}
 
-	srv := NewServer(rootDir, mojra.AppFS)
+	srv := NewServer(rootDir, testAppFS)
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
@@ -486,20 +484,20 @@ Czwarta scena (Hop 3 - poza kolejką 2 kroków).
 	}
 	openBytes, _ := io.ReadAll(rOpen.Body)
 	_ = rOpen.Body.Close()
-	openHTML := string(openBytes)
+	openMeta, openHTML := decodeFDPResponse(openBytes)
 
 	if !strings.Contains(openHTML, `preload="auto"`) {
 		t.Fatalf("expected audio#story-audio to use preload=\"auto\" for full current-scene buffering, got:\n%s", openHTML)
 	}
-	expectedPrefetch := `data-prefetch-urls="/api/books/prefetch-test/media/images/s2.png;/api/books/prefetch-test/media/voice/s2.ogg;/api/books/prefetch-test/media/images/s3.png;/api/books/prefetch-test/media/voice/s3.ogg"`
-	if !strings.Contains(openHTML, expectedPrefetch) {
-		t.Fatalf("expected 1-2 hop BFS media prefetch attribute %s in player HTML, got:\n%s", expectedPrefetch, openHTML)
+	expectedPrefetch := `/api/books/prefetch-test/media/images/s2.png;/api/books/prefetch-test/media/voice/s2.ogg;/api/books/prefetch-test/media/images/s3.png;/api/books/prefetch-test/media/voice/s3.ogg`
+	if openMeta.Get("prefetchUrls") != expectedPrefetch {
+		t.Fatalf("expected 1-2 hop BFS media prefetchUrls %q in FDP ScriptData, got %q", expectedPrefetch, openMeta.Get("prefetchUrls"))
 	}
-	if strings.Contains(openHTML, "/media/images/s4.png") || strings.Contains(openHTML, "/media/voice/s4.ogg") {
+	if strings.Contains(openMeta.Get("prefetchUrls"), "/media/images/s4.png") || strings.Contains(openMeta.Get("prefetchUrls"), "/media/voice/s4.ogg") {
 		t.Fatalf("expected 3-hop scene s4 media NOT to be in 1-2 hop prefetch queue")
 	}
 
-	// Toggling imageless mode should omit image URLs from data-prefetch-urls while keeping 1-2 hop audio URLs
+	// Toggling imageless mode should omit image URLs from prefetchUrls while keeping 1-2 hop audio URLs
 	_, _ = http.PostForm(ts.URL+"/api/action", url.Values{"action": {"ToggleImageless"}})
 	rRefresh, err := http.PostForm(ts.URL+"/api/action", url.Values{
 		"action": {"SwitchView"},
@@ -510,17 +508,17 @@ Czwarta scena (Hop 3 - poza kolejką 2 kroków).
 	}
 	refBytes, _ := io.ReadAll(rRefresh.Body)
 	_ = rRefresh.Body.Close()
-	refHTML := string(refBytes)
+	refMeta, _ := decodeFDPResponse(refBytes)
 
-	expectedAudioOnlyPrefetch := `data-prefetch-urls="/api/books/prefetch-test/media/voice/s2.ogg;/api/books/prefetch-test/media/voice/s3.ogg"`
-	if !strings.Contains(refHTML, expectedAudioOnlyPrefetch) {
-		t.Fatalf("expected audio-only 1-2 hop prefetch when imageless is enabled, got:\n%s", refHTML)
+	expectedAudioOnlyPrefetch := `/api/books/prefetch-test/media/voice/s2.ogg;/api/books/prefetch-test/media/voice/s3.ogg`
+	if refMeta.Get("prefetchUrls") != expectedAudioOnlyPrefetch {
+		t.Fatalf("expected audio-only 1-2 hop prefetchUrls when imageless is enabled, got %q", refMeta.Get("prefetchUrls"))
 	}
 }
 
 func TestUnifiedPortStylesInCSSAndWebGL(t *testing.T) {
 	rootDir := t.TempDir()
-	srv := NewServer(rootDir, mojra.AppFS)
+	srv := NewServer(rootDir, testAppFS)
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
@@ -555,7 +553,7 @@ func TestUnifiedPortStylesInCSSAndWebGL(t *testing.T) {
 
 func TestScreenplayModeEndToEndFlow(t *testing.T) {
 	rootDir := t.TempDir()
-	srv := NewServer(rootDir, mojra.AppFS)
+	srv := NewServer(rootDir, testAppFS)
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
@@ -960,7 +958,7 @@ node: Nowa scena 120 -> 336, 2568
 		t.Fatal(err)
 	}
 
-	srv := NewServer(dir, mojra.AppFS)
+	srv := NewServer(dir, testAppFS)
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
@@ -1026,8 +1024,8 @@ node: Nowa scena 120 -> 336, 2568
 	}
 }
 
-func TestWFPProtocolAndZeroRepoSavesOrAppState(t *testing.T) {
-	// 1. Verify WFP wire framing round-trip with Polish UTF-8 prose, multiline body, Windows paths, and literal \-> arrows
+func TestFDPProtocolAndZeroRepoSavesOrAppState(t *testing.T) {
+	// 1. Verify FDP wire framing round-trip with Polish UTF-8 prose, multiline body, Windows paths, and literal \-> arrows
 	orig := url.Values{
 		"action":     {"SaveScene"},
 		"scene_id":   {"poczatek"},
@@ -1041,7 +1039,7 @@ func TestWFPProtocolAndZeroRepoSavesOrAppState(t *testing.T) {
 		t.Fatalf("expected FDP frame to place multiline text in raw body after \\n\\n, got:\n%s", string(fdpFrame))
 	}
 	decoded := make(url.Values)
-	if !engine.DecodeFDPBytes(fdpFrame, decoded) {
+	if !transport.DecodeFDPBytes(fdpFrame, decoded) {
 		t.Fatalf("DecodeFDPBytes failed on valid frame:\n%s", string(fdpFrame))
 	}
 	for k := range orig {
@@ -1055,16 +1053,16 @@ func TestWFPProtocolAndZeroRepoSavesOrAppState(t *testing.T) {
 
 	// 2. Verify POST /api/action accepts FDP wire frames directly
 	rootDir := t.TempDir()
-	srv := NewServer(rootDir, mojra.AppFS)
+	srv := NewServer(rootDir, testAppFS)
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
-	postWFP := func(vals url.Values) *http.Response {
+	postFDP := func(vals url.Values) *http.Response {
 		req, err := http.NewRequest(http.MethodPost, ts.URL+"/api/action", bytes.NewReader(encodeFDPForm(vals)))
 		if err != nil {
 			t.Fatalf("NewRequest failed: %v", err)
 		}
-		req.Header.Set("Content-Type", engine.ContentTypeFDP)
+		req.Header.Set("Content-Type", transport.ContentTypeFDP)
 		req.Header.Set("X-Requested-With", "Mojra")
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
@@ -1075,25 +1073,25 @@ func TestWFPProtocolAndZeroRepoSavesOrAppState(t *testing.T) {
 		return resp
 	}
 
-	postWFP(url.Values{
+	postFDP(url.Values{
 		"action":   {"CreateNewBook"},
-		"title":    {"Kronika WFP"},
+		"title":    {"Kronika FDP"},
 		"author":   {"Jan Kowalski"},
 		"narrated": {"false"},
 	})
-	if srv.State.Editor.ActiveBook == nil || srv.State.Editor.ActiveBook.Title != "Kronika WFP" {
-		t.Fatalf("expected CreateNewBook via WFP to create active book Kronika WFP, got %+v", srv.State.Editor.ActiveBook)
+	if srv.State.Editor.ActiveBook == nil || srv.State.Editor.ActiveBook.Title != "Kronika FDP" {
+		t.Fatalf("expected CreateNewBook via FDP to create active book Kronika FDP, got %+v", srv.State.Editor.ActiveBook)
 	}
 
-	postWFP(url.Values{
+	postFDP(url.Values{
 		"action":   {"SaveScene"},
 		"scene_id": {"poczatek"},
-		"name":     {"Scena WFP"},
+		"name":     {"Scena FDP"},
 		"text":     {"Linia pierwsza.\nLinia druga ze strzałką \\-> i polskimi znakami ąęćłńóśźż."},
 	})
 	sc := srv.State.Editor.ActiveBook.FindScene("poczatek")
-	if sc == nil || sc.Name != "Scena WFP" || !strings.Contains(sc.Text, "Linia druga") || !strings.Contains(sc.Text, "->") {
-		t.Fatalf("expected SaveScene via WFP to persist multiline text and arrow, got %+v", sc)
+	if sc == nil || sc.Name != "Scena FDP" || !strings.Contains(sc.Text, "Linia druga") || !strings.Contains(sc.Text, "->") {
+		t.Fatalf("expected SaveScene via FDP to persist multiline text and arrow, got %+v", sc)
 	}
 
 	// 3. Verify that a repository directory (containing go.mod) NEVER receives saves/, settings.ini, .pid, or .history/
@@ -1113,8 +1111,8 @@ func TestWFPProtocolAndZeroRepoSavesOrAppState(t *testing.T) {
 	}
 
 	osbridge.StopPreviousInstance(book.ResolveSavesDir(fakeRepo))
-	repoSrv := NewServerWithOptions(fakeRepo, mojra.AppFS, true)
-	_ = repoSrv.State.SaveSettings()
+	repoSrv := NewServerWithOptions(fakeRepo, testAppFS, true)
+	repoSrv.State.SaveSettings()
 	if repoSrv.State.Editor.ActiveBook != nil {
 		_ = book.EnsureBookHistoryBaseline(repoSrv.State.Editor.ActiveBook, "s1")
 	}
@@ -1147,7 +1145,7 @@ func TestWFPProtocolAndZeroRepoSavesOrAppState(t *testing.T) {
 
 func TestVariablesPanelChoiceTripleStackAndThreeStateScenePreview(t *testing.T) {
 	rootDir := t.TempDir()
-	srv := NewServer(rootDir, mojra.AppFS)
+	srv := NewServer(rootDir, testAppFS)
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
@@ -1379,7 +1377,7 @@ func TestSeparatePlayerAndStudioBooksAndPlaybookUnpackWarning(t *testing.T) {
 		t.Fatalf("PackBookToZip C failed: %v", err)
 	}
 
-	srv := NewServer(rootDir, mojra.AppFS)
+	srv := NewServer(rootDir, testAppFS)
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
@@ -1480,8 +1478,8 @@ func TestSeparatePlayerAndStudioBooksAndPlaybookUnpackWarning(t *testing.T) {
 	packedBytes, _ := io.ReadAll(rOpenPacked.Body)
 	_ = rOpenPacked.Body.Close()
 	packedHTML := string(packedBytes)
-	if srv.State.Confirm.PendingAction != actions.UnpackPlaybookForStudio {
-		t.Fatalf("expected ConfirmPendingAction=%q, got %q", actions.UnpackPlaybookForStudio, srv.State.Confirm.PendingAction)
+	if srv.State.Confirm.PendingAction != "UnpackPlaybookForStudio" {
+		t.Fatalf("expected ConfirmPendingAction=%q, got %q", "UnpackPlaybookForStudio", srv.State.Confirm.PendingAction)
 	}
 	if !strings.Contains(packedHTML, "CC BY-NC-ND 4.0") || !strings.Contains(packedHTML, "Anna Twórczyni") {
 		t.Fatalf("expected unpack confirmation modal to display author and license warning, got:\n%s", packedHTML)
@@ -1523,7 +1521,7 @@ func TestSeparatePlayerAndStudioBooksAndPlaybookUnpackWarning(t *testing.T) {
 
 func TestSceneTextSlideOutPanelUnifiedChoicesAndSyntaxHoverTooltip(t *testing.T) {
 	rootDir := t.TempDir()
-	srv := NewServer(rootDir, mojra.AppFS)
+	srv := NewServer(rootDir, testAppFS)
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
@@ -1628,7 +1626,7 @@ func TestSceneTextSlideOutPanelUnifiedChoicesAndSyntaxHoverTooltip(t *testing.T)
 
 func TestSceneVoiceSectionsRecorderAndTextIsolation(t *testing.T) {
 	rootDir := t.TempDir()
-	srv := NewServer(rootDir, mojra.AppFS)
+	srv := NewServer(rootDir, testAppFS)
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
@@ -1754,8 +1752,9 @@ func TestSceneVoiceSectionsRecorderAndTextIsolation(t *testing.T) {
 	}
 	body, _ = io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
-	if !strings.Contains(string(body), `data-trim-start="0.0500"`) || !strings.Contains(string(body), `data-trim-end="0.9200"`) {
-		t.Fatalf("expected non-destructive trim attributes on #modal-voice-rec-strip for 02_if, got:\n%s", string(body))
+	trimMeta, _ := decodeFDPResponse(body)
+	if trimMeta.Get("voiceTrimStart") != "0.05" || trimMeta.Get("voiceTrimEnd") != "0.92" {
+		t.Fatalf("expected non-destructive trim ratios in FDP ScriptData for 02_if, got start=%q end=%q", trimMeta.Get("voiceTrimStart"), trimMeta.Get("voiceTrimEnd"))
 	}
 
 	// Switch from section 02_if back to section 01 with form's explicit_voice of 02_if included -> must NOT copy 02_if's audio file onto section 01
@@ -1772,8 +1771,9 @@ func TestSceneVoiceSectionsRecorderAndTextIsolation(t *testing.T) {
 	}
 	body, _ = io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
-	if strings.Contains(string(body), `data-voice-file="voice/komora_topielcow__02_if.flac"`) {
-		t.Fatalf("expected section 01 not to inherit section 02_if audio file on tab switch, got:\n%s", string(body))
+	sec01Meta, _ := decodeFDPResponse(body)
+	if strings.Contains(sec01Meta.Get("voiceUrl"), "komora_topielcow__02_if.flac") {
+		t.Fatalf("expected section 01 not to inherit section 02_if audio file on tab switch, got voiceUrl=%q", sec01Meta.Get("voiceUrl"))
 	}
 
 	// Delete section 02_if audio
@@ -1811,7 +1811,7 @@ func TestSceneVoiceSectionsRecorderAndTextIsolation(t *testing.T) {
 
 func TestNewSceneIDAndTitleEditsNeverOverwriteFirstSceneAndSyncChapterSlugs(t *testing.T) {
 	rootDir := t.TempDir()
-	srv := NewServer(rootDir, mojra.AppFS)
+	srv := NewServer(rootDir, testAppFS)
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
@@ -1951,7 +1951,7 @@ func TestNewSceneIDAndTitleEditsNeverOverwriteFirstSceneAndSyncChapterSlugs(t *t
 	}
 }
 
-func BenchmarkParseActionRequestWFP(b *testing.B) {
+func BenchmarkParseActionRequestFDP(b *testing.B) {
 	payload := encodeFDPForm(url.Values{
 		"action":    {"SaveEditorState"},
 		"scene_id":  {"poczatek"},
@@ -1965,9 +1965,9 @@ func BenchmarkParseActionRequestWFP(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		req := &http.Request{
 			Method: http.MethodPost,
-			Header: http.Header{"Content-Type": []string{engine.ContentTypeFDP}},
+			Header: http.Header{"Content-Type": []string{transport.ContentTypeFDP}},
 			Body:   io.NopCloser(bytes.NewReader(payload)),
 		}
-		engine.ParseActionRequest(req)
+		transport.ParseActionRequest(req)
 	}
 }

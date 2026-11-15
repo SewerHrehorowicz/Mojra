@@ -45,12 +45,14 @@ implementuj <plan>.md zgodnie z @AGENTS.md nie lap za szerokiego kontekstu, nie 
 - **App Settings (`saves/settings.ini`)**: INI sections (`[display]`, `[audio]`, `[library]`) with `key = value` pairs written atomically via `.tmp` + `os.Rename`.
 - **Player Progress (`saves/<book-id>.sav`)**: Custom Little-Endian binary format (`STSV\x01`). Frequent `AudioTime` updates MUST patch bytes `[5..21]` in-place via `UpdateSaveAudioTimeInPlace` (`os.File.WriteAt`) without rewriting the file.
 
-## 3. Client-Server Protocol — WFP + HTML-Over-The-Wire (`POST /api/action`)
-- All UI mutations and commands go through `POST /api/action` using WFP wire framing (`Content-Type: text/x-wfp;charset=UTF-8`, `key=val` header lines + optional `_body=<key>` and `\n\n` raw UTF-8 body, decoded via pooled `sync.Pool` buffers in `internal/gui/wfp.go`) and must pass `validateSameOriginAction` (`Sec-Fetch-Site`, `Origin`, `Referer`).
-- Never return JSON from `/api/action`. Render a `.tpl` template chunk and set `X-Target` (`#app`, `#workspace`, `#modals-root`, `#editor-context-panel`, or `none` with HTTP `204 No Content`).
-- Sync state and native host commands exclusively via `X-*` HTTP response headers (`X-Theme`, `X-Imageless`, `X-Imageless-Locked`, `X-UI-Scale`, `X-Audio-Speed`, `X-Auto-Choice`, `X-Auto-Strategy`, `X-Keep-Scroll`, `X-Reset-Canvas`, `X-Device-Mode`, `X-Toast`, `X-Native-Cmd`).
-- Declare client actions in `.tpl` via `action: <ActionName>` and `data-*` attributes (`app/js/core.js` maps `data-foo-bar` to form param `foo_bar`).
-- Encode batch node positions in `SaveEditorState` as `positions: id1:x1,y1;id2:x2,y2`.
+## 3. Client-Server Protocol — FDP (`FlatDataProtocol`) & HARD BAN ON RETIRED `WFP`
+- **NEVER USE OR REINTRODUCE RETIRED `WFP` — EVER**:
+  - `WFP` (`text/x-wfp`, `wfp.go`, `wfp.js`, `EncodeWFPForm`, `DecodeWFPFormBytes`), custom `X-*` HTTP state/target headers (`X-Target`, `X-Data`, `X-Theme`, `X-Imageless`, `X-UI-Scale`, `X-Audio-Speed`, `X-Toast`, `X-Native-Cmd`, etc.), `app/js/core.js`, and template `action:` / `kind:` / `param-*` attributes are **permanently retired and strictly forbidden** in code, tests, and architecture plans.
+- **Exclusive Protocol — `FDP` (`FlatDataProtocol`, `Content-Type: text/x-fdp;charset=UTF-8`)**:
+  - All UI mutations and commands go through `POST /api/action` (or WASM bridge) using `FDP` multi-frame wire framing (`engine/fdp.go` and `app/js/fdp.js`) and must pass `ValidateSameOriginAction` (`Sec-Fetch-Site`, `Origin`, `Referer`).
+  - Never return JSON or custom `X-*` headers from `/api/action`. Every response consists of `1..N` controller-isolated `FDP` frames separated by `\n---\n`, each carrying `controller=<Name>Controller`, `target=<#app|#workspace|#modals-root|#editor-context-view|none>`, flat scalar `key=val` fields serialized from `TemplateChunk.ScriptData`, and optional `_body=html\n\n<rendered HTML>` from `TemplateChunk.TemplateData`.
+  - All client event bindings and actions are declared in isolated controllers (`app/js/controllers/<name>_controller.js`) via `bindings()` (`this.<method>` or `Dispatcher.action("<ActionName>")`) and routed by `app/js/dispatcher.js`.
+  - Encode batch node positions in `SaveEditorState` as `positions: id1:x1,y1;id2:x2,y2`.
 
 ## 4. Template (`.tpl`), Stylesheet (`.tss`) & JS Bundling Discipline
 - Edit source templates in `app/templates/*.tpl`, stylesheets in `app/styles/*.tss`, scripts in `app/js/*.js`, and icons in `app/icons/*.svg`.

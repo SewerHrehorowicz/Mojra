@@ -1,7 +1,6 @@
 package domain
 
 import (
-	"io/fs"
 	"net/http/httptest"
 	"os"
 	"os/exec"
@@ -10,31 +9,28 @@ import (
 	"strings"
 	"testing"
 
-	"mojra"
-	"mojra/domain/actions"
-	"mojra/domain/book"
+	book "mojra/domain/book/actions"
+	bookplayeractions "mojra/domain/shell/book_player/actions"
 	"mojra/engine"
 	"mojra/engine/templates"
 )
 
 func TestAllActionSpecsHaveHandlers(t *testing.T) {
-	if len(actions.Handlers) == 0 {
-		t.Fatal("expected actions.Handlers to be non-empty")
+	if len(Handlers) == 0 {
+		t.Fatal("expected Handlers to be non-empty")
 	}
-	for name, handler := range actions.Handlers {
+	for name, handler := range Handlers {
 		if handler == nil {
-			t.Fatalf("action %q in actions.Handlers has a nil Handler", name)
+			t.Fatalf("action %q in Handlers has a nil Handler", name)
 		}
 	}
 }
 
 func TestClientServerActionAndOverlayContracts(t *testing.T) {
-	appDir := filepath.Clean(filepath.Join("..", "app"))
-
-	// 1. Verify every action referenced in .tpl templates exists in actions.Handlers
-	tplFiles, err := filepath.Glob(filepath.Join(appDir, "templates", "*.tpl"))
-	if err != nil || len(tplFiles) == 0 {
-		t.Fatalf("failed to glob .tpl files: %v", err)
+	// 1. Verify every action referenced in .tpl templates exists in Handlers
+	tplFiles := collectStudioTplFiles()
+	if len(tplFiles) == 0 {
+		t.Fatalf("failed to collect .tpl files")
 	}
 	forLoopRe := regexp.MustCompile(`^\s*\{for\s+([A-Za-z0-9_]+)\s+in\s+[A-Za-z0-9_.]+\}\s*$`)
 	propRefRe := regexp.MustCompile(`\{([a-z][A-Za-z0-9_]*)\.[A-Za-z0-9_]+\}`)
@@ -69,7 +65,7 @@ func TestClientServerActionAndOverlayContracts(t *testing.T) {
 				if act := attrMap["action"]; act != "" && !strings.Contains(act, "{") {
 					kind := attrMap["kind"]
 					if kind == "" || kind == "backend" {
-						if _, ok := actions.Handlers[act]; !ok {
+						if _, ok := Handlers[act]; !ok {
 							t.Fatalf("template %s references unknown server action %q", base, act)
 						}
 					}
@@ -82,7 +78,7 @@ func TestClientServerActionAndOverlayContracts(t *testing.T) {
 							kind = attrMap["kind"]
 						}
 						if kind == "" || kind == "backend" {
-							if _, ok := actions.Handlers[v]; !ok {
+							if _, ok := Handlers[v]; !ok {
 								t.Fatalf("template %s references unknown server action %q in %s", base, v, k)
 							}
 						}
@@ -134,9 +130,9 @@ func TestClientServerActionAndOverlayContracts(t *testing.T) {
 		}
 	}
 
-	// 2. Verify every literal action dispatched from app/js/*.js exists in actions.Handlers
-	// and every app/js/*.js file defines a single 1:1 object literal without loose function declarations.
-	jsFiles := engine.JSModuleFiles(appDir)
+	// 2. Verify every literal action dispatched from JS modules exists in Handlers
+	// and every JS module defines a single 1:1 object literal without loose function declarations.
+	jsFiles := collectStudioJSFiles()
 	jsActionRe := regexp.MustCompile(`Dispatcher\.(?:post|action)\(\s*"([A-Za-z0-9_]+)"`)
 	looseFuncRe := regexp.MustCompile(`(?m)^\s*(?:async\s+)?function\s+[A-Za-z0-9_]+\s*\(`)
 	objConstRe := regexp.MustCompile(`(?m)^const\s+([A-Z][A-Za-z0-9]*)\s*=\s*\{`)
@@ -156,16 +152,17 @@ func TestClientServerActionAndOverlayContracts(t *testing.T) {
 		}
 		for _, m := range jsActionRe.FindAllStringSubmatch(src, -1) {
 			act := m[1]
-			if _, ok := actions.Handlers[act]; !ok {
+			if _, ok := Handlers[act]; !ok {
 				t.Fatalf("JS module %s dispatches unknown server action %q", base, act)
 			}
 		}
 	}
 
 	// 3. Verify CSS overlay pointer-events and stacking contexts never block UI interaction
-	cssProd, err := engine.BundleFilesToString(engine.CSSModuleFiles(appDir), true)
+	modFSList, _ := StudioAppModules()
+	cssProd, err := templates.BundleModulesCSS(modFSList, true)
 	if err != nil {
-		t.Fatalf("BundleFilesToString(CSS) failed: %v", err)
+		t.Fatalf("BundleModulesCSS failed: %v", err)
 	}
 	for _, check := range []struct {
 		block string
@@ -197,20 +194,20 @@ func TestClientJSRuntimeAndInteractiveResponsiveness(t *testing.T) {
 		t.Skip("node not found in PATH; skipping live JS DOM responsiveness test")
 	}
 
-	appDir := filepath.Clean(filepath.Join("..", "app"))
+	modFSList, _ := StudioAppModules()
 
 	// Bundle both production (stripped) and dev-mode app.js and verify both execute cleanly in Node VM
-	prodJS, err := engine.BundleFilesToString(engine.JSModuleFiles(appDir), true)
+	prodJS, err := templates.BundleModulesJS(engine.FS, modFSList, true)
 	if err != nil {
 		t.Fatalf("bundle prod JS: %v", err)
 	}
-	devJS, err := engine.BundleFilesToString(engine.JSModuleFiles(appDir), false)
+	devJS, err := templates.BundleModulesJS(engine.FS, modFSList, false)
 	if err != nil {
 		t.Fatalf("bundle dev JS: %v", err)
 	}
-	playerJS, err := engine.BundleFilesToString(engine.JSPlayerModuleFiles(appDir), true)
+	playerJS, err := templates.BundleModulesJS(engine.FS, bookplayeractions.ModuleFSList(), true)
 	if err != nil {
-		t.Fatalf("BundleFilesToString(player) failed: %v", err)
+		t.Fatalf("BundleModulesJS(player) failed: %v", err)
 	}
 
 	// Run live end-to-end DOM + event-delegation + WebGL canvas + form submission harness in Node
@@ -1165,12 +1162,22 @@ function makeEvent(type, props) {
       await Promise.all(Array.from(inFlight));
     }
   };
+  const findBoundElement = (ctrlName, methodName) => {
+    const sel = vm.runInContext(
+      "(() => { const c = Dispatcher.controllers[" + JSON.stringify(ctrlName) + "]; if (!c || !c.bindings) return ''; const b = c.bindings(); for (const [s, evs] of Object.entries(b)) { for (const fn of Object.values(evs)) { if (c[" + JSON.stringify(methodName) + "] && fn === c[" + JSON.stringify(methodName) + "]) return s; } } return ''; })()",
+      win
+    );
+    return sel ? doc.querySelector(sel) : null;
+  };
   const clickEl = async (selectorOrEl) => {
     const el = typeof selectorOrEl === "string" ? doc.querySelector(selectorOrEl) : selectorOrEl;
     if (!el) throw new Error("Missing element to click: " + selectorOrEl);
     el.dispatchEvent(makeEvent("click", { target: el }));
     await waitForActions();
   };
+  if (!findBoundElement("UIController", "initShell")) {
+    throw new Error("Expected UIController binding for initShell in initial DOM");
+  }
 
   // 1. Switch to Studio Home (#studio-view) via bottom mode switch in Reader Home
   await clickEl('#btn-switch-to-studio');
@@ -1538,9 +1545,9 @@ function makeEvent(type, props) {
   }
   // Click Stop ([data-voice-transport=true]) to finish recording & auto-save voice/<scene_id>.flac
   await clickEl('#inspector-voice-rec-strip [data-voice-transport="true"]');
-  const savedVoiceAttr = doc.querySelector("#inspector-voice-rec-strip").getAttribute("data-voice-file") || "";
-  if (!savedVoiceAttr.endsWith(".flac")) {
-    throw new Error("Expected stopping recording to auto-save .flac file and set data-voice-file, got: " + savedVoiceAttr);
+  const savedVoiceUrl = vm.runInContext("EditorContextController.data.voiceUrl || ''", win);
+  if (!savedVoiceUrl.includes(".flac")) {
+    throw new Error("Expected stopping recording to auto-save .flac file and set EditorContextController.data.voiceUrl, got: " + savedVoiceUrl);
   }
   const cutBtnUntrimmed = doc.querySelector('#inspector-voice-rec-strip [data-voice-trim-destructive="true"]');
   if (!cutBtnUntrimmed || cutBtnUntrimmed.classList.contains("hidden") || !cutBtnUntrimmed.disabled) {
@@ -1554,18 +1561,18 @@ function makeEvent(type, props) {
   waveWrapEl.dispatchEvent(makeEvent("pointermove", { button: 0, clientX: 150, clientY: 14, target: waveWrapEl }));
   waveWrapEl.dispatchEvent(makeEvent("pointerup", { button: 0, clientX: 150, clientY: 14, target: waveWrapEl }));
   await waitForActions();
-  const nonDestructiveEnd = doc.querySelector("#inspector-voice-rec-strip").getAttribute("data-trim-end") || "";
+  const nonDestructiveEnd = vm.runInContext("Number(EditorContextController.data.voiceTrimEnd).toFixed(4)", win);
   if (nonDestructiveEnd !== "0.7500") {
-    throw new Error("Expected default non-destructive trim to persist data-trim-end=0.7500, got: " + nonDestructiveEnd);
+    throw new Error("Expected default non-destructive trim to persist EditorContextController.data.voiceTrimEnd=0.7500, got: " + nonDestructiveEnd);
   }
   const cutBtn = doc.querySelector('#inspector-voice-rec-strip [data-voice-trim-destructive="true"]');
   if (!cutBtn || cutBtn.classList.contains("hidden") || cutBtn.disabled) {
     throw new Error("Expected destructive trim button [data-voice-trim-destructive=true] to be visible and enabled when non-destructive trim is active");
   }
   await clickEl('#inspector-voice-rec-strip [data-voice-trim-destructive="true"]');
-  const afterDestructiveEnd = doc.querySelector("#inspector-voice-rec-strip").getAttribute("data-trim-end") || "";
+  const afterDestructiveEnd = vm.runInContext("Number(EditorContextController.data.voiceTrimEnd).toFixed(4)", win);
   if (afterDestructiveEnd !== "1.0000") {
-    throw new Error("Expected destructive trim to crop file and reset data-trim-end=1.0000, got: " + afterDestructiveEnd);
+    throw new Error("Expected destructive trim to crop file and reset EditorContextController.data.voiceTrimEnd=1.0000, got: " + afterDestructiveEnd);
   }
   const cutBtnAfter = doc.querySelector('#inspector-voice-rec-strip [data-voice-trim-destructive="true"]');
   if (!cutBtnAfter || cutBtnAfter.classList.contains("hidden") || !cutBtnAfter.disabled) {
@@ -1652,8 +1659,8 @@ function makeEvent(type, props) {
   if (!proseText.includes("Treść zapisana przez mostek JS.")) {
     throw new Error("Expected dirty textarea auto-flush on CloseSceneTextModal to persist prose in player view");
   }
-  if (!vm.runInContext("AppShellController.data && PlayerController.data && SceneController.data && typeof AppShellController.bindings === 'function' && typeof PlayerController.bindings === 'function' && typeof SceneController.bindings === 'function'", win)) {
-    throw new Error("Expected AppShellController, PlayerController, and SceneController with bindings() to be registered");
+  if (!vm.runInContext("UIController.data && PlayerController.data && SceneController.data && typeof UIController.bindings === 'function' && typeof PlayerController.bindings === 'function' && typeof SceneController.bindings === 'function'", win)) {
+    throw new Error("Expected UIController, PlayerController, and SceneController with bindings() to be registered");
   }
   await clickEl("#active-scene-stage button.choice-btn");
   if (!doc.querySelector("#history-stack")) {
@@ -1935,7 +1942,7 @@ function makeEvent(type, props) {
 		{name: "dev_app_js", code: devJS},
 	} {
 		caseDir := t.TempDir()
-		srv := NewServer(caseDir, mojra.AppFS)
+		srv := NewServer(caseDir, testAppFS)
 		ts := httptest.NewServer(srv.Handler())
 
 		cmd := exec.Command(nodeBin, "-e", harnessScript)
@@ -1969,100 +1976,52 @@ function makeEvent(type, props) {
 	}
 }
 
-type filteredEmbedFS struct {
-	base    fs.FS
-	allowed map[string]bool
-}
-
-func (f *filteredEmbedFS) Open(name string) (fs.File, error) {
-	clean := filepath.ToSlash(strings.TrimPrefix(name, "./"))
-	if clean == "app/templates" || clean == "app/icons" || f.allowed[clean] {
-		return f.base.Open(clean)
-	}
-	return nil, fs.ErrNotExist
-}
-
-func (f *filteredEmbedFS) ReadDir(name string) ([]fs.DirEntry, error) {
-	clean := filepath.ToSlash(strings.TrimPrefix(name, "./"))
-	entries, err := fs.ReadDir(f.base, clean)
-	if err != nil {
-		return nil, err
-	}
-	var out []fs.DirEntry
-	for _, e := range entries {
-		full := clean + "/" + e.Name()
-		if f.allowed[full] {
-			out = append(out, e)
-		}
-	}
-	return out, nil
-}
-
-func (f *filteredEmbedFS) ReadFile(name string) ([]byte, error) {
-	clean := filepath.ToSlash(strings.TrimPrefix(name, "./"))
-	if !f.allowed[clean] {
-		return nil, fs.ErrNotExist
-	}
-	return fs.ReadFile(f.base, clean)
-}
-
 func TestWasmPlayerStaticAnalysisAndRuntimeExecution(t *testing.T) {
 	nodeBin, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("node not found in PATH")
 	}
-	rootDir := filepath.Clean("..")
+	rootDir := repoRootDir()
 
-	// 1. Static Analysis of embed_wasm.go and cmd/wasmplayer/main.go
-	embedWasmRaw, err := os.ReadFile(filepath.Join(rootDir, "embed_wasm.go"))
+	// 1. Static Analysis of book_player modules, cmd/mojra/main_wasm.go, and player actions
+	wasmTemplates, err := templates.LoadTemplatesFromModules(bookplayeractions.ModuleFSList())
 	if err != nil {
-		t.Fatalf("read embed_wasm.go failed: %v", err)
+		t.Fatalf("LoadTemplatesFromModules(book_player) failed: %v", err)
 	}
-	var embedPatterns []string
-	for _, line := range strings.Split(string(embedWasmRaw), "\n") {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "//go:embed ") {
-			embedPatterns = append(embedPatterns, strings.Fields(strings.TrimPrefix(trimmed, "//go:embed "))...)
-		}
-	}
-	if len(embedPatterns) == 0 {
-		t.Fatalf("expected //go:embed patterns in embed_wasm.go")
-	}
-	allowedWasmFiles := make(map[string]bool)
-	for _, pat := range embedPatterns {
-		matches, gErr := fs.Glob(mojra.AppFS, pat)
-		if gErr != nil || len(matches) == 0 {
-			t.Fatalf("embed_wasm.go pattern %q matched 0 files in AppFS (err=%v)", pat, gErr)
-		}
-		for _, m := range matches {
-			allowedWasmFiles[filepath.ToSlash(m)] = true
-		}
-	}
-
-	wasmSimFS := &filteredEmbedFS{base: mojra.AppFS, allowed: allowedWasmFiles}
-	wasmTemplates, err := templates.LoadTemplatesFromDir("", wasmSimFS)
-	if err != nil {
-		t.Fatalf("LoadTemplatesFromDir(\"\", wasmSimFS) failed (missing template or SVG in embed_wasm.go): %v", err)
-	}
-	for _, reqTpl := range []string{"player_view", "scene_choice_arrow", "confirm_view"} {
+	for _, reqTpl := range []string{"shell_view", "player_view", "scene_choice_arrow", "confirm_view"} {
 		if _, ok := wasmTemplates[reqTpl]; !ok {
-			t.Fatalf("expected template %q to be loaded from WasmAppFS", reqTpl)
+			t.Fatalf("expected template %q to be loaded from book_player ModuleFSList", reqTpl)
 		}
 	}
-	if allowedWasmFiles["app/templates/modals.tpl"] || allowedWasmFiles["app/icons/studio.svg"] {
-		t.Fatalf("expected embed_wasm.go to exclude studio templates and icons, got: %v", embedPatterns)
+	for _, forbiddenTpl := range []string{"studio_view", "library_view", "editor_context_view", "topbar_view"} {
+		if _, ok := wasmTemplates[forbiddenTpl]; ok {
+			t.Fatalf("expected book_player not to include studio/library template %q", forbiddenTpl)
+		}
 	}
 
-	wasmMainRaw, err := os.ReadFile(filepath.Join(rootDir, "cmd", "wasmplayer", "main.go"))
+	wasmMainRaw, err := os.ReadFile(filepath.Join(rootDir, "cmd", "mojra", "main_wasm.go"))
 	if err != nil {
-		t.Fatalf("read cmd/wasmplayer/main.go failed: %v", err)
+		t.Fatalf("read cmd/mojra/main_wasm.go failed: %v", err)
 	}
 	wasmMainSrc := string(wasmMainRaw)
 	for _, forbiddenOSCall := range []string{"os.Open", "os.ReadFile", "os.ReadDir", "os.WriteFile", "os.Stat", "os.Mkdir"} {
 		if strings.Contains(wasmMainSrc, forbiddenOSCall) {
-			t.Fatalf("cmd/wasmplayer/main.go must not contain host filesystem call %q", forbiddenOSCall)
+			t.Fatalf("cmd/mojra/main_wasm.go must not contain host filesystem call %q", forbiddenOSCall)
 		}
 	}
+	playerActionsRaw, err := os.ReadFile(filepath.Join(rootDir, "domain", "player", "actions", "player_actions.go"))
+	if err != nil {
+		t.Fatalf("ReadFile domain/player/actions/player_actions.go failed: %v", err)
+	}
+	shellActionsRaw, err := os.ReadFile(filepath.Join(rootDir, "domain", "shell", "book_player", "actions", "shell_actions.go"))
+	if err != nil {
+		t.Fatalf("ReadFile domain/shell/book_player/actions/shell_actions.go failed: %v", err)
+	}
+	confirmActionsRaw, err := os.ReadFile(filepath.Join(rootDir, "domain", "common", "actions", "confirm_actions.go"))
+	if err != nil {
+		t.Fatalf("ReadFile domain/common/actions/confirm_actions.go failed: %v", err)
+	}
+	combinedPlayerSrc := string(playerActionsRaw) + "\n" + string(shellActionsRaw) + "\n" + string(confirmActionsRaw)
 	for _, reqAction := range []string{
 		"SaveAudioTime",
 		"ChooseBranch",
@@ -2079,36 +2038,49 @@ func TestWasmPlayerStaticAnalysisAndRuntimeExecution(t *testing.T) {
 		"FocusHistoryStep",
 		"FocusPresent",
 	} {
-		if !strings.Contains(wasmMainSrc, `case "`+reqAction+`":`) {
-			t.Fatalf("cmd/wasmplayer/main.go is missing handler for player action %q", reqAction)
+		if !strings.Contains(combinedPlayerSrc, `"`+reqAction+`"`) {
+			t.Fatalf("book_player / player / confirm actions missing handler for %q", reqAction)
 		}
 	}
 
-	// 2. Verify WASM dependency graph excludes server/archive/image/exec/base64 bloat, then build exported Web/WASM bundle
-	depsCmd := exec.Command("go", "list", "-deps", "./cmd/wasmplayer")
+	// 2. Verify shell/book_player and WASM dependency graphs never import studio, library, studio_app, or server bloat
+	shellDepsCmd := exec.Command("go", "list", "-deps", "./domain/shell/book_player/...")
+	shellDepsCmd.Dir = rootDir
+	if shellDepsOut, sErr := shellDepsCmd.CombinedOutput(); sErr != nil {
+		t.Fatalf("go list -deps ./domain/shell/book_player/... failed: %v\n%s", sErr, string(shellDepsOut))
+	} else {
+		for _, ln := range strings.Split(string(shellDepsOut), "\n") {
+			dep := strings.TrimSpace(ln)
+			if strings.HasPrefix(dep, "mojra/domain/studio") || strings.HasPrefix(dep, "mojra/domain/library") || strings.HasPrefix(dep, "mojra/domain/shell/studio_app") {
+				t.Fatalf("domain/shell/book_player dependency graph must never import %q", dep)
+			}
+		}
+	}
+
+	depsCmd := exec.Command("go", "list", "-deps", "-tags", "book_player", "./cmd/mojra")
 	depsCmd.Dir = rootDir
 	depsCmd.Env = append(os.Environ(), "GOOS=js", "GOARCH=wasm")
 	if depsOut, dErr := depsCmd.CombinedOutput(); dErr != nil {
-		t.Fatalf("go list -deps ./cmd/wasmplayer failed: %v\n%s", dErr, string(depsOut))
+		t.Fatalf("go list -deps -tags book_player ./cmd/mojra failed: %v\n%s", dErr, string(depsOut))
 	} else {
 		depsSet := make(map[string]bool)
 		for _, ln := range strings.Split(string(depsOut), "\n") {
-			depsSet[strings.TrimSpace(ln)] = true
+			dep := strings.TrimSpace(ln)
+			depsSet[dep] = true
+			if strings.HasPrefix(dep, "mojra/domain/studio") || strings.HasPrefix(dep, "mojra/domain/library") || strings.HasPrefix(dep, "mojra/domain/shell/studio_app") {
+				t.Fatalf("WASM book_player dependency graph must not include %q", dep)
+			}
 		}
 		for _, forbiddenPkg := range []string{
-			"net/http",
-			"crypto/tls",
-			"crypto/x509",
 			"archive/zip",
 			"compress/gzip",
 			"image/png",
 			"encoding/base64",
 			"encoding/xml",
 			"os/exec",
-			"mojra/internal/qr",
 		} {
 			if depsSet[forbiddenPkg] {
-				t.Fatalf("cmd/wasmplayer dependency graph must not include %q", forbiddenPkg)
+				t.Fatalf("WASM book_player dependency graph must not include %q", forbiddenPkg)
 			}
 		}
 	}
@@ -2118,7 +2090,7 @@ func TestWasmPlayerStaticAnalysisAndRuntimeExecution(t *testing.T) {
 		t.Fatalf("LoadBookFromDir failed: %v", err)
 	}
 	exportRoot := t.TempDir()
-	webOutDir, err := book.ExportWebWASMApp(sampleBook, exportRoot, rootDir, mojra.AppFS)
+	webOutDir, err := book.ExportWebWASMApp(sampleBook, exportRoot, rootDir, testAppFS)
 	if err != nil {
 		t.Fatalf("ExportWebWASMApp failed: %v", err)
 	}

@@ -1,0 +1,140 @@
+// Minimal Audio Deck
+.audio-deck
+  position relative
+  z-index 5
+  background --bg-topbar
+  border-top 1px solid --border-subtle
+  padding 6px 18px
+  flex-shrink 0
+
+.audio-deck-inner
+  max-width 960px
+  margin 0 auto
+  display flex
+  align-items center
+  justify-content space-between
+  gap 14px
+
+.audio-transport
+  display flex
+  align-items center
+  gap 12px
+
+.deck-play-btn
+  width 31px
+  height 31px
+  padding 0
+  border none
+  background transparent
+  color --text-secondary
+  display inline-flex
+  align-items center
+  justify-content center
+  cursor pointer
+
+.deck-play-btn:hover
+  color --text-primary
+
+.deck-play-btn.is-buffering
+  opacity 0.45
+  cursor progress
+
+.deck-play-icon
+  width 29px
+  height 29px
+  display block
+
+.audio-progress-wrap
+  flex 1 1 0%
+  min-width 48px
+  display flex
+  align-items center
+  gap 12px
+
+.audio-time-display
+  font-family --font-sans
+  font-size 12px
+  color --text-secondary
+  white-space nowrap
+  flex-shrink 0
+
+.audio-seek-slider
+  -webkit-appearance none
+  appearance none
+  flex 1 1 0%
+  width 0
+  min-width 48px
+  border-radius 999px !important
+  background
+    linear-gradient(to right)
+      --text-secondary 0%
+      --text-secondary --seek-pct(0%)
+      --border-subtle --seek-pct(0%)
+      --border-subtle 100%
+  cursor pointer
+  height 4px
+  outline none
+
+.audio-seek-slider::-webkit-slider-thumb
+  -webkit-appearance none
+  appearance none
+  width 12px
+  height 12px
+  border-radius 50% !important
+  background --text-secondary
+  border none
+  cursor pointer
+
+.audio-seek-slider:hover::-webkit-slider-thumb
+  background --text-primary
+
+.audio-seek-slider::-moz-range-thumb
+  width 12px
+  height 12px
+  border-radius 50% !important
+  background --text-secondary
+  border none
+  cursor pointer
+
+.audio-seek-slider:hover::-moz-range-thumb
+  background --text-primary
+
+.audio-options-col
+  display flex
+  align-items center
+  gap 14px
+  flex-shrink 0
+
+.deck-chip
+  background transparent
+  border none !important
+  text-decoration none !important
+  color --text-secondary
+  padding 4px
+  font-family --font-sans
+  font-size 12px
+  cursor pointer
+  display inline-flex
+  align-items center
+  justify-content center
+
+.deck-chip-icon
+  width 15px
+  height 15px
+  display block
+  flex-shrink 0
+  pointer-events none
+
+.deck-chip:hover, .deck-chip.active
+  color --text-primary
+  border none !important
+  text-decoration none !important
+
+@media (max-width: 620px)
+  .audio-time-display
+    display none
+
+@media (max-width: 220px)
+  .audio-progress-wrap
+    display none
+

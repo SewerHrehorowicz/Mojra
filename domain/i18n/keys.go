@@ -540,6 +540,7 @@ const (
 	TrAddedEnumOptFmt               engine.TrKey = "TrAddedEnumOptFmt"
 	TrRemovedEnumOptFmt             engine.TrKey = "TrRemovedEnumOptFmt"
 	TrRemovedVarFmt                 engine.TrKey = "TrRemovedVarFmt"
+	TrSceneEffectsPlaceholder       engine.TrKey = "TrSceneEffectsPlaceholder"
 )
 
 var mojraTrKeyToTplVar = map[string]string{

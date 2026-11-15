@@ -20,6 +20,9 @@ import (
 	"mojra/engine"
 )
 
+// AppIconPNG holds the optional PNG icon bytes injected by the application shell at startup.
+var AppIconPNG []byte
+
 const (
 	envNoWindow       = "ST_NO_WINDOW"
 	envSTLAN          = "ST_LAN"
@@ -146,7 +149,7 @@ func LaunchWithOptions(savesDir string, port int, headless bool, devMode bool, h
 	fmt.Printf(msgLocalWindowFmt, localURL)
 	if devMode {
 		tLAN := time.Now()
-		lanIP := engine.DetectLANIP()
+		lanIP := DetectLANIP()
 		lanURL := fmt.Sprintf(lanURLFmt, lanIP, actualPort)
 		engine.Active.MarkStep(engine.StageDetectLAN, tLAN, lanURL)
 		fmt.Printf(msgLANPreviewFmt, lanURL)
@@ -200,4 +203,19 @@ func LaunchWithOptions(savesDir string, port int, headless bool, devMode bool, h
 
 	<-shutdownCh
 	return nil
+}
+
+const loopbackIPv4 = "localhost"
+
+// DetectLANIP returns the preferred non-loopback IPv4 LAN address of the current machine.
+func DetectLANIP() string {
+	addrs, addrErr := net.InterfaceAddrs()
+	if addrErr == nil {
+		for _, addr := range addrs {
+			if ipnet, ok := addr.(*net.IPNet); ok && !ipnet.IP.IsLoopback() && ipnet.IP.To4() != nil {
+				return ipnet.IP.String()
+			}
+		}
+	}
+	return loopbackIPv4
 }

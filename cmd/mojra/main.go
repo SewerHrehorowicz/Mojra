@@ -1,3 +1,5 @@
+//go:build !(js && wasm)
+
 package main
 
 import (
@@ -9,9 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"mojra"
-	"mojra/domain"
-	"mojra/domain/book"
+	book "mojra/domain/book/actions"
+	studioappactions "mojra/domain/shell/studio_app/actions"
 	"mojra/engine"
 	"mojra/engine/osbridge"
 	"mojra/internal/audit"
@@ -36,7 +37,7 @@ const (
 	goModFileName  = "go.mod"
 	booksDirName   = "books"
 	distDirName    = "dist"
-	appDirName     = "app"
+	appDirName     = "domain/common"
 	iconsDirName   = "icons"
 	iconPNGFile    = "icon.png"
 	faviconICOFile = "favicon.ico"
@@ -399,7 +400,7 @@ func runCmd(args []string, forceDev bool) {
 		fmt.Fprintf(os.Stderr, msgBetaAuthErr, err)
 		os.Exit(1)
 	}
-	srv := domain.NewServerWithOptions(rootDir, mojra.AppFS, devMode)
+	srv := studioappactions.NewServerWithOptions(rootDir, nil, devMode)
 	if err := osbridge.LaunchWithOptions(srv.State.Config.SavesDir, *port, *headless, devMode, srv.Handler(), srv.State.Config.ShutdownCh, srv.State.Config.TriggerShutdown, func(p int) { srv.State.Config.Port = p }); err != nil {
 		fmt.Fprintf(os.Stderr, msgLaunchErr, err)
 		os.Exit(1)

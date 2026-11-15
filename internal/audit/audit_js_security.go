@@ -27,38 +27,97 @@ type jsFuncBlock struct {
 }
 
 func loadAllJSFiles(rootDir string) []jsFileData {
-	jsDir := filepath.Join(rootDir, "app", "js")
-	if _, err := os.Stat(jsDir); err != nil {
-		return nil
-	}
 	var out []jsFileData
-	var readJSDir func(dir, relPrefix string)
-	readJSDir = func(dir, relPrefix string) {
-		dirEntries, err := os.ReadDir(dir)
-		if err != nil {
-			return
+	for _, sub := range []string{"engine", "domain", "app"} {
+		base := filepath.Join(rootDir, sub)
+		if _, err := os.Stat(base); err != nil {
+			continue
 		}
-		for _, e := range dirEntries {
-			if e.IsDir() {
-				readJSDir(filepath.Join(dir, e.Name()), relPrefix+e.Name()+"/")
-				continue
+		_ = filepath.WalkDir(base, func(path string, d os.DirEntry, err error) error {
+			if err != nil || d.IsDir() || !strings.HasSuffix(d.Name(), ".js") {
+				return nil
 			}
-			if !strings.HasSuffix(e.Name(), ".js") {
-				continue
+			raw, rErr := os.ReadFile(path)
+			if rErr != nil {
+				return nil
 			}
-			raw, err := os.ReadFile(filepath.Join(dir, e.Name()))
-			if err != nil {
-				continue
-			}
+			rel, _ := filepath.Rel(rootDir, path)
+			rel = filepath.ToSlash(rel)
 			src := string(raw)
 			out = append(out, jsFileData{
-				rel:   relPrefix + e.Name(),
+				rel:   rel,
 				src:   src,
 				lines: strings.Split(src, "\n"),
 			})
-		}
+			return nil
+		})
 	}
-	readJSDir(jsDir, "app/js/")
+	return out
+}
+
+func loadAllTplFiles(rootDir string) []parsedTextFile {
+	var out []parsedTextFile
+	for _, sub := range []string{"domain", "app", "www"} {
+		base := filepath.Join(rootDir, sub)
+		if _, err := os.Stat(base); err != nil {
+			continue
+		}
+		_ = filepath.WalkDir(base, func(path string, d os.DirEntry, err error) error {
+			if err != nil || d.IsDir() || !strings.HasSuffix(d.Name(), ".tpl") {
+				return nil
+			}
+			raw, rErr := os.ReadFile(path)
+			if rErr != nil {
+				return nil
+			}
+			rel, _ := filepath.Rel(rootDir, path)
+			rel = filepath.ToSlash(rel)
+			src := string(raw)
+			out = append(out, parsedTextFile{
+				relPath: rel,
+				absPath: path,
+				ext:     ".tpl",
+				src:     src,
+				lines:   strings.Split(src, "\n"),
+			})
+			return nil
+		})
+	}
+	return out
+}
+
+func loadAllCSSFiles(rootDir string) []parsedTextFile {
+	var out []parsedTextFile
+	for _, sub := range []string{"domain", "app", "www"} {
+		base := filepath.Join(rootDir, sub)
+		if _, err := os.Stat(base); err != nil {
+			continue
+		}
+		_ = filepath.WalkDir(base, func(path string, d os.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return nil
+			}
+			ext := strings.ToLower(filepath.Ext(d.Name()))
+			if ext != ".tss" && ext != ".css" {
+				return nil
+			}
+			raw, rErr := os.ReadFile(path)
+			if rErr != nil {
+				return nil
+			}
+			rel, _ := filepath.Rel(rootDir, path)
+			rel = filepath.ToSlash(rel)
+			src := string(raw)
+			out = append(out, parsedTextFile{
+				relPath: rel,
+				absPath: path,
+				ext:     ext,
+				src:     src,
+				lines:   strings.Split(src, "\n"),
+			})
+			return nil
+		})
+	}
 	return out
 }
 
@@ -256,19 +315,11 @@ func checkJSDeepAnalysis(rootDir string) []Finding {
 		}
 	}
 
-	// 7c. JS_DOM_CONTRACT: qs("#id") / getElementById("id") vs app/templates/*.tpl & www/*.tpl
+	// 7c. JS_DOM_CONTRACT: qs("#id") / getElementById("id") vs templates/*.tpl & www/*.tpl
 	var allTpl strings.Builder
-	for _, tplDir := range []string{filepath.Join(rootDir, "app", "templates"), filepath.Join(rootDir, "www")} {
-		if entries, err := os.ReadDir(tplDir); err == nil {
-			for _, e := range entries {
-				if !e.IsDir() && strings.HasSuffix(e.Name(), ".tpl") {
-					if raw, err := os.ReadFile(filepath.Join(tplDir, e.Name())); err == nil {
-						allTpl.Write(raw)
-						allTpl.WriteByte('\n')
-					}
-				}
-			}
-		}
+	for _, tf := range loadAllTplFiles(rootDir) {
+		allTpl.WriteString(tf.src)
+		allTpl.WriteByte('\n')
 	}
 	tplSrc := allTpl.String()
 
@@ -563,8 +614,8 @@ func checkSecurityLoopsAndReliability(rootDir string, fset *token.FileSet, goFil
 			trimmed := strings.TrimSpace(ln)
 			clean := strings.TrimSpace(stripJSLineCommentAndStrings(ln))
 			if innerHTMLRe.MatchString(clean) && !emptyInnerHTMLRe.MatchString(trimmed) {
-				if ((jf.rel == "app/js/core.js" && (curFunc == "sendServerAction" || curFunc == "swapTarget" || curFunc == "bootWasmPlayer")) ||
-					(jf.rel == "app/js/dispatcher.js" && (curFunc == "post" || curFunc == "swapTarget"))) && hotwTransportLineRe.MatchString(trimmed) {
+				isDispatcher := jf.rel == "engine/scripts/dispatcher.js" || jf.rel == "app/js/dispatcher.js"
+				if isDispatcher && (curFunc == "post" || curFunc == "swapTarget") && hotwTransportLineRe.MatchString(trimmed) {
 					continue
 				}
 				out = append(out, Finding{
@@ -579,28 +630,17 @@ func checkSecurityLoopsAndReliability(rootDir string, fset *token.FileSet, goFil
 	}
 
 	// 8b. SECURITY_XSS_INJECTION in .tpl ({raw ...} is strictly forbidden; templates must use {prose ...})
-	tplDir := filepath.Join(rootDir, "app", "templates")
 	rawDirectiveRe := regexp.MustCompile(`\{raw\s+([A-Za-z0-9_.]+)\}`)
-	if entries, err := os.ReadDir(tplDir); err == nil {
-		for _, e := range entries {
-			if e.IsDir() || !strings.HasSuffix(e.Name(), ".tpl") {
-				continue
-			}
-			raw, err := os.ReadFile(filepath.Join(tplDir, e.Name()))
-			if err != nil {
-				continue
-			}
-			rel := "app/templates/" + e.Name()
-			for idx, ln := range strings.Split(string(raw), "\n") {
-				for _, m := range rawDirectiveRe.FindAllStringSubmatch(ln, -1) {
-					out = append(out, Finding{
-						File:     rel,
-						Line:     idx + 1,
-						FuncName: "<template>",
-						Category: "SECURITY_XSS_INJECTION",
-						Message:  fmt.Sprintf("zakazana dyrektywa {raw %s} — użyj {prose ...}", m[1]),
-					})
-				}
+	for _, tf := range loadAllTplFiles(rootDir) {
+		for idx, ln := range tf.lines {
+			for _, m := range rawDirectiveRe.FindAllStringSubmatch(ln, -1) {
+				out = append(out, Finding{
+					File:     tf.relPath,
+					Line:     idx + 1,
+					FuncName: "<template>",
+					Category: "SECURITY_XSS_INJECTION",
+					Message:  fmt.Sprintf("zakazana dyrektywa {raw %s} — użyj {prose ...}", m[1]),
+				})
 			}
 		}
 	}
@@ -1179,7 +1219,7 @@ func checkJSControllersAndDataContracts(rootDir string, fset *token.FileSet, goF
 
 	// 9c. Verify 1:1 mapping between Go *_view.go *Script structs (ScriptData) and JS Controller.data
 	for _, pf := range goFiles {
-		if pf.isTest || (!strings.HasPrefix(pf.relPath, "domain/views/") && !strings.HasPrefix(pf.relPath, "internal/views/")) || !strings.HasSuffix(pf.relPath, "_view.go") {
+		if pf.isTest || !strings.Contains(pf.relPath, "/views/") || !strings.HasSuffix(pf.relPath, "_view.go") {
 			continue
 		}
 		viewBase := filepath.Base(pf.relPath) // <snake>_view.go

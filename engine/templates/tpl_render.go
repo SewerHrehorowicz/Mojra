@@ -4,136 +4,20 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"os"
-	"regexp"
 	"strconv"
 	"strings"
 )
 
-var (
-	proseInlineBoldRe   = regexp.MustCompile(`\*\*([^*]+)\*\*`)
-	proseInlineItalicRe = regexp.MustCompile(`\*([^*]+)\*`)
-	proseHTMLTagStripRe = regexp.MustCompile(`<[a-zA-Z/!?][^>]*>`)
-)
+// ProseFormatter formats plain-text prose for {prose ...} template nodes.
+var ProseFormatter func(string) string
 
-// SanitizePlainText strips any HTML tags, control characters, and dangerous payloads
-// so prose text and metadata are guaranteed to be pure plain text without executable code.
-func SanitizePlainText(s string) string {
-	s = strings.ReplaceAll(s, "\x00", "")
-	s = proseHTMLTagStripRe.ReplaceAllString(s, "")
-	var b strings.Builder
-	b.Grow(len(s))
-	runes := []rune(s)
-	inDoubleBraces := 0
-	for i := 0; i < len(runes); i++ {
-		r := runes[i]
-		if r == '{' && i+1 < len(runes) && runes[i+1] == '{' {
-			inDoubleBraces++
-			b.WriteRune('{')
-			b.WriteRune('{')
-			i++
-			continue
-		}
-		if r == '}' && i+1 < len(runes) && runes[i+1] == '}' && inDoubleBraces > 0 {
-			inDoubleBraces--
-			b.WriteRune('}')
-			b.WriteRune('}')
-			i++
-			continue
-		}
-		if r == '\n' {
-			inDoubleBraces = 0
-		}
-		if r == '<' || r == '>' {
-			if inDoubleBraces > 0 {
-				b.WriteRune(r)
-				continue
-			}
-			cur := b.String()
-			lastNL := strings.LastIndexByte(cur, '\n')
-			linePrefix := cur
-			if lastNL >= 0 {
-				linePrefix = cur[lastNL+1:]
-			}
-			if isConditionalOrRuleLinePrefix(linePrefix) {
-				b.WriteRune(r)
-				continue
-			}
-			if r == '>' && b.Len() > 0 && strings.HasSuffix(cur, "-") {
-				b.WriteRune(r)
-			} else if r == '>' && strings.TrimSpace(linePrefix) == "" {
-				b.WriteRune(r)
-			}
-			continue
-		}
-		if r == '\n' || r == '\t' || r >= 0x20 {
-			b.WriteRune(r)
-		}
+func formatProseNode(rawText string) string {
+	if ProseFormatter != nil {
+		return ProseFormatter(rawText)
 	}
-	return strings.TrimSpace(b.String())
-}
-
-func isConditionalOrRuleLinePrefix(linePrefix string) bool {
-	trimmed := strings.ToLower(strings.TrimSpace(linePrefix))
-	for _, pfx := range []string{"if:", "elif:", "set:"} {
-		if strings.HasPrefix(trimmed, pfx) {
-			return true
-		}
-	}
-	return false
-}
-
-// RenderSafeProseHTML converts plain text into safe HTML paragraphs (`<p>`, `<strong>`, `<em>`, `<blockquote>`, `<hr>`)
-// after escaping all HTML special characters.
-func RenderSafeProseHTML(raw string) string {
-	lines := strings.Split(strings.ReplaceAll(raw, "\r\n", "\n"), "\n")
-	var blocks []string
-	var para []string
-
-	flushPara := func() {
-		if len(para) == 0 {
-			return
-		}
-		joined := strings.Join(para, "<br />")
-		blocks = append(blocks, "<p>"+joined+"</p>")
-		para = nil
-	}
-
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" {
-			flushPara()
-			continue
-		}
-		if trimmed == "---" || trimmed == "***" {
-			flushPara()
-			blocks = append(blocks, `<hr class="scene-divider" />`)
-			continue
-		}
-		if strings.HasPrefix(trimmed, ">") {
-			flushPara()
-			q := strings.TrimSpace(strings.TrimPrefix(trimmed, ">"))
-			blocks = append(blocks, "<blockquote>"+formatProseInlineSafe(q)+"</blockquote>")
-			continue
-		}
-		para = append(para, formatProseInlineSafe(trimmed))
-	}
-	flushPara()
-
-	if len(blocks) == 0 {
-		return "<p></p>"
-	}
-	return strings.Join(blocks, "\n")
-}
-
-func formatProseInlineSafe(s string) string {
-	clean := SanitizePlainText(s)
-	var eb bytes.Buffer
-	writeEscapedHTML(&eb, clean)
-	escaped := eb.String()
-	escaped = proseInlineBoldRe.ReplaceAllString(escaped, "<strong>$1</strong>")
-	escaped = proseInlineItalicRe.ReplaceAllString(escaped, "<em>$1</em>")
-	return escaped
+	var escapedBuf bytes.Buffer
+	writeEscapedHTML(&escapedBuf, rawText)
+	return "<p>" + escapedBuf.String() + "</p>"
 }
 
 func hasLeadingDoctype(nodes []*Node) bool {
@@ -366,6 +250,9 @@ func renderNodesToBuffer(buf *bytes.Buffer, nodes []*Node, components map[string
 				}
 			}
 			comp, ok := components[n.Tag]
+			if !ok {
+				comp, ok = components[pascalToSnake(n.Tag)+templateNameSuffix]
+			}
 			if !ok || len(comp.Nodes) == 0 || sp+1 >= len(stackBuf) {
 				continue
 			}
@@ -566,7 +453,7 @@ func evalProseNodeHTML(n *Node, ctx *RenderContext) string {
 	} else {
 		plain = evaluateValueExpr(expr, ctx)
 	}
-	return RenderSafeProseHTML(plain)
+	return formatProseNode(plain)
 }
 
 func beginElementNode(buf *bytes.Buffer, n *Node, ctx *RenderContext, indent int) (renderStackFrame, bool) {
@@ -1613,22 +1500,6 @@ func valToString(v any) string {
 	default:
 		return fmt.Sprintf("%v", v)
 	}
-}
-
-// TranspileDirectoryToHTML reads all .tpl files in templatesDir, enforces the no-inline-CSS/JS rule,
-// resolves @component includes, and writes the resulting plain HTML file to indexOutPath.
-func TranspileDirectoryToHTML(templatesDir, indexOutPath string) error {
-	templates, err := LoadTemplatesFromDir(templatesDir, nil)
-	if err != nil {
-		return err
-	}
-	idxTpl, ok := templates["index"]
-	if !ok {
-		return fmt.Errorf("missing index.tpl in %s", templatesDir)
-	}
-
-	htmlStr := TranspileStaticHTML(idxTpl, templates)
-	return os.WriteFile(indexOutPath, []byte(htmlStr), 0644)
 }
 
 func hasHTMLSpecialChars(s string) bool {

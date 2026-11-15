@@ -8,6 +8,19 @@ import (
 	"testing"
 )
 
+func TranspileDirectoryToHTML(templatesDir, indexOutPath string) error {
+	templates, err := LoadTemplatesFromDir(templatesDir, nil)
+	if err != nil {
+		return err
+	}
+	idxTpl, ok := templates["index"]
+	if !ok {
+		return os.ErrNotExist
+	}
+	htmlStr := TranspileStaticHTML(idxTpl, templates)
+	return os.WriteFile(indexOutPath, []byte(htmlStr), 0644)
+}
+
 func TestTranspileDirectoryToPlainHTML(t *testing.T) {
 	dir := t.TempDir()
 	templatesDir := filepath.Join(dir, "templates")

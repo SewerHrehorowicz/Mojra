@@ -212,7 +212,7 @@ if [ "${1:-}" = "chaos" ] || [ "${1:-}" = "--chaos" ]; then
         case "$1" in
             -h|--help|help)
                 cat <<'EOF'
-Mojra — Inżynieria Chaosu UI, Crawler DOM & Fuzzer Protokołu WFP
+Mojra — Inżynieria Chaosu UI, Crawler DOM & Fuzzer Protokołu FDP
 
 Użycie / Usage:
   ./build.sh --chaos [opcje]
@@ -227,8 +227,8 @@ Opcje (Options):
 Co testuje przebieg:
   1. Pełna piaskownica bezpieczeństwa (t.TempDir(), ST_NO_WINDOW=1, strażnik AppData i repozytorium).
   2. Crawler DOM w Node VM + 100% pokrycia wszystkich akcji serwera (actionSpecs).
-  3. 4 wektory chaosu: DOM Monkey + Stale-DOM Replay, Mutator WFP, Wyścigi (-race), Fuzzing Mediów/ZIP.
-  4. Wyrocznie po każdym kroku: widoczność #topbar, kontrakt X-Target, unikalność ID scen i spójność .playtxt/.sav.
+  3. 4 wektory chaosu: DOM Monkey + Stale-DOM Replay, Mutator FDP, Wyścigi (-race), Fuzzing Mediów/ZIP.
+  4. Wyrocznie po każdym kroku: widoczność #topbar, kontrakt ramek FDP, unikalność ID scen i spójność .playtxt/.sav.
 
 Przykłady (Examples):
   ./build.sh --chaos                          # Szybki obchód 100% UI + 300 kroków chaosu + raport
@@ -278,9 +278,9 @@ EOF
 
     echo "[CHAOS] Uruchamianie inżynierii chaosu UI (seed=$CHAOS_SEED, steps=$CHAOS_STEPS)..."
     if [ "$CHAOS_RACE" -eq 1 ]; then
-        go test -race -v ./internal/gui -run "TestAuthoringSceneIDGenerationAndReroutingInvariants|TestUIChaosAndStaticCrawler" -args -chaos-seed="$CHAOS_SEED" -chaos-steps="$CHAOS_STEPS"
+        go test -race -v ./domain -run "TestAuthoringSceneIDGenerationAndReroutingInvariants|TestUIChaosAndStaticCrawler" -args -chaos-seed="$CHAOS_SEED" -chaos-steps="$CHAOS_STEPS"
     else
-        go test -v ./internal/gui -run "TestAuthoringSceneIDGenerationAndReroutingInvariants|TestUIChaosAndStaticCrawler" -args -chaos-seed="$CHAOS_SEED" -chaos-steps="$CHAOS_STEPS"
+        go test -v ./domain -run "TestAuthoringSceneIDGenerationAndReroutingInvariants|TestUIChaosAndStaticCrawler" -args -chaos-seed="$CHAOS_SEED" -chaos-steps="$CHAOS_STEPS"
     fi
     echo "[CHAOS] Raport zapisany w: $CHAOS_LOG"
     exit 0

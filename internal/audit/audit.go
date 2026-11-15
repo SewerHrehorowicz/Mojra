@@ -104,7 +104,7 @@ func loadWorkspaceIndex(rootDir string) (*workspaceIndex, error) {
 		fset:    token.NewFileSet(),
 	}
 
-	walkDirs := []string{"internal", "cmd", "app", "www", "apps", "common"}
+	walkDirs := []string{"engine", "domain", "internal", "cmd", "app", "www"}
 	for _, sub := range walkDirs {
 		base := filepath.Join(rootDir, sub)
 		if _, err := os.Stat(base); err != nil {
@@ -200,6 +200,7 @@ func Run(rootDir string) ([]Finding, error) {
 	findings = append(findings, checkASTDuplicatesAndAntiPatterns(fset, goFiles)...)
 	findings = append(findings, checkSecurityLoopsAndReliability(rootDir, fset, goFiles)...)
 	findings = append(findings, checkTSSSelectorLists(rootDir)...)
+	findings = append(findings, checkRetiredWFPProtocol(idx)...)
 
 	for i := range findings {
 		normalizeFinding(&findings[i])
@@ -508,8 +509,8 @@ func checkDeadGoFuncsAndStructs(fset *token.FileSet, files []*parsedGoFile) []Fi
 
 // 2. GHOST_CALL & DEAD_CODE in JS
 func checkJSGhostAndUnusedFuncs(rootDir string) []Finding {
-	jsDir := filepath.Join(rootDir, "app", "js")
-	if _, err := os.Stat(jsDir); err != nil {
+	jsFiles := loadAllJSFiles(rootDir)
+	if len(jsFiles) == 0 {
 		return nil
 	}
 
@@ -528,42 +529,23 @@ func checkJSGhostAndUnusedFuncs(rootDir string) []Finding {
 	funcDeclRe := regexp.MustCompile(`^\s*(?:async\s+)?function\s+([A-Za-z0-9_]+)\s*\(`)
 	typeofFnRe := regexp.MustCompile(`typeof\s+([A-Za-z0-9_]+)\s*===\s*"function"`)
 
-	var readAuditJSDir func(dir, relPrefix string)
-	readAuditJSDir = func(dir, relPrefix string) {
-		dirEntries, err := os.ReadDir(dir)
-		if err != nil {
-			return
-		}
-		for _, e := range dirEntries {
-			if e.IsDir() {
-				readAuditJSDir(filepath.Join(dir, e.Name()), relPrefix+e.Name()+"/")
-				continue
-			}
-			if !strings.HasSuffix(e.Name(), ".js") {
-				continue
-			}
-			fullPath := filepath.Join(dir, e.Name())
-			raw, err := os.ReadFile(fullPath)
-			if err != nil {
-				continue
-			}
-			rel := relPrefix + e.Name()
-			src := string(raw)
-			lines := strings.Split(src, "\n")
-			allJSFiles = append(allJSFiles, struct {
-				rel   string
-				lines []string
-				full  string
-			}{rel: rel, lines: lines, full: src})
-
-			for idx, ln := range lines {
-				if m := funcDeclRe.FindStringSubmatch(ln); m != nil {
-					definedFuncs[m[1]] = jsFuncDef{file: rel, line: idx + 1, name: m[1]}
+	for _, jf := range jsFiles {
+		allJSFiles = append(allJSFiles, struct {
+			rel   string
+			lines []string
+			full  string
+		}{rel: jf.rel, lines: jf.lines, full: jf.src})
+		for idx, ln := range jf.lines {
+			if m := funcDeclRe.FindStringSubmatch(ln); m != nil {
+				fnName := m[1]
+				definedFuncs[fnName] = jsFuncDef{
+					file: jf.rel,
+					line: idx + 1,
+					name: fnName,
 				}
 			}
 		}
 	}
-	readAuditJSDir(jsDir, "app/js/")
 
 	var out []Finding
 	browserGlobals := map[string]bool{
@@ -630,37 +612,24 @@ func checkJSGhostAndUnusedFuncs(rootDir string) []Finding {
 // 3. UNUSED_TPL_VAR & UNUSED_ACTION (Go <-> .tpl / .js contract)
 func checkUnusedActionsAndTplVars(rootDir string, fset *token.FileSet, goFiles []*parsedGoFile) []Finding {
 	var allTplContent strings.Builder
-	tplDir := filepath.Join(rootDir, "app", "templates")
-	if entries, err := os.ReadDir(tplDir); err == nil {
-		for _, e := range entries {
-			if !e.IsDir() && strings.HasSuffix(e.Name(), ".tpl") {
-				if raw, err := os.ReadFile(filepath.Join(tplDir, e.Name())); err == nil {
-					allTplContent.Write(raw)
-					allTplContent.WriteByte('\n')
-				}
-			}
-		}
+	for _, tf := range loadAllTplFiles(rootDir) {
+		allTplContent.WriteString(tf.src)
+		allTplContent.WriteByte('\n')
 	}
 	tplText := allTplContent.String()
 
 	var allJSContent strings.Builder
-	jsDir := filepath.Join(rootDir, "app", "js")
-	_ = filepath.WalkDir(jsDir, func(path string, d os.DirEntry, err error) error {
-		if err == nil && !d.IsDir() && strings.HasSuffix(d.Name(), ".js") {
-			if raw, err := os.ReadFile(path); err == nil {
-				allJSContent.Write(raw)
-				allJSContent.WriteByte('\n')
-			}
-		}
-		return nil
-	})
+	for _, jf := range loadAllJSFiles(rootDir) {
+		allJSContent.WriteString(jf.src)
+		allJSContent.WriteByte('\n')
+	}
 	jsText := allJSContent.String()
 
 	var out []Finding
 
-	// Check registered actions in domain/actions/*_actions.go vs .tpl and .js usage
+	// Check registered actions in */actions/*_actions.go vs .tpl and .js usage
 	for _, pf := range goFiles {
-		if !strings.HasPrefix(pf.relPath, "domain/actions/") && !strings.HasPrefix(pf.relPath, "internal/actions/") {
+		if !strings.Contains(pf.relPath, "/actions/") && !strings.HasPrefix(pf.relPath, "domain/actions/") && !strings.HasPrefix(pf.relPath, "internal/actions/") {
 			continue
 		}
 		ast.Inspect(pf.file, func(n ast.Node) bool {
@@ -723,10 +692,10 @@ func checkUnusedActionsAndTplVars(rootDir string, fset *token.FileSet, goFiles [
 		})
 	}
 
-	// Check vars["key"] in domain/views/*_view.go vs .tpl usage
+	// Check vars["key"] in */views/*_view.go vs .tpl usage
 	varsIndexRe := regexp.MustCompile(`\bvars\["([A-Za-z0-9_]+)"\]\s*=`)
 	for _, pf := range goFiles {
-		if pf.isTest || (!strings.HasPrefix(pf.relPath, "domain/views/") && !strings.HasPrefix(pf.relPath, "internal/views/")) || !strings.HasSuffix(pf.relPath, "_view.go") {
+		if pf.isTest || (!strings.Contains(pf.relPath, "/views/") && !strings.HasPrefix(pf.relPath, "domain/views/") && !strings.HasPrefix(pf.relPath, "internal/views/")) || !strings.HasSuffix(pf.relPath, "_view.go") {
 			continue
 		}
 		lines := strings.Split(string(pf.src), "\n")
@@ -839,7 +808,7 @@ func checkHardcodedGeometryAndDOM(fset *token.FileSet, goFiles []*parsedGoFile) 
 					Category: "DOM_ID_IN_GO",
 					Message:  fmt.Sprintf("selektor DOM %q zaszyty bezpośrednio w kodzie Go", val),
 				})
-			} else if htmlTagRe.MatchString(val) && !strings.HasPrefix(pf.relPath, "engine/templates/") && !strings.HasPrefix(pf.relPath, "internal/tpl/") && pf.relPath != "domain/book/sanitize.go" && pf.relPath != "internal/book/sanitize.go" {
+			} else if htmlTagRe.MatchString(val) && !strings.HasPrefix(pf.relPath, "engine/templates/") && !strings.HasPrefix(pf.relPath, "internal/tpl/") && pf.relPath != "domain/book/sanitize.go" && pf.relPath != "domain/book/actions/sanitize.go" && pf.relPath != "domain/book/model/book.go" && pf.relPath != "internal/book/sanitize.go" {
 				out = append(out, Finding{
 					File:     pf.relPath,
 					Line:     pos.Line,
@@ -883,8 +852,8 @@ func checkSuspiciousStrings(fset *token.FileSet, goFiles []*parsedGoFile) []Find
 				}
 			}
 		}
-		isViewsPkg := strings.HasPrefix(pf.relPath, "domain/views/") || strings.HasPrefix(pf.relPath, "internal/views/")
-		if isViewsPkg || pf.relPath == "domain/book/variables_validate.go" || pf.relPath == "internal/book/variables_validate.go" {
+		isViewsPkg := strings.Contains(pf.relPath, "/views/") || strings.HasPrefix(pf.relPath, "domain/views/") || strings.HasPrefix(pf.relPath, "internal/views/")
+		if isViewsPkg || pf.relPath == "domain/book/variables_validate.go" || pf.relPath == "domain/book/actions/variables_validate.go" || pf.relPath == "domain/book/actions/conditions.go" || pf.relPath == "internal/book/variables_validate.go" {
 			for _, decl := range pf.file.Decls {
 				if fn, ok := decl.(*ast.FuncDecl); ok && fn.Body != nil && fn.Name != nil {
 					out = collectGoBodyMagicStrings(fset, pf.relPath, funcSymbolName(fn), fn.Body, out)
@@ -897,7 +866,7 @@ func checkSuspiciousStrings(fset *token.FileSet, goFiles []*parsedGoFile) []Find
 			}
 			if sel, ok := n.(*ast.SelectorExpr); ok {
 				if pkgIdent, ok := sel.X.(*ast.Ident); ok && (pkgIdent.Name == "i18n" || pkgIdent.Name == "engine") && (sel.Sel.Name == "LangEN" || sel.Sel.Name == "LangPL") {
-					if !strings.HasPrefix(pf.relPath, "engine/") && !strings.HasPrefix(pf.relPath, "domain/i18n/") && !strings.HasPrefix(pf.relPath, "internal/i18n/") && pf.relPath != "domain/book/screenplay.go" && pf.relPath != "internal/book/screenplay.go" {
+					if !strings.HasPrefix(pf.relPath, "engine/") && !strings.HasPrefix(pf.relPath, "domain/i18n/") && !strings.HasPrefix(pf.relPath, "internal/i18n/") && pf.relPath != "domain/book/screenplay.go" && pf.relPath != "domain/book/actions/exporters.go" && pf.relPath != "internal/book/screenplay.go" && !strings.Contains(pf.relPath, "/views/") {
 						pos := fset.Position(sel.Pos())
 						out = append(out, Finding{
 							File:     pf.relPath,
@@ -1188,23 +1157,58 @@ func truncateStr(s string, maxLen int) string {
 // 9. TPL_ARCH: Forbid > 4 comma-separated selectors in a single .tss / .css rule
 func checkTSSSelectorLists(rootDir string) []Finding {
 	var out []Finding
-	for _, dir := range []string{filepath.Join(rootDir, "app", "styles"), filepath.Join(rootDir, "www")} {
-		entries, err := os.ReadDir(dir)
-		if err != nil {
-			continue
-		}
-		for _, e := range entries {
-			if e.IsDir() || (!strings.HasSuffix(e.Name(), ".tss") && !strings.HasSuffix(e.Name(), ".css")) {
-				continue
+	for _, cf := range loadAllCSSFiles(rootDir) {
+		out = append(out, auditTSSSourceSelectorLists(cf.relPath, cf.src)...)
+	}
+	return out
+}
+
+var (
+	retiredWFPTokenRe         = regexp.MustCompile(`text/x-wfp|\bwfp\.go\b|\bwfp\.js\b|\bEncodeWFP|\bDecodeWFP|\bX-Target\b|\bX-Data\b|app/js/core\.js`)
+	nonCanonicalPlaytxtBoolRe = regexp.MustCompile(`"(?:tak|nie|yes|no|on|off|neutralny)"`)
+)
+
+func checkRetiredWFPProtocol(idx *workspaceIndex) []Finding {
+	var out []Finding
+	if idx == nil {
+		return nil
+	}
+	scanLines := func(relPath string, lines []string) {
+		for lineIdx, ln := range lines {
+			if m := retiredWFPTokenRe.FindString(ln); m != "" {
+				out = append(out, Finding{
+					File:     relPath,
+					Line:     lineIdx + 1,
+					FuncName: "<file>",
+					Category: "RETIRED_WFP_PROTOCOL",
+					Severity: "ERROR",
+					Message:  fmt.Sprintf("wycofany symbol/protokół WFP (%q) jest trwale zabroniony — używaj wyłącznie FDP", m),
+				})
 			}
-			fullPath := filepath.Join(dir, e.Name())
-			raw, err := os.ReadFile(fullPath)
-			if err != nil {
-				continue
-			}
-			rel, _ := filepath.Rel(rootDir, fullPath)
-			out = append(out, auditTSSSourceSelectorLists(filepath.ToSlash(rel), string(raw))...)
 		}
+	}
+	for _, gf := range idx.goFiles {
+		scanLines(gf.relPath, gf.lines)
+		if !gf.isTest && strings.HasSuffix(gf.relPath, "/conditions.go") {
+			for lineIdx, ln := range gf.lines {
+				if m := nonCanonicalPlaytxtBoolRe.FindString(ln); m != "" {
+					out = append(out, Finding{
+						File:     gf.relPath,
+						Line:     lineIdx + 1,
+						FuncName: "<file>",
+						Category: "PLAYTXT_SYNTAX_VIOLATION",
+						Severity: "ERROR",
+						Message:  fmt.Sprintf("niekanoniczny literał %s w parserze warunków .playtxt — dozwolone wyłącznie stałe TokenTrue/TokenFalse", m),
+					})
+				}
+			}
+		}
+	}
+	for _, jf := range idx.jsFiles {
+		scanLines(jf.relPath, jf.lines)
+	}
+	for _, tf := range idx.tplFiles {
+		scanLines(tf.relPath, tf.lines)
 	}
 	return out
 }

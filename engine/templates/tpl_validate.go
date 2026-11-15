@@ -180,7 +180,7 @@ func validateNoInlineCSSOrJS(n *Node) error {
 		}
 		if strings.HasPrefix(keyLower, "on") {
 			return fmt.Errorf(
-				"tpl compile error in %s.tpl:%d: inline JS event handler [%s=%q] is strictly forbidden in .tpl files; bind events in app/js/core.js and app/js/events.js instead",
+				"tpl compile error in %s.tpl:%d: inline JS event handler [%s=%q] is strictly forbidden in .tpl files; bind events via bindings() in controllers/<name>_controller.js instead",
 				n.File, n.Line, a.Key, rawVal,
 			)
 		}
@@ -278,7 +278,11 @@ func resolveExternalSVGs(templatesDir string, embeddedFS fs.FS, rootNodes []*Nod
 					err = os.ErrNotExist
 				}
 				if err != nil && embeddedFS != nil {
-					if embRaw, embErr := fs.ReadFile(embeddedFS, "app/"+strings.TrimPrefix(src, "/")); embErr == nil {
+					cleanSrc := strings.TrimPrefix(src, "/")
+					if embRaw, embErr := fs.ReadFile(embeddedFS, cleanSrc); embErr == nil {
+						raw = embRaw
+						err = nil
+					} else if embRaw, embErr := fs.ReadFile(embeddedFS, "app/"+cleanSrc); embErr == nil {
 						raw = embRaw
 						err = nil
 					}

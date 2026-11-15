@@ -21,11 +21,11 @@ import (
 	"testing"
 	"time"
 
-	"mojra"
-	"mojra/domain/actions"
-	"mojra/domain/book"
-	"mojra/domain/state"
+	book "mojra/domain/book/actions"
+	"mojra/domain/shell/studio_app/state"
 	"mojra/engine"
+	"mojra/engine/templates"
+	"mojra/engine/transport"
 )
 
 var (
@@ -99,7 +99,7 @@ func (l *ChaosTraceLogger) LogStep(step int, view, modal, elDesc, reqLine string
 		modal = "none"
 	}
 	if elDesc == "" {
-		elDesc = "wfp-direct"
+		elDesc = "fdp-direct"
 	}
 	cleanReq := strings.ReplaceAll(strings.ReplaceAll(reqLine, "\r", "\\r"), "\n", " ")
 	if len(cleanReq) > 220 {
@@ -122,7 +122,7 @@ func (l *ChaosTraceLogger) Flush(failed bool, failReason string) {
 	if failed {
 		statusStr = "FAIL"
 	}
-	fmt.Fprintf(&l.buf, "---\nsummary:\n  status: %s\n  action_specs_coverage: %d/%d (100.0%%)\n  total_steps_logged: %d\n  elapsed_ms: %.2f\n", statusStr, len(actions.Handlers), len(actions.Handlers), l.totalLogged, elapsedMs)
+	fmt.Fprintf(&l.buf, "---\nsummary:\n  status: %s\n  action_specs_coverage: %d/%d (100.0%%)\n  total_steps_logged: %d\n  elapsed_ms: %.2f\n", statusStr, len(Handlers), len(Handlers), l.totalLogged, elapsedMs)
 	if failed {
 		fmt.Fprintf(&l.buf, "  failure: %s\n", strings.ReplaceAll(failReason, "\n", " "))
 	}
@@ -215,11 +215,11 @@ func newIsolatedChaosServer(t *testing.T, seed int64, steps int) *chaosSandbox {
 	}))
 	t.Cleanup(mediaSrv.Close)
 
-	srv := NewServerWithOptions(rootDir, mojra.AppFS, true)
+	srv := NewServerWithOptions(rootDir, testAppFS, true)
 	srv.State.Config.SavesDir = savesDir
 	srv.State.Settings.NewBookDir = projectsDir
 	srv.State.Settings.ExportDir = exportsDir
-	_ = srv.State.SaveSettings()
+	srv.State.SaveSettings()
 
 	ts := httptest.NewServer(srv.Handler())
 	t.Cleanup(ts.Close)
@@ -320,7 +320,7 @@ func verifySandboxHostIsolation(t *testing.T, repoRoot string, preUserAppData ma
 	}
 }
 
-func postChaosWFP(t *testing.T, sb *chaosSandbox, step int, elDesc string, vals url.Values, rawBodyOverride []byte, headers map[string]string) (int, http.Header, string) {
+func postChaosFDP(t *testing.T, sb *chaosSandbox, step int, elDesc string, vals url.Values, rawBodyOverride []byte, headers map[string]string) (int, http.Header, string) {
 	t.Helper()
 	start := time.Now()
 	var payload []byte
@@ -345,7 +345,7 @@ func postChaosWFP(t *testing.T, sb *chaosSandbox, step int, elDesc string, vals 
 		sb.Logger.Flush(true, err.Error())
 		t.Fatalf("step %d: NewRequest failed: %v", step, err)
 	}
-	req.Header.Set("Content-Type", engine.ContentTypeFDP)
+	req.Header.Set("Content-Type", transport.ContentTypeFDP)
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
@@ -362,7 +362,7 @@ func postChaosWFP(t *testing.T, sb *chaosSandbox, step int, elDesc string, vals 
 	dur := time.Since(start)
 
 	sb.Server.State.Mu.Lock()
-	view := state.ActiveWorkspaceView(sb.Server.State).String()
+	view := string(state.ActiveWorkspaceView(sb.Server.State))
 	modal := activeModalLabelLocked(sb.Server)
 	sb.Server.State.Mu.Unlock()
 
@@ -661,7 +661,7 @@ func TestAuthoringSceneIDGenerationAndReroutingInvariants(t *testing.T) {
 		for i := 0; i+1 < len(kv); i += 2 {
 			vals.Set(kv[i], kv[i+1])
 		}
-		status, _, bodyStr := postChaosWFP(t, sb, step, el, vals, nil, nil)
+		status, _, bodyStr := postChaosFDP(t, sb, step, el, vals, nil, nil)
 		step++
 		if status != http.StatusOK && status != http.StatusNoContent {
 			t.Fatalf("step %d: expected 200/204 for %v, got %d", step-1, kv, status)
@@ -818,17 +818,14 @@ func TestAuthoringSceneIDGenerationAndReroutingInvariants(t *testing.T) {
 
 // TestUIChaosAndStaticCrawler executes the 6-stage Chaos Engineering & Static UI Crawler plan:
 // 1. Isolated Sandbox + FS Guard
-// 2. Deterministic Crawler of all UI interactions & 100% actions.Handlers coverage
-// 3. 4 Chaos Vectors (DOM Monkey + Stale DOM Replay, WFP Mutator, -race Concurrency Chaos, Media/Archive Fuzzing)
+// 2. Deterministic Crawler of all UI interactions & 100% Handlers coverage
+// 3. 4 Chaos Vectors (DOM Monkey + Stale DOM Replay, FDP Mutator, -race Concurrency Chaos, Media/Archive Fuzzing)
 // 4. Per-step Invariant Oracles
 // 5. Plain-text Trace Log (ui-chaos-trace.log)
 func TestUIChaosAndStaticCrawler(t *testing.T) {
 	seed, totalSteps := resolveChaosSeedAndSteps()
 
-	repoRoot, err := filepath.Abs("..")
-	if err != nil {
-		t.Fatalf("resolve repoRoot: %v", err)
-	}
+	repoRoot := repoRootDir()
 	var realUserAppDataDir string
 	if cfgDir, cErr := os.UserConfigDir(); cErr == nil && strings.TrimSpace(cfgDir) != "" {
 		realUserAppDataDir = filepath.Join(cfgDir, "Mojra")
@@ -841,7 +838,7 @@ func TestUIChaosAndStaticCrawler(t *testing.T) {
 		verifySandboxHostIsolation(t, repoRoot, preUserAppDataSnap, realUserAppDataDir)
 	}()
 
-	executedActions := make(map[string]int, len(actions.Handlers))
+	executedActions := make(map[string]int, len(Handlers))
 	stepCounter := 0
 	var staleQueue []url.Values
 
@@ -862,7 +859,7 @@ func TestUIChaosAndStaticCrawler(t *testing.T) {
 		if len(staleQueue) > 32 {
 			staleQueue = staleQueue[1:]
 		}
-		return postChaosWFP(t, sb, stepCounter, elDesc, vals, nil, nil)
+		return postChaosFDP(t, sb, stepCounter, elDesc, vals, nil, nil)
 	}
 
 	// =========================================================================
@@ -878,15 +875,15 @@ func TestUIChaosAndStaticCrawler(t *testing.T) {
 	crawlAllActionSpecsDeterministically(t, sb, runAction)
 
 	var missingActions []string
-	for actName := range actions.Handlers {
+	for actName := range Handlers {
 		if executedActions[actName] == 0 {
 			missingActions = append(missingActions, actName)
 		}
 	}
 	sort.Strings(missingActions)
 	if len(missingActions) > 0 {
-		sb.Logger.Flush(true, fmt.Sprintf("missing actions.Handlers coverage: %v", missingActions))
-		t.Fatalf("static crawler missed %d/%d actions.Handlers: %v", len(missingActions), len(actions.Handlers), missingActions)
+		sb.Logger.Flush(true, fmt.Sprintf("missing Handlers coverage: %v", missingActions))
+		t.Fatalf("static crawler missed %d/%d Handlers: %v", len(missingActions), len(Handlers), missingActions)
 	}
 
 	// =========================================================================
@@ -916,7 +913,7 @@ func TestUIChaosAndStaticCrawler(t *testing.T) {
 				staleVals := staleQueue[staleIdx]
 				stepCounter++
 				executedActions[staleVals.Get("action")]++
-				postChaosWFP(t, sb, stepCounter, "stale-dom-replay", staleVals, nil, nil)
+				postChaosFDP(t, sb, stepCounter, "stale-dom-replay", staleVals, nil, nil)
 			} else {
 				stepCounter++
 				vals, desc := generateDOMMonkeyAction(rng, sb, stepCounter)
@@ -925,24 +922,24 @@ func TestUIChaosAndStaticCrawler(t *testing.T) {
 				if len(staleQueue) > 8 {
 					staleQueue = staleQueue[1:]
 				}
-				postChaosWFP(t, sb, stepCounter, desc, vals, nil, nil)
+				postChaosFDP(t, sb, stepCounter, desc, vals, nil, nil)
 			}
 
 		case vector < 75:
-			// Vector 2: WFP Protocol & Syntax Injection Mutator (30% of steps)
+			// Vector 2: FDP Protocol & Syntax Injection Mutator (30% of steps)
 			stepCounter++
-			vals, rawOverride, hdrs, desc := generateMutatedWFPRequest(rng, sb, stepCounter)
+			vals, rawOverride, hdrs, desc := generateMutatedFDPRequest(rng, sb, stepCounter)
 			if vals.Get("action") != "" {
 				executedActions[vals.Get("action")]++
 			}
-			postChaosWFP(t, sb, stepCounter, desc, vals, rawOverride, hdrs)
+			postChaosFDP(t, sb, stepCounter, desc, vals, rawOverride, hdrs)
 
 		case vector < 90:
 			// Vector 4: Media & Archive Magic-Byte Validation Fuzzing (15% of steps)
 			stepCounter++
 			vals, desc := generateMediaFuzzAction(rng, sb, fuzzMediaDir)
 			executedActions[vals.Get("action")]++
-			postChaosWFP(t, sb, stepCounter, desc, vals, nil, nil)
+			postChaosFDP(t, sb, stepCounter, desc, vals, nil, nil)
 
 		default:
 			// Vector 3: Concurrency Chaos Burst (10% of steps, N=8 goroutines)
@@ -955,9 +952,9 @@ func TestUIChaosAndStaticCrawler(t *testing.T) {
 	for stepCounter%12 != 0 {
 		stepCounter++
 	}
-	postChaosWFP(t, sb, stepCounter, "final-oracle-verify", url.Values{"action": {"SwitchView"}, "view": {"editor"}}, nil, nil)
+	postChaosFDP(t, sb, stepCounter, "final-oracle-verify", url.Values{"action": {"SwitchView"}, "view": {"editor"}}, nil, nil)
 	verifyPlaytxtAndPlaybookFormatIntegrity(t, sb)
-	t.Logf("Chaos report: seed=%d, actions.Handlers=%d/%d (100%%), totalSteps=%d, log=%s", seed, len(actions.Handlers), len(actions.Handlers), stepCounter, sb.Logger.filePath)
+	t.Logf("Chaos report: seed=%d, Handlers=%d/%d (100%%), totalSteps=%d, log=%s", seed, len(Handlers), len(Handlers), stepCounter, sb.Logger.filePath)
 }
 
 func crawlAllActionSpecsDeterministically(t *testing.T, sb *chaosSandbox, runAction func(elDesc string, kv ...string) (int, http.Header, string)) {
@@ -1428,19 +1425,19 @@ func generateDOMMonkeyAction(rng *rand.Rand, sb *chaosSandbox, step int) (url.Va
 	}
 }
 
-func generateMutatedWFPRequest(rng *rand.Rand, sb *chaosSandbox, step int) (url.Values, []byte, map[string]string, string) {
+func generateMutatedFDPRequest(rng *rand.Rand, sb *chaosSandbox, step int) (url.Values, []byte, map[string]string, string) {
 	vals := url.Values{}
 	headers := make(map[string]string)
 
 	switch rng.Intn(10) {
 	case 0:
-		// Malformed / truncated / binary WFP wire payload
+		// Malformed / truncated / binary FDP wire payload
 		raw := []byte(fmt.Sprintf("action=SaveScene\nscene_id=poczatek\n_body=text\n\n\xff\xfe\xfd\x00BrokenUTF8\n---\nscene: injected_%d\n", step))
-		return vals, raw, headers, "wfp-mutator:invalid-utf8-body"
+		return vals, raw, headers, "fdp-mutator:invalid-utf8-body"
 	case 1:
 		// Missing \n\n separator with _body header and duplicate keys
 		raw := []byte("action=SaveScene\naction=DeleteScene\nscene_id=poczatek\n_body=text\n BezSeparatora")
-		return vals, raw, headers, "wfp-mutator:missing-body-sep"
+		return vals, raw, headers, "fdp-mutator:missing-body-sep"
 	case 2:
 		// Extreme numeric values in SaveEditorState
 		vals.Set("action", "SaveEditorState")
@@ -1448,7 +1445,7 @@ func generateMutatedWFPRequest(rng *rand.Rand, sb *chaosSandbox, step int) (url.
 		vals.Set("pan_y", "-99999999999999999999")
 		vals.Set("zoom", "1e308")
 		vals.Set("positions", "poczatek:999999999,-999999999;bad_entry;x:NaN,Inf")
-		return vals, nil, headers, "wfp-mutator:extreme-numbers"
+		return vals, nil, headers, "fdp-mutator:extreme-numbers"
 	case 3:
 		// Path traversal & null bytes in scene/book/media fields
 		vals.Set("action", "SaveScene")
@@ -1458,7 +1455,7 @@ func generateMutatedWFPRequest(rng *rand.Rand, sb *chaosSandbox, step int) (url.
 		vals.Set("explicit_image", "../../secret.png")
 		vals.Set("explicit_voice", "../../../secret.flac")
 		vals.Set("source_file", "../../book.playtxt")
-		return vals, nil, headers, "wfp-mutator:path-traversal"
+		return vals, nil, headers, "fdp-mutator:path-traversal"
 	case 4:
 		// .playtxt syntax & HTML/template injection in scene fields
 		vals.Set("action", "SaveScene")
@@ -1474,20 +1471,20 @@ func generateMutatedWFPRequest(rng *rand.Rand, sb *chaosSandbox, step int) (url.
 		vals.Set("choice_effects_0", "zloto++")
 		vals.Set("choice_label_1", "<img src=x onerror=alert(1)>")
 		vals.Set("choice_target_1", "END")
-		return vals, nil, headers, "wfp-mutator:playtxt-html-injection"
+		return vals, nil, headers, "fdp-mutator:playtxt-html-injection"
 	case 5:
 		// Cross-Origin / CSRF attack simulation (must return 403 Forbidden)
 		vals.Set("action", "DeleteScene")
 		vals.Set("scene", "poczatek")
 		headers["Sec-Fetch-Site"] = "cross-site"
 		headers["Origin"] = "https://evil.example.com"
-		return vals, nil, headers, "wfp-mutator:csrf-cross-origin"
+		return vals, nil, headers, "fdp-mutator:csrf-cross-origin"
 	case 6:
 		// Multi-KB prose payload stress test
 		vals.Set("action", "AutoSaveScene")
 		vals.Set("scene_id", "poczatek")
 		vals.Set("text", strings.Repeat("Wiersz testu obciążeniowego inżynierii chaosu. ", 80))
-		return vals, nil, headers, "wfp-mutator:large-prose"
+		return vals, nil, headers, "fdp-mutator:large-prose"
 	case 7:
 		// Extreme audio trim & time parameters
 		vals.Set("action", "TrimSceneVoice")
@@ -1497,17 +1494,17 @@ func generateMutatedWFPRequest(rng *rand.Rand, sb *chaosSandbox, step int) (url.
 		vals.Set("sample_rate", "-1")
 		vals.Set("pcm_b64", "!!!not_valid_base64!!!")
 		vals.Set("destructive", "true")
-		return vals, nil, headers, "wfp-mutator:voice-trim-corrupt"
+		return vals, nil, headers, "fdp-mutator:voice-trim-corrupt"
 	case 8:
 		// Path traversal in disk book/export actions
 		vals.Set("action", "AddBookFromDisk")
 		vals.Set("path", filepath.Join(sb.RootDir, "..", "..", ".git"))
-		return vals, nil, headers, "wfp-mutator:dotgit-path-guard"
+		return vals, nil, headers, "fdp-mutator:dotgit-path-guard"
 	default:
 		// Unknown action name with arbitrary parameters
 		vals.Set("action", fmt.Sprintf("NonExistentChaosAction_%d", rng.Intn(1000)))
 		vals.Set("scene", "none")
-		return vals, nil, headers, "wfp-mutator:unknown-action"
+		return vals, nil, headers, "fdp-mutator:unknown-action"
 	}
 }
 
@@ -1623,7 +1620,7 @@ func runConcurrentChaosBurst(t *testing.T, sb *chaosSandbox, baseStep int, burst
 				errs <- err.Error()
 				return
 			}
-			req.Header.Set("Content-Type", engine.ContentTypeFDP)
+			req.Header.Set("Content-Type", transport.ContentTypeFDP)
 			resp, err := sb.HTTPServer.Client().Do(req)
 			if err != nil {
 				errs <- err.Error()
@@ -1645,7 +1642,7 @@ func runConcurrentChaosBurst(t *testing.T, sb *chaosSandbox, baseStep int, burst
 
 	// Verify invariants after concurrent burst settles
 	req, _ := http.NewRequest(http.MethodPost, sb.HTTPServer.URL+"/api/action", bytes.NewReader(encodeFDPForm(url.Values{"action": {"SwitchView"}, "view": {"editor"}})))
-	req.Header.Set("Content-Type", engine.ContentTypeFDP)
+	req.Header.Set("Content-Type", transport.ContentTypeFDP)
 	if resp, err := sb.HTTPServer.Client().Do(req); err == nil {
 		b, _ := io.ReadAll(resp.Body)
 		_ = resp.Body.Close()
@@ -1659,10 +1656,10 @@ func runConcurrentChaosBurst(t *testing.T, sb *chaosSandbox, baseStep int, burst
 // .custom-select dropdowns, and #studio-canvas gestures, and checking topbar invariants after every click.
 func runNodeVMDOMCrawler(t *testing.T, nodeBin string, sb *chaosSandbox, seed int64, executedActions map[string]int) {
 	t.Helper()
-	appDir := filepath.Clean(filepath.Join("..", "app"))
-	devJS, err := engine.BundleFilesToString(engine.JSModuleFiles(appDir), false)
+	modFSList, _ := StudioAppModules()
+	devJS, err := templates.BundleModulesJS(engine.FS, modFSList, false)
 	if err != nil {
-		t.Fatalf("BundleFilesToString(dev) failed: %v", err)
+		t.Fatalf("BundleModulesJS(dev) failed: %v", err)
 	}
 
 	crawlerScript := `

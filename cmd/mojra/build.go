@@ -1,3 +1,5 @@
+//go:build !(js && wasm)
+
 package main
 
 import (
@@ -9,9 +11,10 @@ import (
 	"runtime"
 	"strings"
 
-	_ "mojra/domain"
-	"mojra/domain/book"
+	book "mojra/domain/book/actions"
+	studioappactions "mojra/domain/shell/studio_app/actions"
 	"mojra/engine"
+	"mojra/engine/templates"
 )
 
 const (
@@ -520,7 +523,13 @@ func prepareBuildAssets(rootDir string) error {
 			return fmt.Errorf(errMissingIconFmt, iconPath, err)
 		}
 	}
-	if err := engine.BuildApp(appDir); err != nil {
+	modFSList, modSubDirs := studioappactions.StudioAppModules()
+	diskMods, diskEngine := templates.BuildDiskOrEmbeddedModules(rootDir, modSubDirs, modFSList)
+	if diskEngine == nil {
+		diskEngine = engine.FS
+	}
+	outAppDir := filepath.Join(rootDir, "build", "app")
+	if err := templates.BuildModuleAppToDir(diskEngine, diskMods, "shell_view", outAppDir, true); err != nil {
 		return fmt.Errorf(errBuildAssetsFmt, err)
 	}
 	if entries, rErr := os.ReadDir(booksDir); rErr == nil {

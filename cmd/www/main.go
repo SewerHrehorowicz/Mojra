@@ -6,8 +6,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	_ "mojra/domain"
-	"mojra/domain/book"
+	book "mojra/domain/book/actions"
+	"mojra/domain/common"
+	bookplayeractions "mojra/domain/shell/book_player/actions"
 	"mojra/engine"
 	"mojra/engine/templates"
 )
@@ -15,7 +16,7 @@ import (
 const (
 	goModFile       = "go.mod"
 	dirWWW          = "www"
-	dirApp          = "app"
+	dirApp          = "domain/common"
 	dirDist         = "dist"
 	dirFonts        = "fonts"
 	dirIcons        = "icons"
@@ -96,7 +97,7 @@ func buildSite(rootDir string) error {
 	if err := os.MkdirAll(filepath.Join(outDir, dirFonts), 0755); err != nil {
 		return fmt.Errorf(errMkdirFmt, outDir, err)
 	}
-	loadedTemplates, err := templates.LoadTemplatesFromDir(wwwDir, nil)
+	loadedTemplates, err := templates.LoadTemplatesFromDir(wwwDir, common.FS)
 	if err != nil {
 		return fmt.Errorf(errTplLoadFmt, err)
 	}
@@ -116,25 +117,40 @@ func buildSite(rootDir string) error {
 		}
 	}
 	styleCSSPath := filepath.Join(outDir, styleCSSFile)
-	wwwCSSFiles := append([]string{}, engine.CSSPlayerModuleFiles(appDir)...)
-	wwwCSSFiles = append(wwwCSSFiles, filepath.Join(wwwDir, styleTSSFile))
-	if err := engine.BundleCSSFiles(wwwCSSFiles, styleCSSPath); err != nil {
+	playerMods := bookplayeractions.ModuleFSList()
+	baseCSS, err := templates.BundleModulesCSS(playerMods, true)
+	if err != nil {
 		return fmt.Errorf(errCSSBundleFmt, err)
 	}
-	if rawCSS, err := os.ReadFile(styleCSSPath); err == nil {
-		relCSS := strings.ReplaceAll(string(rawCSS), urlAbsFonts, urlRelFonts)
-		if err := os.WriteFile(styleCSSPath, []byte(relCSS), 0644); err != nil {
-			return err
-		}
+	wwwStyleRaw, err := os.ReadFile(filepath.Join(wwwDir, styleTSSFile))
+	if err != nil {
+		return fmt.Errorf(errCSSBundleFmt, err)
 	}
-	var wwwJSFiles []string
+	wwwStyleCSS, err := templates.TranspileCSSWithSwitches(string(wwwStyleRaw), styleTSSFile, nil, templates.DefaultCSSSwitches(), true)
+	if err != nil {
+		return fmt.Errorf(errCSSBundleFmt, err)
+	}
+	relCSS := strings.ReplaceAll(baseCSS+"\n\n"+wwwStyleCSS, urlAbsFonts, urlRelFonts)
+	if err := os.WriteFile(styleCSSPath, []byte(relCSS), 0644); err != nil {
+		return err
+	}
+
+	var jsBuf strings.Builder
 	wasmExecPath := filepath.Join(rootDir, dirBuild, dirWasm, wasmExecJSFile)
-	if _, err := os.Stat(wasmExecPath); err == nil {
-		wwwJSFiles = append(wwwJSFiles, wasmExecPath)
+	if rawWasmExec, err := os.ReadFile(wasmExecPath); err == nil {
+		jsBuf.Write(rawWasmExec)
+		jsBuf.WriteByte('\n')
 	}
-	wwwJSFiles = append(wwwJSFiles, engine.JSPlayerModuleFiles(appDir)...)
-	wwwJSFiles = append(wwwJSFiles, filepath.Join(wwwDir, appJSFile))
-	if err := engine.BundleJSFiles(wwwJSFiles, filepath.Join(outDir, appJSFile)); err != nil {
+	baseJS, err := templates.BundleModulesJS(engine.FS, playerMods, true)
+	if err != nil {
+		return fmt.Errorf(errJSBundleFmt, err)
+	}
+	jsBuf.WriteString(baseJS)
+	if rawWWWJS, err := os.ReadFile(filepath.Join(wwwDir, appJSFile)); err == nil {
+		jsBuf.WriteByte('\n')
+		jsBuf.Write(rawWWWJS)
+	}
+	if err := os.WriteFile(filepath.Join(outDir, appJSFile), []byte(jsBuf.String()), 0644); err != nil {
 		return fmt.Errorf(errJSBundleFmt, err)
 	}
 

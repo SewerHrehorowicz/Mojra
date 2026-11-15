@@ -85,6 +85,7 @@ func init() {
 		I18nDicts[l] = make(map[string]string)
 	}
 	initUIContextTables()
+	templates.I18nScriptGenerator = BuildJSI18nHeader
 }
 
 // ParseLang resolves a language code or alias (e.g. "en", "pl", "english") to a registered Lang index.

@@ -8,16 +8,12 @@ import (
 	"strings"
 )
 
-const (
-	dirInternalActions = "domain/actions"
-)
-
 var (
 	reTplDefLine    = regexp.MustCompile(`^(?:\{\s*def\s+([a-zA-Z0-9_]+)|def:\s*([a-zA-Z0-9_]+)|@component\s+([a-zA-Z0-9_]+))`)
 	reTplIncludeUse = regexp.MustCompile(`^\s*@([a-zA-Z0-9_]+)\b`)
 	reTplActionAttr = regexp.MustCompile(`(?:^|\s)(?:action|data-backdrop-action):\s*"?([A-Za-z0-9_]+)"?`)
 	reJSFuncHeader  = regexp.MustCompile(`(?m)^\s*(?:async\s+)?function\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*\(([^)]*)\)\s*\{`)
-	reJSActionCall  = regexp.MustCompile(`\b(?:sendServerAction|postServerActionSilent)\s*\(\s*["']([A-Za-z0-9_]+)["']`)
+	reJSActionCall  = regexp.MustCompile(`(?:Dispatcher\.(?:action|post)|sendServerAction|postServerActionSilent)\s*\(\s*["']([A-Za-z0-9_]+)["']`)
 	reJSIdentCall   = regexp.MustCompile(`\b([A-Za-z_$][A-Za-z0-9_$]*)\s*\(`)
 )
 
@@ -94,7 +90,7 @@ func scanTplFile(absPath, relPath string) (FileView, []rawEdge, error) {
 			if len(m) > 1 && m[1] != "" {
 				edges = append(edges, rawEdge{
 					FromID: rootID,
-					ToPkg:  dirInternalActions,
+					ToPkg:  "",
 					ToName: m[1],
 					Kind:   edgeDispatches,
 				})
@@ -146,7 +142,7 @@ func scanJSFile(absPath, relPath string) (FileView, []rawEdge, error) {
 			if len(actMatch) > 1 && actMatch[1] != "" {
 				edges = append(edges, rawEdge{
 					FromID: symID,
-					ToPkg:  dirInternalActions,
+					ToPkg:  "",
 					ToName: actMatch[1],
 					Kind:   edgeDispatches,
 				})

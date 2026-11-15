@@ -1,0 +1,341 @@
+"use strict";
+
+/*
+No domain logic here, no hardcoded maps, this is generic
+dispatcher that knows nothing about app, its DOM, controllers, views
+can be moved to another project and work the same
+make sure never violate that when editing this file
+*/
+const Dispatcher = {
+  _ready: typeof document !== "undefined" ? document.addEventListener("DOMContentLoaded", () => Dispatcher.boot()) : null,
+  endpoint: "/api/action",
+  activePointerEl: null,
+  lastAction: "",
+  lastParams: null,
+  events: [
+    "click", "dblclick", "contextmenu", "input", "change", "submit", "focus", "blur",
+    "keydown", "keyup", "scroll", "wheel",
+    "pointerdown", "pointermove", "pointerup",
+    "mouseover", "mouseout", "mousemove", "mousedown", "mouseup",
+    "timeupdate", "ended"
+  ],
+
+  settings: {
+    dataPrefixLen: 5,
+    attrs: {
+      dataPrefix: "data-",
+      dataHint: "data-hint"
+    },
+    selectors: {
+      dropZone: "[drop-zone]"
+    },
+    headers: {
+      contentType: "Content-Type"
+    },
+    tags: {
+      form: "form",
+      input: "input",
+      textarea: "textarea",
+      select: "select",
+      radio: "radio"
+    },
+    evNames: {
+      click: "click",
+      change: "change",
+      submit: "submit",
+      wheel: "wheel",
+      pointerdown: "pointerdown",
+      pointermove: "pointermove",
+      pointerup: "pointerup"
+    },
+    vals: {
+      none: "none",
+      trueStr: "true",
+      falseStr: "false",
+      strType: "string",
+      numType: "number",
+      fnType: "function",
+      objType: "object"
+    },
+    http: {
+      post: "POST",
+      fdpMime: "text/x-fdp;charset=UTF-8"
+    }
+  },
+
+  controllers: {},
+  bindingsByEvent: {},
+  boundSelectors: [],
+
+  register(name, ctrl) {
+    this.controllers[name] = ctrl;
+    if (ctrl && ctrl.bindings) {
+      const map = ctrl.bindings();
+      const selectors = Object.keys(map || {});
+      for (let i = 0; i < selectors.length; i++) {
+        const selector = selectors[i];
+        if (this.boundSelectors.indexOf(selector) < 0) {
+          this.boundSelectors.push(selector);
+        }
+        const evMap = map[selector];
+        const evNames = Object.keys(evMap || {});
+        for (let j = 0; j < evNames.length; j++) {
+          const evName = evNames[j];
+          if (!this.bindingsByEvent[evName]) this.bindingsByEvent[evName] = [];
+          this.bindingsByEvent[evName].push({
+            ctrl: ctrl,
+            selector: selector,
+            handler: evMap[evName]
+          });
+        }
+      }
+    }
+    return ctrl;
+  },
+
+  action(actionName) {
+    return function (params, _el, e) {
+      if (e && e.preventDefault) e.preventDefault();
+      Dispatcher.post(actionName, Object.assign({}, params));
+    };
+  },
+
+  assignDataValue(dataObj, field, valStr) {
+    const v = this.settings.vals;
+    if (valStr === v.trueStr) {
+      dataObj[field] = true;
+    } else if (valStr === v.falseStr) {
+      dataObj[field] = false;
+    } else if (typeof dataObj[field] === v.numType) {
+      dataObj[field] = Number(valStr) || 0;
+    } else {
+      dataObj[field] = valStr;
+    }
+  },
+
+  hydrate(frame) {
+    if (!frame || !frame.controller) return;
+    const s = this.settings;
+    const ctrl = this.controllers[frame.controller];
+    if (!ctrl || !ctrl.data || typeof ctrl.data !== s.vals.objType) return;
+    const keys = Object.keys(frame);
+    for (let i = 0; i < keys.length; i++) {
+      const key = keys[i];
+      if (key in ctrl.data) {
+        this.assignDataValue(ctrl.data, key, frame[key]);
+      }
+    }
+  },
+
+  notifyHydrated(frame, action, params) {
+    if (!frame || !frame.controller) return;
+    const ctrl = this.controllers[frame.controller];
+    if (ctrl && typeof ctrl.onHydrate === this.settings.vals.fnType) {
+      ctrl.onHydrate(frame, action, params);
+    }
+  },
+
+  mountAll(root, skipInit) {
+    const scope = root || document;
+    for (let s = 0; s < this.boundSelectors.length; s++) {
+      const list = document.querySelectorAll(this.boundSelectors[s]);
+      for (let k = 0; k < list.length; k++) {
+        list[k]._idx = k;
+      }
+    }
+    if (skipInit) return;
+    const entries = this.bindingsByEvent.init;
+    if (!entries) return;
+    for (let i = 0; i < entries.length; i++) {
+      const entry = entries[i];
+      if (scope.matches && scope.matches(entry.selector)) {
+        entry.handler.call(entry.ctrl, { idx: scope._idx || 0 }, scope);
+      }
+      const matched = scope.querySelectorAll ? scope.querySelectorAll(entry.selector) : [];
+      for (let j = 0; j < matched.length; j++) {
+        entry.handler.call(entry.ctrl, { idx: j }, matched[j]);
+      }
+    }
+  },
+
+  resolve(e) {
+    const s = this.settings;
+    const ev = s.evNames;
+    const t = e.target && e.target.closest ? e.target : null;
+    const isDropEvt = e.type === ev.pointermove || e.type === ev.pointerup;
+    if (isDropEvt && this.activePointerEl) {
+      const pEl = this.activePointerEl;
+      const pBound = this.bindingsByEvent[e.type];
+      if (pBound) {
+        for (let i = 0; i < pBound.length; i++) {
+          const entry = pBound[i];
+          if (pEl.matches && pEl.matches(entry.selector)) {
+            return {
+              el: pEl,
+              ctrl: entry.ctrl,
+              handler: entry.handler,
+              idx: pEl._idx !== undefined ? pEl._idx : 0
+            };
+          }
+        }
+      }
+    }
+    if (!t) return null;
+    const boundList = this.bindingsByEvent[e.type];
+    if (boundList) {
+      let bestEntries = null;
+      let bestEl = null;
+      for (let i = 0; i < boundList.length; i++) {
+        const entry = boundList[i];
+        const matchedEl = t.closest(entry.selector);
+        if (!matchedEl) continue;
+        if (!bestEl || (bestEl !== matchedEl && bestEl.contains && bestEl.contains(matchedEl))) {
+          bestEl = matchedEl;
+          bestEntries = [entry];
+        } else if (matchedEl === bestEl) {
+          bestEntries.push(entry);
+        }
+      }
+      if (bestEntries && bestEl) {
+        return {
+          el: bestEl,
+          entries: bestEntries,
+          ctrl: bestEntries[0].ctrl,
+          handler: bestEntries[0].handler,
+          idx: bestEl._idx !== undefined ? bestEl._idx : 0
+        };
+      }
+    }
+    return null;
+  },
+
+  collectParams(hit, e) {
+    const s = this.settings;
+    const params = {};
+    const el = hit.el;
+    const tag = (el.localName || el.tagName || "").toLowerCase();
+    const formEl = tag === s.tags.form ? el : (el.form || (el.closest ? el.closest(s.tags.form) : null));
+    if (formEl && formEl.elements) {
+      for (let i = 0; i < formEl.elements.length; i++) {
+        const f = formEl.elements[i];
+        if (f.name && (f.type !== s.tags.radio || f.checked)) {
+          params[f.name] = f.value || "";
+        }
+      }
+    }
+    if (el.name) params[el.name] = el.value || "";
+    if (el.attributes) {
+      for (let i = 0; i < el.attributes.length; i++) {
+        const a = el.attributes[i];
+        if (a.name.startsWith(s.attrs.dataPrefix) && a.name !== s.attrs.dataHint) {
+          const dKey = a.name.slice(s.dataPrefixLen).replace(/-/g, "_");
+          if (params[dKey] === undefined) params[dKey] = a.value;
+        }
+      }
+    }
+    if (e && e.clientX !== undefined) {
+      params.client_x = e.clientX;
+      params.client_y = e.clientY;
+    }
+    if (e && (e.type === s.evNames.pointermove || e.type === s.evNames.pointerup) && document.elementFromPoint) {
+      const under = document.elementFromPoint(e.clientX, e.clientY);
+      const dropEl = under && under.closest ? under.closest(s.selectors.dropZone) : null;
+      if (dropEl) {
+        const drop = {};
+        for (let i = 0; i < dropEl.attributes.length; i++) {
+          const a = dropEl.attributes[i];
+          if (a.name.startsWith(s.attrs.dataPrefix) && a.name !== s.attrs.dataHint) {
+            const dKey = a.name.slice(s.dataPrefixLen).replace(/-/g, "_");
+            if (drop[dKey] === undefined) drop[dKey] = a.value;
+          }
+        }
+        params.drop_target = drop;
+        params.drop_el = dropEl;
+      }
+    }
+    return params;
+  },
+
+  swapTarget(targetSel, html) {
+    let targetEl = document.querySelector(targetSel);
+    if (!targetEl) return;
+    targetEl.innerHTML = html;
+    if (targetEl.id && targetEl.firstElementChild && targetEl.firstElementChild.id === targetEl.id && targetEl.parentElement) {
+      const unwrapped = targetEl.firstElementChild;
+      targetEl.parentElement.replaceChild(unwrapped, targetEl);
+      targetEl = unwrapped;
+    }
+    this.mountAll(targetEl);
+  },
+
+  async applyResponse(resp, action, params, targetOverride) {
+    if (!resp) return null;
+    this.lastAction = action || "";
+    this.lastParams = params || null;
+    const s = this.settings;
+    const raw = typeof resp === s.vals.strType ? resp : (resp.html !== undefined ? resp.html : await resp.text());
+    const frames = Fdp.decode(raw);
+    for (let i = 0; i < frames.length; i++) {
+      this.hydrate(frames[i]);
+    }
+    for (let i = 0; i < frames.length; i++) {
+      const f = frames[i];
+      const t = (i === 0 && targetOverride) ? targetOverride : f.target;
+      if (t && t !== s.vals.none) {
+        this.swapTarget(t, f.html || "");
+      }
+    }
+    for (let i = 0; i < frames.length; i++) {
+      this.notifyHydrated(frames[i], action, params);
+    }
+    return frames;
+  },
+
+  async post(action, params, target) {
+    const s = this.settings;
+    const resp = await fetch(this.endpoint, {
+      method: s.http.post,
+      headers: { [s.headers.contentType]: s.http.fdpMime },
+      body: Fdp.encode(Object.assign({ action: action }, params))
+    });
+    return await this.applyResponse(resp, action, params, target);
+  },
+
+  handle(e) {
+    const ev = this.settings.evNames;
+    const hit = this.resolve(e);
+    if (!hit) {
+      if (e.type === ev.pointermove || e.type === ev.pointerup) this.activePointerEl = null;
+      return;
+    }
+    if (hit.el.disabled) return;
+    if (e.type === ev.pointerdown) this.activePointerEl = hit.el;
+    else if (e.type === ev.pointerup) this.activePointerEl = null;
+    const params = this.collectParams(hit, e);
+    if (hit.entries) {
+      if (e.type === ev.submit) e.preventDefault();
+      if (params.idx === undefined) params.idx = hit.idx;
+      for (let i = 0; i < hit.entries.length; i++) {
+        const entry = hit.entries[i];
+        entry.handler.call(entry.ctrl, params, hit.el, e, hit);
+      }
+      return;
+    }
+    if (hit.handler) {
+      if (e.type === ev.submit) e.preventDefault();
+      if (params.idx === undefined) params.idx = hit.idx;
+      hit.handler.call(hit.ctrl, params, hit.el, e, hit);
+    }
+  },
+
+  bind() {
+    const handler = (e) => this.handle(e);
+    const w = this.settings.evNames.wheel;
+    this.events.forEach((evt) => document.addEventListener(evt, handler, evt === w ? { capture: true, passive: false } : true));
+  },
+
+  boot() {
+    this.bind();
+    this.mountAll(document);
+  }
+};

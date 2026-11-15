@@ -24,8 +24,8 @@ const (
 	msdfWindingSeg = 4
 
 	flagAppName   = "app"
-	flagAppDef    = "app"
-	flagAppUsage  = "Path to app directory"
+	flagAppDef    = "domain"
+	flagAppUsage  = "Path to domain directory"
 	flagOutName   = "out"
 	flagOutDef    = "build/app"
 	flagOutUsage  = "Path to build output directory"
@@ -39,12 +39,13 @@ const (
 	langCodeEN = "en"
 	langCodePL = "pl"
 
-	fontDirName     = "fonts"
-	jsDirName       = "js"
+	fontDirName     = "common/fonts"
+	jsDirName       = "studio/scripts"
 	fontAleoRegular = "Aleo-Regular.ttf"
 	fontLatoRegular = "Lato-Regular.ttf"
 	fontLatoBold    = "Lato-Bold.ttf"
 	atlasFileName   = "studio-atlas.png"
+	studioSubDir    = "studio"
 	metricsFileName = "msdf_metrics.js"
 
 	ttfTagHead = "head"
@@ -141,7 +142,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	appAtlasPath := filepath.Join(*appDir, atlasFileName)
+	appAtlasPath := filepath.Join(*appDir, studioSubDir, atlasFileName)
 	if err := os.WriteFile(appAtlasPath, pngBytes, 0644); err != nil {
 		fmt.Fprintf(os.Stderr, errGenFailed, err)
 		os.Exit(1)

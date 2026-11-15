@@ -11,8 +11,9 @@ import (
 	"strings"
 	"time"
 
-	_ "mojra/domain"
-	"mojra/engine"
+	_ "mojra/domain/book/actions"
+	"mojra/domain/common"
+	bookplayeractions "mojra/domain/shell/book_player/actions"
 	"mojra/engine/templates"
 )
 
@@ -21,7 +22,7 @@ const (
 	flagOutName        = "o"
 	flagOutUsage       = "Ścieżka wyjściowa pliku PDF"
 	dirWWW             = "www"
-	dirApp             = "app"
+	dirApp             = "domain/common"
 	dirDist            = "dist"
 	dirDocs            = "docs"
 	dirFonts           = "fonts"
@@ -135,7 +136,7 @@ func buildDeckHTML(rootDir string) error {
 	if err := os.MkdirAll(filepath.Join(outDir, dirFonts), 0755); err != nil {
 		return fmt.Errorf(errMkdirFmt, outDir, err)
 	}
-	loadedTemplates, err := templates.LoadTemplatesFromDir(wwwDir, nil)
+	loadedTemplates, err := templates.LoadTemplatesFromDir(wwwDir, common.FS)
 	if err != nil {
 		return fmt.Errorf(errTplLoadFmt, err)
 	}
@@ -153,16 +154,21 @@ func buildDeckHTML(rootDir string) error {
 		}
 	}
 	styleCSSPath := filepath.Join(outDir, styleCSSFile)
-	wwwCSSFiles := append([]string{}, engine.CSSPlayerModuleFiles(appDir)...)
-	wwwCSSFiles = append(wwwCSSFiles, filepath.Join(wwwDir, styleTSSFile))
-	if err := engine.BundleCSSFiles(wwwCSSFiles, styleCSSPath); err != nil {
+	baseCSS, err := templates.BundleModulesCSS(bookplayeractions.ModuleFSList(), true)
+	if err != nil {
 		return fmt.Errorf(errCSSBundleFmt, err)
 	}
-	if rawCSS, err := os.ReadFile(styleCSSPath); err == nil {
-		relCSS := strings.ReplaceAll(string(rawCSS), urlAbsFonts, urlRelFonts)
-		if err := os.WriteFile(styleCSSPath, []byte(relCSS), 0644); err != nil {
-			return err
-		}
+	wwwStyleRaw, err := os.ReadFile(filepath.Join(wwwDir, styleTSSFile))
+	if err != nil {
+		return fmt.Errorf(errCSSBundleFmt, err)
+	}
+	wwwStyleCSS, err := templates.TranspileCSSWithSwitches(string(wwwStyleRaw), styleTSSFile, nil, templates.DefaultCSSSwitches(), true)
+	if err != nil {
+		return fmt.Errorf(errCSSBundleFmt, err)
+	}
+	relCSS := strings.ReplaceAll(baseCSS+"\n\n"+wwwStyleCSS, urlAbsFonts, urlRelFonts)
+	if err := os.WriteFile(styleCSSPath, []byte(relCSS), 0644); err != nil {
+		return err
 	}
 	if fontEntries, err := os.ReadDir(filepath.Join(appDir, dirFonts)); err == nil {
 		for _, fe := range fontEntries {

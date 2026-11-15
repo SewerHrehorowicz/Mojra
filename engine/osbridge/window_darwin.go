@@ -439,11 +439,8 @@ import (
 	"time"
 	"unsafe"
 
-	"mojra"
 	"mojra/engine"
 )
-
-const embeddedAppIconPath = "app/icons/icon.png"
 
 var _ = goLogCocoaStartupStage
 
@@ -486,9 +483,9 @@ func RunNativeOSWindow(url string, onClosed func()) bool {
 
 	var iconPtr unsafe.Pointer
 	var iconLen C.int
-	if iconData, err := mojra.AppFS.ReadFile(embeddedAppIconPath); err == nil && len(iconData) > 0 {
-		iconPtr = unsafe.Pointer(&iconData[0])
-		iconLen = C.int(len(iconData))
+	if len(AppIconPNG) > 0 {
+		iconPtr = unsafe.Pointer(&AppIconPNG[0])
+		iconLen = C.int(len(AppIconPNG))
 	}
 
 	C.runNativeMacOSWebView(cURL, iconPtr, iconLen)

@@ -18,8 +18,8 @@ func TestAppIconsAndWindowsResourceSYSO(t *testing.T) {
 	if err != nil {
 		t.Fatalf("filepath.Abs failed: %v", err)
 	}
-	srcIconPNG := filepath.Join(rootDir, "app", "icons", "icon.png")
-	srcFaviconICO := filepath.Join(rootDir, "app", "icons", "favicon.ico")
+	srcIconPNG := filepath.Join(rootDir, "domain", "common", "icons", "icon.png")
+	srcFaviconICO := filepath.Join(rootDir, "domain", "common", "icons", "favicon.ico")
 
 	pngBytes, err := os.ReadFile(srcIconPNG)
 	if err != nil {
@@ -327,7 +327,7 @@ func TestAndroidToolchainAndAPKPackagingInvariants(t *testing.T) {
 	if err != nil {
 		t.Fatalf("filepath.Abs failed: %v", err)
 	}
-	srcIconPNG := filepath.Join(rootDir, "app", "icons", "icon.png")
+	srcIconPNG := filepath.Join(rootDir, "domain", "common", "icons", "icon.png")
 	resTmp := filepath.Join(t.TempDir(), "res")
 	if err := writeAndroidLauncherResources(srcIconPNG, resTmp); err != nil {
 		t.Fatalf("writeAndroidLauncherResources failed: %v", err)
@@ -453,15 +453,15 @@ func TestProdEmbedUsesCompressedWasmAndNoDuplicateBook(t *testing.T) {
 	if err != nil {
 		t.Fatalf("filepath.Abs failed: %v", err)
 	}
-	raw, err := os.ReadFile(filepath.Join(rootDir, "embed_prod.go"))
+	rawCfg, err := os.ReadFile(filepath.Join(rootDir, "domain", "shell", "book_player", "modules.cfg"))
 	if err != nil {
-		t.Fatalf("failed to read embed_prod.go: %v", err)
+		t.Fatalf("failed to read book_player/modules.cfg: %v", err)
 	}
-	src := string(raw)
-	if !strings.Contains(src, "build/wasm/mojra.wasm.gz") {
-		t.Fatalf("expected embed_prod.go to embed compressed build/wasm/mojra.wasm.gz")
+	cfgStr := string(rawCfg)
+	if !strings.Contains(cfgStr, "common") || !strings.Contains(cfgStr, "player") {
+		t.Fatalf("expected book_player/modules.cfg to include common and player, got %q", cfgStr)
 	}
-	if strings.Contains(src, "build/wasm/mojra.wasm ") || strings.Contains(src, "all:books/") {
-		t.Fatalf("expected embed_prod.go not to embed uncompressed mojra.wasm or duplicate books/: %s", src)
+	if strings.Contains(cfgStr, "studio") || strings.Contains(cfgStr, "library") {
+		t.Fatalf("expected book_player/modules.cfg not to include studio or library, got %q", cfgStr)
 	}
 }
