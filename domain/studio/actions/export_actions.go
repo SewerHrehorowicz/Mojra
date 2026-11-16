@@ -36,8 +36,11 @@ func openExportModal(s *state.StudioState, _ *transport.ActionRequest) []transpo
 	if b == nil {
 		return frameModals(s, tr(s, i18n.TrNoActiveProject))
 	}
-	s.Overlays.QR = false
+	s.Overlays.Settings = false
 	s.Overlays.AddBook = false
+	if s.NewBook != nil {
+		s.NewBook.Reset()
+	}
 	s.Export.Open = true
 	s.Export.AdvancedOpen = false
 	s.Export.Standard = b.NormalizedStandard()

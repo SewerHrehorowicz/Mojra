@@ -45,11 +45,11 @@
   line-height 1.6
   color --text-secondary
 
-.qr-modal-body
+.settings-modal-body
   align-items center
   text-align center
 
-.qr-modal-body .modal-meta-fields
+.settings-modal-body .modal-meta-fields
   text-align left
   align-items stretch
 
@@ -378,6 +378,7 @@
   right 0
   bottom 0
   padding 0
+  z-index 110
   background --bg-obsidian
   backdrop-filter none
   align-items stretch

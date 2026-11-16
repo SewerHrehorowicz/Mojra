@@ -1,6 +1,6 @@
 "use strict";
 
-const QRController = {
+const SettingsController = {
   data: {
     theme: "dark",
     uiScale: "small",
@@ -12,13 +12,13 @@ const QRController = {
 
   bindings() {
     return {
-      "#qr-view": {
+      "#settings-view": {
         click: this.onBackdrop
       },
-      "#qr-view .btn-close-qr": {
-        click: Dispatcher.action("CloseQRModal")
+      "#settings-view .btn-close-settings": {
+        click: Dispatcher.action("CloseSettingsModal")
       },
-      "#qr-view .lang-radio-btn": {
+      "#settings-view .lang-radio-btn": {
         click: Dispatcher.action("SetLanguage")
       },
       "#btn-toggle-theme": {
@@ -27,17 +27,17 @@ const QRController = {
       "#btn-toggle-imageless": {
         click: Dispatcher.action("ToggleImageless")
       },
-      "#qr-view .ui-scale-radio-btn": {
+      "#settings-view .ui-scale-radio-btn": {
         click: Dispatcher.action("SetUIScale")
       },
-      "#qr-view .scroll-sens-radio-btn": {
+      "#settings-view .scroll-sens-radio-btn": {
         click: Dispatcher.action("SetScrollSensitivity")
       },
-      "#qr-view .auto-delay-radio-btn": {
+      "#settings-view .auto-delay-radio-btn": {
         click: Dispatcher.action("SetAutoChoiceDelay")
       },
       // @dev-only-start
-      "#qr-view .btn-extract-embedded-book": {
+      "#settings-view .btn-extract-embedded-book": {
         click: Dispatcher.action("ExtractEmbeddedBook")
       }
       // @dev-only-end
@@ -45,13 +45,13 @@ const QRController = {
   },
 
   settings: {
-    closeAction: "CloseQRModal"
+    closeAction: "CloseSettingsModal"
   },
 
-  onBackdrop(_params, el, e) {
-    if (e && e.target === el) {
+  onBackdrop(_params, backdropEl, domEvent) {
+    if (domEvent && domEvent.target === backdropEl) {
       Dispatcher.post(this.settings.closeAction, {});
     }
   }
 };
-Dispatcher.register("QRController", QRController);
+Dispatcher.register("SettingsController", SettingsController);

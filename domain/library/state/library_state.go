@@ -9,16 +9,14 @@ import (
 type LibraryState struct {
 	*commonstate.UIState
 	Library *LibraryState
-	NewBook *NewBookState
 	Books   []*model.Book
 	Loaded  bool
 }
 
-// BindUI links the library state to the shared UIState and NewBookState.
-func (lib *LibraryState) BindUI(ui *commonstate.UIState, newBook *NewBookState) {
+// BindUI links the library state to the shared UIState.
+func (lib *LibraryState) BindUI(ui *commonstate.UIState) {
 	lib.UIState = ui
 	lib.Library = lib
-	lib.NewBook = newBook
 }
 
 // Set replaces the in-memory book list and marks the library state as loaded.

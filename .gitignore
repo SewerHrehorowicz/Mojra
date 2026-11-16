@@ -16,3 +16,7 @@
 .DS_Store
 .kilo/
 *.log
+*.key
+/cmd/keygen/sign.key
+/cmd/keygen/license.txt
+/license.txt

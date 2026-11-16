@@ -95,9 +95,12 @@ func importScreenplayFromDiskFile(s *state.StudioState, rawPath string, openInSt
 }
 
 func openStudioProjectModal(s *state.StudioState, _ *transport.ActionRequest) []transport.ActionFrame {
-	s.Overlays.QR = false
+	s.Overlays.Settings = false
 	s.Overlays.AddBook = false
 	s.Export.Open = false
+	if s.NewBook != nil {
+		s.NewBook.Reset()
+	}
 	s.Overlays.StudioProjects = true
 	return frameModals(s, "")
 }

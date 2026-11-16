@@ -28,8 +28,7 @@ var _ = registerActions(map[string]ActionHandler{
 })
 
 func openAddBookModal(s *state.LibraryState, _ *transport.ActionRequest) []transport.ActionFrame {
-	s.Overlays.QR = false
-	s.NewBook.Open = false
+	s.Overlays.Settings = false
 	s.Overlays.StudioProjects = false
 	s.Overlays.AddBook = true
 	return frameLibraryModals(s, "")
@@ -60,7 +59,7 @@ func addBookFromDisk(s *state.LibraryState, req *transport.ActionRequest) []tran
 // AddBookFromDiskPath resolves and loads one or more books from rawPath into LibraryState.
 func AddBookFromDiskPath(s *state.LibraryState, rawPath string) string {
 	if isScreenplayImportFile(rawPath) {
-		return ImportScreenplayFromDiskFile(s, rawPath, false)
+		return ImportScreenplayFromDiskFile(s, rawPath)
 	}
 	resolvedPaths, err := book.ResolveDiskBookPaths(rawPath)
 	if err != nil {

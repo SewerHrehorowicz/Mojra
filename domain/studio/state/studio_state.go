@@ -54,6 +54,7 @@ type StudioState struct {
 	*commonstate.UIState
 	Editor                  *StudioState
 	Export                  *ExportState
+	NewBook                 *NewBookState
 	ActiveBook              *book.Book
 	StudioHome              bool
 	SelectedSceneID         string
@@ -71,11 +72,12 @@ type StudioState struct {
 // EditorState is an alias for StudioState.
 type EditorState = StudioState
 
-// BindUI links StudioState to the shared UIState and ExportState.
-func (e *StudioState) BindUI(ui *commonstate.UIState, exp *ExportState) {
+// BindUI links StudioState to the shared UIState, ExportState, and NewBookState.
+func (e *StudioState) BindUI(ui *commonstate.UIState, exp *ExportState, newBook *NewBookState) {
 	e.UIState = ui
 	e.Editor = e
 	e.Export = exp
+	e.NewBook = newBook
 	if e.History == nil {
 		e.History = &book.BookHistory{NextSeq: 1}
 	}

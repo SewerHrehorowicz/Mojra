@@ -541,6 +541,20 @@ const (
 	TrRemovedEnumOptFmt             engine.TrKey = "TrRemovedEnumOptFmt"
 	TrRemovedVarFmt                 engine.TrKey = "TrRemovedVarFmt"
 	TrSceneEffectsPlaceholder       engine.TrKey = "TrSceneEffectsPlaceholder"
+
+	TrLicenseTitle            engine.TrKey = "TrLicenseTitle"
+	TrLicenseSubtitle         engine.TrKey = "TrLicenseSubtitle"
+	TrLicenseKeyPlaceholder   engine.TrKey = "TrLicenseKeyPlaceholder"
+	TrLicenseActivateBtn      engine.TrKey = "TrLicenseActivateBtn"
+	TrLicenseDeactivateBtn    engine.TrKey = "TrLicenseDeactivateBtn"
+	TrLicenseStatusActive     engine.TrKey = "TrLicenseStatusActive"
+	TrLicenseTierKey          engine.TrKey = "TrLicenseTierKey"
+	TrLicenseExpiresKey       engine.TrKey = "TrLicenseExpiresKey"
+	TrLicenseLifetime         engine.TrKey = "TrLicenseLifetime"
+	TrLicenseErrorInvalid     engine.TrKey = "TrLicenseErrorInvalid"
+	TrLicenseErrorExpired     engine.TrKey = "TrLicenseErrorExpired"
+	TrLicenseActivatedToast   engine.TrKey = "TrLicenseActivatedToast"
+	TrLicenseDeactivatedToast engine.TrKey = "TrLicenseDeactivatedToast"
 )
 
 var mojraTrKeyToTplVar = map[string]string{

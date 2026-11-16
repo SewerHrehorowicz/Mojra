@@ -22,6 +22,9 @@ import (
 	"mojra/domain/i18n"
 	"mojra/domain/library"
 	libraryactions "mojra/domain/library/actions"
+	"mojra/domain/license"
+	_ "mojra/domain/license/actions"
+	licenseviews "mojra/domain/license/views"
 	"mojra/domain/player"
 	playeractions "mojra/domain/player/actions"
 	bookplayeractions "mojra/domain/shell/book_player/actions"
@@ -79,11 +82,12 @@ func StudioAppModules() ([]fs.FS, []string) {
 		"player":  player.FS,
 		"library": library.FS,
 		"studio":  studio.FS,
+		"license": license.FS,
 	}
 	resolved, names, err := templates.ResolveModuleFSList(studio_app.FS, registry)
 	if err != nil || len(resolved) == 0 {
-		return []fs.FS{common.FS, player.FS, library.FS, studio.FS, studio_app.FS},
-			[]string{"common", "player", "library", "studio", "shell/studio_app"}
+		return []fs.FS{common.FS, player.FS, library.FS, studio.FS, license.FS, studio_app.FS},
+			[]string{"common", "player", "library", "studio", "license", "shell/studio_app"}
 	}
 	return resolved, append(names, "shell/studio_app")
 }
@@ -251,7 +255,7 @@ func (s *Server) initializeActiveBooks(books []*book.Book) {
 		st.Player.SetBook(st.Config.SavesDir, st.Settings, chosenPlayer)
 	}
 
-	if st.Settings.EditorStudioHome {
+	if !st.License.IsActive() || st.Settings.EditorStudioHome {
 		st.Editor.ActiveBook = nil
 		st.Editor.StudioHome = true
 	} else {
@@ -496,6 +500,10 @@ func WireShellHooks(s *state.AppState) {
 		}
 	}
 
+	s.Hooks.SettingsExtraSections = func() []templates.TemplateChunk {
+		return []templates.TemplateChunk{licenseviews.LicenseSummaryView(&s.License)}
+	}
+
 	s.Hooks.RenderModalsFrame = func() transport.ActionFrame {
 		return transport.ActionFrame{
 			Target: commonstate.TargetModalsRoot,
@@ -507,7 +515,7 @@ func WireShellHooks(s *state.AppState) {
 		if toast != "" {
 			s.Overlays.Toast = toast
 		}
-		if s.Overlays.QR {
+		if s.Overlays.Settings {
 			return []transport.ActionFrame{s.Hooks.RenderModalsFrame()}
 		}
 		return nil
@@ -524,6 +532,12 @@ func WireShellHooks(s *state.AppState) {
 			return ""
 		}
 		if targetView == commonstate.ViewEditor {
+			if !s.License.IsActive() {
+				s.Settings.ActiveView = string(commonstate.ViewEditor)
+				s.CloseAllModals()
+				s.SaveSettings()
+				return ""
+			}
 			return studioactions.OpenBookInStudio(&s.Editor, b)
 		}
 		if s.Settings != nil && s.Settings.ActiveView == string(commonstate.ViewEditor) && s.Editor.HasActiveBook() {
@@ -565,13 +579,15 @@ func WireShellHooks(s *state.AppState) {
 		}
 		s.Library.Put(created)
 		if openTarget == string(commonstate.ViewEditor) {
-			s.Editor.SetBook(created, s.Settings)
+			if s.License.IsActive() {
+				s.Editor.SetBook(created, s.Settings)
+			}
 			if s.Player.Book == nil {
 				s.Player.SetBook(s.Config.SavesDir, s.Settings, created)
 			}
 		} else {
 			s.Player.SetBook(s.Config.SavesDir, s.Settings, created)
-			if s.Editor.ActiveBook == nil {
+			if s.License.IsActive() && s.Editor.ActiveBook == nil {
 				s.Editor.SetBook(created, s.Settings)
 			}
 		}
@@ -638,6 +654,9 @@ func WireShellHooks(s *state.AppState) {
 	}
 
 	s.Hooks.UnpackPlaybookForEdit = func(bookID string) (string, bool) {
+		if !s.License.IsActive() {
+			return "", false
+		}
 		b := s.Library.Get(bookID)
 		if b == nil {
 			return "", false
@@ -695,8 +714,10 @@ func WireShellHooks(s *state.AppState) {
 			}()
 			return nil, true
 		default:
-			if frames, ok := studioactions.ExecutePendingStudioConfirm(&s.Editor, pendingAction, pendingParam); ok {
-				return frames, true
+			if s.License.IsActive() {
+				if frames, ok := studioactions.ExecutePendingStudioConfirm(&s.Editor, pendingAction, pendingParam); ok {
+					return frames, true
+				}
 			}
 		}
 		return nil, false
@@ -705,6 +726,7 @@ func WireShellHooks(s *state.AppState) {
 
 func switchView(s *state.AppState, req *transport.ActionRequest) []transport.ActionFrame {
 	_ = studioactions.FlushFormSceneIfPresent(&s.Editor, req)
+	s.License.ShowActivatedSummary = false
 	view := strings.TrimSpace(req.FormValue(formKeyView))
 	prevView := ""
 	if s.Settings != nil {
@@ -722,7 +744,9 @@ func switchView(s *state.AppState, req *transport.ActionRequest) []transport.Act
 		s.Player.ZenMode = false
 		s.Settings.ActiveView = string(state.ViewEditor)
 		s.CloseAllModals()
-		s.Editor.SyncToSettings(s.Settings)
+		if s.License.IsActive() {
+			s.Editor.SyncToSettings(s.Settings)
+		}
 		s.SaveSettings()
 		return s.Hooks.RenderAppFrames()
 	}
@@ -745,16 +769,21 @@ func switchView(s *state.AppState, req *transport.ActionRequest) []transport.Act
 		}
 		s.Settings.ActiveView = view
 		s.CloseAllModals()
-		if view == string(state.ViewEditor) && !wasActiveStudioEditor {
+		if view == string(state.ViewEditor) && !wasActiveStudioEditor && s.License.IsActive() {
 			s.Editor.RestoreBookUIState(s.Settings, true)
 		}
-		s.Editor.SyncToSettings(s.Settings)
+		if s.License.IsActive() {
+			s.Editor.SyncToSettings(s.Settings)
+		}
 		s.SaveSettings()
 	}
 	return s.Hooks.RenderAppFrames()
 }
 
 func playFromScene(s *state.AppState, req *transport.ActionRequest) []transport.ActionFrame {
+	if !s.License.IsActive() {
+		return s.Hooks.RenderAppFrames()
+	}
 	_ = studioactions.FlushFormSceneIfPresent(&s.Editor, req)
 	if scID := strings.TrimSpace(req.FormValue(formKeyScene)); scID != "" {
 		s.Editor.SelectedSceneID = scID
@@ -895,7 +924,7 @@ func HandleAction(appState *state.AppState, writer http.ResponseWriter, request 
 }
 
 func finalizeActionFrames(appState *state.AppState, act string, actionFrames []transport.ActionFrame) ([]transport.ActionFrame, []templates.TemplateChunk) {
-	if !commonactions.SkipSettingsSyncActions[act] && !appState.Config.StandaloneMode && !appState.Hooks.IsHistoryPreview() {
+	if !commonactions.SkipSettingsSyncActions[act] && !appState.Config.StandaloneMode && appState.License.IsActive() && !appState.Hooks.IsHistoryPreview() {
 		if appState.Editor.SyncToSettings(appState.Settings) {
 			appState.SaveSettings()
 		}
@@ -907,7 +936,7 @@ func finalizeActionFrames(appState *state.AppState, act string, actionFrames []t
 		if af.Target == commonstate.TargetApp {
 			hasAppTarget = true
 		}
-		if (af.Target == commonstate.TargetApp || af.Target == commonstate.TargetWorkspace) && state.ActiveWorkspaceView(appState) == state.ViewEditor && !appState.Editor.StudioHome {
+		if (af.Target == commonstate.TargetApp || af.Target == commonstate.TargetWorkspace) && state.ActiveWorkspaceView(appState) == state.ViewEditor && appState.License.IsActive() && !appState.Editor.StudioHome {
 			hasStudio = true
 		}
 	}
@@ -919,7 +948,7 @@ func finalizeActionFrames(appState *state.AppState, act string, actionFrames []t
 			globalScriptChunks = append(globalScriptChunks, templates.TemplateChunk{ScriptData: views.TopbarView(appState).ScriptData})
 		}
 	}
-	if !appState.Config.StandaloneMode && !hasStudio {
+	if !appState.Config.StandaloneMode && appState.License.IsActive() && !hasStudio {
 		if !(commonactions.IgnoreSilentActions[act] && requestFormSilent(actionFrames)) {
 			globalScriptChunks = append(globalScriptChunks,
 				studioviews.StudioScriptView(&appState.Editor),

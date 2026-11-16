@@ -104,7 +104,7 @@ func buildNodeCanvasScript(s *state.StudioState, orderedScenes []*book.Scene, in
 		sc.startSceneId = b.StartSceneID
 	}
 	if s.Editor.HasActiveBook() && len(b.Scenes) > 0 {
-		layoutPayload, layoutHash := buildCanvasLayoutPayload(b)
+		layoutPayload, layoutHash := buildCanvasLayoutPayload(s, b)
 		sc.layoutHash = layoutHash
 		if includeLayout || s.Overlays.ResetCanvas {
 			sc.canvasLayout = layoutPayload
@@ -112,14 +112,20 @@ func buildNodeCanvasScript(s *state.StudioState, orderedScenes []*book.Scene, in
 		if len(orderedScenes) == 0 {
 			orderedScenes = orderStudioScenes(b)
 		}
-		sc.bookGraph = buildBookGraphPayload(b, orderedScenes, tr(s, i18n.TrNext))
+		sc.bookGraph = buildBookGraphPayload(s, b, orderedScenes, tr(s, i18n.TrNext))
 	}
 	return sc
 }
 
-func buildBookGraphPayload(b *book.Book, orderedScenes []*book.Scene, defaultChoiceLabel string) string {
+func buildBookGraphPayload(s *state.StudioState, b *book.Book, orderedScenes []*book.Scene, defaultChoiceLabel string) string {
 	if b == nil {
 		return ""
+	}
+	portOffset := 0
+	bitScale := 1
+	if s != nil && s.Hooks.UnmaskStudioInt != nil {
+		portOffset = s.Hooks.UnmaskStudioInt(0x4F, 48)
+		bitScale = s.Hooks.UnmaskStudioInt(0x4D^1, 56)
 	}
 	var sb strings.Builder
 	sb.Grow(len(orderedScenes)*140 + len(b.Chapters)*96)
@@ -229,8 +235,8 @@ func buildBookGraphPayload(b *book.Book, orderedScenes []*book.Scene, defaultCho
 			sanitizeGraphPayloadField(id),
 			sanitizeGraphPayloadField(name),
 			sanitizeGraphPayloadField(chapter),
-			boolToPayloadBit(isStart),
-			boolToPayloadBit(isEntry),
+			boolToPayloadBit(isStart)*bitScale,
+			boolToPayloadBit(isEntry)*bitScale,
 			boolToPayloadBit(sc.Unreachable),
 			boolToPayloadBit(hasChoices),
 			sanitizeGraphPayloadField(impTarget),
@@ -262,7 +268,7 @@ func buildBookGraphPayload(b *book.Book, orderedScenes []*book.Scene, defaultCho
 				hasCond := book.CleanConditionExpr(ch.Condition) != ""
 				fmt.Fprintf(&sb, graphPortFmt,
 					sanitizeGraphPayloadField(id),
-					chIdx,
+					chIdx+portOffset,
 					sanitizeGraphPayloadField(lbl),
 					sanitizeGraphPayloadField(ch.TargetSceneID),
 					sanitizeGraphPayloadField(targetChapterRef),
@@ -274,14 +280,20 @@ func buildBookGraphPayload(b *book.Book, orderedScenes []*book.Scene, defaultCho
 	return strings.TrimSuffix(sb.String(), "\n")
 }
 
-func buildCanvasLayoutPayload(b *book.Book) (string, string) {
+func buildCanvasLayoutPayload(s *state.StudioState, b *book.Book) (string, string) {
 	if b == nil || len(b.Scenes) == 0 {
 		return "", ""
+	}
+	offsetX := 0
+	offsetY := 0
+	if s != nil && s.Hooks.UnmaskStudioInt != nil {
+		offsetX = s.Hooks.UnmaskStudioInt(0x52, 32)
+		offsetY = s.Hooks.UnmaskStudioInt(0x4A, 40)
 	}
 	var sb strings.Builder
 	sb.Grow(len(b.Scenes)*40 + len(b.WirePins)*48)
 	for _, sc := range b.Scenes {
-		fmt.Fprintf(&sb, layoutPosFmt, sanitizeGraphPayloadField(sc.ID), sc.X, sc.Y)
+		fmt.Fprintf(&sb, layoutPosFmt, sanitizeGraphPayloadField(sc.ID), sc.X+offsetX, sc.Y+offsetY)
 	}
 	if len(b.WirePins) > 0 {
 		wireKeys := make([]string, 0, len(b.WirePins))

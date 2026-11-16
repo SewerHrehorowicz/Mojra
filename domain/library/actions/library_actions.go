@@ -62,20 +62,6 @@ func registerActions(actionMap map[string]ActionHandler) bool {
 	return true
 }
 
-func registerStandaloneActions(actionMap map[string]ActionHandler) bool {
-	for actionName, handler := range actionMap {
-		fn := handler
-		commonactions.RegisterAction(actionName, true, true, func(ui *commonstate.UIState, req *transport.ActionRequest) []transport.ActionFrame {
-			ls := libraryFromUI(ui)
-			if ls == nil {
-				return nil
-			}
-			return fn(ls, req)
-		})
-	}
-	return true
-}
-
 func tr(s *state.LibraryState, key engine.TrKey) string {
 	return commonviews.Tr(s.UIState, key)
 }
@@ -152,7 +138,7 @@ func openBook(s *state.LibraryState, req *transport.ActionRequest) []transport.A
 	return frameLibraryAppResetCanvas(s, toast)
 }
 
-func ImportScreenplayFromDiskFile(s *state.LibraryState, rawPath string, openInStudio bool) string {
+func ImportScreenplayFromDiskFile(s *state.LibraryState, rawPath string) string {
 	expanded, err := book.ExpandLocalPath(rawPath)
 	if err != nil {
 		return err.Error()
@@ -172,12 +158,6 @@ func ImportScreenplayFromDiskFile(s *state.LibraryState, rawPath string, openInS
 	s.Library.Put(imported)
 	s.Overlays.AddBook = false
 	s.Overlays.StudioProjects = false
-	if openInStudio {
-		if s.Hooks.OpenBookInView != nil {
-			return s.Hooks.OpenBookInView(imported.ID, commonstate.ViewEditor)
-		}
-		return ""
-	}
 	if s.Hooks.OnBookCreated != nil {
 		s.Hooks.OnBookCreated(imported, string(commonstate.ViewLibrary))
 	}
@@ -298,7 +278,7 @@ func extractEmbeddedDefaultBook(s *state.LibraryState) string {
 	if isExt {
 		s.Settings.AddExternalBook(sampleDir)
 	}
-	s.Overlays.QR = false
+	s.Overlays.Settings = false
 	if b, err := book.LoadBookFromPath(sampleDir); err == nil && b != nil {
 		b.IsExternal = isExt
 		s.Library.Put(b)

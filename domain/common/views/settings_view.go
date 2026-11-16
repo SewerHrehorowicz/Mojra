@@ -7,9 +7,8 @@ import (
 	"net"
 
 	book "mojra/domain/book/actions"
-	commonviews "mojra/domain/common/views"
+	"mojra/domain/common/state"
 	"mojra/domain/i18n"
-	"mojra/domain/library/state"
 	"mojra/engine/templates"
 )
 
@@ -48,8 +47,8 @@ func resolveLANShareURL(port int) string {
 	return fmt.Sprintf(loopbackShareURLFmt, port)
 }
 
-type qrTemplate struct {
-	ShowQRModal          bool
+type settingsTemplate struct {
+	ShowSettingsModal    bool
 	IsDark               bool
 	ThemeToggleLabel     string
 	Imageless            bool
@@ -68,9 +67,10 @@ type qrTemplate struct {
 	IsAutoDelay5         bool
 	DevMode              bool
 	LANURL               string
+	ExtraSections        []templates.TemplateChunk
 }
 
-type qRScript struct {
+type settingsScript struct {
 	theme           string
 	uiScale         string
 	imageless       bool
@@ -79,47 +79,53 @@ type qRScript struct {
 	autoChoiceDelay float64
 }
 
-func QRView(s *state.LibraryState) templates.TemplateChunk {
-	theme := s.Settings.Theme
+// SettingsView builds the TemplateChunk for the global application settings modal (#settings-view).
+func SettingsView(ui *state.UIState) templates.TemplateChunk {
+	theme := ui.Settings.Theme
 	if theme != themeLight {
 		theme = themeDark
 	}
-	themeLbl := commonviews.Tr(s.UIState, i18n.TrThemeLightLabel)
+	themeLbl := Tr(ui, i18n.TrThemeLightLabel)
 	if theme == themeLight {
-		themeLbl = commonviews.Tr(s.UIState, i18n.TrThemeDarkLabel)
+		themeLbl = Tr(ui, i18n.TrThemeDarkLabel)
 	}
 
 	var ctxBook *book.Book
-	if s.Hooks.ActiveContextBook != nil {
-		ctxBook = s.Hooks.ActiveContextBook()
+	if ui.Hooks.ActiveContextBook != nil {
+		ctxBook = ui.Hooks.ActiveContextBook()
 	}
 	locked := ctxBook.IsImageless()
-	eff := ctxBook.IsEffectiveImageless(s.Settings)
+	eff := ctxBook.IsEffectiveImageless(ui.Settings)
 
 	var imagelessLbl string
 	if locked {
-		imagelessLbl = commonviews.Tr(s.UIState, i18n.TrImagelessLockedLabel)
+		imagelessLbl = Tr(ui, i18n.TrImagelessLockedLabel)
 	} else if eff {
-		imagelessLbl = commonviews.Tr(s.UIState, i18n.TrImagelessOffLabel)
+		imagelessLbl = Tr(ui, i18n.TrImagelessOffLabel)
 	} else {
-		imagelessLbl = commonviews.Tr(s.UIState, i18n.TrImagelessOnLabel)
+		imagelessLbl = Tr(ui, i18n.TrImagelessOnLabel)
 	}
 
-	uiScale := s.Settings.UIScale
+	uiScale := ui.Settings.UIScale
 	if uiScale != uiScaleLarge {
 		uiScale = uiScaleSmall
 	}
-	scrollSens := book.NormalizeScrollSensitivity(s.Settings.ScrollSensitivity)
-	autoDelay := book.NormalizeAutoChoiceDelay(s.Settings.AutoChoiceDelay)
+	scrollSens := book.NormalizeScrollSensitivity(ui.Settings.ScrollSensitivity)
+	autoDelay := book.NormalizeAutoChoiceDelay(ui.Settings.AutoChoiceDelay)
 
 	lanURL := ""
-	if s.Overlays.QR && s.Config.DevMode && !s.Config.StandaloneMode {
-		lanURL = resolveLANShareURL(s.Config.Port)
+	if ui.Overlays.Settings && ui.Config.DevMode && !ui.Config.StandaloneMode {
+		lanURL = resolveLANShareURL(ui.Config.Port)
+	}
+
+	var extraSections []templates.TemplateChunk
+	if ui.Hooks.SettingsExtraSections != nil {
+		extraSections = ui.Hooks.SettingsExtraSections()
 	}
 
 	return templates.TemplateChunk{
-		TemplateData: &qrTemplate{
-			ShowQRModal:          s.Overlays.QR,
+		TemplateData: &settingsTemplate{
+			ShowSettingsModal:    ui.Overlays.Settings,
 			IsDark:               theme != themeLight,
 			ThemeToggleLabel:     themeLbl,
 			Imageless:            eff,
@@ -136,10 +142,11 @@ func QRView(s *state.LibraryState) templates.TemplateChunk {
 			IsAutoDelay2:         autoDelay > 1.25 && autoDelay <= 2.5,
 			IsAutoDelay3:         autoDelay > 2.5 && autoDelay <= 4.0,
 			IsAutoDelay5:         autoDelay > 4.0,
-			DevMode:              s.Config.DevMode,
+			DevMode:              ui.Config.DevMode,
 			LANURL:               lanURL,
+			ExtraSections:        extraSections,
 		},
-		ScriptData: &qRScript{
+		ScriptData: &settingsScript{
 			theme:           theme,
 			uiScale:         uiScale,
 			imageless:       eff,

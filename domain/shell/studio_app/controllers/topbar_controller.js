@@ -15,7 +15,7 @@ const TopbarController = {
         click: Dispatcher.action("ToggleZenMode")
       },
       "#btn-open-settings": {
-        click: Dispatcher.action("OpenQRModal")
+        click: Dispatcher.action("OpenSettingsModal")
       },
       "#btn-toggle-fullscreen": {
         click: Dispatcher.action("ToggleFullscreen")

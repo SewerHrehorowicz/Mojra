@@ -6,6 +6,7 @@ import (
 
 	book "mojra/domain/book/actions"
 	"mojra/domain/book/model"
+	"mojra/engine/templates"
 	"mojra/engine/transport"
 )
 
@@ -50,7 +51,7 @@ func (cfg *RuntimeConfig) TriggerShutdown() {
 
 // OverlayState tracks active view flags and transient UI feedback notifications.
 type OverlayState struct {
-	QR             bool
+	Settings       bool
 	AddBook        bool
 	StudioProjects bool
 	VoiceRecorder  bool
@@ -65,10 +66,14 @@ type ShellHooks struct {
 	PlayerState           any
 	LibraryState          any
 	StudioState           any
+	LicenseState          any
 	ShellState            any
 	ActiveBook            func() *model.Book
 	ActiveContextBook     func() *model.Book
 	IsHistoryPreview      func() bool
+	IsLicenseActive       func() bool
+	UnmaskStudioInt       func(masked uint64, shift uint) int
+	SettingsExtraSections func() []templates.TemplateChunk
 	ActivePlayerSave      func(bookID string) *model.SaveState
 	IsEffectiveImageless  func() bool
 	IsBookLockedImageless func() bool
@@ -133,7 +138,7 @@ func (ui *UIState) CloseTransientViews() {
 	if ui == nil {
 		return
 	}
-	ui.Overlays.QR = false
+	ui.Overlays.Settings = false
 	ui.Overlays.AddBook = false
 	ui.Overlays.StudioProjects = false
 	ui.Overlays.VoiceRecorder = false

@@ -6,6 +6,7 @@ import (
 	book "mojra/domain/book/actions"
 	commonstate "mojra/domain/common/state"
 	librarystate "mojra/domain/library/state"
+	licensestate "mojra/domain/license/state"
 	playerstate "mojra/domain/player/state"
 	studiostate "mojra/domain/studio/state"
 )
@@ -17,7 +18,8 @@ type (
 	OverlayState      = commonstate.OverlayState
 	ConfirmState      = commonstate.ConfirmState
 	LibraryState      = librarystate.LibraryState
-	NewBookState      = librarystate.NewBookState
+	LicenseState      = licensestate.LicenseState
+	NewBookState      = studiostate.NewBookState
 	PlayerState       = playerstate.PlayerState
 	StudioState       = studiostate.StudioState
 	EditorState       = studiostate.StudioState
@@ -58,11 +60,12 @@ func ParseWorkspaceView(raw string) ViewMode {
 	}
 }
 
-// AppState aggregates the shared UIState and the Library, Player, and Studio module states for studio_app.
+// AppState aggregates the shared UIState and the Library, License, Player, and Studio module states for studio_app.
 type AppState struct {
 	*commonstate.UIState
 	Library librarystate.LibraryState
-	NewBook librarystate.NewBookState
+	License licensestate.LicenseState
+	NewBook studiostate.NewBookState
 	Player  playerstate.PlayerState
 	Editor  studiostate.StudioState
 	Export  studiostate.ExportState
@@ -81,20 +84,24 @@ func NewAppState(cfg RuntimeConfig) *AppState {
 	return app
 }
 
-// BindSubstates links Library, Player, and Editor to the shared UIState.
+// BindSubstates links Library, License, Player, and Editor to the shared UIState.
 func (s *AppState) BindSubstates() {
 	if s.UIState == nil {
 		s.UIState = &commonstate.UIState{
 			Settings: &book.AppSettings{},
 		}
 	}
-	s.Library.BindUI(s.UIState, &s.NewBook)
+	s.License.BindUI(s.UIState)
+	s.Library.BindUI(s.UIState)
 	s.Player.BindUI(s.UIState)
-	s.Editor.BindUI(s.UIState, &s.Export)
+	s.Editor.BindUI(s.UIState, &s.Export, &s.NewBook)
 	s.Hooks.PlayerState = &s.Player
 	s.Hooks.LibraryState = &s.Library
 	s.Hooks.StudioState = &s.Editor
+	s.Hooks.LicenseState = &s.License
 	s.Hooks.ShellState = s
+	s.Hooks.IsLicenseActive = s.License.IsActive
+	s.Hooks.UnmaskStudioInt = s.License.UnmaskInt
 	s.Hooks.ActiveBook = func() *book.Book {
 		return s.Player.Book
 	}
@@ -130,7 +137,7 @@ func ContextBook(s *AppState) *book.Book {
 		return nil
 	}
 	if ActiveWorkspaceView(s) == ViewEditor {
-		if s.Editor.StudioHome {
+		if !s.License.IsActive() || s.Editor.StudioHome {
 			return nil
 		}
 		if s.Editor.ActiveBook != nil {

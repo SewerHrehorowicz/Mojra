@@ -399,8 +399,8 @@ func activeModalLabelLocked(s *Server) string {
 		return "#studio-projects-view"
 	case st.Export.Open:
 		return "#export-view"
-	case st.Overlays.QR:
-		return "#qr-view"
+	case st.Overlays.Settings:
+		return "#settings-view"
 	default:
 		return "none"
 	}
@@ -975,8 +975,12 @@ func crawlAllActionSpecsDeterministically(t *testing.T, sb *chaosSandbox, runAct
 	runAction("header#topbar[action=StartWindowDrag]", "action", "StartWindowDrag")
 
 	// 2. Modals in Library & Studio Home
-	runAction("button[action=OpenQRModal]", "action", "OpenQRModal")
-	runAction("button[action=CloseQRModal]", "action", "CloseQRModal")
+	runAction("button[action=DeactivateLicense]", "action", "DeactivateLicense")
+	runAction("button[action=BrowseLicenseFile]", "action", "BrowseLicenseFile")
+	runAction("form[action=ActivateLicense]", "action", "ActivateLicense", "key", testSignedLicenseKey)
+	runAction("button[action=CloseLicenseSummary]", "action", "CloseLicenseSummary")
+	runAction("button[action=OpenSettingsModal]", "action", "OpenSettingsModal")
+	runAction("button[action=CloseSettingsModal]", "action", "CloseSettingsModal")
 	runAction("button[action=OpenAddBookModal]", "action", "OpenAddBookModal")
 	runAction("button[action=CloseAddBookModal]", "action", "CloseAddBookModal")
 	runAction("button[action=OpenStudioProjectModal]", "action", "OpenStudioProjectModal")

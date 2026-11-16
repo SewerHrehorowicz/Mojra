@@ -1629,7 +1629,7 @@ function makeEvent(type, props) {
   if (doc.body.getAttribute("data-theme") !== "light") {
     throw new Error("Expected ToggleTheme to set data-theme=light");
   }
-  await clickEl('#qr-view .btn-close-qr');
+  await clickEl('#settings-view .btn-close-settings');
 
   // 11. Navigate Node Editor -> Studio Home -> Reader Home -> Book Reader (#player-view)
   await clickEl("#tab-studio-home");

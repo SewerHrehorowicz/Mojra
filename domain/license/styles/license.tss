@@ -1,0 +1,82 @@
+.license-view
+  display flex
+  flex-direction column
+  justify-content center
+  align-items center
+  min-height 100%
+  padding 32px 24px
+  background --bg-primary
+  color --text-primary
+
+.license-container
+  width 100%
+  max-width 460px
+  display flex
+  flex-direction column
+  gap 24px
+
+.license-card
+  display flex
+  flex-direction column
+  gap 20px
+  padding 28px 0
+  border-top 1px solid --border-strong
+  border-bottom 1px solid --border-subtle
+
+.license-header
+  display flex
+  flex-direction column
+  gap 8px
+
+.license-title
+  margin 0
+  font-family --font-serif
+  font-size 22px
+  font-weight 600
+  color --text-primary
+
+.license-subtitle
+  margin 0
+  font-family --font-sans
+  font-size 12px
+  line-height 1.5
+  color --text-secondary
+
+.license-form
+  display flex
+  flex-direction column
+  gap 18px
+
+.license-status-box
+  display flex
+  flex-direction column
+  gap 14px
+
+.license-holder-value, .license-tier-value
+  font-family --font-mono
+  font-size 12px
+  color --text-primary
+
+.license-error
+  margin 0
+  font-family --font-sans
+  font-size 12px
+  color --danger
+
+.license-actions
+  display flex
+  justify-content flex-end
+  gap 12px
+  padding-top 6px
+
+.license-summary-inline
+  display flex
+  align-items center
+  justify-content space-between
+  gap 12px
+  width 100%
+
+.license-summary-holder
+  font-family --font-mono
+  font-size 11px
+  color --text-primary

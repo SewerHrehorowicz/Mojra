@@ -31,7 +31,7 @@ type topbarTemplate struct {
 // TopbarView prepares the TemplateChunk for topbar_view.tpl.
 func TopbarView(s *state.AppState) templates.TemplateChunk {
 	activeView := state.ActiveWorkspaceView(s)
-	hasEditorBook := s.Editor.HasActiveBook()
+	hasEditorBook := s.License.IsActive() && s.Editor.HasActiveBook()
 	var editorBook *book.Book
 	if hasEditorBook {
 		editorBook = s.Editor.ActiveBook

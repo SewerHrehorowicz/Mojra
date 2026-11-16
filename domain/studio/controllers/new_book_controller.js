@@ -34,24 +34,24 @@ const NewBookController = {
     setModeAction: "SetNewBookModalMode"
   },
 
-  onBackdrop(_params, el, e) {
-    if (e && e.target === el) {
+  onBackdrop(_params, backdropEl, domEvent) {
+    if (domEvent && domEvent.target === backdropEl) {
       Dispatcher.post(this.settings.closeAction, {});
     }
   },
 
-  selectMode(p) {
-    Dispatcher.post(this.settings.setModeAction, Object.assign({}, p, { mode: p.select_value || "" }));
+  selectMode(params) {
+    Dispatcher.post(this.settings.setModeAction, Object.assign({}, params, { mode: params.select_value || "" }));
   },
 
-  selectRadio(p, el) {
-    if (!el) return;
-    StudioController.selectRadio(p, el);
+  selectRadio(params, optionEl) {
+    if (!optionEl) return;
+    StudioController.selectRadio(params, optionEl);
   },
 
-  toggleFormBtn(p, el) {
-    if (!el || el.disabled) return;
-    StudioController.toggleFormBtn(p, el);
+  toggleFormBtn(params, toggleEl) {
+    if (!toggleEl || toggleEl.disabled) return;
+    StudioController.toggleFormBtn(params, toggleEl);
   }
 };
 Dispatcher.register("NewBookController", NewBookController);

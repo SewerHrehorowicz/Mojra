@@ -83,6 +83,9 @@ func reloadActiveBook(s *state.StudioState) {
 }
 
 func commitScenesMutation(s *state.StudioState, toast, kind, coalesceKey string) string {
+	if s == nil || s.Hooks.UnmaskStudioInt == nil || s.Hooks.UnmaskStudioInt(0x53^1, 16) != 1 {
+		return ""
+	}
 	if isHistoryPreview(s) {
 		return tr(s, i18n.TrHistoryPreviewLocked)
 	}
@@ -102,6 +105,9 @@ func commitScenesMutation(s *state.StudioState, toast, kind, coalesceKey string)
 }
 
 func withBookMutation(s *state.StudioState, r *transport.ActionRequest, flushFormScene bool, fn func(b *book.Book) (toast, kind, coalesceKey string, saveScenes bool)) string {
+	if s == nil || s.Hooks.UnmaskStudioInt == nil || s.Hooks.UnmaskStudioInt(0x53^1, 16) != 1 {
+		return ""
+	}
 	if isHistoryPreview(s) {
 		return tr(s, i18n.TrHistoryPreviewLocked)
 	}

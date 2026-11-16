@@ -28,11 +28,22 @@ import (
 
 type Server = studioactions.Server
 
+const testSignedLicenseKey = "MOJRA-SmFuIEtvd2Fsc2tpfGphbkBtb2pyYS5wbHxsaWZldGltZXwwfDEzNTdjMmRmZWY5ZmI3ZjY.8pDsljyRe3euPcez6P-fJSWhrRq9fXwsM9g8yX1b7hZfUgtCf9uhx1GwKGZiGn6KcLG3GTOvOu6-CGkJjyBGAQ"
+
 var (
-	StudioAppModules     = studioactions.StudioAppModules
-	NewServerWithOptions = studioactions.NewServerWithOptions
-	Handlers             = studioactions.Handlers
+	StudioAppModules = studioactions.StudioAppModules
+	Handlers         = studioactions.Handlers
 )
+
+func NewServerWithOptions(rootDir string, embeddedFS fs.FS, devMode bool) *Server {
+	savesDir := book.ResolveSavesDir(rootDir)
+	licPath := filepath.Join(savesDir, "license.txt")
+	if _, err := os.Stat(licPath); os.IsNotExist(err) {
+		_ = os.MkdirAll(savesDir, 0755)
+		_ = os.WriteFile(licPath, []byte(testSignedLicenseKey+"\n"), 0644)
+	}
+	return studioactions.NewServerWithOptions(rootDir, embeddedFS, devMode)
+}
 
 func NewStandaloneServer(rootDir string, embeddedFS fs.FS, standaloneBook *book.Book) *Server {
 	srv := NewServerWithOptions(rootDir, embeddedFS, false)
@@ -925,12 +936,12 @@ func TestDevicePreviewStrippedInProductionAndEnabledInDev(t *testing.T) {
 		t.Fatalf("expected no deviceMode in production mode, got %q", gotHdr)
 	}
 
-	// Verify QR code markup is stripped from #modal-qr in production mode
+	// Verify QR code markup is stripped from #settings-view in production mode
 	qrModalForm := url.Values{}
-	qrModalForm.Set("action", "OpenQRModal")
+	qrModalForm.Set("action", "OpenSettingsModal")
 	prodQRModalResp, err := http.PostForm(prodTS.URL+"/api/action", qrModalForm)
 	if err != nil {
-		t.Fatalf("POST /api/action OpenQRModal failed: %v", err)
+		t.Fatalf("POST /api/action OpenSettingsModal failed: %v", err)
 	}
 	prodQRModalHTML, _ := io.ReadAll(prodQRModalResp.Body)
 	_ = prodQRModalResp.Body.Close()
@@ -1898,9 +1909,9 @@ func TestBookImagelessSettingAndTopbarLock(t *testing.T) {
 	if togOnMeta.Get("imageless") != "true" || togOnMeta.Get("imagelessLocked") != "true" {
 		t.Fatalf("expected imageless=true and imagelessLocked=true when imageless book is loaded, got %q / %q", togOnMeta.Get("imageless"), togOnMeta.Get("imagelessLocked"))
 	}
-	rSettingsOn, err := http.PostForm(ts.URL+"/api/action", url.Values{"action": {"OpenQRModal"}})
+	rSettingsOn, err := http.PostForm(ts.URL+"/api/action", url.Values{"action": {"OpenSettingsModal"}})
 	if err != nil {
-		t.Fatalf("OpenQRModal failed: %v", err)
+		t.Fatalf("OpenSettingsModal failed: %v", err)
 	}
 	settingsOnBytes, _ := io.ReadAll(rSettingsOn.Body)
 	_ = rSettingsOn.Body.Close()
@@ -1912,7 +1923,7 @@ func TestBookImagelessSettingAndTopbarLock(t *testing.T) {
 		strings.Contains(settingsOnHTML, `class="action-icon hidden" id="icon-imageless-on"`) {
 		t.Fatalf("expected #btn-toggle-imageless to show no-image icon (#icon-imageless-on) when imageless book is open")
 	}
-	_, _ = http.PostForm(ts.URL+"/api/action", url.Values{"action": {"CloseQRModal"}})
+	_, _ = http.PostForm(ts.URL+"/api/action", url.Values{"action": {"CloseSettingsModal"}})
 
 	// Verify book.playtxt persisted imageless: true
 	dataBytes, err := os.ReadFile(filepath.Join(srv.State.Editor.ActiveBook.RootPath, "book.playtxt"))
@@ -2783,5 +2794,115 @@ func TestNoHTMLStringLiteralsInClientJS(t *testing.T) {
 				t.Fatalf("forbidden dynamic markup token %q found in %s; render all HTML via server .tpl templates", tok, filepath.Base(path))
 			}
 		}
+	}
+}
+
+func TestLicenseModuleAndStudioXORGate(t *testing.T) {
+	tmpDir := t.TempDir()
+	srv := studioactions.NewServerWithOptions(tmpDir, testAppFS, false)
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	postFDP := func(vals url.Values) (url.Values, string) {
+		t.Helper()
+		resp, err := http.PostForm(ts.URL+"/api/action", vals)
+		if err != nil {
+			t.Fatalf("POST /api/action %s failed: %v", vals.Get("action"), err)
+		}
+		defer resp.Body.Close()
+		raw, _ := io.ReadAll(resp.Body)
+		return decodeFDPResponse(raw)
+	}
+
+	if srv.State.License.IsActive() {
+		t.Fatalf("expected fresh server without license.ini to start unlicensed")
+	}
+
+	// Switch to editor while unlicensed -> should render #license-view, not #studio-view
+	_, html := postFDP(url.Values{
+		"action": {"SwitchView"},
+		"view":   {"editor"},
+	})
+	if !strings.Contains(html, `id="license-view"`) || strings.Contains(html, `id="studio-view"`) {
+		t.Fatalf("expected #license-view when unlicensed in editor view, got:\n%s", html)
+	}
+
+	// Studio action CreateNewBook must be rejected when unlicensed
+	_, _ = postFDP(url.Values{
+		"action": {"CreateNewBook"},
+		"title":  {"Zablokowana"},
+		"author": {"Autor"},
+	})
+	if len(srv.State.Library.Books) != 0 {
+		t.Fatalf("expected CreateNewBook to be blocked while unlicensed")
+	}
+
+	// Invalid key activation must fail and show error
+	_, htmlErr := postFDP(url.Values{
+		"action": {"ActivateLicense"},
+		"key":    {"MOJRA-invalid.signature"},
+	})
+	if srv.State.License.IsActive() || !strings.Contains(htmlErr, `id="license-error-msg"`) {
+		t.Fatalf("expected invalid key error in #license-view, got:\n%s", htmlErr)
+	}
+
+	// Valid Ed25519 key activation must show post-activation summary with holder info and manual close button
+	_, htmlSummary := postFDP(url.Values{
+		"action": {"ActivateLicense"},
+		"key":    {testSignedLicenseKey},
+	})
+	if !srv.State.License.IsActive() {
+		t.Fatalf("expected license to be active after ActivateLicense with testSignedLicenseKey")
+	}
+	if !strings.Contains(htmlSummary, `id="license-activated-summary"`) || !strings.Contains(htmlSummary, "Jan Kowalski") || !strings.Contains(htmlSummary, `id="btn-close-license-summary"`) {
+		t.Fatalf("expected post-activation summary with holder info and close button, got:\n%s", htmlSummary)
+	}
+
+	// Closing summary transitions to #studio-view
+	_, htmlActive := postFDP(url.Values{
+		"action": {"CloseLicenseSummary"},
+	})
+	if !strings.Contains(htmlActive, `id="studio-view"`) {
+		t.Fatalf("expected #studio-view after CloseLicenseSummary, got:\n%s", htmlActive)
+	}
+
+	// Opening global Settings modal embeds #license-summary-view from domain/license
+	_, htmlSettings := postFDP(url.Values{
+		"action": {"OpenSettingsModal"},
+	})
+	if !strings.Contains(htmlSettings, `id="settings-view"`) || !strings.Contains(htmlSettings, `id="license-summary-view"`) || !strings.Contains(htmlSettings, "Jan Kowalski") {
+		t.Fatalf("expected #settings-view to embed #license-summary-view with holder info, got:\n%s", htmlSettings)
+	}
+	if got := srv.State.License.UnmaskInt(0x55^24, 0); got != 24 {
+		t.Fatalf("expected UnmaskInt shift=0 to decode 24, got %d", got)
+	}
+	if got := srv.State.License.UnmaskInt(0x54^1, 8); got != 1 {
+		t.Fatalf("expected UnmaskInt shift=8 to decode 1, got %d", got)
+	}
+	if got := srv.State.License.UnmaskInt(0x53^1, 16); got != 1 {
+		t.Fatalf("expected UnmaskInt shift=16 to decode 1, got %d", got)
+	}
+	if got := srv.State.License.UnmaskInt(0x41^1, 24); got != 1 {
+		t.Fatalf("expected UnmaskInt shift=24 to decode 1, got %d", got)
+	}
+	if got := srv.State.License.UnmaskInt(0x52, 32); got != 0 {
+		t.Fatalf("expected UnmaskInt shift=32 to decode 0, got %d", got)
+	}
+	if got := srv.State.License.UnmaskInt(0x4A, 40); got != 0 {
+		t.Fatalf("expected UnmaskInt shift=40 to decode 0, got %d", got)
+	}
+	if got := srv.State.License.UnmaskInt(0x4F, 48); got != 0 {
+		t.Fatalf("expected UnmaskInt shift=48 to decode 0, got %d", got)
+	}
+	if got := srv.State.License.UnmaskInt(0x4D^1, 56); got != 1 {
+		t.Fatalf("expected UnmaskInt shift=56 to decode 1, got %d", got)
+	}
+
+	// DeactivateLicense must lock Studio again
+	_, htmlDeact := postFDP(url.Values{
+		"action": {"DeactivateLicense"},
+	})
+	if srv.State.License.IsActive() || !strings.Contains(htmlDeact, `id="license-view"`) {
+		t.Fatalf("expected DeactivateLicense to lock Studio and render #license-view")
 	}
 }

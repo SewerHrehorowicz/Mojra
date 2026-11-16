@@ -1,9 +1,9 @@
-{if ShowQRModal}
-    .modal-backdrop#qr-view
+{if ShowSettingsModal}
+    .modal-backdrop#settings-view
         .modal-card
             .modal-header
                 h3.modal-title {t_settings_modal_title}
-            .modal-body.qr-modal-body
+            .modal-body.settings-modal-body
                 .node-meta-fields.modal-meta-fields
                     .node-meta-row
                         span.node-meta-key {t_settings_lang_key}
@@ -81,6 +81,7 @@
                                 data-delay: "5"
                                 span.form-radio-label "5s"
                                 span.form-radio-sq
+                    @ExtraSections
                 {if DevMode}
                     .settings-modal-actions
                         button.btn.btn-sm.btn-extract-embedded-book
@@ -92,5 +93,5 @@
                             alt: "{t_lan_qr_alt}"
                     .lan-url-box {LANURL}
                 .modal-actions
-                    button.btn.btn-close-qr
+                    button.btn.btn-close-settings
                         "{t_close}"

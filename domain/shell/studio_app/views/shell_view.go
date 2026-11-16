@@ -7,6 +7,7 @@ import (
 	commonviews "mojra/domain/common/views"
 	"mojra/domain/i18n"
 	libraryviews "mojra/domain/library/views"
+	licenseviews "mojra/domain/license/views"
 	playerviews "mojra/domain/player/views"
 	"mojra/domain/shell/studio_app/state"
 	studioviews "mojra/domain/studio/views"
@@ -81,6 +82,9 @@ func trf(s *state.AppState, key engine.TrKey, args ...any) string {
 func ActiveWorkspaceView(s *state.AppState) templates.TemplateChunk {
 	switch state.ActiveWorkspaceView(s) {
 	case state.ViewEditor:
+		if !s.License.IsActive() || s.License.ShowActivatedSummary {
+			return licenseviews.LicenseView(&s.License)
+		}
 		return studioviews.StudioView(&s.Editor)
 	case state.ViewPlayer:
 		return playerviews.PlayerView(&s.Player)
@@ -92,22 +96,22 @@ func ActiveWorkspaceView(s *state.AppState) templates.TemplateChunk {
 // ActiveOverlayViews returns the ordered list of active overlay TemplateChunks for #modals-root.
 func ActiveOverlayViews(s *state.AppState) []templates.TemplateChunk {
 	var modals []templates.TemplateChunk
-	if s.Overlays.QR {
-		modals = append(modals, libraryviews.QRView(&s.Library))
+	if s.Overlays.Settings {
+		modals = append(modals, commonviews.SettingsView(s.UIState))
 	}
-	if s.NewBook.Open {
-		modals = append(modals, libraryviews.NewBookView(&s.Library))
+	if s.License.IsActive() && s.NewBook.Open {
+		modals = append(modals, studioviews.NewBookView(&s.Editor))
 	}
-	if s.Export.Open {
+	if s.License.IsActive() && s.Export.Open {
 		modals = append(modals, studioviews.ExportView(&s.Editor))
 	}
 	if s.Overlays.AddBook {
 		modals = append(modals, libraryviews.AddBookView(&s.Library))
 	}
-	if s.Overlays.StudioProjects {
+	if s.License.IsActive() && s.Overlays.StudioProjects {
 		modals = append(modals, studioviews.StudioProjectsView(&s.Editor))
 	}
-	if s.Editor.SceneText.IsOpen() {
+	if s.License.IsActive() && s.Editor.SceneText.IsOpen() {
 		if m := studioviews.TextEditorView(&s.Editor); m.TemplateData != nil {
 			modals = append(modals, m)
 		}

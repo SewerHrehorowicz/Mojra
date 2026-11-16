@@ -14,6 +14,6 @@ type NewBookState struct {
 }
 
 // Reset clears the new book view state.
-func (m *NewBookState) Reset() {
-	*m = NewBookState{}
+func (modal *NewBookState) Reset() {
+	*modal = NewBookState{}
 }

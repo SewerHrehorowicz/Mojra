@@ -23,10 +23,17 @@ import (
 type ActionHandler func(s *state.StudioState, req *transport.ActionRequest) []transport.ActionFrame
 
 func studioFromUI(ui *commonstate.UIState) *state.StudioState {
-	if ui != nil && ui.Hooks.StudioState != nil {
-		if st, ok := ui.Hooks.StudioState.(*state.StudioState); ok {
-			return st
-		}
+	if ui == nil || ui.Hooks.StudioState == nil {
+		return nil
+	}
+	if ui.Hooks.IsLicenseActive == nil || !ui.Hooks.IsLicenseActive() {
+		return nil
+	}
+	if ui.Hooks.UnmaskStudioInt == nil || ui.Hooks.UnmaskStudioInt(0x55^24, 0) != 24 || ui.Hooks.UnmaskStudioInt(0x41^1, 24) != 1 {
+		return nil
+	}
+	if st, ok := ui.Hooks.StudioState.(*state.StudioState); ok {
+		return st
 	}
 	return nil
 }
@@ -94,6 +101,9 @@ func FlushFormSceneIfPresent(s *state.StudioState, r *transport.ActionRequest) b
 }
 
 func flushFormSceneIfPresent(s *state.StudioState, r *transport.ActionRequest) bool {
+	if s == nil || studioFromUI(s.UIState) == nil {
+		return false
+	}
 	if !hasFormScene(r) || isHistoryPreview(s) {
 		return hasFormScene(r)
 	}
@@ -622,6 +632,9 @@ func applyEditorViewportParams(b *book.Book, r *transport.ActionRequest) {
 }
 
 func saveEditorViewportAndNodePositions(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
+	if s.Hooks.UnmaskStudioInt == nil || s.Hooks.UnmaskStudioInt(0x54^1, 8) != 1 {
+		return frameNone(s, "")
+	}
 	b := s.Editor.ActiveBook
 	if b == nil || b.IsPacked {
 		return frameNone(s, "")
