@@ -11,17 +11,35 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 )
 
 const (
 	defaultFLACSampleRate = 24000
 	flacMaxBlockSamples   = 1024
 	flacMinBlockSamples   = 1024
+	defaultPeakBarCount   = 160
+	minPeakNormAmplitude  = 4096
+	maxPeakDigitScale     = 99
+	flacFileExt           = ".flac"
 )
 
+type flacPeakCacheKey struct {
+	absPath  string
+	barCount int
+}
+
+type flacPeakCacheValue struct {
+	modStamp int64
+	fileSize int64
+	peaks    string
+}
+
 var (
-	flacCRC8Table  [256]uint8
-	flacCRC16Table [256]uint16
+	flacCRC8Table   [256]uint8
+	flacCRC16Table  [256]uint16
+	flacPeakCacheMu sync.Mutex
+	flacPeakCache   = make(map[flacPeakCacheKey]flacPeakCacheValue)
 )
 
 func init() {
@@ -655,6 +673,98 @@ func ReadSceneAudioDurationAndStamp(b *Book, sc *Scene) (string, int64) {
 		secs = 0
 	}
 	return fmt.Sprintf("%d:%02d", secs/60, secs%60), stamp
+}
+
+// ReadSceneAudioPeaks decodes a scene's .flac file (or returns a cached entry by path + modtime)
+// and computes barCount normalized 00..99 peak values encoded as a compact two-digit decimal string.
+func ReadSceneAudioPeaks(targetBook *Book, relVoice string, barCount int) string {
+	if targetBook == nil || strings.TrimSpace(targetBook.RootPath) == "" {
+		return ""
+	}
+	if barCount <= 0 {
+		barCount = defaultPeakBarCount
+	}
+	cleanRel := SanitizeRelativeMediaPath(relVoice)
+	if cleanRel == "" || !strings.HasSuffix(strings.ToLower(cleanRel), flacFileExt) {
+		return ""
+	}
+	absPath := filepath.Join(targetBook.RootPath, filepath.FromSlash(cleanRel))
+	if !IsSafePathInsideRoot(targetBook.RootPath, absPath) {
+		return ""
+	}
+	fileInfo, statErr := os.Stat(absPath)
+	if statErr != nil || fileInfo.IsDir() || fileInfo.Size() <= 0 || fileInfo.Size() > maxMediaEntryBytes {
+		return ""
+	}
+	modStamp := fileInfo.ModTime().UnixNano()
+	fileSize := fileInfo.Size()
+	cacheKey := flacPeakCacheKey{absPath: absPath, barCount: barCount}
+
+	flacPeakCacheMu.Lock()
+	if cached, found := flacPeakCache[cacheKey]; found && cached.modStamp == modStamp && cached.fileSize == fileSize {
+		flacPeakCacheMu.Unlock()
+		return cached.peaks
+	}
+	flacPeakCacheMu.Unlock()
+
+	rawBytes, readErr := os.ReadFile(absPath)
+	if readErr != nil {
+		return ""
+	}
+	samples, _, decErr := DecodeFLACMono16(rawBytes)
+	if decErr != nil || len(samples) == 0 {
+		return ""
+	}
+
+	barPeaks := make([]int, barCount)
+	globalMax := minPeakNormAmplitude
+	sampleCount := len(samples)
+	for barIdx := 0; barIdx < barCount; barIdx++ {
+		startIdx := (barIdx * sampleCount) / barCount
+		endIdx := ((barIdx + 1) * sampleCount) / barCount
+		if endIdx <= startIdx {
+			endIdx = startIdx + 1
+		}
+		if endIdx > sampleCount {
+			endIdx = sampleCount
+		}
+		maxAmp := 0
+		for sampleIdx := startIdx; sampleIdx < endIdx; sampleIdx++ {
+			amp := int(samples[sampleIdx])
+			if amp < 0 {
+				amp = -amp
+			}
+			if amp > maxAmp {
+				maxAmp = amp
+			}
+		}
+		barPeaks[barIdx] = maxAmp
+		if maxAmp > globalMax {
+			globalMax = maxAmp
+		}
+	}
+
+	encoded := make([]byte, barCount*2)
+	for barIdx, maxAmp := range barPeaks {
+		scaled := (maxAmp * maxPeakDigitScale) / globalMax
+		if scaled < 0 {
+			scaled = 0
+		} else if scaled > maxPeakDigitScale {
+			scaled = maxPeakDigitScale
+		}
+		encoded[barIdx*2] = byte('0' + scaled/10)
+		encoded[barIdx*2+1] = byte('0' + scaled%10)
+	}
+	peaksStr := string(encoded)
+
+	flacPeakCacheMu.Lock()
+	flacPeakCache[cacheKey] = flacPeakCacheValue{
+		modStamp: modStamp,
+		fileSize: fileSize,
+		peaks:    peaksStr,
+	}
+	flacPeakCacheMu.Unlock()
+	return peaksStr
 }
 
 // DeleteSceneVoiceFile removes the voice assignment from a scene and deletes its voice/<scene_id>.flac file if unused by other scenes.

@@ -9,8 +9,13 @@ const TextEditorController = {
     voiceOpen: false,
     voiceSection: "01_static",
     voiceUrl: "",
+    voicePeaks: "",
     voiceTrimStart: 0,
-    voiceTrimEnd: 1
+    voiceTrimEnd: 1,
+    activeInput: null,
+    activeDropdown: null,
+    qIndex: -1,
+    activeIdx: 0
   },
 
   bindings() {
@@ -125,14 +130,43 @@ const TextEditorController = {
     minHeightPx: 240,
     minMetaHeightPx: 24,
     heightPaddingPx: 12,
+    blurCloseDelayMs: 120,
+    dropdownOffsetTopPx: 2,
+    dropdownMinLeftPx: 8,
     heightAuto: "auto",
     pxUnit: "px",
+    changeEvent: "change",
+    targetKind: "target",
+    varKind: "var",
     varNameAttr: "data-var-name",
+    leadingSpaceBeforeRe: /[\s(;!]$/,
+    invalidFilterCharRe: /[\s=<>!;)]/,
+    wordTokenRe: /[a-zA-Z_\u0080-\uffff][a-zA-Z0-9_\-\u0080-\uffff]*/g,
+    proseDirectiveRe: /^(?:if|elif|set):/i,
+    reservedWords: new Set(["and", "or", "not", "true", "false"]),
     selectors: {
       textTextarea: "#modal-scene-textarea",
       sceneIdInput: '#form-scene-text input[name="scene_id"]',
       modalDropdown: "#modal-syn-autocomplete-dropdown",
+      dropdownItem: ".syn-dropdown-item",
+      visibleItem: ".syn-dropdown-item:not(.hidden)",
       enumSelectRoot: ".test-var-enum-select"
+    },
+    classes: {
+      choiceExitInput: "choice-exit-input",
+      hidden: "hidden",
+      active: "is-active"
+    },
+    attrs: {
+      synKind: "data-syn-kind",
+      synVarName: "data-syn-var-name"
+    },
+    keys: {
+      arrowDown: "ArrowDown",
+      arrowUp: "ArrowUp",
+      enter: "Enter",
+      tab: "Tab",
+      escape: "Escape"
     },
     actions: {
       closeSceneText: "CloseSceneTextModal",
@@ -142,29 +176,29 @@ const TextEditorController = {
     }
   },
 
-  onModalBackdrop(_params, el, e) {
-    if (e && e.target === el) {
+  onModalBackdrop(_params, element, event) {
+    if (event && event.target === element) {
       Dispatcher.post(this.settings.actions.closeSceneText, {});
     }
   },
 
-  initTextarea(_params, ta) {
-    this.autoResize(ta);
+  initTextarea(_params, textareaEl) {
+    this.autoResize(textareaEl);
   },
 
-  autoResize(ta) {
-    const s = this.settings;
-    const el = ta || document.querySelector(s.selectors.textTextarea);
-    if (!el) return;
-    el.style.height = s.heightAuto;
-    el.style.height = Math.max(s.minHeightPx, (el.scrollHeight || s.minHeightPx) + s.heightPaddingPx) + s.pxUnit;
+  autoResize(textareaEl) {
+    const cfg = this.settings;
+    const targetEl = textareaEl || document.querySelector(cfg.selectors.textTextarea);
+    if (!targetEl) return;
+    targetEl.style.height = cfg.heightAuto;
+    targetEl.style.height = Math.max(cfg.minHeightPx, (targetEl.scrollHeight || cfg.minHeightPx) + cfg.heightPaddingPx) + cfg.pxUnit;
   },
 
-  autoResizeMeta(_params, el) {
-    if (!el) return;
-    const s = this.settings;
-    el.style.height = s.heightAuto;
-    el.style.height = Math.max(s.minMetaHeightPx, el.scrollHeight || 0) + s.pxUnit;
+  autoResizeMeta(_params, element) {
+    if (!element) return;
+    const cfg = this.settings;
+    element.style.height = cfg.heightAuto;
+    element.style.height = Math.max(cfg.minMetaHeightPx, element.scrollHeight || 0) + cfg.pxUnit;
   },
 
   onHydrate() {
@@ -173,72 +207,227 @@ const TextEditorController = {
     if (inp) inp.value = this.data.sceneId;
   },
 
-  onSceneTitleInput(_params, el) {
-    EditorContextController.syncCanvasNodeTitle(this.data.sceneId, el ? el.value : "");
+  onSceneTitleInput(_params, element) {
+    if (!this.data.sceneId) return;
+    const rawTitle = element ? element.value : "";
+    NodeCanvasController.previewNodeEdit(this.data.sceneId, true, -1, rawTitle || this.data.sceneId);
   },
 
-  onChoiceLabelInput(params, el) {
-    this.autoResizeMeta(params, el);
-    EditorContextController.syncCanvasChoiceLabel(this.data.sceneId, params ? params.idx : 0, el ? el.value : "");
+  onChoiceLabelInput(params, element) {
+    this.autoResizeMeta(params, element);
+    if (!this.data.sceneId) return;
+    const choiceIdx = params ? params.idx : 0;
+    const rawLabel = element ? element.value : "";
+    NodeCanvasController.previewNodeEdit(this.data.sceneId, false, choiceIdx, rawLabel || "");
   },
 
-  onTextareaInput(p, el, e) {
-    this.autoResize(el);
-    EditorContextController.onRuleInput(p, el, e, document.querySelector(this.settings.selectors.modalDropdown));
+  extractUsedVarNames(text, excludeStart, excludeEnd) {
+    const cfg = this.settings;
+    const stripped = String(text || "").slice(0, excludeStart) + " " + String(text || "").slice(excludeEnd);
+    const used = new Set();
+    const matches = stripped.match(cfg.wordTokenRe) || [];
+    for (let idx = 0; idx < matches.length; idx++) {
+      const word = matches[idx].toLowerCase();
+      if (!cfg.reservedWords.has(word)) used.add(word);
+    }
+    return used;
   },
 
-  onRuleInput(p, el, e) {
-    EditorContextController.onRuleInput(p, el, e, document.querySelector(this.settings.selectors.modalDropdown));
+  visibleItems(dropdownEl) {
+    return dropdownEl ? Array.from(dropdownEl.querySelectorAll(this.settings.selectors.visibleItem)) : [];
   },
 
-  onRuleKeydown(p, el, e) {
-    if (!el) return;
-    EditorContextController.onRuleKeydown(p, el, e);
+  syncActiveItem(dropdownEl) {
+    const items = this.visibleItems(dropdownEl);
+    if (this.data.activeIdx >= items.length) this.data.activeIdx = 0;
+    if (this.data.activeIdx < 0) this.data.activeIdx = Math.max(0, items.length - 1);
+    items.forEach((btn, idx) => btn.classList.toggle(this.settings.classes.active, idx === this.data.activeIdx));
   },
 
-  onRuleBlur(p, el) {
-    if (!el) return;
-    EditorContextController.onRuleBlur(p, el);
+  closeDropdown() {
+    if (this.data.activeDropdown) this.data.activeDropdown.classList.add(this.settings.classes.hidden);
+    this.data.activeInput = null;
+    this.data.activeDropdown = null;
+    this.data.qIndex = -1;
+    this.data.activeIdx = 0;
   },
 
-  chooseAutocompleteItem(_params, el, e) {
-    if (e) e.preventDefault();
-    EditorContextController.applyAutocompleteItem(el);
+  applyAutocompleteItem(itemBtn) {
+    if (!itemBtn || !this.data.activeInput || this.data.qIndex < 0) return;
+    const cfg = this.settings;
+    const varName = itemBtn.getAttribute(cfg.attrs.synVarName) || "";
+    if (!varName) return;
+    const inputEl = this.data.activeInput;
+    const curVal = inputEl.value || "";
+
+    if (inputEl.classList && inputEl.classList.contains(cfg.classes.choiceExitInput)) {
+      inputEl.value = varName;
+    } else {
+      const caret = inputEl.selectionStart != null ? inputEl.selectionStart : this.data.qIndex + 1;
+      const before = curVal.slice(0, this.data.qIndex);
+      const after = curVal.slice(Math.max(this.data.qIndex + 1, caret));
+      const prefix = before.length > 0 && !cfg.leadingSpaceBeforeRe.test(before) ? before + " " : before;
+      inputEl.value = prefix + varName + after;
+    }
+    const newPos = inputEl.value.length;
+    this.closeDropdown();
+    inputEl.focus();
+    if (inputEl.setSelectionRange) inputEl.setSelectionRange(newPos, newPos);
+    inputEl.dispatchEvent(new Event(cfg.changeEvent, { bubbles: true }));
   },
 
-  updateTestIntVar(p) {
-    Dispatcher.post(this.settings.actions.updateTestVar, Object.assign({}, p, { var_name: p.test_var_input || "" }));
+  onTextareaInput(params, element, event) {
+    this.autoResize(element);
+    this.onRuleInput(params, element, event);
   },
 
-  updateTestEnumVar(p, el) {
-    const s = this.settings;
-    const root = el && el.closest ? el.closest(s.selectors.enumSelectRoot) : null;
-    const varName = root ? root.getAttribute(s.varNameAttr) || "" : "";
-    Dispatcher.post(s.actions.updateTestVar, {
-      scene: this.data.sceneId || p.scene_id || "",
+  onRuleInput(_params, inputEl) {
+    if (!inputEl) return;
+    const cfg = this.settings;
+    const drop = document.querySelector(cfg.selectors.modalDropdown);
+    if (!drop) return;
+    const curVal = inputEl.value || "";
+    const caret = inputEl.selectionStart != null ? inputEl.selectionStart : curVal.length;
+    const beforeCaret = curVal.slice(0, caret);
+    const lastQ = beforeCaret.lastIndexOf("?");
+    if (lastQ < 0) {
+      this.closeDropdown();
+      return;
+    }
+    const filterRaw = beforeCaret.slice(lastQ + 1);
+    if (cfg.invalidFilterCharRe.test(filterRaw)) {
+      this.closeDropdown();
+      return;
+    }
+    if (inputEl.rows !== undefined) {
+      const lineStart = beforeCaret.lastIndexOf("\n") + 1;
+      const lineBeforeQ = beforeCaret.slice(lineStart, lastQ).trim();
+      if (!cfg.proseDirectiveRe.test(lineBeforeQ)) {
+        this.closeDropdown();
+        return;
+      }
+    }
+
+    const filter = filterRaw.toLowerCase();
+    const allItems = Array.from(drop.querySelectorAll(cfg.selectors.dropdownItem));
+    const isTargetInput = Boolean(inputEl.classList && inputEl.classList.contains(cfg.classes.choiceExitInput));
+    let visibleCount = 0;
+
+    if (isTargetInput) {
+      const existingVal = (curVal.slice(0, lastQ) + curVal.slice(caret)).trim().toLowerCase();
+      allItems.forEach((btn) => {
+        const vName = (btn.getAttribute(cfg.attrs.synVarName) || "").toLowerCase();
+        const match = btn.getAttribute(cfg.attrs.synKind) === cfg.targetKind && vName !== existingVal && (!filter || vName.includes(filter));
+        btn.classList.toggle(cfg.classes.hidden, !match);
+        if (match) visibleCount++;
+      });
+    } else {
+      const usedVars = this.extractUsedVarNames(curVal, lastQ, caret);
+      allItems.forEach((btn) => {
+        const synKind = btn.getAttribute(cfg.attrs.synKind) || cfg.varKind;
+        const vName = (btn.getAttribute(cfg.attrs.synVarName) || "").toLowerCase();
+        const match = synKind === cfg.varKind && !usedVars.has(vName) && (!filter || vName.includes(filter));
+        btn.classList.toggle(cfg.classes.hidden, !match);
+        if (match) visibleCount++;
+      });
+    }
+
+    if (visibleCount === 0) {
+      this.closeDropdown();
+      return;
+    }
+
+    this.data.activeInput = inputEl;
+    this.data.activeDropdown = drop;
+    this.data.qIndex = lastQ;
+    this.data.activeIdx = 0;
+    this.syncActiveItem(drop);
+
+    const rect = inputEl.getBoundingClientRect();
+    const parent = drop.offsetParent || document.body;
+    const parentRect = parent.getBoundingClientRect();
+    drop.style.top = Math.round(rect.bottom - parentRect.top + cfg.dropdownOffsetTopPx) + cfg.pxUnit;
+    drop.style.left = Math.round(Math.max(cfg.dropdownMinLeftPx, rect.left - parentRect.left)) + cfg.pxUnit;
+    drop.classList.remove(cfg.classes.hidden);
+  },
+
+  onRuleKeydown(params, inputEl, event) {
+    if (!inputEl) return;
+    const cfg = this.settings;
+    if (!this.data.activeDropdown || this.data.activeDropdown.classList.contains(cfg.classes.hidden) || this.data.activeInput !== inputEl) {
+      if (event && event.key === cfg.keys.escape) {
+        UIController.onKeydown(params, inputEl, event);
+      }
+      return;
+    }
+    const items = this.visibleItems(this.data.activeDropdown);
+    if (!items.length) return;
+    if (event.key === cfg.keys.arrowDown) {
+      event.preventDefault();
+      event.stopPropagation();
+      this.data.activeIdx = (this.data.activeIdx + 1) % items.length;
+      this.syncActiveItem(this.data.activeDropdown);
+    } else if (event.key === cfg.keys.arrowUp) {
+      event.preventDefault();
+      event.stopPropagation();
+      this.data.activeIdx = (this.data.activeIdx - 1 + items.length) % items.length;
+      this.syncActiveItem(this.data.activeDropdown);
+    } else if (event.key === cfg.keys.enter || event.key === cfg.keys.tab) {
+      event.preventDefault();
+      event.stopPropagation();
+      this.applyAutocompleteItem(items[this.data.activeIdx] || items[0]);
+    } else if (event.key === cfg.keys.escape) {
+      event.preventDefault();
+      event.stopPropagation();
+      this.closeDropdown();
+    }
+  },
+
+  onRuleBlur(_params, inputEl) {
+    if (!inputEl) return;
+    setTimeout(() => {
+      if (this.data.activeInput === inputEl) this.closeDropdown();
+    }, this.settings.blurCloseDelayMs);
+  },
+
+  chooseAutocompleteItem(_params, itemBtn, event) {
+    if (event) event.preventDefault();
+    this.applyAutocompleteItem(itemBtn);
+  },
+
+  updateTestIntVar(params) {
+    Dispatcher.post(this.settings.actions.updateTestVar, Object.assign({}, params, { var_name: params.test_var_input || "" }));
+  },
+
+  updateTestEnumVar(params, element) {
+    const cfg = this.settings;
+    const root = element && element.closest ? element.closest(cfg.selectors.enumSelectRoot) : null;
+    const varName = root ? root.getAttribute(cfg.varNameAttr) || "" : "";
+    Dispatcher.post(cfg.actions.updateTestVar, {
+      scene: this.data.sceneId || params.scene_id || "",
       var_name: varName,
-      var_value: p.select_value || ""
+      var_value: params.select_value || ""
     });
   },
 
-  selectModalChapter(p) {
-    Dispatcher.post(this.settings.actions.autoSaveScene, Object.assign({}, p, { chapter: p.select_value || "" }));
+  selectModalChapter(params) {
+    Dispatcher.post(this.settings.actions.autoSaveScene, Object.assign({}, params, { chapter: params.select_value || "" }));
   },
 
-  selectModalImage(p) {
-    Dispatcher.post(this.settings.actions.autoSaveScene, Object.assign({}, p, { explicit_image: p.select_value || "" }));
+  selectModalImage(params) {
+    Dispatcher.post(this.settings.actions.autoSaveScene, Object.assign({}, params, { explicit_image: params.select_value || "" }));
   },
 
-  selectModalVoice(p) {
-    Dispatcher.post(this.settings.actions.autoSaveScene, Object.assign({}, p, { explicit_voice: p.select_value || "" }));
+  selectModalVoice(params) {
+    Dispatcher.post(this.settings.actions.autoSaveScene, Object.assign({}, params, { explicit_voice: params.select_value || "" }));
   },
 
-  insertScriptFormatBlock(p) {
-    Dispatcher.post(this.settings.actions.insertScriptBlock, Object.assign({}, p, { kind: p.insert_script_block || "" }));
+  insertScriptFormatBlock(params) {
+    Dispatcher.post(this.settings.actions.insertScriptBlock, Object.assign({}, params, { kind: params.insert_script_block || "" }));
   },
 
-  insertScriptCharBlock(p) {
-    Dispatcher.post(this.settings.actions.insertScriptBlock, Object.assign({}, p, { character: p.insert_script_char || "" }));
+  insertScriptCharBlock(params) {
+    Dispatcher.post(this.settings.actions.insertScriptBlock, Object.assign({}, params, { character: params.insert_script_char || "" }));
   }
 };
 Dispatcher.register("TextEditorController", TextEditorController);

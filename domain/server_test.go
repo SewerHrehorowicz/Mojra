@@ -246,9 +246,6 @@ func TestServerActionLifecycleAndSecurity(t *testing.T) {
 	}
 	defer addChResp.Body.Close()
 	addChHTML, _ := io.ReadAll(addChResp.Body)
-	if !strings.Contains(string(addChHTML), "choice_label_1") {
-		t.Fatalf("expected second choice input choice_label_1 in rendered studio HTML")
-	}
 	if strings.Contains(string(addChHTML), "<select") {
 		t.Fatalf("expected no native system <select> dropdowns in editor HTML")
 	}
@@ -492,8 +489,8 @@ func TestServerActionLifecycleAndSecurity(t *testing.T) {
 	}
 	closeModalHTML, _ := io.ReadAll(closeModalResp.Body)
 	_ = closeModalResp.Body.Close()
-	if !strings.Contains(string(closeModalHTML), `node-edit-text-btn`) || strings.Contains(string(closeModalHTML), "Drugie zdanie") {
-		t.Fatalf("expected .node-edit-text-btn in context panel after closing modal, got:\n%s", string(closeModalHTML))
+	if strings.Contains(string(closeModalHTML), `id="text-editor-view"`) || strings.Contains(string(closeModalHTML), "Drugie zdanie") {
+		t.Fatalf("expected #text-editor-view to be closed after CloseSceneTextModal, got:\n%s", string(closeModalHTML))
 	}
 
 	// 2d. Insert a new scene before an existing scene via InsertSceneBefore
@@ -1787,8 +1784,8 @@ func TestTopbarAlwaysVisibleIncludingSceneTextEditor(t *testing.T) {
 		if end := strings.Index(block, "}"); end > 0 {
 			block = block[:end]
 		}
-		if !strings.Contains(block, "width: 320px") || strings.Contains(block, "width: 100%") {
-			t.Fatalf("expected %s to stay a 320px right-side column on desktop (never width: 100%%), got:\n%s", panelSel, block)
+		if strings.Contains(block, "width: 100%") {
+			t.Fatalf("expected %s to stay a right-side column on desktop (never width: 100%%), got:\n%s", panelSel, block)
 		}
 	}
 	if strings.Contains(css, "\n.editor-workspace-body:has(> aside:not(.hidden)) .timeline-scroll-viewport {") {
@@ -2034,11 +2031,10 @@ func TestNodeEditorEmptyLibraryRenameFitAndRootScene(t *testing.T) {
 		t.Fatalf("expected data-canvas-zoom=fit in editor toolbar, got:\n%s", createHTML)
 	}
 	if !strings.Contains(createHTML, "start:1") ||
-		!strings.Contains(createHTML, `class="node-start-indicator"`) ||
 		!strings.Contains(createHTML, `id="btn-book-settings"`) ||
 		!strings.Contains(createHTML, `book-start-scene-select`) ||
 		strings.Contains(createHTML, `id="btn-set-start-scene"`) {
-		t.Fatalf("expected start:1, read-only start indicator, and book settings start selector without scene SetStartScene button, got:\n%s", createHTML)
+		t.Fatalf("expected start:1 and book settings start selector without scene SetStartScene button, got:\n%s", createHTML)
 	}
 
 	// 3. Alter book title via RenameBook
@@ -2079,8 +2075,8 @@ func TestNodeEditorEmptyLibraryRenameFitAndRootScene(t *testing.T) {
 	if srv.State.Editor.ActiveBook.StartSceneID != "rozdroze" {
 		t.Fatalf("expected StartSceneID='rozdroze', got %q", srv.State.Editor.ActiveBook.StartSceneID)
 	}
-	if !strings.Contains(startHTML, `class="node-start-indicator"`) {
-		t.Fatalf("expected active start scene indicator in inspector after SetStartScene, got:\n%s", startHTML)
+	if !strings.Contains(startHTML, `id:rozdroze`) || !strings.Contains(startHTML, `start:1`) {
+		t.Fatalf("expected active start scene indicator in studio graph data after SetStartScene, got:\n%s", startHTML)
 	}
 	dataTxtAfterStart, err := os.ReadFile(filepath.Join(srv.State.Editor.ActiveBook.RootPath, "book.playtxt"))
 	if err != nil || !strings.Contains(string(dataTxtAfterStart), "start: rozdroze") {
@@ -2287,8 +2283,21 @@ func TestNarrationlessAllOrNothingAndMinimalProgressBar(t *testing.T) {
 	if !srv.State.Editor.ActiveBook.Narrated {
 		t.Fatalf("expected ActiveBook.Narrated=true after ToggleBookNarrated")
 	}
-	if (!strings.Contains(togOnHTML, `name="explicit_voice"`) && !strings.Contains(togOnHTML, `node-voice-select`)) || !strings.Contains(togOnHTML, `data-kind="audio"`) {
-		t.Fatalf("expected voice controls to appear in Node Studio when book narration is enabled, got:\n%s", togOnHTML)
+	if !strings.Contains(togOnHTML, `btn-toggle-book-narrated active`) {
+		t.Fatalf("expected active narrated toggle in Book Settings after ToggleBookNarrated, got:\n%s", togOnHTML)
+	}
+	rOpenModal, err := http.PostForm(ts.URL+"/api/action", url.Values{
+		"action": {"OpenSceneTextModal"},
+		"scene":  {srv.State.Editor.ActiveBook.StartSceneID},
+	})
+	if err != nil {
+		t.Fatalf("OpenSceneTextModal failed: %v", err)
+	}
+	modalBytes, _ := io.ReadAll(rOpenModal.Body)
+	_ = rOpenModal.Body.Close()
+	modalHTML := string(modalBytes)
+	if !strings.Contains(modalHTML, `modal-voice-select`) || !strings.Contains(modalHTML, `data-kind="audio"`) || !strings.Contains(modalHTML, `id="modal-voice-rec-strip"`) {
+		t.Fatalf("expected voice controls to appear in #text-editor-view when book narration is enabled, got:\n%s", modalHTML)
 	}
 }
 

@@ -1237,8 +1237,12 @@ func TestVariablesPanelChoiceTripleStackAndThreeStateScenePreview(t *testing.T) 
 		t.Fatalf("expected 2 enum options after RemoveBookEnumOption, got %+v", srv.State.Editor.ActiveBook.Variables[2].Options)
 	}
 
-	// 3. Add a second choice to the start scene and verify automatic 4-row exit:/label:/if:/set: choice stack + syntax help
+	// 3. Open Scene Text Modal, add a second choice to the start scene, and verify automatic 4-row exit:/label:/if:/set: choice stack + syntax help
 	startID := srv.State.Editor.ActiveBook.StartSceneID
+	_, _ = http.PostForm(ts.URL+"/api/action", url.Values{
+		"action": {"OpenSceneTextModal"},
+		"scene":  {startID},
+	})
 	resp, _ = http.PostForm(ts.URL+"/api/action", url.Values{
 		"action": {"AddChoice"},
 		"scene":  {startID},
@@ -1254,15 +1258,11 @@ func TestVariablesPanelChoiceTripleStackAndThreeStateScenePreview(t *testing.T) 
 	})
 	body, _ = io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
-	if !strings.Contains(string(body), `id="syntax-help-popover"`) || !strings.Contains(string(body), "sumienie &gt;= 2") {
+	if !strings.Contains(string(body), `id="modal-syntax-help-popover"`) || !strings.Contains(string(body), "sumienie &gt;= 2") {
 		t.Fatalf("expected syntax help popover with exit:/if:/set: cheat sheet")
 	}
 
-	// 4. Open Scene Text Modal, save conditional prose & choice condition, and test 3 preview modes (normal / highlight / output)
-	_, _ = http.PostForm(ts.URL+"/api/action", url.Values{
-		"action": {"OpenSceneTextModal"},
-		"scene":  {startID},
-	})
+	// 4. Save conditional prose & choice condition, and test 3 preview modes (normal / highlight / output)
 	_, _ = http.PostForm(ts.URL+"/api/action", url.Values{
 		"action":           {"SaveSceneTextModal"},
 		"scene_id":         {startID},
@@ -1597,6 +1597,20 @@ func TestSceneTextSlideOutPanelUnifiedChoicesAndSyntaxHoverTooltip(t *testing.T)
 		t.Fatalf("expected #modal-scene-text to switch to .mode-full on SetSceneTextWidthMode=full, got:\n%s", string(fullBody))
 	}
 
+	// 2c. Step-collapse from full width back to half width (Stage 2 -> Stage 1: mode-half)
+	respStepHalf, err := http.PostForm(ts.URL+"/api/action", url.Values{
+		"action": {"CloseSceneTextModal"},
+		"step":   {"true"},
+	})
+	if err != nil {
+		t.Fatalf("CloseSceneTextModal step=true failed: %v", err)
+	}
+	stepHalfBody, _ := io.ReadAll(respStepHalf.Body)
+	_ = respStepHalf.Body.Close()
+	if !strings.Contains(string(stepHalfBody), `class="modal-backdrop scene-text-fullscreen-backdrop mode-half has-right-panel" id="text-editor-view"`) {
+		t.Fatalf("expected CloseSceneTextModal step=true in full mode to return .mode-half, got:\n%s", string(stepHalfBody))
+	}
+
 	// 3. Save an invalid condition expression (stan_ducha = zbuntowany && cwiczenia_z_wioslem++) and verify hover popup data-hint explains the syntax error
 	resp, err = http.PostForm(ts.URL+"/api/action", url.Values{
 		"action":           {"SaveSceneTextModal"},
@@ -1755,6 +1769,9 @@ func TestSceneVoiceSectionsRecorderAndTextIsolation(t *testing.T) {
 	trimMeta, _ := decodeFDPResponse(body)
 	if trimMeta.Get("voiceTrimStart") != "0.05" || trimMeta.Get("voiceTrimEnd") != "0.92" {
 		t.Fatalf("expected non-destructive trim ratios in FDP ScriptData for 02_if, got start=%q end=%q", trimMeta.Get("voiceTrimStart"), trimMeta.Get("voiceTrimEnd"))
+	}
+	if len(trimMeta.Get("voicePeaks")) != 320 {
+		t.Fatalf("expected 320-char (160 bars) voicePeaks envelope in FDP ScriptData for 02_if, got len=%d (%q)", len(trimMeta.Get("voicePeaks")), trimMeta.Get("voicePeaks"))
 	}
 
 	// Switch from section 02_if back to section 01 with form's explicit_voice of 02_if included -> must NOT copy 02_if's audio file onto section 01

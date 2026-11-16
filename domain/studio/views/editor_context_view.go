@@ -4,7 +4,6 @@ package views
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 
 	book "mojra/domain/book/actions"
@@ -57,20 +56,7 @@ type editorContextTemplate struct {
 	BookImageless                 bool
 	BookImagelessLabel            string
 	BookImagelessShortLabel       string
-	HasBookVariables              bool
-	BookVarsSpec                  string
-	BookVarSuggestions            []book.VariableDef
-	BookEnumSuggestions           []book.SelectOption
-	BookTargetSuggestions         []book.SelectOption
-	SyntaxHelpCondRows            []book.SelectOption
-	SelectedSceneID               string
-	SelectedSceneTitle            string
-	SelectedNode                  *book.EditorNodeView
-	HasSelectedNode               bool
-	VoiceRecorderOpen             bool
 	ScriptStandardOptions         []book.SelectOption
-	SluglinePrefixPills           []string
-	SluglineTimePills             []string
 	MultiSceneItems               []book.SelectOption
 	BookSettingsOpen              bool
 	BookStartChapterName          string
@@ -80,41 +66,13 @@ type editorContextTemplate struct {
 	BookStartSceneOptions         []book.SelectOption
 	SelectedChapter               *book.Chapter
 	HasSelectedChapter            bool
-	IsNodeInspectorHidden         bool
 	IsContextPanelHidden          bool
-	ShowEditorHelpPanel           bool
-	ShowSyntaxHelpPopover         bool
 }
 
 type editorContextScript struct {
 	selectedSceneId string
-	bookVarsSpec    string
 	isScreenplay    bool
 	scriptStandard  string
-	voiceOpen       bool
-	voiceSection    string
-	voiceUrl        string
-	voiceTrimStart  float64
-	voiceTrimEnd    float64
-}
-
-func resolveVoiceScriptFields(appState *state.StudioState, nodeView *book.EditorNodeView) (bool, string, string, float64, float64) {
-	if appState == nil || nodeView == nil {
-		return false, defaultVoiceSecKey, "", 0.0, 1.0
-	}
-	secKey := nodeView.ActiveVoiceSectionKey
-	if secKey == "" {
-		secKey = defaultVoiceSecKey
-	}
-	trimStart, errStart := strconv.ParseFloat(nodeView.VoiceTrimStart, 64)
-	if errStart != nil || trimStart < 0 || trimStart >= 1 {
-		trimStart = 0.0
-	}
-	trimEnd, errEnd := strconv.ParseFloat(nodeView.VoiceTrimEnd, 64)
-	if errEnd != nil || trimEnd <= trimStart || trimEnd > 1 {
-		trimEnd = 1.0
-	}
-	return appState.Overlays.VoiceRecorder, secKey, nodeView.CurrentVoiceURL, trimStart, trimEnd
 }
 
 func populateEditorCommonFields(s *state.StudioState, v *editorContextTemplate) {
@@ -183,26 +141,15 @@ func EditorContextScriptView(s *state.StudioState) templates.TemplateChunk {
 	b := s.Editor.ActiveBook
 	isSp := false
 	std := book.ScriptStandardPL
-	var nv *book.EditorNodeView
 	if b != nil {
 		isSp = b.IsScreenplay()
 		std = b.NormalizedStandard()
-		if selSc := b.FindScene(b.ResolveValidSceneID(s.Editor.SelectedSceneID)); selSc != nil {
-			nv = buildEditorNodeView(s, selSc, true)
-		}
 	}
-	vOpen, vSec, vURL, vStart, vEnd := resolveVoiceScriptFields(s, nv)
 	return templates.TemplateChunk{
 		ScriptData: &editorContextScript{
 			selectedSceneId: s.Editor.SelectedSceneID,
-			bookVarsSpec:    book.EncodeBookVariablesSpec(b),
 			isScreenplay:    isSp,
 			scriptStandard:  std,
-			voiceOpen:       vOpen,
-			voiceSection:    vSec,
-			voiceUrl:        vURL,
-			voiceTrimStart:  vStart,
-			voiceTrimEnd:    vEnd,
 		},
 	}
 }
@@ -211,21 +158,15 @@ func EditorContextView(s *state.StudioState) templates.TemplateChunk {
 	v := &editorContextTemplate{}
 	populateEditorCommonFields(s, v)
 	if s.Editor.HasActiveBook() && len(s.Editor.ActiveBook.Scenes) > 0 {
-		populateEditorSelectedNodeOnly(s, v)
+		s.Editor.SelectedSceneID = s.Editor.ActiveBook.ResolveValidSceneID(s.Editor.SelectedSceneID)
+		populateEditorBookAndChapterSettings(s, v)
 	}
-	vOpen, vSec, vURL, vStart, vEnd := resolveVoiceScriptFields(s, v.SelectedNode)
 	return templates.TemplateChunk{
 		TemplateData: v,
 		ScriptData: &editorContextScript{
-			selectedSceneId: v.SelectedSceneID,
-			bookVarsSpec:    v.BookVarsSpec,
+			selectedSceneId: s.Editor.SelectedSceneID,
 			isScreenplay:    v.IsScreenplayMode,
 			scriptStandard:  v.ScriptStandard,
-			voiceOpen:       vOpen,
-			voiceSection:    vSec,
-			voiceUrl:        vURL,
-			voiceTrimStart:  vStart,
-			voiceTrimEnd:    vEnd,
 		},
 	}
 }
@@ -410,14 +351,8 @@ func buildSceneVoiceSectionsView(s *state.StudioState, sc *book.Scene) (hasMulti
 
 	sectionItems = make([]book.VoiceSection, len(sections))
 	for i, sec := range sections {
-		isActive := i == activeIdx
-		inspLabel := sec.ShortLabel
-		if isActive {
-			inspLabel = sec.Label
-		}
 		secItem := sec
-		secItem.InspectorLabel = inspLabel
-		secItem.IsActive = isActive
+		secItem.IsActive = i == activeIdx
 		sectionItems[i] = secItem
 	}
 	return hasMultiple, activeSec, sectionItems
@@ -596,14 +531,10 @@ func populateEditorBookAndChapterSettings(s *state.StudioState, v *editorContext
 
 	normStd := b.NormalizedStandard()
 	_, stdOpts := buildScriptStandardOptions(normStd, LangOf(s))
-	prefixPills, timePills := book.SluglineHelperPills(normStd)
 
 	v.IsScreenplayMode = b.IsScreenplay()
 	v.ScriptStandard = normStd
-	v.VoiceRecorderOpen = s.Overlays.VoiceRecorder
 	v.ScriptStandardOptions = stdOpts
-	v.SluglinePrefixPills = prefixPills
-	v.SluglineTimePills = timePills
 
 	v.MultiSceneItems = make([]book.SelectOption, 0, len(b.Scenes))
 	for _, sc := range b.Scenes {
@@ -757,21 +688,7 @@ func populateEditorBookAndChapterSettings(s *state.StudioState, v *editorContext
 		}
 	}
 	v.HasSelectedChapter = hasSelectedChapter
-	v.IsNodeInspectorHidden = true
 	v.IsContextPanelHidden = !bookSettingsOpen && !hasSelectedChapter
-	v.ShowEditorHelpPanel = s.Editor.RightPanel == state.PanelHelp
-	v.ShowSyntaxHelpPopover = s.Editor.SceneText.SyntaxHelpOpen
-
-	var selScene *book.Scene
-	if b != nil {
-		selScene = b.FindScene(s.Editor.SelectedSceneID)
-	}
-	v.HasBookVariables = b != nil && len(b.Variables) > 0
-	v.BookVarsSpec = book.EncodeBookVariablesSpec(b)
-	v.BookVarSuggestions = buildBookVarSuggestions(b)
-	v.BookEnumSuggestions = buildBookEnumValueSuggestions(b)
-	v.BookTargetSuggestions = buildBookTargetSuggestions(s, selScene)
-	v.SyntaxHelpCondRows = buildSyntaxHelpCondRows(s)
 }
 
 func buildChoiceRuleView(s *state.StudioState, sc *book.Scene, idx int, ch book.Choice, selectedVal string) (book.Choice, bool) {
@@ -883,15 +800,4 @@ func buildSceneInspectorChoices(appState *state.StudioState, targetScene *book.S
 		inspectorPorts = append(inspectorPorts, choiceView)
 	}
 	return inspectorPorts
-}
-
-func populateEditorSelectedNodeOnly(s *state.StudioState, v *editorContextTemplate) {
-	b := s.Editor.ActiveBook
-	s.Editor.SelectedSceneID = b.ResolveValidSceneID(s.Editor.SelectedSceneID)
-	selected := b.FindScene(s.Editor.SelectedSceneID)
-	v.SelectedSceneID = selected.ID
-	v.SelectedSceneTitle = selected.DisplayName()
-	v.SelectedNode = buildEditorNodeView(s, selected, true)
-	v.HasSelectedNode = v.SelectedNode != nil
-	populateEditorBookAndChapterSettings(s, v)
 }

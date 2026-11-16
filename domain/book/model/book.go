@@ -112,15 +112,14 @@ type VoiceSectionMeta struct {
 
 // VoiceSection represents an ordered static or conditional voiceover section extracted from a scene's AST.
 type VoiceSection struct {
-	Index          int
-	Key            string
-	Kind           string
-	Condition      string
-	Label          string
-	ShortLabel     string
-	InspectorLabel string
-	HeaderTitle    string
-	Text           string
+	Index         int
+	Key           string
+	Kind          string
+	Condition     string
+	Label         string
+	ShortLabel    string
+	HeaderTitle   string
+	Text          string
 	ExplicitVoice  string
 	TargetFile     string
 	AudioFile      string

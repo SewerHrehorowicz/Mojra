@@ -931,10 +931,14 @@ func finalizeActionFrames(appState *state.AppState, act string, actionFrames []t
 	}
 
 	hasAppTarget := false
+	hasModalsTarget := false
 	hasStudio := false
 	for _, af := range actionFrames {
 		if af.Target == commonstate.TargetApp {
 			hasAppTarget = true
+		}
+		if af.Target == commonstate.TargetModalsRoot {
+			hasModalsTarget = true
 		}
 		if (af.Target == commonstate.TargetApp || af.Target == commonstate.TargetWorkspace) && state.ActiveWorkspaceView(appState) == state.ViewEditor && appState.License.IsActive() && !appState.Editor.StudioHome {
 			hasStudio = true
@@ -954,6 +958,9 @@ func finalizeActionFrames(appState *state.AppState, act string, actionFrames []t
 				studioviews.StudioScriptView(&appState.Editor),
 				studioviews.NodeCanvasScriptView(&appState.Editor),
 			)
+			if !hasAppTarget && !hasModalsTarget && appState.Editor.SceneText.IsOpen() {
+				globalScriptChunks = append(globalScriptChunks, studioviews.TextEditorScriptView(&appState.Editor))
+			}
 		}
 	}
 	appState.Overlays.ResetCanvas = false

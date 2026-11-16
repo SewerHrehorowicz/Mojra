@@ -182,25 +182,6 @@ if [ "${1:-}" = "deck" ] || [ "${1:-}" = "--deck" ]; then
     exec go run ./cmd/deck "$@"
 fi
 
-if [ "${1:-}" = "graph" ] || [ "${1:-}" = "--graph" ]; then
-    shift
-    GRAPH_ARGS=()
-    for arg in "$@"; do
-        case "$arg" in
-            graph|--graph|--with-graph|-with-graph)
-                ;;
-            *)
-                GRAPH_ARGS+=("$arg")
-                ;;
-        esac
-    done
-    if [ "${#GRAPH_ARGS[@]}" -eq 0 ]; then
-        exec go run ./cmd/projgraph
-    else
-        exec go run ./cmd/projgraph "${GRAPH_ARGS[@]}"
-    fi
-fi
-
 if [ "${1:-}" = "chaos" ] || [ "${1:-}" = "--chaos" ]; then
     shift
     CHAOS_STEPS="${MOJRA_CHAOS_STEPS:-300}"
@@ -286,25 +267,8 @@ EOF
     exit 0
 fi
 
-WITH_GRAPH=0
-BUILD_ARGS=()
-for arg in "$@"; do
-    case "$arg" in
-        --with-graph|-with-graph)
-            WITH_GRAPH=1
-            ;;
-        *)
-            BUILD_ARGS+=("$arg")
-            ;;
-    esac
-done
-
-if [ "$WITH_GRAPH" -eq 1 ]; then
-    go run ./cmd/projgraph
-fi
-
-if [ "${#BUILD_ARGS[@]}" -eq 0 ]; then
+if [ $# -eq 0 ]; then
     exec go run ./cmd/mojra build
 else
-    exec go run ./cmd/mojra build "${BUILD_ARGS[@]}"
+    exec go run ./cmd/mojra build "$@"
 fi

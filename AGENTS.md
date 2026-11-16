@@ -13,14 +13,14 @@ implementuj <plan>.md zgodnie z @AGENTS.md nie lap za szerokiego kontekstu, nie 
 - variable, parameter, and receiver names must be descriptive and readable; single-letter or cryptic abbreviated names (`a`, `b`, `tr`, `el`, `tg`, `ev`, `fn`, `cb`, etc.) are strictly forbidden
 - no pass-through functions, they are forbidden
 - no duped funcionalities, before implementing check if you have the thing in project already
-- use project graph you keep in project root in standarized format (not json); read from it to discover project quickly, write to it after changing anything that is relevant each time
+- see `docs/api/arch.md` for full View–Template–Controller architecture specification
 - separation of concerns - app is a set of subsystems that communicate wit each other; state handles app state in memory; views handle preparing data for templates; actions handle url actions & dispatching them to views etc
 - no stuffing many fields in one struct just to pass arch tests
 - do not think twice over same thing, if you already analyzed and formulated plan, act on it
-- during refactors existing files, for each task formulate simple step-by-step plan in *.md, inline in chat in one copyable window, and include:
+- during refactors or plans for existing files, for each task ALWAYS save a simple step-by-step plan as a `*.md` file in `docs/plans/<name>.md` — NEVER print the plan inline in chat; only notify the user that the plan is ready and provide the file path/name. Every plan file must include:
   - what is there and what are problems
   - what are solutions
-  - file by file, method my method or line by line (if relevant) describe proposed changes, where it goes (if mixed responsibility), how to rename it
+  - file by file, method by method or line by line (if relevant) describe proposed changes, where it goes (if mixed responsibility), how to rename it
 
 ## 1. ALWAYS Keep the Top Bar (`header.topbar#topbar`) Visible — NEVER VIOLATE
 - **THE TOP BAR MUST ALWAYS REMAIN VISIBLE AND INTERACTIVE IN EVERY VIEW AND MODAL**:
@@ -87,10 +87,8 @@ implementuj <plan>.md zgodnie z @AGENTS.md nie lap za szerokiego kontekstu, nie 
     - Never duplicate entity names or values in the same card/row (e.g., never render a static title above an input prefilled with the exact same name in `#editor-breakdown-panel`).
   - Never use up/down arrow buttons (`↑`, `↓`) to reorder scenes, choices, or items (rejected at `.tpl` compile time); use 24px-grid canvas dragging (`data-node-drag-grip`) and wire ports.
   - Never explain the UI inside the UI (never write `"Kliknij przycisk..."`, `"Kliknij aby..."`, `"Przeciągnij..."`, or tutorial hints) and never spam the UI with unnecessary text, subtitles, or redundant headers.
-  - Keep canvas node cards (`.timeline-node-card`) read-only on the canvas (grip `⋮⋮`, title, choice labels, ports, `+ Wybór`); all editable inputs and delete buttons belong in `#editor-context-panel`.
-  - **Right-Side Studio Panels (`320px` Column) vs Portrait Phones**:
-    - `.editor-context-panel`, `.editor-history-panel`, `.editor-help-panel`, `.editor-breakdown-panel`, and `.editor-variables-panel` (`app/styles/editor_inspector.tss`) MUST ALWAYS render as a `320px` right-hand column (`width: 320px; min-width: 320px; max-width: 320px; border-left: 1px solid --border-subtle; flex-shrink: 0`) alongside a visible `#timeline-scroll-viewport` canvas on desktop, tablet, and landscape.
-    - Full-width panel mode (`width: 100%; flex: 1; border-left: none`) is strictly restricted to portrait phones (`@media (max-width: 760px) and (orientation: portrait)` and `.device-stage[data-preview="portrait"]`). Never hide `#timeline-scroll-viewport` on desktop when a right-side panel is open.
+  - **Right-Side Studio Panels vs Portrait Phones**:
+    - Never hide `#timeline-scroll-viewport` on desktop when a right-side panel is open; full-width panel mode (`width: 100%; flex: 1; border-left: none`) is restricted to portrait phones (`@media (max-width: 760px) and (orientation: portrait)` and `.device-stage[data-preview="portrait"]`).
 
 ## 5. Performance, Zero External Dependencies & Repository Hygiene
 - **Performance Hard Rules (P0)**:

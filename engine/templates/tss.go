@@ -2,8 +2,6 @@ package templates
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -39,39 +37,6 @@ func DefaultCSSSwitches() map[string]*CSSSwitchDef {
 		}
 	}
 	return out
-}
-
-// TranspileCSSFilesToString reads, transpiles, and bundles multiple CSS template files sharing switch definitions.
-func TranspileCSSFilesToString(cssFiles []string, stripDev bool, ctx *RenderContext) (string, error) {
-	switches := DefaultCSSSwitches()
-	var sb strings.Builder
-	for _, path := range cssFiles {
-		raw, err := os.ReadFile(path)
-		if err != nil {
-			return "", fmt.Errorf(errReadCSSFileFmt, path, err)
-		}
-		src := string(raw)
-		if stripDev {
-			src = StripDevOnlyBlocks(src)
-		}
-		name := strings.TrimSuffix(strings.TrimSuffix(filepath.Base(path), tssExt), cssExt)
-		rendered, err := TranspileCSSWithSwitches(src, name, ctx, switches, stripDev)
-		if err != nil {
-			return "", err
-		}
-		rendered = strings.TrimSpace(rendered)
-		if rendered == "" {
-			continue
-		}
-		if sb.Len() > 0 {
-			sb.WriteString("\n\n")
-		}
-		sb.WriteString(rendered)
-	}
-	if sb.Len() > 0 {
-		sb.WriteString("\n")
-	}
-	return sb.String(), nil
 }
 
 func isCSSPropertyAssignment(content string) bool {

@@ -344,7 +344,7 @@ mojaMetoda(params, matchedEl, event)
 
 ### Skąd `Dispatcher.collectParams` bierze klucze w `params`? (I dlaczego NIE przemycamy stanu z backendu w `data-*`!)
 
-> **Ważna zasada architektury (`ARCH.md` 4.3 — Zero State-Shuttling `data-*`)**:
+> **Ważna zasada architektury (`docs/api/arch.md` 4.3 — Zero State-Shuttling `data-*`)**:
 > Nigdy nie doklejamy danych domenowych z backendu do HTML-a przez atrybuty `data-scene-id="{SceneID}"` czy `data-track-id="..."` tylko po to, żeby JS odesłał je z powrotem do Go!
 > - Stan widoku z Go do JS zawsze podróżuje przez **`ScriptData` (`FDP`) -> `Controller.data`**.
 > - Kliknięty element na liście (np. która ścieżka lub który wybór został kliknięty) identyfikujemy automatycznie przez **`params.idx` (`0, 1, 2...`)**, a w Go sięgamy po `activeBook.Scenes[idx]`.
@@ -508,7 +508,7 @@ domain/mixer/
     └── mixer_controller.js
 ```
 
-> **Zasada Triady 1:1:1 (`ARCH.md`)**: Nazwy muszą pasować do siebie 1:1:
+> **Zasada Triady 1:1:1 (`docs/api/arch.md`)**: Nazwy muszą pasować do siebie 1:1:
 > - plik widoku: `mixer_view.go` -> konstruktor `MixerView` -> struktury `mixerTemplate` i `mixerScript`
 > - plik szablonu: `mixer_view.tpl` -> główny element `#mixer-view`
 > - plik kontrolera: `mixer_controller.js` -> obiekt `MixerController`

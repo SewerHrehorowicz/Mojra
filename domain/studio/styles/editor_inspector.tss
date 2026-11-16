@@ -115,13 +115,6 @@
   overflow hidden
   text-overflow ellipsis
 
-.editor-context-form
-  display flex
-  flex-direction column
-  gap 12px
-  padding 14px
-  min-height 100%
-
 .editor-chapter-form, .editor-book-form
   display flex
   flex-direction column
@@ -345,7 +338,7 @@
   padding 2px 0
   transition border-color 0.15s ease
 
-.editor-context-form .node-inline-title, .editor-chapter-form .node-inline-title, .editor-book-form .node-inline-title
+.editor-chapter-form .node-inline-title, .editor-book-form .node-inline-title
   font-size 19px
   font-weight 400
 
@@ -888,8 +881,14 @@
   user-select none
 
 .voice-rec-strip.modal-voice-rec-strip
-  padding 12px 0 6px 0
+  padding 10px 36px
+  border-top 1px solid --border-subtle
   gap 10px
+
+@media (max-width: 760px)
+  .voice-rec-strip.modal-voice-rec-strip,
+  .voice-rec-sections.modal-voice-rec-sections
+    padding 10px 20px
 
 .voice-rec-transport-btn,
 .voice-rec-action-btn
@@ -912,6 +911,8 @@
 .voice-rec-action-btn:hover
   color --text-primary
 
+.voice-rec-transport-btn:disabled,
+.voice-rec-transport-btn.is-disabled,
 .voice-rec-action-btn:disabled,
 .voice-rec-action-btn.is-disabled
   opacity 0.28
@@ -919,12 +920,31 @@
   cursor default
   pointer-events none
 
+.voice-rec-strip.is-recording .voice-rec-record-btn
+  color --accent-danger
+
 .voice-rec-icon,
 .voice-rec-btn-icon
   width 15px
   height 15px
   display block
   pointer-events none
+
+.voice-rec-play-btn .voice-rec-icon-play,
+.voice-rec-record-btn .voice-rec-icon-mic
+  display block
+
+.voice-rec-play-btn .voice-rec-icon-pause,
+.voice-rec-record-btn .voice-rec-icon-stop
+  display none
+
+.voice-rec-strip.is-playing .voice-rec-play-btn .voice-rec-icon-play,
+.voice-rec-strip.is-recording .voice-rec-record-btn .voice-rec-icon-mic
+  display none
+
+.voice-rec-strip.is-playing .voice-rec-play-btn .voice-rec-icon-pause,
+.voice-rec-strip.is-recording .voice-rec-record-btn .voice-rec-icon-stop
+  display block
 
 .voice-rec-waveform-wrap
   position relative
@@ -946,6 +966,7 @@
   pointer-events none
 
 .voice-rec-playhead
+  display none
   position absolute
   top 0
   bottom 0
@@ -954,6 +975,10 @@
   background --text-primary
   pointer-events none
   z-index 1
+
+.voice-rec-strip.is-playing .voice-rec-playhead,
+.voice-rec-playhead.is-visible
+  display block
 
 .voice-rec-trim-handle
   position absolute
@@ -1004,44 +1029,8 @@
   border-right 1px solid --text-primary
 
 .voice-rec-strip.is-recording .voice-rec-trim-handle,
-[data-voice-strip][data-voice-state="recording"] .voice-rec-trim-handle
+.voice-rec-strip.is-idle .voice-rec-trim-handle
   display none
-
-[data-voice-strip][data-voice-state="recording"] [data-voice-icon="stop"],
-[data-voice-strip][data-voice-state="playing"] [data-voice-icon="pause"],
-[data-voice-strip][data-voice-state="ready"] [data-voice-icon="play"],
-[data-voice-strip][data-voice-state="idle"] [data-voice-icon="mic"]
-  display block !important
-
-[data-voice-strip][data-voice-state="recording"] [data-voice-icon="mic"],
-[data-voice-strip][data-voice-state="recording"] [data-voice-icon="play"],
-[data-voice-strip][data-voice-state="recording"] [data-voice-icon="pause"],
-[data-voice-strip][data-voice-state="playing"] [data-voice-icon="play"]
-  display none !important
-
-[data-voice-strip][data-voice-state="playing"] [data-voice-icon="mic"],
-[data-voice-strip][data-voice-state="playing"] [data-voice-icon="stop"],
-[data-voice-strip][data-voice-state="ready"] [data-voice-icon="pause"],
-[data-voice-strip][data-voice-state="ready"] [data-voice-icon="mic"]
-  display none !important
-
-[data-voice-strip][data-voice-state="ready"] [data-voice-icon="stop"],
-[data-voice-strip][data-voice-state="idle"] [data-voice-icon="play"],
-[data-voice-strip][data-voice-state="idle"] [data-voice-icon="pause"],
-[data-voice-strip][data-voice-state="idle"] [data-voice-icon="stop"]
-  display none !important
-
-[data-voice-strip][data-voice-state="recording"] [data-voice-record-start="true"],
-[data-voice-strip][data-voice-state="recording"] [data-voice-delete="true"],
-[data-voice-strip][data-voice-state="idle"] [data-voice-record-start="true"],
-[data-voice-strip][data-voice-state="idle"] [data-voice-delete="true"]
-  display none !important
-
-[data-voice-strip][data-voice-state="ready"] [data-voice-record-start="true"],
-[data-voice-strip][data-voice-state="ready"] [data-voice-delete="true"],
-[data-voice-strip][data-voice-state="playing"] [data-voice-record-start="true"],
-[data-voice-strip][data-voice-state="playing"] [data-voice-delete="true"]
-  display inline-flex !important
 
 .voice-rec-timer
   font-family --font-sans
@@ -1053,8 +1042,7 @@
   flex-shrink 0
   font-variant-numeric tabular-nums
 
-.voice-rec-strip.is-recording .voice-rec-timer,
-[data-voice-strip][data-voice-state="recording"] .voice-rec-timer
+.voice-rec-strip.is-recording .voice-rec-timer
   color --text-primary
   font-weight 700
 
@@ -1063,13 +1051,9 @@
   align-items center
   justify-content space-between
   gap 12px
-  border-bottom 1px solid --border-subtle
-  margin-top 4px
-  margin-bottom 2px
-
-.inspector-voice-rec-sections
-  margin-top 2px
-  margin-bottom 6px
+  padding 10px 36px
+  border-top 1px solid --border-subtle
+  margin 0
 
 .voice-rec-sections-tabs
   display flex
@@ -1077,9 +1061,6 @@
   gap 14px
   flex-wrap wrap
   min-width 0
-
-.inspector-voice-rec-sections .voice-rec-sections-tabs
-  gap 10px
 
 .voice-rec-section-btn
   display inline-flex
@@ -1113,10 +1094,6 @@
   background transparent
   flex-shrink 0
   pointer-events none
-
-.inspector-voice-rec-sections .voice-rec-section-dot
-  width 5px
-  height 5px
 
 .voice-rec-section-dot.is-recorded
   background --text-primary

@@ -5,53 +5,43 @@ const EditorVoice = {
 
   bindings() {
     return {
-      "[data-voice-strip]": { init: this.initStrips },
-      "[data-voice-strip] .voice-rec-transport-btn": { click: this.toggleTransport },
-      "[data-voice-strip] .voice-rec-waveform-wrap": {
+      ".voice-rec-strip": { init: this.initStrips },
+      ".voice-rec-strip .voice-rec-play-btn": { click: this.togglePreview },
+      ".voice-rec-strip .voice-rec-record-btn": { click: this.toggleRecord },
+      ".voice-rec-strip .voice-rec-waveform-wrap": {
         pointerdown: this.startScrubDrag,
         pointermove: this.moveTrimDrag,
         pointerup: this.endTrimDrag
       },
-      "[data-voice-strip] .voice-rec-trim-handle": {
+      ".voice-rec-strip .voice-rec-trim-handle": {
         pointerdown: this.startTrimDrag,
         pointermove: this.moveTrimDrag,
         pointerup: this.endTrimDrag
       },
-      "[data-voice-strip] .voice-rec-cut-btn": { click: this.cutTrim },
-      "[data-voice-strip] .voice-rec-rerecord-btn": { click: this.startRecord },
-      "[data-voice-strip] .voice-rec-delete-btn": { click: Dispatcher.action("DeleteSceneVoice") }
+      ".voice-rec-strip .voice-rec-cut-btn": { click: this.cutTrim },
+      ".voice-rec-strip .voice-rec-delete-btn": { click: Dispatcher.action("DeleteSceneVoice") }
     };
   },
 
   dom: {
     selectors: {
-      strip: "[data-voice-strip]",
-      wrap: "[data-voice-waveform-wrap]",
-      timer: "[data-voice-timer]",
-      transport: "[data-voice-transport]",
-      cut: "[data-voice-trim-destructive]"
-    },
-    attrs: {
-      state: "data-voice-state",
-      trimmed: "data-voice-trimmed",
-      open: "data-voice-open",
-      scene: "data-scene",
-      paramScene: "param-scene",
-      section: "data-voice-section",
-      paramSection: "param-voice-section",
-      url: "data-voice-url",
-      paramUrl: "param-voice-url",
-      trimStart: "data-trim-start",
-      trimEnd: "data-trim-end",
-      trimRole: "data-voice-trim"
+      strip: ".voice-rec-strip",
+      wrap: ".voice-rec-waveform-wrap",
+      timer: ".voice-rec-timer",
+      playBtn: ".voice-rec-play-btn",
+      recordBtn: ".voice-rec-record-btn",
+      cutBtn: ".voice-rec-cut-btn",
+      deleteBtn: ".voice-rec-delete-btn"
     }
   },
 
-  modes: {
-    idle: "idle",
-    recording: "recording",
-    ready: "ready",
-    playing: "playing"
+  classes: {
+    idle: "is-idle",
+    recording: "is-recording",
+    ready: "is-ready",
+    playing: "is-playing",
+    disabled: "is-disabled",
+    trimEnd: "trim-end"
   },
 
   handles: {
@@ -73,16 +63,17 @@ const EditorVoice = {
     defaultRatioEnd: "1.0000",
     trueStr: "true",
     falseStr: "false",
-    zeroStr: "0",
-    oneStr: "1",
-    querySep: "?",
     eventLoadedMeta: "loadedmetadata",
+    eventCanPlay: "canplay",
+    preloadAuto: "auto",
     audioClosed: "closed",
-    audioSuspended: "suspended"
+    audioSuspended: "suspended",
+    undefType: "undefined",
+    numType: "number",
+    fnType: "function"
   },
 
   actions: {
-    toggleRecorder: "ToggleSceneVoiceRecorder",
     startCapture: "StartSceneVoiceCapture",
     pollCapture: "PollSceneVoiceCapture",
     stopCapture: "StopSceneVoiceCapture",
@@ -108,6 +99,7 @@ const EditorVoice = {
     maxSampleRate: 96000,
     scriptBufferSize: 2048,
     channels: 1,
+    readyStateHaveCurrentData: 2,
     minPeakSamples: 256,
     peakRateDivisor: 25,
     maxPeaks: 240,
@@ -124,6 +116,7 @@ const EditorVoice = {
     ratioDecimals: 4,
     fallbackDurationSec: 5,
     minPlaySpanSec: 0.05,
+    seekEpsilonSec: 0.015,
     androidStatusOk: 1,
     androidStatusPerm: 2,
     minRatio: 0,
@@ -135,11 +128,14 @@ const EditorVoice = {
     audio: null,
     sourceUrl: "",
     playing: false,
+    startingPlay: false,
     durationSec: 0,
+    scrubRatio: 0,
     animFrame: 0
   },
 
   capture: {
+    sessionSeq: 0,
     recording: false,
     starting: false,
     nativeMode: false,
@@ -151,6 +147,7 @@ const EditorVoice = {
     mediaStream: null,
     sourceNode: null,
     processorNode: null,
+    gainNode: null,
     sampleRate: 24000,
     pcmChunks: [],
     totalSamples: 0,
@@ -169,631 +166,815 @@ const EditorVoice = {
     draggingHandle: ""
   },
 
-  resolveStripControllerData(stripEl) {
-    if (stripEl && stripEl.id === "modal-voice-rec-strip" && typeof TextEditorController !== "undefined") {
+  resolveStripControllerData() {
+    if (typeof TextEditorController !== this.values.undefType) {
       return TextEditorController.data;
-    }
-    if (typeof EditorContextController !== "undefined") {
-      return EditorContextController.data;
     }
     return null;
   },
 
-  resolveStripMeta(stripEl, params) {
-    const attrs = this.dom.attrs;
+  resolveStripMeta(params) {
     const vals = this.values;
     const spec = this.audioSpec;
-    if (!stripEl) {
-      return {
-        sceneId: "",
-        sectionKey: vals.defaultSection,
-        audioUrl: "",
-        trimStart: spec.minRatio,
-        trimEnd: spec.maxRatio
-      };
-    }
-    const ctrlData = this.resolveStripControllerData(stripEl);
+    const ctrlData = this.resolveStripControllerData();
     const sceneId =
       (params && (params.scene || params.scene_id)) ||
-      stripEl.getAttribute(attrs.paramScene) ||
-      stripEl.getAttribute(attrs.scene) ||
-      (ctrlData && (ctrlData.selectedSceneId || ctrlData.sceneId)) ||
+      (ctrlData && ctrlData.sceneId) ||
       "";
     const sectionKey =
       (params && params.voice_section) ||
-      stripEl.getAttribute(attrs.paramSection) ||
-      stripEl.getAttribute(attrs.section) ||
       (ctrlData && ctrlData.voiceSection) ||
       vals.defaultSection;
     const audioUrl = (
       (params && params.voice_url) ||
-      stripEl.getAttribute(attrs.url) ||
-      stripEl.getAttribute(attrs.paramUrl) ||
       (ctrlData && ctrlData.voiceUrl) ||
       ""
     ).trim();
-    const rawStart = stripEl.getAttribute(attrs.trimStart);
-    const rawEnd = stripEl.getAttribute(attrs.trimEnd);
-    const savedStart = rawStart !== null ? (parseFloat(rawStart) || spec.minRatio) : (ctrlData && typeof ctrlData.voiceTrimStart === "number" ? ctrlData.voiceTrimStart : spec.minRatio);
-    const savedEnd = rawEnd !== null ? parseFloat(rawEnd) : (ctrlData && typeof ctrlData.voiceTrimEnd === "number" && ctrlData.voiceTrimEnd > 0 ? ctrlData.voiceTrimEnd : spec.maxRatio);
+    const voicePeaks = (ctrlData && ctrlData.voicePeaks) || "";
+    const savedStart =
+      ctrlData && typeof ctrlData.voiceTrimStart === vals.numType
+        ? ctrlData.voiceTrimStart
+        : spec.minRatio;
+    const savedEnd =
+      ctrlData && typeof ctrlData.voiceTrimEnd === vals.numType && ctrlData.voiceTrimEnd > spec.minRatio
+        ? ctrlData.voiceTrimEnd
+        : spec.maxRatio;
     const trimStart = savedStart >= spec.minRatio && savedStart < spec.maxRatio ? savedStart : spec.minRatio;
     const trimEnd = savedEnd > trimStart && savedEnd <= spec.maxRatio ? savedEnd : spec.maxRatio;
-    return { sceneId, sectionKey, audioUrl, trimStart, trimEnd };
+    return { sceneId, sectionKey, audioUrl, voicePeaks, trimStart, trimEnd };
   },
 
-  syncStripState(stripEl) {
-    if (!stripEl) return;
-    const attrs = this.dom.attrs;
-    const sels = this.dom.selectors;
-    const vals = this.values;
-    const cap = this.capture;
-    const pb = this.playback;
-    const ts = this.trimState;
-    const meta = this.resolveStripMeta(stripEl, null);
-    const isThisStrip = ts.stripEl === stripEl;
-    const isRec = isThisStrip && (cap.recording || cap.starting);
-    const isPlaying = isThisStrip && pb.playing;
+  syncStripState(stripElement) {
+    if (!stripElement) return;
+    const selectors = this.dom.selectors;
+    const classes = this.classes;
+    const captureState = this.capture;
+    const playbackState = this.playback;
+    const trimState = this.trimState;
+    const meta = this.resolveStripMeta(null);
+    const isThisStrip = trimState.stripEl === stripElement;
+    const isRecording = isThisStrip && (captureState.recording || captureState.starting);
+    const isPlaying = isThisStrip && (playbackState.playing || playbackState.startingPlay);
     const hasFile = Boolean(
       meta.audioUrl ||
-      (isThisStrip && cap.rawFloatSamples && cap.rawFloatSamples.length > 0) ||
-      (isThisStrip && cap.peaks && cap.peaks.length > 0 && !isRec)
+      (isThisStrip && captureState.rawFloatSamples && captureState.rawFloatSamples.length > 0) ||
+      (isThisStrip && captureState.peaks && captureState.peaks.length > 0 && !isRecording)
     );
 
-    const stateMode = isRec
-      ? this.modes.recording
-      : isPlaying
-        ? this.modes.playing
-        : hasFile
-          ? this.modes.ready
-          : this.modes.idle;
-    stripEl.setAttribute(attrs.state, stateMode);
+    stripElement.classList.toggle(classes.recording, isRecording);
+    stripElement.classList.toggle(classes.playing, !isRecording && isPlaying);
+    stripElement.classList.toggle(classes.ready, !isRecording && !isPlaying && hasFile);
+    stripElement.classList.toggle(classes.idle, !isRecording && !isPlaying && !hasFile);
 
-    const sRatio = isThisStrip ? ts.trimStart : meta.trimStart;
-    const eRatio = isThisStrip ? ts.trimEnd : meta.trimEnd;
-    const trimmed = !isRec && hasFile && EditorVoiceWaveform.isTrimActive(sRatio, eRatio);
-    stripEl.setAttribute(attrs.trimmed, trimmed ? vals.trueStr : vals.falseStr);
+    const startRatio = isThisStrip ? trimState.trimStart : meta.trimStart;
+    const endRatio = isThisStrip ? trimState.trimEnd : meta.trimEnd;
+    const isTrimmed = !isRecording && hasFile && EditorVoiceWaveform.isTrimActive(startRatio, endRatio);
 
-    const cutBtn = stripEl.querySelector(sels.cut);
-    if (cutBtn) cutBtn.disabled = !trimmed;
+    const playButton = stripElement.querySelector(selectors.playBtn);
+    if (playButton) {
+      const playDisabled = isRecording || !hasFile;
+      playButton.disabled = playDisabled;
+      playButton.classList.toggle(classes.disabled, playDisabled);
+      UIController.setHint(
+        playButton,
+        UIController.tr(isPlaying ? this.i18n.pauseHint : this.i18n.listenHint)
+      );
+    }
 
-    const transportBtn = stripEl.querySelector(sels.transport);
-    if (transportBtn) {
-      const hintKey = isRec
-        ? this.i18n.stopSaveHint
-        : isPlaying
-          ? this.i18n.pauseHint
-          : hasFile
-            ? this.i18n.listenHint
-            : this.i18n.startRecHint;
-      UIController.setHint(transportBtn, UIController.tr(hintKey));
+    const recordButton = stripElement.querySelector(selectors.recordBtn);
+    if (recordButton) {
+      UIController.setHint(
+        recordButton,
+        UIController.tr(isRecording ? this.i18n.stopSaveHint : this.i18n.startRecHint)
+      );
+    }
+
+    const cutButton = stripElement.querySelector(selectors.cutBtn);
+    if (cutButton) {
+      const cutDisabled = isRecording || !isTrimmed;
+      cutButton.disabled = cutDisabled;
+      cutButton.classList.toggle(classes.disabled, cutDisabled);
+    }
+
+    const deleteButton = stripElement.querySelector(selectors.deleteBtn);
+    if (deleteButton) {
+      const deleteDisabled = isRecording || !hasFile;
+      deleteButton.disabled = deleteDisabled;
+      deleteButton.classList.toggle(classes.disabled, deleteDisabled);
     }
   },
 
-  stopPreview(stripEl) {
-    const pb = this.playback;
-    if (pb.audio) {
-      try { pb.audio.pause(); } catch (_) {}
+  resetPlaybackAudio() {
+    const playbackState = this.playback;
+    if (playbackState.animFrame && !this.capture.recording) {
+      cancelAnimationFrame(playbackState.animFrame);
+      playbackState.animFrame = 0;
     }
-    pb.playing = false;
-    if (pb.animFrame && !this.capture.recording) {
-      cancelAnimationFrame(pb.animFrame);
-      pb.animFrame = 0;
+    if (playbackState.audio) {
+      try { playbackState.audio.pause(); } catch (_) {}
     }
-    this.syncStripState(stripEl || this.trimState.stripEl);
+    playbackState.audio = null;
+    playbackState.sourceUrl = "";
+    playbackState.playing = false;
+    playbackState.startingPlay = false;
+    playbackState.durationSec = 0;
+    playbackState.scrubRatio = 0;
   },
 
-  togglePreview(stripEl) {
-    if (!stripEl) return;
-    const pb = this.playback;
-    const ts = this.trimState;
-    const cap = this.capture;
+  stopPreview(stripElement) {
+    const playbackState = this.playback;
+    if (playbackState.audio) {
+      try { playbackState.audio.pause(); } catch (_) {}
+    }
+    playbackState.playing = false;
+    playbackState.startingPlay = false;
+    if (playbackState.animFrame && !this.capture.recording) {
+      cancelAnimationFrame(playbackState.animFrame);
+      playbackState.animFrame = 0;
+    }
+    this.syncStripState(stripElement || this.trimState.stripEl);
+  },
+
+  togglePreview(_params, targetElement) {
+    const stripElement =
+      targetElement && targetElement.closest
+        ? targetElement.closest(this.dom.selectors.strip) || targetElement
+        : this.trimState.stripEl;
+    if (!stripElement) return;
+    const playbackState = this.playback;
+    const trimState = this.trimState;
+    const captureState = this.capture;
     const spec = this.audioSpec;
-    if (pb.playing) {
-      this.stopPreview(stripEl);
-      EditorVoiceWaveform.draw(stripEl, ts, cap, spec.playheadOff);
+    if (playbackState.playing || playbackState.startingPlay) {
+      if (playbackState.audio && playbackState.durationSec > spec.minRatio) {
+        playbackState.scrubRatio = Math.max(
+          trimState.trimStart,
+          Math.min(trimState.trimEnd, playbackState.audio.currentTime / playbackState.durationSec)
+        );
+      }
+      this.stopPreview(stripElement);
+      EditorVoiceWaveform.syncPlayhead(stripElement, playbackState.scrubRatio);
       return;
     }
-    const meta = this.resolveStripMeta(stripEl, null);
-    if (!meta.audioUrl) return;
-    const baseUrl = meta.audioUrl.split(this.values.querySep)[0];
-    if (!pb.audio || pb.sourceUrl !== baseUrl) {
-      if (pb.audio) {
-        try { pb.audio.pause(); } catch (_) {}
+    const meta = this.resolveStripMeta(null);
+    if (!meta.audioUrl || captureState.recording || captureState.starting) return;
+    trimState.stripEl = stripElement;
+    trimState.sceneId = meta.sceneId;
+    trimState.sectionKey = meta.sectionKey;
+    if (!playbackState.audio || playbackState.sourceUrl !== meta.audioUrl) {
+      if (playbackState.audio) {
+        try { playbackState.audio.pause(); } catch (_) {}
       }
-      pb.audio = new window.Audio(meta.audioUrl);
-      pb.sourceUrl = baseUrl;
+      playbackState.audio = new window.Audio(meta.audioUrl);
+      playbackState.audio.preload = this.values.preloadAuto;
+      playbackState.sourceUrl = meta.audioUrl;
     }
-    const aud = pb.audio;
+    const audioElement = playbackState.audio;
     const startPlay = () => {
-      const dur = aud.duration && isFinite(aud.duration) ? aud.duration : pb.durationSec || spec.fallbackDurationSec;
-      pb.durationSec = dur;
-      const t0 = ts.trimStart * dur;
-      const t1 = Math.max(t0 + spec.minPlaySpanSec, ts.trimEnd * dur);
-      if (aud.currentTime < t0 || aud.currentTime >= t1 - spec.minPlaySpanSec) aud.currentTime = t0;
-      pb.playing = true;
-      this.syncStripState(stripEl);
-      aud.play().catch(() => {
-        pb.playing = false;
-        this.syncStripState(stripEl);
-      });
+      if (playbackState.audio !== audioElement) return;
+      const durationSec =
+        audioElement.duration && isFinite(audioElement.duration)
+          ? audioElement.duration
+          : playbackState.durationSec || spec.fallbackDurationSec;
+      playbackState.durationSec = durationSec;
+      const startRatio =
+        playbackState.scrubRatio >= trimState.trimStart &&
+        playbackState.scrubRatio < trimState.trimEnd - spec.minTrimGap
+          ? playbackState.scrubRatio
+          : trimState.trimStart;
+      const startSec = startRatio * durationSec;
+      const endSec = Math.max(startSec + spec.minPlaySpanSec, trimState.trimEnd * durationSec);
+      if (
+        audioElement.currentTime < startSec - spec.seekEpsilonSec ||
+        audioElement.currentTime >= endSec - spec.minPlaySpanSec ||
+        Math.abs((audioElement.currentTime || 0) - startSec) > spec.seekEpsilonSec
+      ) {
+        audioElement.currentTime = startSec;
+      }
+      playbackState.startingPlay = true;
+      playbackState.playing = true;
+      this.syncStripState(stripElement);
+      EditorVoiceWaveform.syncPlayhead(stripElement, startRatio);
+
       const tick = () => {
-        if (!pb.playing || aud.paused) {
-          pb.playing = false;
-          this.syncStripState(stripEl);
-          EditorVoiceWaveform.draw(stripEl, ts, cap, spec.playheadOff);
+        if (!playbackState.playing || playbackState.audio !== audioElement) {
           return;
         }
-        if (aud.currentTime >= t1) {
-          aud.pause();
-          aud.currentTime = t0;
-          pb.playing = false;
-          this.syncStripState(stripEl);
-          EditorVoiceWaveform.draw(stripEl, ts, cap, spec.playheadOff);
+        if (audioElement.paused && !playbackState.startingPlay) {
+          playbackState.playing = false;
+          this.syncStripState(stripElement);
           return;
         }
-        EditorVoiceWaveform.draw(stripEl, ts, cap, dur > spec.minRatio ? aud.currentTime / dur : spec.minRatio);
-        pb.animFrame = requestAnimationFrame(tick);
+        if (audioElement.currentTime >= endSec) {
+          audioElement.pause();
+          audioElement.currentTime = trimState.trimStart * durationSec;
+          playbackState.scrubRatio = trimState.trimStart;
+          playbackState.playing = false;
+          playbackState.startingPlay = false;
+          this.syncStripState(stripElement);
+          EditorVoiceWaveform.syncPlayhead(stripElement, spec.playheadOff);
+          const timerElement = stripElement.querySelector(this.dom.selectors.timer);
+          if (timerElement) {
+            timerElement.textContent = AudioDeckController.formatSeconds(
+              durationSec * (trimState.trimEnd - trimState.trimStart)
+            );
+          }
+          return;
+        }
+        const currentRatio = durationSec > spec.minRatio ? audioElement.currentTime / durationSec : spec.minRatio;
+        playbackState.scrubRatio = currentRatio;
+        EditorVoiceWaveform.syncPlayhead(stripElement, currentRatio);
+        const timerElement = stripElement.querySelector(this.dom.selectors.timer);
+        if (timerElement) {
+          timerElement.textContent = AudioDeckController.formatSeconds(audioElement.currentTime);
+        }
+        playbackState.animFrame = requestAnimationFrame(tick);
       };
-      pb.animFrame = requestAnimationFrame(tick);
+
+      const onPlayStarted = () => {
+        if (!playbackState.playing || playbackState.audio !== audioElement) return;
+        playbackState.startingPlay = false;
+        if (playbackState.animFrame) cancelAnimationFrame(playbackState.animFrame);
+        playbackState.animFrame = requestAnimationFrame(tick);
+      };
+
+      const playPromise = audioElement.play();
+      if (playPromise && typeof playPromise.then === this.values.fnType) {
+        playPromise.then(onPlayStarted).catch(() => {
+          playbackState.startingPlay = false;
+          playbackState.playing = false;
+          this.syncStripState(stripElement);
+        });
+      } else {
+        onPlayStarted();
+      }
     };
-    if (aud.readyState >= spec.channels) startPlay();
-    else aud.addEventListener(this.values.eventLoadedMeta, startPlay, { once: true });
+
+    if (
+      audioElement.readyState >= spec.readyStateHaveCurrentData ||
+      typeof audioElement.addEventListener !== this.values.fnType
+    ) {
+      startPlay();
+    } else {
+      let started = false;
+      const runOnce = () => {
+        if (started) return;
+        started = true;
+        startPlay();
+      };
+      audioElement.addEventListener(this.values.eventCanPlay, runOnce, { once: true });
+      audioElement.addEventListener(this.values.eventLoadedMeta, runOnce, { once: true });
+    }
   },
 
   stopCaptureTracks() {
-    const cap = this.capture;
-    if (cap.nativePollTimer) { clearInterval(cap.nativePollTimer); cap.nativePollTimer = null; }
-    if (cap.androidPollTimer) { clearInterval(cap.androidPollTimer); cap.androidPollTimer = null; }
-    if (cap.processorNode) { try { cap.processorNode.disconnect(); } catch (_) {} cap.processorNode = null; }
-    if (cap.sourceNode) { try { cap.sourceNode.disconnect(); } catch (_) {} cap.sourceNode = null; }
-    if (cap.mediaStream) {
-      try { cap.mediaStream.getTracks().forEach((t) => t.stop()); } catch (_) {}
-      cap.mediaStream = null;
+    const captureState = this.capture;
+    captureState.sessionSeq += 1;
+    if (captureState.nativePollTimer) {
+      clearInterval(captureState.nativePollTimer);
+      captureState.nativePollTimer = null;
+    }
+    if (captureState.androidPollTimer) {
+      clearInterval(captureState.androidPollTimer);
+      captureState.androidPollTimer = null;
+    }
+    if (captureState.processorNode) {
+      try { captureState.processorNode.onaudioprocess = null; } catch (_) {}
+      try { captureState.processorNode.disconnect(); } catch (_) {}
+      captureState.processorNode = null;
+    }
+    if (captureState.gainNode) {
+      try { captureState.gainNode.disconnect(); } catch (_) {}
+      captureState.gainNode = null;
+    }
+    if (captureState.sourceNode) {
+      try { captureState.sourceNode.disconnect(); } catch (_) {}
+      captureState.sourceNode = null;
+    }
+    if (captureState.mediaStream) {
+      try { captureState.mediaStream.getTracks().forEach((mediaTrack) => mediaTrack.stop()); } catch (_) {}
+      captureState.mediaStream = null;
     }
   },
 
   encodeInt16Base64(floatSamples, startRatio, endRatio) {
     if (!floatSamples || !floatSamples.length) return "";
     const spec = this.audioSpec;
-    const total = floatSamples.length;
-    const i0 = Math.max(0, Math.min(total - 1, Math.floor((startRatio || spec.minRatio) * total)));
-    const i1 = Math.max(i0 + 1, Math.min(total, Math.ceil((endRatio || spec.maxRatio) * total)));
-    const len = i1 - i0;
-    const int16 = new Int16Array(len);
-    for (let i = 0; i < len; i++) {
-      let s = floatSamples[i0 + i];
-      if (s > spec.maxRatio) s = spec.maxRatio;
-      else if (s < -spec.maxRatio) s = -spec.maxRatio;
-      int16[i] = s < spec.minRatio ? Math.round(s * spec.pcmNegScale) : Math.round(s * spec.pcmPosScale);
+    const totalSamples = floatSamples.length;
+    const startIndex = Math.max(0, Math.min(totalSamples - 1, Math.floor((startRatio || spec.minRatio) * totalSamples)));
+    const endIndex = Math.max(startIndex + 1, Math.min(totalSamples, Math.ceil((endRatio || spec.maxRatio) * totalSamples)));
+    const sampleCount = endIndex - startIndex;
+    const int16Buffer = new Int16Array(sampleCount);
+    for (let sampleIdx = 0; sampleIdx < sampleCount; sampleIdx++) {
+      let sampleVal = floatSamples[startIndex + sampleIdx];
+      if (sampleVal > spec.maxRatio) sampleVal = spec.maxRatio;
+      else if (sampleVal < -spec.maxRatio) sampleVal = -spec.maxRatio;
+      int16Buffer[sampleIdx] =
+        sampleVal < spec.minRatio
+          ? Math.round(sampleVal * spec.pcmNegScale)
+          : Math.round(sampleVal * spec.pcmPosScale);
     }
-    const bytes = new Uint8Array(int16.buffer);
-    let binary = "";
-    for (let i = 0; i < bytes.length; i += spec.b64ChunkSize) {
-      binary += String.fromCharCode.apply(null, bytes.subarray(i, Math.min(bytes.length, i + spec.b64ChunkSize)));
+    const byteView = new Uint8Array(int16Buffer.buffer);
+    let binaryStr = "";
+    for (let byteOffset = 0; byteOffset < byteView.length; byteOffset += spec.b64ChunkSize) {
+      binaryStr += String.fromCharCode.apply(
+        null,
+        byteView.subarray(byteOffset, Math.min(byteView.length, byteOffset + spec.b64ChunkSize))
+      );
     }
-    return window.btoa ? window.btoa(binary) : "";
+    return window.btoa ? window.btoa(binaryStr) : "";
   },
 
-  startAndroidCapture(stripEl) {
-    const cap = this.capture;
-    const pb = this.playback;
-    const ts = this.trimState;
+  startAndroidCapture(stripElement) {
+    const captureState = this.capture;
+    const playbackState = this.playback;
+    const trimState = this.trimState;
     const spec = this.audioSpec;
-    cap.starting = true;
-    cap.recording = false;
-    this.syncStripState(stripEl);
+    captureState.starting = true;
+    captureState.recording = false;
+    this.syncStripState(stripElement);
     let status = 0;
     try { status = Number(window.mojraAndroid.startAudioCapture()); } catch (_) { status = 0; }
     if (status !== spec.androidStatusOk && status !== spec.androidStatusPerm) {
-      cap.starting = false;
-      this.syncStripState(stripEl);
+      captureState.starting = false;
+      this.syncStripState(stripElement);
       UIController.showToast(UIController.tr(this.i18n.errUnavailable));
       return;
     }
-    cap.starting = false;
-    cap.recording = true;
-    cap.androidMode = true;
-    cap.androidPendingPerm = status === spec.androidStatusPerm;
+    captureState.starting = false;
+    captureState.recording = true;
+    captureState.androidMode = true;
+    captureState.androidPendingPerm = status === spec.androidStatusPerm;
     if (window.mojraAndroid.getAudioSampleRate) {
-      const sr = Number(window.mojraAndroid.getAudioSampleRate());
-      if (sr >= spec.minSampleRate && sr <= spec.maxSampleRate) cap.sampleRate = sr;
+      const reportedRate = Number(window.mojraAndroid.getAudioSampleRate());
+      if (reportedRate >= spec.minSampleRate && reportedRate <= spec.maxSampleRate) {
+        captureState.sampleRate = reportedRate;
+      }
     }
-    this.syncStripState(stripEl);
+    this.syncStripState(stripElement);
     let startWallMs = Date.now();
-    cap.androidPollTimer = setInterval(() => {
-      if (!cap.recording || !cap.androidMode || !window.mojraAndroid) return;
+    captureState.androidPollTimer = setInterval(() => {
+      if (!captureState.recording || !captureState.androidMode || !window.mojraAndroid) return;
       const rawPeak = String(window.mojraAndroid.pollAudioPeak() || "");
       if (rawPeak === this.peakStatus.pending) {
         startWallMs = Date.now();
         return;
       }
-      if (cap.androidPendingPerm) {
-        cap.androidPendingPerm = false;
+      if (captureState.androidPendingPerm) {
+        captureState.androidPendingPerm = false;
         startWallMs = Date.now();
       }
       if (rawPeak === this.peakStatus.denied || rawPeak === this.peakStatus.error) {
         this.stopCaptureTracks();
-        cap.recording = false;
-        cap.androidMode = false;
-        this.syncStripState(stripEl);
-        UIController.showToast(rawPeak === this.peakStatus.denied ? UIController.tr(this.i18n.errDenied) : UIController.tr(this.i18n.errStartFailed));
+        captureState.recording = false;
+        captureState.androidMode = false;
+        this.syncStripState(stripElement);
+        UIController.showToast(
+          rawPeak === this.peakStatus.denied
+            ? UIController.tr(this.i18n.errDenied)
+            : UIController.tr(this.i18n.errStartFailed)
+        );
         return;
       }
       if (rawPeak === this.peakStatus.stopped) {
-        this.stopAndSaveCapture(stripEl);
+        this.stopAndSaveCapture(stripElement);
         return;
       }
-      const p = parseFloat(rawPeak);
-      if (!isNaN(p) && p >= spec.minRatio) {
-        cap.peaks.push(Math.min(spec.maxRatio, p * spec.nativePeakGain));
-        if (cap.peaks.length > spec.maxPeaks) cap.peaks.shift();
+      const peakVal = parseFloat(rawPeak);
+      if (!isNaN(peakVal) && peakVal >= spec.minRatio) {
+        captureState.peaks.push(Math.min(spec.maxRatio, peakVal * spec.nativePeakGain));
+        if (captureState.peaks.length > spec.maxPeaks) captureState.peaks.shift();
       }
     }, spec.androidPollMs);
     const tickAndroid = () => {
-      if (!cap.recording || !cap.androidMode) return;
-      pb.durationSec = cap.androidPendingPerm ? spec.minRatio : (Date.now() - startWallMs) / spec.msPerSec;
-      const timeEl = stripEl.querySelector(this.dom.selectors.timer);
-      if (timeEl) timeEl.textContent = AudioDeckController.formatSeconds(pb.durationSec);
-      EditorVoiceWaveform.draw(stripEl, ts, cap, spec.playheadOff);
-      pb.animFrame = requestAnimationFrame(tickAndroid);
+      if (!captureState.recording || !captureState.androidMode) return;
+      playbackState.durationSec = captureState.androidPendingPerm
+        ? spec.minRatio
+        : (Date.now() - startWallMs) / spec.msPerSec;
+      const timerElement = stripElement.querySelector(this.dom.selectors.timer);
+      if (timerElement) timerElement.textContent = AudioDeckController.formatSeconds(playbackState.durationSec);
+      EditorVoiceWaveform.draw(stripElement, trimState, captureState, spec.playheadOff);
+      playbackState.animFrame = requestAnimationFrame(tickAndroid);
     };
-    pb.animFrame = requestAnimationFrame(tickAndroid);
+    playbackState.animFrame = requestAnimationFrame(tickAndroid);
   },
 
-  async startNativeCapture(stripEl) {
-    const cap = this.capture;
-    const pb = this.playback;
-    const ts = this.trimState;
+  async startNativeCapture(stripElement, sessionId) {
+    const captureState = this.capture;
+    const playbackState = this.playback;
+    const trimState = this.trimState;
     const spec = this.audioSpec;
     const vals = this.values;
-    cap.starting = true;
-    cap.recording = false;
-    this.syncStripState(stripEl);
+    captureState.starting = true;
+    captureState.recording = false;
+    captureState.nativeMode = true;
+    this.syncStripState(stripElement);
     const decoded = await Dispatcher.post(this.actions.startCapture, {
-      scene: ts.sceneId,
-      voice_section: ts.sectionKey,
+      scene: trimState.sceneId,
+      voice_section: trimState.sectionKey,
       silent: vals.trueStr
     });
-    if (!cap.starting) return;
-    const peakHdr = (decoded && decoded.voicePeak) || "";
-    if (!decoded || peakHdr === this.peakStatus.stopped) {
-      cap.starting = false;
-      cap.recording = false;
-      this.syncStripState(stripEl);
+    if (!captureState.starting || sessionId !== captureState.sessionSeq) {
+      Dispatcher.post(this.actions.stopCapture, {
+        scene: trimState.sceneId,
+        voice_section: trimState.sectionKey,
+        silent: vals.trueStr
+      });
       return;
     }
-    cap.starting = false;
-    cap.recording = true;
-    cap.nativeMode = true;
-    this.syncStripState(stripEl);
+    const peakHeader =
+      (typeof StudioController !== vals.undefType && StudioController.data && StudioController.data.voicePeak) || "";
+    if (!decoded || peakHeader === this.peakStatus.stopped) {
+      captureState.starting = false;
+      captureState.recording = false;
+      captureState.nativeMode = false;
+      this.syncStripState(stripElement);
+      return;
+    }
+    captureState.starting = false;
+    captureState.recording = true;
+    this.syncStripState(stripElement);
     const startWallMs = Date.now();
-    cap.nativePollTimer = setInterval(() => {
-      if (!cap.recording || !cap.nativeMode) return;
+    captureState.nativePollTimer = setInterval(() => {
+      if (!captureState.recording || !captureState.nativeMode) return;
       Dispatcher.post(this.actions.pollCapture, { silent: vals.trueStr });
     }, spec.nativePollMs);
     const tickNative = () => {
-      if (!cap.recording || !cap.nativeMode) return;
-      pb.durationSec = (Date.now() - startWallMs) / spec.msPerSec;
-      const timeEl = stripEl.querySelector(this.dom.selectors.timer);
-      if (timeEl) timeEl.textContent = AudioDeckController.formatSeconds(pb.durationSec);
-      EditorVoiceWaveform.draw(stripEl, ts, cap, spec.playheadOff);
-      pb.animFrame = requestAnimationFrame(tickNative);
+      if (!captureState.recording || !captureState.nativeMode) return;
+      playbackState.durationSec = (Date.now() - startWallMs) / spec.msPerSec;
+      const timerElement = stripElement.querySelector(this.dom.selectors.timer);
+      if (timerElement) timerElement.textContent = AudioDeckController.formatSeconds(playbackState.durationSec);
+      EditorVoiceWaveform.draw(stripElement, trimState, captureState, spec.playheadOff);
+      playbackState.animFrame = requestAnimationFrame(tickNative);
     };
-    pb.animFrame = requestAnimationFrame(tickNative);
+    playbackState.animFrame = requestAnimationFrame(tickNative);
   },
 
-  async startWebAudioCapture(stripEl) {
-    const cap = this.capture;
-    const pb = this.playback;
-    const ts = this.trimState;
+  async startWebAudioCapture(stripElement, sessionId) {
+    const captureState = this.capture;
+    const playbackState = this.playback;
+    const trimState = this.trimState;
     const spec = this.audioSpec;
+    captureState.starting = true;
+    captureState.recording = false;
+    this.syncStripState(stripElement);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, channelCount: spec.channels }
+      const mediaStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false,
+          channelCount: spec.channels
+        }
       });
-      const AudioCtx = window.AudioContext || window.webkitAudioContext;
-      if (!AudioCtx) {
-        stream.getTracks().forEach((t) => t.stop());
+      if (!captureState.starting || sessionId !== captureState.sessionSeq) {
+        mediaStream.getTracks().forEach((mediaTrack) => mediaTrack.stop());
+        return;
+      }
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContextClass) {
+        captureState.starting = false;
+        mediaStream.getTracks().forEach((mediaTrack) => mediaTrack.stop());
+        this.syncStripState(stripElement);
         UIController.showToast(UIController.tr(this.i18n.errWebAudio));
         return;
       }
-      if (!cap.audioCtx || cap.audioCtx.state === this.values.audioClosed) {
-        cap.audioCtx = new AudioCtx({ sampleRate: spec.defaultSampleRate });
+      if (!captureState.audioCtx || captureState.audioCtx.state === this.values.audioClosed) {
+        captureState.audioCtx = new AudioContextClass({ sampleRate: spec.defaultSampleRate });
       }
-      if (cap.audioCtx.state === this.values.audioSuspended) await cap.audioCtx.resume();
-      cap.sampleRate = cap.audioCtx.sampleRate || spec.defaultSampleRate;
-      cap.mediaStream = stream;
-      cap.sourceNode = cap.audioCtx.createMediaStreamSource(stream);
-      const proc = cap.audioCtx.createScriptProcessor(spec.scriptBufferSize, spec.channels, spec.channels);
-      cap.processorNode = proc;
-      cap.recording = true;
-      this.syncStripState(stripEl);
-      const samplesPerPeak = Math.max(spec.minPeakSamples, Math.floor(cap.sampleRate / spec.peakRateDivisor));
-      proc.onaudioprocess = (ev) => {
-        if (!cap.recording) return;
-        const ch = ev.inputBuffer.getChannelData(0);
-        const copy = new Float32Array(ch.length);
-        copy.set(ch);
-        cap.pcmChunks.push(copy);
-        cap.totalSamples += copy.length;
-        pb.durationSec = cap.totalSamples / cap.sampleRate;
-        for (let i = 0; i < copy.length; i++) {
-          const a = Math.abs(copy[i]);
-          if (a > cap.peakWindowMax) cap.peakWindowMax = a;
-          cap.peakWindowSamples++;
-          if (cap.peakWindowSamples >= samplesPerPeak) {
-            cap.peaks.push(Math.min(spec.maxRatio, cap.peakWindowMax * spec.webPeakGain));
-            if (cap.peaks.length > spec.maxPeaks) cap.peaks.shift();
-            cap.peakWindowMax = 0;
-            cap.peakWindowSamples = 0;
+      if (captureState.audioCtx.state === this.values.audioSuspended) {
+        await captureState.audioCtx.resume();
+        if (!captureState.starting || sessionId !== captureState.sessionSeq) {
+          mediaStream.getTracks().forEach((mediaTrack) => mediaTrack.stop());
+          return;
+        }
+      }
+      captureState.sampleRate = captureState.audioCtx.sampleRate || spec.defaultSampleRate;
+      captureState.mediaStream = mediaStream;
+      captureState.sourceNode = captureState.audioCtx.createMediaStreamSource(mediaStream);
+      const processorNode = captureState.audioCtx.createScriptProcessor(
+        spec.scriptBufferSize,
+        spec.channels,
+        spec.channels
+      );
+      captureState.processorNode = processorNode;
+      captureState.starting = false;
+      captureState.recording = true;
+      this.syncStripState(stripElement);
+      const samplesPerPeak = Math.max(
+        spec.minPeakSamples,
+        Math.floor(captureState.sampleRate / spec.peakRateDivisor)
+      );
+      processorNode.onaudioprocess = (audioEvent) => {
+        if (!captureState.recording || sessionId !== captureState.sessionSeq) return;
+        if (audioEvent.outputBuffer && typeof audioEvent.outputBuffer.getChannelData === this.values.fnType) {
+          const outChannel = audioEvent.outputBuffer.getChannelData(0);
+          if (outChannel && typeof outChannel.fill === this.values.fnType) outChannel.fill(0);
+        }
+        const inputChannel = audioEvent.inputBuffer.getChannelData(0);
+        const sampleCopy = new Float32Array(inputChannel.length);
+        sampleCopy.set(inputChannel);
+        captureState.pcmChunks.push(sampleCopy);
+        captureState.totalSamples += sampleCopy.length;
+        playbackState.durationSec = captureState.totalSamples / captureState.sampleRate;
+        for (let sampleIdx = 0; sampleIdx < sampleCopy.length; sampleIdx++) {
+          const sampleAmp = Math.abs(sampleCopy[sampleIdx]);
+          if (sampleAmp > captureState.peakWindowMax) captureState.peakWindowMax = sampleAmp;
+          captureState.peakWindowSamples++;
+          if (captureState.peakWindowSamples >= samplesPerPeak) {
+            captureState.peaks.push(Math.min(spec.maxRatio, captureState.peakWindowMax * spec.webPeakGain));
+            if (captureState.peaks.length > spec.maxPeaks) captureState.peaks.shift();
+            captureState.peakWindowMax = 0;
+            captureState.peakWindowSamples = 0;
           }
         }
       };
-      cap.sourceNode.connect(proc);
-      proc.connect(cap.audioCtx.destination);
-      const tick = () => {
-        if (!cap.recording) return;
-        const timeEl = stripEl.querySelector(this.dom.selectors.timer);
-        if (timeEl) timeEl.textContent = Audio.formatSeconds(pb.durationSec);
-        EditorVoiceWaveform.draw(stripEl, ts, cap, spec.playheadOff);
-        pb.animFrame = requestAnimationFrame(tick);
+      captureState.sourceNode.connect(processorNode);
+      if (typeof captureState.audioCtx.createGain === this.values.fnType) {
+        const silentGain = captureState.audioCtx.createGain();
+        silentGain.gain.value = 0;
+        captureState.gainNode = silentGain;
+        processorNode.connect(silentGain);
+        silentGain.connect(captureState.audioCtx.destination);
+      } else {
+        processorNode.connect(captureState.audioCtx.destination);
+      }
+      const tickRecording = () => {
+        if (!captureState.recording || sessionId !== captureState.sessionSeq) return;
+        const timerElement = stripElement.querySelector(this.dom.selectors.timer);
+        if (timerElement) timerElement.textContent = AudioDeckController.formatSeconds(playbackState.durationSec);
+        EditorVoiceWaveform.draw(stripElement, trimState, captureState, spec.playheadOff);
+        playbackState.animFrame = requestAnimationFrame(tickRecording);
       };
-      pb.animFrame = requestAnimationFrame(tick);
+      playbackState.animFrame = requestAnimationFrame(tickRecording);
     } catch (_) {
+      captureState.starting = false;
+      this.syncStripState(stripElement);
       UIController.showToast(UIController.tr(this.i18n.errAccess));
     }
   },
 
-  async startCapture(stripEl, params) {
-    if (!stripEl) return;
-    const cap = this.capture;
-    const pb = this.playback;
-    const ts = this.trimState;
+  isNativeHostCaptureAvailable() {
+    if (typeof window === this.values.undefType) return false;
+    if (window.mojraNative) return true;
+    return Boolean(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.nativeHost);
+  },
+
+  async startCapture(stripElement, params) {
+    if (!stripElement) return;
+    const captureState = this.capture;
+    const playbackState = this.playback;
+    const trimState = this.trimState;
     const spec = this.audioSpec;
-    this.stopPreview(stripEl);
+    if (captureState.recording || captureState.starting) return;
+    this.resetPlaybackAudio();
     this.stopCaptureTracks();
+    const sessionId = captureState.sessionSeq;
 
-    const meta = this.resolveStripMeta(stripEl, params);
-    ts.stripEl = stripEl;
-    ts.sceneId = meta.sceneId;
-    ts.sectionKey = meta.sectionKey;
-    ts.trimStart = spec.minRatio;
-    ts.trimEnd = spec.maxRatio;
-    cap.pcmChunks = [];
-    cap.totalSamples = 0;
-    cap.peaks = [];
-    cap.peakWindowMax = 0;
-    cap.peakWindowSamples = 0;
-    cap.rawFloatSamples = null;
-    cap.nativeMode = false;
-    cap.androidMode = false;
-    cap.androidPendingPerm = false;
-    pb.durationSec = 0;
-    EditorVoiceWaveform.syncHandles(stripEl, ts, pb, cap);
+    const meta = this.resolveStripMeta(params);
+    trimState.stripEl = stripElement;
+    trimState.sceneId = meta.sceneId;
+    trimState.sectionKey = meta.sectionKey;
+    trimState.trimStart = spec.minRatio;
+    trimState.trimEnd = spec.maxRatio;
+    captureState.pcmChunks = [];
+    captureState.totalSamples = 0;
+    captureState.peaks = [];
+    captureState.peakWindowMax = 0;
+    captureState.peakWindowSamples = 0;
+    captureState.rawFloatSamples = null;
+    captureState.nativeMode = false;
+    captureState.androidMode = false;
+    captureState.androidPendingPerm = false;
+    EditorVoiceWaveform.syncHandles(stripElement, trimState, playbackState, captureState);
+    EditorVoiceWaveform.draw(stripElement, trimState, captureState, spec.playheadOff);
 
-    if (typeof window !== "undefined" && window.mojraAndroid && window.mojraAndroid.startAudioCapture) {
-      this.startAndroidCapture(stripEl);
+    if (typeof window !== this.values.undefType && window.mojraAndroid && window.mojraAndroid.startAudioCapture) {
+      this.startAndroidCapture(stripElement);
       return;
     }
     const canUseWebMic = Boolean(
-      typeof navigator !== "undefined" &&
+      typeof navigator !== this.values.undefType &&
       navigator.mediaDevices &&
       navigator.mediaDevices.getUserMedia &&
-      (typeof window === "undefined" || !window.mojraNative)
+      !this.isNativeHostCaptureAvailable()
     );
     if (!canUseWebMic) {
-      await this.startNativeCapture(stripEl);
+      await this.startNativeCapture(stripElement, sessionId);
       return;
     }
-    await this.startWebAudioCapture(stripEl);
+    await this.startWebAudioCapture(stripElement, sessionId);
   },
 
-  async stopAndSaveCapture(stripEl) {
-    const cap = this.capture;
-    const pb = this.playback;
-    const ts = this.trimState;
+  async stopAndSaveCapture(stripElement) {
+    const captureState = this.capture;
+    const playbackState = this.playback;
+    const trimState = this.trimState;
     const vals = this.values;
     const spec = this.audioSpec;
-    if (!cap.recording && !cap.starting) return;
-    const wasNative = cap.nativeMode;
-    const wasAndroid = cap.androidMode;
-    cap.starting = false;
-    cap.recording = false;
-    cap.nativeMode = false;
-    cap.androidMode = false;
-    cap.androidPendingPerm = false;
-    if (pb.animFrame) { cancelAnimationFrame(pb.animFrame); pb.animFrame = 0; }
+    if (!captureState.recording && !captureState.starting) return;
+    const wasNative = captureState.nativeMode;
+    const wasAndroid = captureState.androidMode;
+    captureState.starting = false;
+    captureState.recording = false;
+    captureState.nativeMode = false;
+    captureState.androidMode = false;
+    captureState.androidPendingPerm = false;
+    if (playbackState.animFrame) {
+      cancelAnimationFrame(playbackState.animFrame);
+      playbackState.animFrame = 0;
+    }
     this.stopCaptureTracks();
+    this.resetPlaybackAudio();
 
     if (wasAndroid && window.mojraAndroid && window.mojraAndroid.stopAudioCaptureBase64) {
-      let b64 = "";
-      try { b64 = String(window.mojraAndroid.stopAudioCaptureBase64() || ""); } catch (_) { b64 = ""; }
-      this.syncStripState(stripEl);
-      if (!b64) return;
+      let base64Pcm = "";
+      try { base64Pcm = String(window.mojraAndroid.stopAudioCaptureBase64() || ""); } catch (_) { base64Pcm = ""; }
+      this.syncStripState(stripElement);
+      if (!base64Pcm) return;
       await Dispatcher.post(this.actions.saveRecording, {
-        scene: ts.sceneId,
-        voice_section: ts.sectionKey,
-        sample_rate: String(Math.round(cap.sampleRate || spec.defaultSampleRate)),
+        scene: trimState.sceneId,
+        voice_section: trimState.sectionKey,
+        sample_rate: String(Math.round(captureState.sampleRate || spec.defaultSampleRate)),
         start_ratio: vals.defaultRatioStart,
         end_ratio: vals.defaultRatioEnd,
-        pcm_b64: b64
+        pcm_b64: base64Pcm
       });
       return;
     }
 
     if (wasNative) {
-      this.syncStripState(stripEl);
+      this.syncStripState(stripElement);
       await Dispatcher.post(this.actions.stopCapture, {
-        scene: ts.sceneId,
-        voice_section: ts.sectionKey
+        scene: trimState.sceneId,
+        voice_section: trimState.sectionKey
       });
       return;
     }
 
-    if (cap.totalSamples > 0) {
-      const merged = new Float32Array(cap.totalSamples);
-      let off = 0;
-      for (let i = 0; i < cap.pcmChunks.length; i++) {
-        merged.set(cap.pcmChunks[i], off);
-        off += cap.pcmChunks[i].length;
+    if (captureState.totalSamples > 0) {
+      const mergedSamples = new Float32Array(captureState.totalSamples);
+      let sampleOffset = 0;
+      for (let chunkIdx = 0; chunkIdx < captureState.pcmChunks.length; chunkIdx++) {
+        mergedSamples.set(captureState.pcmChunks[chunkIdx], sampleOffset);
+        sampleOffset += captureState.pcmChunks[chunkIdx].length;
       }
-      cap.rawFloatSamples = merged;
-      cap.pcmChunks = [];
+      captureState.rawFloatSamples = mergedSamples;
+      captureState.pcmChunks = [];
     }
-    EditorVoiceWaveform.syncHandles(stripEl, ts, pb, cap);
-    EditorVoiceWaveform.draw(stripEl, ts, cap, spec.playheadOff);
-    if (!cap.rawFloatSamples || cap.rawFloatSamples.length < spec.minSaveSamples) {
-      this.syncStripState(stripEl);
+    EditorVoiceWaveform.syncHandles(stripElement, trimState, playbackState, captureState);
+    EditorVoiceWaveform.draw(stripElement, trimState, captureState, spec.playheadOff);
+    if (!captureState.rawFloatSamples || captureState.rawFloatSamples.length < spec.minSaveSamples) {
+      this.syncStripState(stripElement);
       return;
     }
-    const b64 = this.encodeInt16Base64(cap.rawFloatSamples, spec.minRatio, spec.maxRatio);
-    if (!b64) return;
+    const base64Pcm = this.encodeInt16Base64(captureState.rawFloatSamples, spec.minRatio, spec.maxRatio);
+    if (!base64Pcm) return;
     await Dispatcher.post(this.actions.saveRecording, {
-      scene: ts.sceneId,
-      voice_section: ts.sectionKey,
-      sample_rate: String(Math.round(cap.sampleRate || spec.defaultSampleRate)),
+      scene: trimState.sceneId,
+      voice_section: trimState.sectionKey,
+      sample_rate: String(Math.round(captureState.sampleRate || spec.defaultSampleRate)),
       start_ratio: vals.defaultRatioStart,
       end_ratio: vals.defaultRatioEnd,
-      pcm_b64: b64
+      pcm_b64: base64Pcm
     });
   },
 
   handlePeakHeader(peakVal) {
-    const cap = this.capture;
+    const captureState = this.capture;
     const spec = this.audioSpec;
-    if (!cap.nativeMode || (!cap.recording && !cap.starting)) return;
+    if (!captureState.nativeMode || (!captureState.recording && !captureState.starting)) return;
     if (peakVal === this.peakStatus.stopped) {
-      if (cap.starting) return;
+      if (captureState.starting) return;
       this.stopAndSaveCapture(this.trimState.stripEl);
       return;
     }
-    const p = parseFloat(peakVal);
-    if (!isNaN(p) && p >= spec.minRatio) {
-      cap.peaks.push(Math.min(spec.maxRatio, p * spec.nativePeakGain));
-      if (cap.peaks.length > spec.maxPeaks) cap.peaks.shift();
+    const parsedPeak = parseFloat(peakVal);
+    if (!isNaN(parsedPeak) && parsedPeak >= spec.minRatio) {
+      captureState.peaks.push(Math.min(spec.maxRatio, parsedPeak * spec.nativePeakGain));
+      if (captureState.peaks.length > spec.maxPeaks) captureState.peaks.shift();
     }
   },
 
-  toggleTransport(params, el) {
-    const stripEl = el.closest(this.dom.selectors.strip) || el;
-    const cap = this.capture;
-    const ts = this.trimState;
-    if (ts.stripEl === stripEl && (cap.recording || cap.starting)) {
-      this.stopAndSaveCapture(stripEl);
+  toggleRecord(params, buttonElement) {
+    const stripElement = buttonElement.closest(this.dom.selectors.strip) || buttonElement;
+    const captureState = this.capture;
+    if (captureState.recording || captureState.starting) {
+      this.stopAndSaveCapture(stripElement);
       return;
     }
-    const meta = this.resolveStripMeta(stripEl, params);
-    const hasExisting = Boolean(
-      meta.audioUrl ||
-      (ts.stripEl === stripEl && cap.rawFloatSamples && cap.rawFloatSamples.length > 0)
-    );
-    if (hasExisting) {
-      ts.stripEl = stripEl;
-      ts.sceneId = meta.sceneId;
-      ts.sectionKey = meta.sectionKey;
-      this.togglePreview(stripEl);
-    } else {
-      this.startCapture(stripEl, params);
-    }
+    this.startCapture(stripElement, params);
   },
 
-  startRecord(params, el) {
-    const stripEl = el.closest(this.dom.selectors.strip) || el;
-    this.startCapture(stripEl, params);
-  },
-
-  async cutTrim(params, el) {
-    const stripEl = el.closest(this.dom.selectors.strip) || el;
-    const ts = this.trimState;
-    const cap = this.capture;
+  async cutTrim(params, buttonElement) {
+    const stripElement = buttonElement.closest(this.dom.selectors.strip) || buttonElement;
+    const trimState = this.trimState;
+    const captureState = this.capture;
     const spec = this.audioSpec;
-    const meta = this.resolveStripMeta(stripEl, params);
-    const sRatio = ts.stripEl === stripEl ? ts.trimStart : meta.trimStart;
-    const eRatio = ts.stripEl === stripEl ? ts.trimEnd : meta.trimEnd;
-    if (!EditorVoiceWaveform.isTrimActive(sRatio, eRatio)) return;
-    ts.stripEl = stripEl;
-    ts.trimStart = sRatio;
-    ts.trimEnd = eRatio > sRatio ? eRatio : spec.maxRatio;
+    const meta = this.resolveStripMeta(params);
+    const startRatio = trimState.stripEl === stripElement ? trimState.trimStart : meta.trimStart;
+    const endRatio = trimState.stripEl === stripElement ? trimState.trimEnd : meta.trimEnd;
+    if (!EditorVoiceWaveform.isTrimActive(startRatio, endRatio)) return;
+    trimState.stripEl = stripElement;
+    trimState.trimStart = startRatio;
+    trimState.trimEnd = endRatio > startRatio ? endRatio : spec.maxRatio;
     const postParams = {
       scene: meta.sceneId,
       voice_section: meta.sectionKey,
-      start_ratio: ts.trimStart.toFixed(spec.ratioDecimals),
-      end_ratio: ts.trimEnd.toFixed(spec.ratioDecimals),
+      start_ratio: trimState.trimStart.toFixed(spec.ratioDecimals),
+      end_ratio: trimState.trimEnd.toFixed(spec.ratioDecimals),
       destructive: this.values.trueStr
     };
-    if (cap.rawFloatSamples && cap.rawFloatSamples.length > spec.minSaveSamples) {
-      postParams.sample_rate = String(Math.round(cap.sampleRate || spec.defaultSampleRate));
-      postParams.pcm_b64 = this.encodeInt16Base64(cap.rawFloatSamples, spec.minRatio, spec.maxRatio);
+    if (captureState.rawFloatSamples && captureState.rawFloatSamples.length > spec.minSaveSamples) {
+      postParams.sample_rate = String(Math.round(captureState.sampleRate || spec.defaultSampleRate));
+      postParams.pcm_b64 = this.encodeInt16Base64(captureState.rawFloatSamples, spec.minRatio, spec.maxRatio);
     }
-    this.stopPreview(stripEl);
-    ts.trimStart = spec.minRatio;
-    ts.trimEnd = spec.maxRatio;
+    this.resetPlaybackAudio();
+    trimState.trimStart = spec.minRatio;
+    trimState.trimEnd = spec.maxRatio;
     await Dispatcher.post(this.actions.trimVoice, postParams);
   },
 
-  startTrimDrag(params, el) {
-    const stripEl = el.closest(this.dom.selectors.strip);
-    if (!stripEl) return;
-    const ts = this.trimState;
-    const meta = this.resolveStripMeta(stripEl, params);
-    if (ts.stripEl !== stripEl) {
-      ts.stripEl = stripEl;
-      ts.sceneId = meta.sceneId;
-      ts.sectionKey = meta.sectionKey;
-      ts.trimStart = meta.trimStart;
-      ts.trimEnd = meta.trimEnd;
+  startTrimDrag(params, handleElement) {
+    const stripElement = handleElement.closest(this.dom.selectors.strip);
+    if (!stripElement) return;
+    const trimState = this.trimState;
+    const meta = this.resolveStripMeta(params);
+    if (trimState.stripEl !== stripElement) {
+      trimState.stripEl = stripElement;
+      trimState.sceneId = meta.sceneId;
+      trimState.sectionKey = meta.sectionKey;
+      trimState.trimStart = meta.trimStart;
+      trimState.trimEnd = meta.trimEnd;
     }
-    ts.draggingHandle = params.voice_trim || el.getAttribute(this.dom.attrs.trimRole) || this.handles.start;
+    trimState.draggingHandle = handleElement.classList.contains(this.classes.trimEnd)
+      ? this.handles.end
+      : this.handles.start;
   },
 
   moveTrimDrag(params) {
-    const ts = this.trimState;
-    const pb = this.playback;
-    const cap = this.capture;
+    const trimState = this.trimState;
+    const playbackState = this.playback;
+    const captureState = this.capture;
     const spec = this.audioSpec;
-    if (!ts.draggingHandle || !ts.stripEl) return;
-    const wrap = ts.stripEl.querySelector(this.dom.selectors.wrap);
-    if (!wrap) return;
-    const rect = wrap.getBoundingClientRect();
-    if (!rect.width) return;
-    const ratio = Math.max(spec.minRatio, Math.min(spec.maxRatio, ((params.client_x || 0) - rect.left) / rect.width));
-    if (ts.draggingHandle === this.handles.start) {
-      ts.trimStart = Math.min(ratio, ts.trimEnd - spec.minTrimGap);
-    } else if (ts.draggingHandle === this.handles.end) {
-      ts.trimEnd = Math.max(ratio, ts.trimStart + spec.minTrimGap);
-    } else if (ts.draggingHandle === this.handles.scrub && pb.audio && pb.durationSec > spec.minRatio) {
-      const clamped = Math.max(ts.trimStart, Math.min(ts.trimEnd, ratio));
-      pb.audio.currentTime = clamped * pb.durationSec;
-      EditorVoiceWaveform.draw(ts.stripEl, ts, cap, clamped);
+    if (!trimState.draggingHandle || !trimState.stripEl) return;
+    const wrapElement = trimState.stripEl.querySelector(this.dom.selectors.wrap);
+    if (!wrapElement) return;
+    const wrapRect = wrapElement.getBoundingClientRect();
+    if (!wrapRect.width) return;
+    const ratio = Math.max(
+      spec.minRatio,
+      Math.min(spec.maxRatio, ((params.client_x || 0) - wrapRect.left) / wrapRect.width)
+    );
+    if (trimState.draggingHandle === this.handles.start) {
+      trimState.trimStart = Math.min(ratio, trimState.trimEnd - spec.minTrimGap);
+    } else if (trimState.draggingHandle === this.handles.end) {
+      trimState.trimEnd = Math.max(ratio, trimState.trimStart + spec.minTrimGap);
+    } else if (trimState.draggingHandle === this.handles.scrub) {
+      const clampedRatio = Math.max(trimState.trimStart, Math.min(trimState.trimEnd, ratio));
+      playbackState.scrubRatio = clampedRatio;
+      if (playbackState.audio && playbackState.durationSec > spec.minRatio) {
+        playbackState.audio.currentTime = clampedRatio * playbackState.durationSec;
+      }
+      if (playbackState.durationSec > spec.minRatio) {
+        const timerElement = trimState.stripEl.querySelector(this.dom.selectors.timer);
+        if (timerElement) {
+          timerElement.textContent = AudioDeckController.formatSeconds(clampedRatio * playbackState.durationSec);
+        }
+      }
+      EditorVoiceWaveform.syncPlayhead(trimState.stripEl, clampedRatio);
       return;
     }
-    EditorVoiceWaveform.syncHandles(ts.stripEl, ts, pb, cap);
-    EditorVoiceWaveform.draw(ts.stripEl, ts, cap, spec.playheadOff);
+    EditorVoiceWaveform.syncHandles(trimState.stripEl, trimState, playbackState, captureState);
+    EditorVoiceWaveform.draw(
+      trimState.stripEl,
+      trimState,
+      captureState,
+      playbackState.scrubRatio > spec.minRatio ? playbackState.scrubRatio : spec.playheadOff
+    );
   },
 
   async endTrimDrag() {
-    const ts = this.trimState;
+    const trimState = this.trimState;
     const spec = this.audioSpec;
-    const attrs = this.dom.attrs;
-    if (!ts.draggingHandle) return;
-    const wasTrim = ts.draggingHandle === this.handles.start || ts.draggingHandle === this.handles.end;
-    const stripEl = ts.stripEl;
-    ts.draggingHandle = "";
-    if (wasTrim && stripEl) {
-      const startStr = ts.trimStart.toFixed(spec.ratioDecimals);
-      const endStr = ts.trimEnd.toFixed(spec.ratioDecimals);
-      stripEl.setAttribute(attrs.trimStart, startStr);
-      stripEl.setAttribute(attrs.trimEnd, endStr);
-      const ctrlData = this.resolveStripControllerData(stripEl);
+    if (!trimState.draggingHandle) return;
+    const wasTrim =
+      trimState.draggingHandle === this.handles.start || trimState.draggingHandle === this.handles.end;
+    const stripElement = trimState.stripEl;
+    trimState.draggingHandle = "";
+    if (wasTrim && stripElement) {
+      const startStr = trimState.trimStart.toFixed(spec.ratioDecimals);
+      const endStr = trimState.trimEnd.toFixed(spec.ratioDecimals);
+      const ctrlData = this.resolveStripControllerData();
       if (ctrlData) {
-        ctrlData.voiceTrimStart = ts.trimStart;
-        ctrlData.voiceTrimEnd = ts.trimEnd;
+        ctrlData.voiceTrimStart = trimState.trimStart;
+        ctrlData.voiceTrimEnd = trimState.trimEnd;
       }
-      this.syncStripState(stripEl);
-      const meta = this.resolveStripMeta(stripEl, null);
+      this.syncStripState(stripElement);
+      const meta = this.resolveStripMeta(null);
       await Dispatcher.post(this.actions.trimVoice, {
-        scene: ts.sceneId || meta.sceneId,
-        voice_section: ts.sectionKey || meta.sectionKey,
+        scene: trimState.sceneId || meta.sceneId,
+        voice_section: trimState.sectionKey || meta.sectionKey,
         start_ratio: startStr,
         end_ratio: endStr,
         destructive: this.values.falseStr,
@@ -802,63 +983,85 @@ const EditorVoice = {
     }
   },
 
-  startScrubDrag(params, el) {
-    const stripEl = el.closest(this.dom.selectors.strip);
-    if (!stripEl) return;
-    const ts = this.trimState;
-    const pb = this.playback;
-    const cap = this.capture;
+  startScrubDrag(params, wrapElement) {
+    const stripElement = wrapElement.closest(this.dom.selectors.strip);
+    if (!stripElement) return;
+    const trimState = this.trimState;
+    const playbackState = this.playback;
+    const captureState = this.capture;
     const spec = this.audioSpec;
-    const meta = this.resolveStripMeta(stripEl, params);
-    if (!meta.audioUrl || cap.recording) return;
-    const rect = el.getBoundingClientRect();
-    if (!rect.width) return;
-    ts.stripEl = stripEl;
-    ts.draggingHandle = this.handles.scrub;
-    const ratio = Math.max(ts.trimStart, Math.min(ts.trimEnd, ((params.client_x || 0) - rect.left) / rect.width));
-    EditorVoiceWaveform.draw(stripEl, ts, cap, ratio);
-    if (!pb.playing) this.togglePreview(stripEl);
-    if (pb.audio && pb.durationSec > spec.minRatio) {
-      pb.audio.currentTime = ratio * pb.durationSec;
+    const meta = this.resolveStripMeta(params);
+    if (!meta.audioUrl || captureState.recording || captureState.starting) return;
+    const wrapRect = wrapElement.getBoundingClientRect();
+    if (!wrapRect.width) return;
+    trimState.stripEl = stripElement;
+    trimState.sceneId = meta.sceneId;
+    trimState.sectionKey = meta.sectionKey;
+    trimState.draggingHandle = this.handles.scrub;
+    const clampedRatio = Math.max(
+      trimState.trimStart,
+      Math.min(trimState.trimEnd, ((params.client_x || 0) - wrapRect.left) / wrapRect.width)
+    );
+    playbackState.scrubRatio = clampedRatio;
+    if (playbackState.audio && playbackState.durationSec > spec.minRatio) {
+      playbackState.audio.currentTime = clampedRatio * playbackState.durationSec;
     }
+    if (playbackState.durationSec > spec.minRatio) {
+      const timerElement = stripElement.querySelector(this.dom.selectors.timer);
+      if (timerElement) {
+        timerElement.textContent = AudioDeckController.formatSeconds(clampedRatio * playbackState.durationSec);
+      }
+    }
+    EditorVoiceWaveform.syncPlayhead(stripElement, clampedRatio);
   },
 
-  initStrips() {
-    const triggerAction = Dispatcher.lastAction;
-    const strips = Array.from(document.querySelectorAll(this.dom.selectors.strip));
+  initStrips(_params, mountedElement) {
+    const strips = mountedElement
+      ? [mountedElement]
+      : Array.from(document.querySelectorAll(this.dom.selectors.strip));
     if (!strips.length) return;
-    const ts = this.trimState;
-    const pb = this.playback;
-    const cap = this.capture;
-    strips.forEach((stripEl) => {
-      const meta = this.resolveStripMeta(stripEl, null);
-      if (!cap.recording && (ts.sceneId !== meta.sceneId || ts.sectionKey !== meta.sectionKey || ts.stripEl !== stripEl)) {
-        ts.stripEl = stripEl;
-        ts.sceneId = meta.sceneId;
-        ts.sectionKey = meta.sectionKey;
-        ts.trimStart = meta.trimStart;
-        ts.trimEnd = meta.trimEnd;
-        cap.rawFloatSamples = null;
-        cap.peaks = [];
-        if (pb.sourceUrl && pb.sourceUrl !== meta.audioUrl.split(this.values.querySep)[0]) {
-          this.stopPreview(stripEl);
-          pb.audio = null;
-          pb.sourceUrl = "";
+    const trimState = this.trimState;
+    const playbackState = this.playback;
+    const captureState = this.capture;
+    strips.forEach((stripElement) => {
+      const meta = this.resolveStripMeta(null);
+      if (captureState.recording || captureState.starting) {
+        trimState.stripEl = stripElement;
+      } else {
+        trimState.stripEl = stripElement;
+        trimState.sceneId = meta.sceneId;
+        trimState.sectionKey = meta.sectionKey;
+        trimState.trimStart = meta.trimStart;
+        trimState.trimEnd = meta.trimEnd;
+        captureState.rawFloatSamples = null;
+        captureState.peaks = [];
+        if (playbackState.sourceUrl !== meta.audioUrl) {
+          this.resetPlaybackAudio();
+          if (meta.audioUrl && typeof window !== this.values.undefType && window.Audio) {
+            const preloadAudio = new window.Audio(meta.audioUrl);
+            preloadAudio.preload = this.values.preloadAuto;
+            playbackState.audio = preloadAudio;
+            playbackState.sourceUrl = meta.audioUrl;
+            if (typeof preloadAudio.addEventListener === this.values.fnType) {
+              preloadAudio.addEventListener(
+                this.values.eventLoadedMeta,
+                () => {
+                  if (
+                    playbackState.audio === preloadAudio &&
+                    preloadAudio.duration &&
+                    isFinite(preloadAudio.duration)
+                  ) {
+                    playbackState.durationSec = preloadAudio.duration;
+                  }
+                },
+                { once: true }
+              );
+            }
+          }
         }
       }
-      EditorVoiceWaveform.syncHandles(stripEl, ts, pb, cap);
-      EditorVoiceWaveform.loadPeaks(stripEl, ts, cap);
-      const ctrlData = this.resolveStripControllerData(stripEl);
-      const isOpen = stripEl.getAttribute(this.dom.attrs.open) === this.values.trueStr || Boolean(ctrlData && ctrlData.voiceOpen) || !stripEl.classList.contains("hidden");
-      if (
-        triggerAction === this.actions.toggleRecorder &&
-        isOpen &&
-        !meta.audioUrl &&
-        !cap.recording &&
-        !cap.starting
-      ) {
-        this.startCapture(stripEl, { scene: meta.sceneId, voice_section: meta.sectionKey });
-      }
+      EditorVoiceWaveform.syncHandles(stripElement, trimState, playbackState, captureState);
+      EditorVoiceWaveform.loadPeaks(stripElement, trimState, captureState);
     });
   }
 };

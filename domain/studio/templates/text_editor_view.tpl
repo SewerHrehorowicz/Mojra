@@ -18,6 +18,7 @@
                                 data-scene: "{SelectedNode.ID}"
                                 svg.btn-icon src: /icons/trash.svg
                         button.scene-text-back-btn#btn-collapse-scene-text
+                            data-step: "true"
                             svg.btn-icon src: /icons/chevrons-left.svg
                         button.scene-text-back-btn#btn-expand-scene-text-full .hidden?: {SceneTextIsFullWidth}
                             data-mode: full
@@ -238,44 +239,29 @@
                                                         span.voice-rec-section-label {vsec.Label}
                                                         span.voice-rec-section-time {vsec.DurationLabel}
                                             span.voice-rec-section-file {SelectedNode.ActiveVoiceSectionFile}
-                                    .voice-rec-strip.modal-voice-rec-strip#modal-voice-rec-strip .hidden?: {!VoiceRecorderOpen}
-                                        data-voice-strip: "true"
-                                        data-scene: "{SelectedNode.ID}"
-                                        button.voice-rec-transport-btn
-                                            data-voice-transport: "true"
-                                            svg.voice-rec-icon.voice-rec-icon-play .hidden?: {!SelectedNode.HasVoiceFile} data-voice-icon: "play" src: /icons/voice-play.svg
-                                            svg.voice-rec-icon.voice-rec-icon-mic .hidden?: {SelectedNode.HasVoiceFile} data-voice-icon: "mic" src: /icons/mic.svg
-                                            svg.voice-rec-icon.voice-rec-icon-pause.hidden data-voice-icon: "pause" src: /icons/voice-pause.svg
-                                            svg.voice-rec-icon.voice-rec-icon-stop.hidden data-voice-icon: "stop" src: /icons/voice-stop.svg
+                                    .voice-rec-strip.modal-voice-rec-strip#modal-voice-rec-strip .hidden?: {!VoiceRecorderOpen} .is-ready?: {SelectedNode.HasVoiceFile} .is-idle?: {!SelectedNode.HasVoiceFile}
+                                        button.voice-rec-transport-btn.voice-rec-play-btn .is-disabled?: {!SelectedNode.HasVoiceFile}
+                                            disabled?: {!SelectedNode.HasVoiceFile}
+                                            svg.voice-rec-icon.voice-rec-icon-play src: /icons/voice-play.svg
+                                            svg.voice-rec-icon.voice-rec-icon-pause src: /icons/voice-pause.svg
+                                        button.voice-rec-transport-btn.voice-rec-record-btn
+                                            svg.voice-rec-icon.voice-rec-icon-mic src: /icons/mic.svg
+                                            svg.voice-rec-icon.voice-rec-icon-stop src: /icons/voice-stop.svg
                                         .voice-rec-waveform-wrap
-                                            data-voice-waveform-wrap: "true"
                                             canvas.voice-rec-waveform-canvas
-                                                data-voice-canvas: "true"
                                                 width: "510"
                                                 height: "30"
                                             span.voice-rec-playhead
-                                                data-voice-playhead: "true"
                                             span.voice-rec-trim-handle.trim-start
-                                                data-voice-trim: "start"
                                             span.voice-rec-trim-handle.trim-end
-                                                data-voice-trim: "end"
                                         span.voice-rec-timer
-                                            data-voice-timer: "true"
                                             {SelectedNode.VoiceDurationLabel}
                                         button.voice-rec-action-btn.voice-rec-cut-btn .is-disabled?: {!SelectedNode.HasVoiceTrim}
-                                            data-voice-trim-destructive: "true"
-                                            data-scene: "{SelectedNode.ID}"
-                                            data-voice-section: "{SelectedNode.ActiveVoiceSectionKey}"
                                             data-hint: "{t_voice_trim_destructive_hint}"
                                             disabled?: {!SelectedNode.HasVoiceTrim}
                                             svg.voice-rec-btn-icon src: /icons/scissors.svg
-                                        button.voice-rec-action-btn.voice-rec-rerecord-btn .hidden?: {!SelectedNode.HasVoiceFile}
-                                            data-voice-record-start: "true"
-                                            svg.voice-rec-btn-icon src: /icons/mic.svg
-                                        button.voice-rec-action-btn.voice-rec-delete-btn .hidden?: {!SelectedNode.HasVoiceFile}
-                                            data-voice-delete: "true"
-                                            data-scene: "{SelectedNode.ID}"
-                                            data-voice-section: "{SelectedNode.ActiveVoiceSectionKey}"
+                                        button.voice-rec-action-btn.voice-rec-delete-btn .is-disabled?: {!SelectedNode.HasVoiceFile}
+                                            disabled?: {!SelectedNode.HasVoiceFile}
                                             svg.voice-rec-btn-icon src: /icons/trash.svg
                         {if SceneTextModalHasImage}
                             .scene-illustration-spacer

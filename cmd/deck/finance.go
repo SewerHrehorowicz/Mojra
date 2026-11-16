@@ -42,10 +42,10 @@ type deckMonthRow struct {
 	InvDiv    int64
 }
 
-// LoadDeckFinanceContext reads docs/finanse.cfg, evaluates all bottom-up financial formulas
+// LoadDeckFinanceContext reads docs/business/finanse.cfg, evaluates all bottom-up financial formulas
 // for both the Investor Deck (P&L, OPEX R&D/BD, EBITDA, ROI) and the Founder's Master Overview
 // (36-month simulation M1-M36, stakeholder pie split between Lead Architect 78%, Business Co-Founder 12%,
-// and Investors 10%, plus 3 realism scenarios), writes docs/kalkulator-finansowy.csv and docs/symulacja-36-miesiecy.csv,
+// and Investors 10%, plus 3 realism scenarios), writes docs/business/kalkulator-finansowy.csv and docs/business/symulacja-36-miesiecy.csv,
 // and returns a *tpl.RenderContext.
 func LoadDeckFinanceContext(rootDir string) *templates.RenderContext {
 	var cfg financeConfig

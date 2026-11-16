@@ -3,6 +3,7 @@
 package views
 
 import (
+	"strconv"
 	"strings"
 
 	book "mojra/domain/book/actions"
@@ -13,9 +14,10 @@ import (
 )
 
 const (
-	charPillPrefix = "@ "
-	arrowBranch    = "»"
-	arrowRestart   = "↺"
+	charPillPrefix        = "@ "
+	arrowBranch           = "»"
+	arrowRestart          = "↺"
+	voiceWaveformPeakBars = 160
 )
 
 type screenplayPillSpec struct {
@@ -92,8 +94,55 @@ type textEditorScript struct {
 	voiceOpen      bool
 	voiceSection   string
 	voiceUrl       string
+	voicePeaks     string
 	voiceTrimStart float64
 	voiceTrimEnd   float64
+}
+
+func buildTextEditorScript(appState *state.StudioState, nodeView *book.EditorNodeView) *textEditorScript {
+	activeBook := appState.Editor.ActiveBook
+	isScreenplay := false
+	scriptStd := book.ScriptStandardPL
+	if activeBook != nil {
+		isScreenplay = activeBook.IsScreenplay()
+		scriptStd = activeBook.NormalizedStandard()
+	}
+	sceneID := appState.Editor.SceneText.SceneID
+	secKey := defaultVoiceSecKey
+	voiceURL := ""
+	voicePeaks := ""
+	trimStart := 0.0
+	trimEnd := 1.0
+	if nodeView != nil {
+		if nodeView.ID != "" {
+			sceneID = nodeView.ID
+		}
+		if nodeView.ActiveVoiceSectionKey != "" {
+			secKey = nodeView.ActiveVoiceSectionKey
+		}
+		voiceURL = nodeView.CurrentVoiceURL
+		if activeBook != nil && nodeView.CurrentVoice != "" {
+			voicePeaks = book.ReadSceneAudioPeaks(activeBook, nodeView.CurrentVoice, voiceWaveformPeakBars)
+		}
+		if parsedStart, errStart := strconv.ParseFloat(nodeView.VoiceTrimStart, 64); errStart == nil && parsedStart >= 0 && parsedStart < 1 {
+			trimStart = parsedStart
+		}
+		if parsedEnd, errEnd := strconv.ParseFloat(nodeView.VoiceTrimEnd, 64); errEnd == nil && parsedEnd > trimStart && parsedEnd <= 1 {
+			trimEnd = parsedEnd
+		}
+	}
+	return &textEditorScript{
+		sceneId:        sceneID,
+		bookVarsSpec:   book.EncodeBookVariablesSpec(activeBook),
+		isScreenplay:   isScreenplay,
+		scriptStandard: scriptStd,
+		voiceOpen:      appState.Overlays.VoiceRecorder,
+		voiceSection:   secKey,
+		voiceUrl:       voiceURL,
+		voicePeaks:     voicePeaks,
+		voiceTrimStart: trimStart,
+		voiceTrimEnd:   trimEnd,
+	}
 }
 
 func buildScreenplayFormatInsertPills(standard string, b *book.Book, lang engine.Lang) ([]book.ScreenplayInsertPill, []book.ScreenplayInsertPill) {
@@ -147,29 +196,14 @@ func TextEditorScriptView(s *state.StudioState) templates.TemplateChunk {
 		return templates.TemplateChunk{}
 	}
 	b := s.Editor.ActiveBook
-	isSp := false
-	std := book.ScriptStandardPL
 	var nv *book.EditorNodeView
 	if b != nil {
-		isSp = b.IsScreenplay()
-		std = b.NormalizedStandard()
 		if modalSc := b.FindScene(s.Editor.SceneText.SceneID); modalSc != nil {
 			nv = buildEditorNodeView(s, modalSc, true)
 		}
 	}
-	vOpen, vSec, vURL, vStart, vEnd := resolveVoiceScriptFields(s, nv)
 	return templates.TemplateChunk{
-		ScriptData: &textEditorScript{
-			sceneId:        s.Editor.SceneText.SceneID,
-			bookVarsSpec:   book.EncodeBookVariablesSpec(b),
-			isScreenplay:   isSp,
-			scriptStandard: std,
-			voiceOpen:      vOpen,
-			voiceSection:   vSec,
-			voiceUrl:       vURL,
-			voiceTrimStart: vStart,
-			voiceTrimEnd:   vEnd,
-		},
+		ScriptData: buildTextEditorScript(s, nv),
 	}
 }
 
@@ -348,20 +382,9 @@ func TextEditorView(s *state.StudioState) templates.TemplateChunk {
 	v.SceneTextModalIncoming = incomingScenes
 	v.SceneTextModalHasIncoming = len(incomingScenes) > 0
 	nv.InspectorPorts = buildSceneInspectorChoices(s, modalSc, previewMode, testState)
-	vOpen, vSec, vURL, vStart, vEnd := resolveVoiceScriptFields(s, nv)
 	return templates.TemplateChunk{
 		TemplateData: v,
-		ScriptData: &textEditorScript{
-			sceneId:        nv.ID,
-			bookVarsSpec:   v.BookVarsSpec,
-			isScreenplay:   v.IsScreenplayMode,
-			scriptStandard: v.ScriptStandard,
-			voiceOpen:      vOpen,
-			voiceSection:   vSec,
-			voiceUrl:       vURL,
-			voiceTrimStart: vStart,
-			voiceTrimEnd:   vEnd,
-		},
+		ScriptData:   buildTextEditorScript(s, nv),
 	}
 }
 

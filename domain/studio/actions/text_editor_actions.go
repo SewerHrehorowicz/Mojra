@@ -24,6 +24,7 @@ const (
 	formKeyVarVal            = "var_val"
 	formKeyDelta             = "delta"
 	formKeyToggle            = "toggle"
+	formKeyStep              = "step"
 	formValTrue              = "true"
 
 	defaultVoiceSectionKey = "01"
@@ -118,6 +119,10 @@ func setSceneTextWidthModeAction(s *state.StudioState, r *transport.ActionReques
 
 func closeSceneTextModal(s *state.StudioState, r *transport.ActionRequest) []transport.ActionFrame {
 	_, errToast := flushSceneTextChanges(s, r)
+	if r != nil && r.FormValue(formKeyStep) == formValTrue && !s.Editor.SceneText.StepCollapse() {
+		s.Overlays.Toast = errToast
+		return frameModals(s, errToast)
+	}
 	s.Editor.SceneText.Close()
 	s.Editor.SelectedVoiceSectionKey = defaultVoiceSectionKey
 	s.Overlays.Toast = errToast

@@ -157,10 +157,10 @@ html lang: pl
                                     p.plan-tl-desc "W latach 2–3 powiększamy katalog własnych hitów do 8–12 tytułów i nagrywamy anglojęzyczne wersje lektorskie na globalnego Steama. Przychód spółki rośnie do {przychod_s_r3_zl} zł w 3. roku, a inwestorzy osiągają {zwrot_inwestora_x} zwrotu."
 
                     footer.pitch-sources
-                        p.pitch-sources-title "ZASADY BEZPIECZEŃSTWA KAPITAŁU I PRAW AUTORSKICH (DOCS/FINANSE.CFG)"
+                        p.pitch-sources-title "ZASADY BEZPIECZEŃSTWA KAPITAŁU I PRAW AUTORSKICH (DOCS/BUSINESS/FINANSE.CFG)"
                         .pitch-sources-list
                             p.pitch-source-item "1. Reguła Pilot-First: żadna pełna superprodukcja nie wchodzi do studia przed potwierdzeniem popytu 1-godzinnym Pilotem (8 000 zł) i przedsprzedażą."
-                            p.pitch-source-item "2. Wszystkie liczby są wyliczane automatycznie z pliku docs/finanse.cfg (pełna tabela: docs/kalkulator-finansowy.csv)."
+                            p.pitch-source-item "2. Wszystkie liczby są wyliczane automatycznie z pliku docs/business/finanse.cfg (pełna tabela: docs/business/kalkulator-finansowy.csv)."
 
                 footer.deck-page-footer
                     span.deck-footer-left "MOJRA • PLAN DZIAŁANIA (12 MIESIĘCY)"

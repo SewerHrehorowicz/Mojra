@@ -39,7 +39,6 @@ const (
 	cssDeclFmt         = "%s%s: %s;"
 	cssIndentedDeclFmt = "  %s: %s;"
 	cssContentDeclFmt  = "  content: %s;"
-	errReadCSSFileFmt  = "read %s: %w"
 
 	errCSSInlineSwitchCountFmt = "css compile error in %s.css:%d: too many inline values (%d) for switch(%s) which has %d cases"
 	errCSSSwitchDefCaseFmt     = "css compile error in %s.css:%d: switch case definition %q must be 'case selector' or 'case: selector'"

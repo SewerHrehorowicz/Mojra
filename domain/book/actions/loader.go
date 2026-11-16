@@ -36,6 +36,14 @@ const (
 	rebindHashIDFormat    = "%s-%s"
 	rebindHashSeqIDFormat = "%s-%s-%d"
 	stageLoadBookItem     = engine.Stage("boot.load_book_item")
+	headerContentType     = "Content-Type"
+	headerCacheControl    = "Cache-Control"
+	headerContentTypeOpts = "X-Content-Type-Options"
+	headerContentSecPol   = "Content-Security-Policy"
+	cacheControlAudio     = "no-cache"
+	cacheControlMedia     = "private, max-age=3600"
+	contentTypeOptsNoSnif = "nosniff"
+	mediaContentSecPolVal = "default-src 'none'; media-src 'self'; img-src 'self'; sandbox"
 )
 
 // LoadBooksFromDirectory scans booksDir for unpacked book folders and packed .playbook/.zip archives.
@@ -1509,19 +1517,24 @@ func ServeBookMedia(w http.ResponseWriter, r *http.Request, b *Book, rawRelPath 
 	}
 
 	contentType := mediaContentType(cleanRel)
-	if contentType == "" || (!isAudioFilename(cleanRel) && !isRasterImageFilename(cleanRel)) {
+	isAudio := isAudioFilename(cleanRel)
+	if contentType == "" || (!isAudio && !isRasterImageFilename(cleanRel)) {
 		http.Error(w, "unsupported media type (SVG is forbidden in book media)", http.StatusForbidden)
 		return
 	}
-	if !b.Narrated && isAudioFilename(cleanRel) {
+	if !b.Narrated && isAudio {
 		http.Error(w, "voice media is disabled for narrationless books", http.StatusForbidden)
 		return
 	}
 
-	w.Header().Set("Content-Type", contentType)
-	w.Header().Set("Cache-Control", "private, max-age=3600")
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.Header().Set("Content-Security-Policy", "default-src 'none'; media-src 'self'; img-src 'self'; sandbox")
+	w.Header().Set(headerContentType, contentType)
+	if isAudio && !b.IsPacked {
+		w.Header().Set(headerCacheControl, cacheControlAudio)
+	} else {
+		w.Header().Set(headerCacheControl, cacheControlMedia)
+	}
+	w.Header().Set(headerContentTypeOpts, contentTypeOptsNoSnif)
+	w.Header().Set(headerContentSecPol, mediaContentSecPolVal)
 
 	if !b.IsPacked {
 		fullPath := filepath.Join(b.RootPath, filepath.FromSlash(cleanRel))

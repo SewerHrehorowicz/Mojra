@@ -1082,15 +1082,17 @@ function makeEvent(type, props) {
     btoa: (str) => Buffer.from(str, "binary").toString("base64"),
     atob: (b64) => Buffer.from(b64, "base64").toString("binary"),
     Audio: class {
-      constructor() { this.src = ""; this.paused = true; this.currentTime = 0; this.duration = 2.0; }
+      constructor(src) { this.src = src || ""; this.paused = true; this.currentTime = 0; this.duration = 2.0; this.readyState = 4; }
       play() { this.paused = false; return Promise.resolve(); }
       pause() { this.paused = true; }
+      addEventListener(_ev, handler) { if (typeof handler === "function") handler(); }
       getAttribute(k) { return this["_" + k] || ""; }
       setAttribute(k, v) { this["_" + k] = String(v); }
     },
     AudioContext: class {
       constructor() { this.sampleRate = 24000; this.destination = {}; }
       createMediaStreamSource() { return { connect() {}, disconnect() {} }; }
+      createGain() { return { gain: { value: 1 }, connect() {}, disconnect() {} }; }
       createScriptProcessor() {
         const node = {
           onaudioprocess: null,
@@ -1098,7 +1100,10 @@ function makeEvent(type, props) {
             if (typeof this.onaudioprocess === "function") {
               const fakeBuf = new Float32Array(24000);
               for (let i = 0; i < fakeBuf.length; i++) fakeBuf[i] = Math.sin(i * 0.1) * 0.4;
-              this.onaudioprocess({ inputBuffer: { getChannelData: () => fakeBuf } });
+              this.onaudioprocess({
+                inputBuffer: { getChannelData: () => fakeBuf },
+                outputBuffer: { getChannelData: () => new Float32Array(24000) }
+              });
             }
           },
           disconnect() {}
@@ -1227,8 +1232,8 @@ function makeEvent(type, props) {
   canvas.dispatchEvent(makeEvent("mousedown", { button: 0, clientX: nodeScreenPt.x, clientY: nodeScreenPt.y, target: canvas }));
   canvas.dispatchEvent(makeEvent("mouseup", { button: 0, clientX: nodeScreenPt.x, clientY: nodeScreenPt.y, target: canvas }));
   await waitForActions();
-  if (!doc.querySelector("#editor-context-form").classList.contains("hidden") || !doc.querySelector("#editor-context-view").classList.contains("hidden")) {
-    throw new Error("Expected #editor-context-view and #editor-context-form to remain hidden when clicking a node card on canvas");
+  if (doc.querySelector("#editor-context-form") || !doc.querySelector("#editor-context-view").classList.contains("hidden")) {
+    throw new Error("Expected #editor-context-view to remain hidden and #editor-context-form to not exist when clicking a node card on canvas");
   }
   if (!vm.runInContext("NodeCanvasHelpers.selectedNodeIds.has(NodeCanvasLayout.studioGraphState.nodes[0].id)", win)) {
     throw new Error("Expected clicking node card on canvas to select the node");
@@ -1531,50 +1536,102 @@ function makeEvent(type, props) {
   edCanvasForVoice.dispatchEvent(makeEvent("mouseup", { button: 0, clientX: selectNodePt.x, clientY: selectNodePt.y, target: edCanvasForVoice }));
   await waitForActions();
 
-  await clickEl("#btn-inspector-voice-recorder");
-  const voiceStrip = doc.querySelector("#inspector-voice-rec-strip");
+  await clickEl("#btn-expand-scene-text");
+  if (!doc.querySelector("#text-editor-view")) {
+    throw new Error("Expected #btn-expand-scene-text to open #text-editor-view for voice recording test");
+  }
+  await clickEl("#btn-modal-voice-recorder");
+  const voiceStrip = doc.querySelector("#modal-voice-rec-strip");
   if (!voiceStrip || voiceStrip.classList.contains("hidden")) {
-    throw new Error("Expected #btn-inspector-voice-recorder to reveal #inspector-voice-rec-strip");
+    throw new Error("Expected #btn-modal-voice-recorder to reveal #modal-voice-rec-strip");
   }
-  if (doc.querySelector("#inspector-voice-rec-strip").getAttribute("data-voice-state") !== "recording") {
-    throw new Error("Expected clicking #btn-inspector-voice-recorder on scene without audio to auto-start recording");
+  if (!voiceStrip.classList.contains("is-idle")) {
+    throw new Error("Expected opening #modal-voice-rec-strip on scene without audio to stay in .is-idle state until Record is clicked");
   }
-  const cutBtnWhileRec = doc.querySelector('#inspector-voice-rec-strip [data-voice-trim-destructive="true"]');
+  const playBtnIdle = doc.querySelector("#modal-voice-rec-strip .voice-rec-play-btn");
+  const recBtnIdle = doc.querySelector("#modal-voice-rec-strip .voice-rec-record-btn");
+  const cutBtnIdle = doc.querySelector("#modal-voice-rec-strip .voice-rec-cut-btn");
+  const delBtnIdle = doc.querySelector("#modal-voice-rec-strip .voice-rec-delete-btn");
+  if (!playBtnIdle || !recBtnIdle || !cutBtnIdle || !delBtnIdle) {
+    throw new Error("Expected separate Play, Record, Cut, and Delete buttons to always exist in #modal-voice-rec-strip");
+  }
+  if (!playBtnIdle.disabled || !cutBtnIdle.disabled || !delBtnIdle.disabled) {
+    throw new Error("Expected Play, Cut, and Delete buttons to be disabled when no recording exists");
+  }
+  // Click Record (.voice-rec-record-btn) to start recording
+  await clickEl("#modal-voice-rec-strip .voice-rec-record-btn");
+  if (!doc.querySelector("#modal-voice-rec-strip").classList.contains("is-recording")) {
+    throw new Error("Expected clicking .voice-rec-record-btn to start recording (.is-recording)");
+  }
+  const stopIconEl = doc.querySelector("#modal-voice-rec-strip .voice-rec-icon-stop");
+  if (!stopIconEl || stopIconEl.classList.contains("hidden")) {
+    throw new Error("Expected .voice-rec-icon-stop to be present and not hidden during recording");
+  }
+  const cutBtnWhileRec = doc.querySelector("#modal-voice-rec-strip .voice-rec-cut-btn");
   if (!cutBtnWhileRec || cutBtnWhileRec.classList.contains("hidden") || !cutBtnWhileRec.disabled) {
     throw new Error("Expected destructive trim scissors button to always be visible and disabled/grayed out while recording");
   }
-  // Click Stop ([data-voice-transport=true]) to finish recording & auto-save voice/<scene_id>.flac
-  await clickEl('#inspector-voice-rec-strip [data-voice-transport="true"]');
-  const savedVoiceUrl = vm.runInContext("EditorContextController.data.voiceUrl || ''", win);
+  // Click Record/Stop (.voice-rec-record-btn) to finish recording & auto-save voice/<scene_id>.flac
+  await clickEl("#modal-voice-rec-strip .voice-rec-record-btn");
+  const savedVoiceUrl = vm.runInContext("TextEditorController.data.voiceUrl || ''", win);
   if (!savedVoiceUrl.includes(".flac")) {
-    throw new Error("Expected stopping recording to auto-save .flac file and set EditorContextController.data.voiceUrl, got: " + savedVoiceUrl);
+    throw new Error("Expected stopping recording to auto-save .flac file and set TextEditorController.data.voiceUrl, got: " + savedVoiceUrl);
   }
-  const cutBtnUntrimmed = doc.querySelector('#inspector-voice-rec-strip [data-voice-trim-destructive="true"]');
+  const savedVoicePeaksLen = vm.runInContext("(TextEditorController.data.voicePeaks || '').length", win);
+  if (savedVoicePeaksLen !== 320) {
+    throw new Error("Expected stopping recording to populate 320-char TextEditorController.data.voicePeaks, got len=" + savedVoicePeaksLen);
+  }
+  const resolvedWaveformBars = vm.runInContext("EditorVoiceWaveform.resolvePeaks(document.querySelector('#modal-voice-rec-strip'), EditorVoice.trimState, EditorVoice.capture).length", win);
+  if (resolvedWaveformBars !== 160) {
+    throw new Error("Expected EditorVoiceWaveform.resolvePeaks to return 160 bars for saved .flac, got " + resolvedWaveformBars);
+  }
+  const cutBtnUntrimmed = doc.querySelector("#modal-voice-rec-strip .voice-rec-cut-btn");
   if (!cutBtnUntrimmed || cutBtnUntrimmed.classList.contains("hidden") || !cutBtnUntrimmed.disabled) {
     throw new Error("Expected destructive trim scissors button to remain visible and disabled/grayed out when untrimmed [0, 1]");
   }
-  // Drag right 4-corner trim handle (.trim-end) and release to auto-save non-destructive trim by default
-  const trimEndEl = doc.querySelector('#inspector-voice-rec-strip [data-voice-trim="end"]');
-  const waveWrapEl = doc.querySelector('#inspector-voice-rec-strip [data-voice-waveform-wrap="true"]');
+  // Clicking on the waveform (.voice-rec-waveform-wrap) must only position the playhead (scrubRatio), NEVER auto-play
+  const waveWrapEl = doc.querySelector("#modal-voice-rec-strip .voice-rec-waveform-wrap");
   waveWrapEl.getBoundingClientRect = () => ({ left: 0, top: 0, width: 200, height: 28, right: 200, bottom: 28 });
+  waveWrapEl.dispatchEvent(makeEvent("pointerdown", { button: 0, clientX: 80, clientY: 14, target: waveWrapEl }));
+  waveWrapEl.dispatchEvent(makeEvent("pointerup", { button: 0, clientX: 80, clientY: 14, target: waveWrapEl }));
+  if (vm.runInContext("EditorVoice.playback.playing", win)) {
+    throw new Error("Expected clicking .voice-rec-waveform-wrap NOT to auto-start playback");
+  }
+  if (Math.abs(vm.runInContext("EditorVoice.playback.scrubRatio", win) - 0.4) > 0.01) {
+    throw new Error("Expected clicking .voice-rec-waveform-wrap at 80/200px to set scrubRatio=0.4");
+  }
+  if (!doc.querySelector("#modal-voice-rec-strip .voice-rec-playhead").classList.contains("is-visible")) {
+    throw new Error("Expected clicking .voice-rec-waveform-wrap to make .voice-rec-playhead visible at scrubbed position");
+  }
+  // Clicking Play (.voice-rec-play-btn) starts playback from scrubRatio, and clicking again pauses
+  await clickEl("#modal-voice-rec-strip .voice-rec-play-btn");
+  if (!vm.runInContext("EditorVoice.playback.playing", win) || !doc.querySelector("#modal-voice-rec-strip").classList.contains("is-playing")) {
+    throw new Error("Expected clicking .voice-rec-play-btn to enter .is-playing state without immediately aborting on first play");
+  }
+  await clickEl("#modal-voice-rec-strip .voice-rec-play-btn");
+  if (vm.runInContext("EditorVoice.playback.playing", win)) {
+    throw new Error("Expected clicking .voice-rec-play-btn while playing to pause playback");
+  }
+  // Drag right 4-corner trim handle (.trim-end) and release to auto-save non-destructive trim by default
+  const trimEndEl = doc.querySelector("#modal-voice-rec-strip .voice-rec-trim-handle.trim-end");
   trimEndEl.dispatchEvent(makeEvent("pointerdown", { button: 0, clientX: 200, clientY: 14, target: trimEndEl }));
   waveWrapEl.dispatchEvent(makeEvent("pointermove", { button: 0, clientX: 150, clientY: 14, target: waveWrapEl }));
   waveWrapEl.dispatchEvent(makeEvent("pointerup", { button: 0, clientX: 150, clientY: 14, target: waveWrapEl }));
   await waitForActions();
-  const nonDestructiveEnd = vm.runInContext("Number(EditorContextController.data.voiceTrimEnd).toFixed(4)", win);
+  const nonDestructiveEnd = vm.runInContext("Number(TextEditorController.data.voiceTrimEnd).toFixed(4)", win);
   if (nonDestructiveEnd !== "0.7500") {
-    throw new Error("Expected default non-destructive trim to persist EditorContextController.data.voiceTrimEnd=0.7500, got: " + nonDestructiveEnd);
+    throw new Error("Expected default non-destructive trim to persist TextEditorController.data.voiceTrimEnd=0.7500, got: " + nonDestructiveEnd);
   }
-  const cutBtn = doc.querySelector('#inspector-voice-rec-strip [data-voice-trim-destructive="true"]');
+  const cutBtn = doc.querySelector("#modal-voice-rec-strip .voice-rec-cut-btn");
   if (!cutBtn || cutBtn.classList.contains("hidden") || cutBtn.disabled) {
-    throw new Error("Expected destructive trim button [data-voice-trim-destructive=true] to be visible and enabled when non-destructive trim is active");
+    throw new Error("Expected destructive trim button .voice-rec-cut-btn to be visible and enabled when non-destructive trim is active");
   }
-  await clickEl('#inspector-voice-rec-strip [data-voice-trim-destructive="true"]');
-  const afterDestructiveEnd = vm.runInContext("Number(EditorContextController.data.voiceTrimEnd).toFixed(4)", win);
+  await clickEl("#modal-voice-rec-strip .voice-rec-cut-btn");
+  const afterDestructiveEnd = vm.runInContext("Number(TextEditorController.data.voiceTrimEnd).toFixed(4)", win);
   if (afterDestructiveEnd !== "1.0000") {
-    throw new Error("Expected destructive trim to crop file and reset EditorContextController.data.voiceTrimEnd=1.0000, got: " + afterDestructiveEnd);
+    throw new Error("Expected destructive trim to crop file and reset TextEditorController.data.voiceTrimEnd=1.0000, got: " + afterDestructiveEnd);
   }
-  const cutBtnAfter = doc.querySelector('#inspector-voice-rec-strip [data-voice-trim-destructive="true"]');
+  const cutBtnAfter = doc.querySelector("#modal-voice-rec-strip .voice-rec-cut-btn");
   if (!cutBtnAfter || cutBtnAfter.classList.contains("hidden") || !cutBtnAfter.disabled) {
     throw new Error("Expected destructive trim button to remain visible and become disabled/grayed out after destructive trim resets bounds to [0, 1]");
   }
@@ -1599,15 +1656,21 @@ function makeEvent(type, props) {
       return win.btoa(bin);
     }
   };
-  await clickEl('#inspector-voice-rec-strip [data-voice-record-start="true"]');
-  if (androidCaptureCalls !== 1 || doc.querySelector("#inspector-voice-rec-strip").getAttribute("data-voice-state") !== "recording") {
-    throw new Error("Expected clicking re-record with window.mojraAndroid to invoke startAudioCapture() and enter recording state");
+  await clickEl("#modal-voice-rec-strip .voice-rec-record-btn");
+  if (androidCaptureCalls !== 1 || !doc.querySelector("#modal-voice-rec-strip").classList.contains("is-recording")) {
+    throw new Error("Expected clicking .voice-rec-record-btn with window.mojraAndroid to invoke startAudioCapture() and enter .is-recording state");
   }
-  await clickEl('#inspector-voice-rec-strip [data-voice-transport="true"]');
+  await clickEl("#modal-voice-rec-strip .voice-rec-record-btn");
   if (androidStopCalls !== 1) {
     throw new Error("Expected stopping recording with window.mojraAndroid to invoke stopAudioCaptureBase64()");
   }
+  const overwrittenVoiceUrl = vm.runInContext("TextEditorController.data.voiceUrl || ''", win);
+  const currentPlaybackSourceUrl = vm.runInContext("EditorVoice.playback.sourceUrl || ''", win);
+  if (currentPlaybackSourceUrl !== overwrittenVoiceUrl) {
+    throw new Error("Expected EditorVoice.playback.sourceUrl to update to new cache-busted voiceUrl after overwriting recording, got sourceUrl=" + currentPlaybackSourceUrl + " vs voiceUrl=" + overwrittenVoiceUrl);
+  }
   delete win.mojraAndroid;
+  await clickEl("#btn-collapse-scene-text");
 
   // 10b. Settings modal toggles (Theme, UI Scale) & Studio Home <-> Reader Home navigation
   if (doc.querySelector("#btn-toggle-zen")) {
@@ -1826,7 +1889,18 @@ function makeEvent(type, props) {
   }
   canvasTitleInp.dispatchEvent(makeEvent("blur", { target: canvasTitleInp }));
   await waitForActions();
+  await clickEl('#btn-expand-scene-text-full');
+  if (!doc.querySelector("#text-editor-view") || !doc.querySelector("#text-editor-view").classList.contains("mode-full")) {
+    throw new Error("Expected #btn-expand-scene-text-full to switch #text-editor-view to .mode-full");
+  }
   await clickEl('#btn-collapse-scene-text');
+  if (!doc.querySelector("#text-editor-view") || !doc.querySelector("#text-editor-view").classList.contains("mode-half")) {
+    throw new Error("Expected first #btn-collapse-scene-text click in .mode-full to step down to .mode-half");
+  }
+  await clickEl('#btn-collapse-scene-text');
+  if (doc.querySelector("#text-editor-view")) {
+    throw new Error("Expected second #btn-collapse-scene-text click in .mode-half to close #text-editor-view");
+  }
 
   // Verify Export Project Modal multi-select, collapsible ZAAWANSOWANE, and norma dropdown in live DOM
   await clickEl('#btn-open-export-modal');

@@ -24,7 +24,7 @@ const (
 	dirWWW             = "www"
 	dirApp             = "domain/common"
 	dirDist            = "dist"
-	dirDocs            = "docs"
+	dirDocs            = "docs/business"
 	dirFonts           = "fonts"
 	extHTML            = ".html"
 	extTTF             = ".ttf"
@@ -263,7 +263,7 @@ func renderHTMLFileToPDF(browserBin, htmlPath, outPDFPath string) error {
 }
 
 // BuildDeckPDF renders dist/www/deck.html, dist/www/plan.html, and dist/www/przeglad.html
-// into docs/mojra-deck-finansowy.pdf, docs/mojra-plan.pdf, and docs/mojra-przeglad-zalozyciela.pdf.
+// into docs/business/mojra-deck-finansowy.pdf, docs/business/mojra-plan.pdf, and docs/business/mojra-przeglad-zalozyciela.pdf.
 func BuildDeckPDF(rootDir, customOutPath string) (string, error) {
 	browserBin := FindHeadlessPDFBrowser()
 	if browserBin == "" {

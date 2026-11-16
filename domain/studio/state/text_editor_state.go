@@ -102,15 +102,26 @@ func (m *TextEditorState) SyncSceneID(sceneID string) {
 	m.InitialID = sceneID
 }
 
-// Close closes the scene text editor panel while preserving sticky layout preferences (WidthMode, SettingsOpen).
+// Close closes the scene text editor panel and resets WidthMode to WidthModeHalf so reopening starts at half width.
 func (m *TextEditorState) Close() {
 	m.SceneID = ""
 	m.InitialID = ""
+	m.WidthMode = WidthModeHalf
 	m.PreviewMode = PreviewModeNormal
 	m.TestVars = nil
 	m.ChoiceRulesOpen = nil
 	m.SyntaxHelpOpen = false
 	m.TestVarsOpen = false
+}
+
+// StepCollapse steps the scene text editor panel down one stage (WidthModeFull -> WidthModeHalf -> closed).
+func (m *TextEditorState) StepCollapse() bool {
+	if m.WidthMode == WidthModeFull {
+		m.WidthMode = WidthModeHalf
+		return false
+	}
+	m.Close()
+	return true
 }
 
 // ApplyNavigationEffects applies choice and destination scene variable effects to the preview test state.

@@ -59,7 +59,7 @@ var (
 		c2: "Rok 1",
 		c3: "Rok 2",
 		c4: "Rok 3",
-		c5: "Suma 3 Lat / Szczegóły (Źródło: docs/finanse.cfg)",
+		c5: "Suma 3 Lat / Szczegóły (Źródło: docs/business/finanse.cfg)",
 	}
 
 	calcSection0Header = calcCSVRowTemplate{
